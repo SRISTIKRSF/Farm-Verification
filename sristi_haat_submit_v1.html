@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>મારી પેદાશ — સૃષ્ટિ ખેડૂત હાટ</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@700;900&family=Noto+Sans+Gujarati:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --green:#1b4332; --green2:#2d6a4f; --green3:#52b788; --green-pale:#d8f3dc;
+  --orange:#e36414; --orange-pale:#fff0e0; --red:#c1121f; --red-pale:#ffe0e0;
+  --bg:#fffbf4; --card:#fff; --text:#1a1a1a; --muted:#6b7280; --border:#e8e0d0;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:"Noto Sans Gujarati","DM Sans",sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.45;min-height:100vh}
+.wrap{max-width:560px;margin:0 auto;padding-bottom:120px}
+
+/* LOGIN */
+.login{padding:24px 22px;max-width:420px;margin:0 auto}
+.login-hero{text-align:center;padding:30px 10px 24px}
+.login-hero-emoji{font-size:62px;margin-bottom:10px}
+.login-title{font-family:"Fraunces","Noto Sans Gujarati",serif;font-size:28px;font-weight:900;color:var(--green);line-height:1.1;margin-bottom:6px}
+.login-sub{font-size:14px;color:var(--muted)}
+.login-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px 20px;box-shadow:0 6px 24px rgba(27,67,50,.08)}
+.frm{display:flex;flex-direction:column;gap:14px}
+.frm-row{display:flex;flex-direction:column;gap:5px}
+.frm-label{font-size:12.5px;font-weight:600;color:var(--muted)}
+.frm-in{border:1.5px solid var(--border);border-radius:10px;padding:13px 14px;font-size:16px;font-family:inherit;outline:none;background:#fff}
+.frm-in:focus{border-color:var(--green2)}
+.btn-primary{background:var(--green2);color:#fff;border:none;border-radius:10px;padding:14px;font-size:15.5px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;box-shadow:0 4px 14px rgba(45,106,79,.3)}
+.btn-primary:active{transform:scale(.99)}
+.login-hint{margin-top:14px;font-size:12.5px;color:var(--muted);text-align:center;line-height:1.6}
+.login-hint b{color:var(--green2);font-weight:600}
+.login-err{background:var(--red-pale);color:var(--red);border-radius:8px;padding:10px 12px;font-size:13px;text-align:center;margin-top:10px;font-weight:500}
+
+/* HEADER */
+.hdr{background:linear-gradient(135deg,var(--green) 0%,var(--green2) 100%);color:#fff;padding:14px 18px 20px;position:relative;overflow:hidden}
+.hdr::before{content:"🌿";position:absolute;right:-12px;top:-22px;font-size:120px;opacity:.08;transform:rotate(-15deg)}
+.hdr-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;position:relative;z-index:2}
+.hdr-week{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;opacity:.8}
+.hdr-logout{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.hdr-title{font-size:21px;font-weight:800;line-height:1.2;margin-bottom:10px}
+.farmer-card{background:rgba(255,255,255,.12);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px}
+.farmer-avatar{width:42px;height:42px;border-radius:50%;background:var(--green3);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--green);flex-shrink:0;overflow:hidden}
+.farmer-avatar img{width:100%;height:100%;object-fit:cover}
+.farmer-info{flex:1;min-width:0}
+.farmer-name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.farmer-meta{font-size:11.5px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* DEADLINE BAR */
+.deadline{background:var(--orange-pale);border-left:4px solid var(--orange);padding:11px 16px;font-size:13px;color:#7a3010;font-weight:500}
+.deadline b{font-weight:700}
+
+/* STATUS PILL */
+.status-pill{display:inline-flex;align-items:center;gap:6px;background:var(--green-pale);color:var(--green2);padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;margin-top:8px}
+.status-pill.warn{background:var(--orange-pale);color:#7a3010}
+
+/* TEXTAREA */
+.sect{padding:18px 16px 6px}
+.sect-label{font-size:13px;font-weight:600;color:var(--green2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sect-hint{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.55}
+.sect-hint code{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-family:"DM Sans",monospace;font-size:11.5px}
+.big-ta{width:100%;min-height:340px;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;font-size:15px;font-family:inherit;outline:none;line-height:1.6;background:#fff;resize:vertical}
+.big-ta:focus{border-color:var(--green2);box-shadow:0 0 0 3px rgba(45,106,79,.08)}
+.big-ta::placeholder{color:#bbb}
+
+/* PASTE FROM WHATSAPP TIP */
+.tip-card{margin:12px 16px 0;background:#eaf6ed;border:1px solid var(--green3);border-radius:12px;padding:11px 14px;font-size:12.5px;color:var(--green2);line-height:1.6}
+.tip-card b{color:var(--green)}
+
+/* SUBMIT FOOTER */
+.submit-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);padding:12px 16px env(safe-area-inset-bottom,12px);box-shadow:0 -4px 18px rgba(0,0,0,.06);z-index:50}
+.submit-bar-inner{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px}
+.submit-summary{flex:1;font-size:12px;color:var(--muted);line-height:1.3}
+.submit-summary b{color:var(--text);font-size:14px;display:block;font-weight:700}
+.btn-submit{background:var(--green2);color:#fff;border:none;border-radius:10px;padding:13px 22px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;box-shadow:0 4px 12px rgba(45,106,79,.3)}
+.btn-submit:disabled{background:#aaa;box-shadow:none;cursor:not-allowed}
+.btn-submit:active:not(:disabled){transform:scale(.97)}
+
+/* STATES & TOAST */
+.state{padding:80px 30px;text-align:center;color:var(--muted)}
+.state-icon{font-size:60px;margin-bottom:14px}
+.state-title{font-size:17px;color:var(--text);font-weight:700;margin-bottom:6px}
+.state-body{font-size:13.5px;line-height:1.6}
+.toast-wrap{position:fixed;top:16px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:200;pointer-events:none}
+.toast{background:var(--text);color:#fff;padding:10px 18px;border-radius:24px;font-size:13.5px;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:80%;text-align:center;animation:toastIn .25s ease-out}
+.toast.ok{background:var(--green2)}
+.toast.err{background:var(--red)}
+@keyframes toastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"></div>
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   સૃષ્ટિ ખેડૂત હાટ — Farmer submit v3 (textarea-only)
+   File: sristi_haat_submit_v1.html (2026-06-11)
+
+   Farmer's actual workflow now matches what they already do on WhatsApp:
+     1. Mobile-number login (password = last 4 digits of mobile by default)
+     2. One big textarea: paste/type your produce list (WhatsApp-style)
+     3. Submit. The office runs Claude weekly to parse all rawTexts
+        into structured items[] that the catalog consumes.
+
+   DB additions (under prakrutik_kheti namespace):
+     weekly/current               → current week #
+     weekly/{n}/meta              → {weekNum, dateLabel, frozen, deadline}
+     weekly/{n}/submissions/{fid} → {rawText, submittedAt, updatedAt,
+                                     items?[] (filled by admin publish)}
+     farmerAuth/{phone}/pwd       → custom password (else default = last-4)
+   ══════════════════════════════════════════════════════════════════ */
+
+const FB_CONFIG = {
+  apiKey:"AIzaSyCd0jU_rtG3Us3E4au4rntN5N8tbciHWY0",
+  authDomain:"prakrutik-kheti-c0a89.firebaseapp.com",
+  databaseURL:"https://prakrutik-kheti-c0a89-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"prakrutik-kheti-c0a89",
+  storageBucket:"prakrutik-kheti-c0a89.firebasestorage.app",
+  messagingSenderId:"269627097742",
+  appId:"1:269627097742:web:2d82d97f0621db87133fdf",
+};
+const FB_NAMESPACE='prakrutik_kheti';
+const AUTH_KEY='sristi_farmer_auth_v1';
+
+let FB={app:null,db:null};
+function fbRef(p){return FB.db.ref(FB_NAMESPACE+(p?'/'+p:''));}
+
+const $=q=>document.querySelector(q);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, kind=""){
+  const w=$('#toasts'); const t=document.createElement('div');
+  t.className='toast '+(kind||""); t.textContent=msg; w.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='.3s';},2200);
+  setTimeout(()=>t.remove(),2700);
+}
+
+let WK=null, WK_META={}, FARMER=null, RAW_TEXT="", SUBMITTED_AT=null;
+
+async function init(){
+  FB.app = firebase.initializeApp(FB_CONFIG);
+  FB.db  = firebase.database();
+  const saved=(()=>{try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"null");}catch{return null;}})();
+  if(saved && saved.phone){
+    showState("⏳","લોડ થઈ રહ્યું છે...","");
+    try{ await loginByPhone(saved.phone, saved.pwd, true); return; }
+    catch(e){ /* fall through */ }
+  }
+  renderLogin();
+}
+
+/* ════════ LOGIN ════════ */
+function renderLogin(errMsg){
+  $('#wrap').innerHTML = `
+    <div class="login">
+      <div class="login-hero">
+        <div class="login-hero-emoji">🌿</div>
+        <div class="login-title">મારી પેદાશ<br>મોકલો</div>
+        <div class="login-sub">સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ</div>
+      </div>
+      <div class="login-card">
+        <div class="frm">
+          <div class="frm-row">
+            <label class="frm-label">મોબાઈલ નંબર</label>
+            <input class="frm-in" id="liPhone" type="tel" inputmode="numeric" maxlength="10" placeholder="દા.ત. 9016810831" autocomplete="username">
+          </div>
+          <div class="frm-row">
+            <label class="frm-label">પાસવર્ડ</label>
+            <input class="frm-in" id="liPwd" type="password" inputmode="numeric" placeholder="મોબાઈલ ના છેલ્લા 4 અંક" autocomplete="current-password">
+          </div>
+          <button class="btn-primary" onclick="doLogin()">આગળ વધો →</button>
+          ${errMsg?`<div class="login-err">${esc(errMsg)}</div>`:''}
+        </div>
+        <div class="login-hint">
+          પહેલી વાર લોગ-ઇન કરો છો?<br>
+          <b>પાસવર્ડ = તમારા મોબાઈલ ના છેલ્લા 4 અંક</b><br>
+          (દા.ત. 9016810831 માટે પાસવર્ડ <b>0831</b>)
+        </div>
+      </div>
+    </div>
+  `;
+  setTimeout(()=>document.getElementById('liPhone')?.focus(),80);
+  ['liPhone','liPwd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  });
+}
+
+window.doLogin = async () => {
+  const phoneRaw = ($('#liPhone')?.value||'').replace(/[^0-9]/g,'');
+  const pwd      = ($('#liPwd')?.value||'').trim();
+  if(phoneRaw.length<10) return renderLogin("મોબાઈલ નંબર બરાબર નથી");
+  if(!pwd)               return renderLogin("પાસવર્ડ ભરો");
+  try{ await loginByPhone(phoneRaw, pwd, false); }
+  catch(e){ renderLogin(e.message||"લોગ-ઇન નિષ્ફળ"); }
+};
+
+async function loginByPhone(phone, pwd, silent){
+  const fSnap = await fbRef('haatFarmers').get();
+  const all = fSnap.val()||[];
+  const arr = Array.isArray(all)?all:Object.values(all);
+  const match = arr.find(f=>f && f.program==='haat' && String(f.phone||'').replace(/[^0-9]/g,'').endsWith(phone));
+  if(!match) throw new Error("આ નંબર નોંધાયેલો નથી. કૃપા કરી ઑફિસ સંપર્ક કરો.");
+  const phoneClean = String(match.phone||'').replace(/[^0-9]/g,'');
+  const defaultPwd = phoneClean.slice(-4);
+  const authSnap = await fbRef('farmerAuth/'+phoneClean).get();
+  const customPwd = authSnap.exists()?String(authSnap.val().pwd||''):'';
+  const expected = customPwd || defaultPwd;
+  if(String(pwd) !== expected) throw new Error("પાસવર્ડ ખોટો છે");
+  try{localStorage.setItem(AUTH_KEY, JSON.stringify({phone:phoneClean, pwd}));}catch{}
+  FARMER = match;
+  if(!silent) toast("સ્વાગત છે, "+(match.name||"")+"!", "ok");
+  await loadSubmission();
+}
+
+window.doLogout = () => {
+  try{localStorage.removeItem(AUTH_KEY);}catch{}
+  FARMER=null; RAW_TEXT=""; SUBMITTED_AT=null;
+  renderLogin();
+};
+
+/* ════════ SUBMISSION ════════ */
+async function loadSubmission(){
+  const wkSnap = await fbRef('weekly/current').get();
+  WK = wkSnap.exists() ? wkSnap.val() : 1;
+  if(!wkSnap.exists()){
+    await fbRef('weekly/current').set(1);
+    await fbRef('weekly/1/meta').set({weekNum:1, dateLabel:"", frozen:false, createdAt:Date.now()});
+  }
+  const metaSnap = await fbRef('weekly/'+WK+'/meta').get();
+  WK_META = metaSnap.val() || {weekNum:WK};
+  if(WK_META.frozen) return showState("🔒","હાટ બંધ થઈ ગઈ",`હાટ #${WK} માટેનો સમય પૂરો થયો છે. આગલા હાટ માટે રાહ જુઓ.`);
+
+  const curSub = await fbRef('weekly/'+WK+'/submissions/'+FARMER.id).get();
+  if(curSub.exists()){
+    const v = curSub.val();
+    RAW_TEXT = v.rawText || "";
+    SUBMITTED_AT = v.submittedAt || null;
+  }else{
+    const lastWk = (typeof WK==='number'?WK:parseInt(WK,10))-1;
+    if(lastWk>0){
+      const lastSub = await fbRef('weekly/'+lastWk+'/submissions/'+FARMER.id).get();
+      if(lastSub.exists() && lastSub.val().rawText){
+        RAW_TEXT = lastSub.val().rawText;
+      }
+    }
+  }
+  renderFarmer();
+}
+
+function deadlineText(){ return WK_META.deadline || "શનિવાર સાંજે 8 વાગ્યા સુધી"; }
+
+function renderFarmer(){
+  const f = FARMER;
+  const initial = (f.name||"?").trim().charAt(0);
+  const photoHtml = f.photoUrl ? `<img src="${esc(f.photoUrl)}" alt="">` : esc(initial);
+  const venueText = (f.haat||"") || [f.village,f.taluka,f.district].filter(Boolean).join(", ");
+  const submittedTxt = SUBMITTED_AT
+    ? `<div class="status-pill">✓ ${formatAgo(SUBMITTED_AT)} મોકલાઈ — બદલવા ઈચ્છો તો બદલીને ફરી મોકલો</div>`
+    : (RAW_TEXT
+        ? `<div class="status-pill warn">↻ ગયા હાટ ની યાદી લોડ થઈ — બદલીને મોકલો</div>`
+        : '');
+
+  $('#wrap').innerHTML = `
+    <div class="hdr">
+      <div class="hdr-top">
+        <div class="hdr-week">હાટ #${esc(WK)} ${WK_META.dateLabel?'• '+esc(WK_META.dateLabel):''}</div>
+        <button class="hdr-logout" onclick="doLogout()">⎋ લોગ-આઉટ</button>
+      </div>
+      <div class="hdr-title">તમારી પેદાશ મોકલો 🌿</div>
+      <div class="farmer-card">
+        <div class="farmer-avatar">${photoHtml}</div>
+        <div class="farmer-info">
+          <div class="farmer-name">${esc(f.name||"")}</div>
+          <div class="farmer-meta">${esc(venueText)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="deadline">⏰ <b>છેલ્લો સમય:</b> ${esc(deadlineText())}</div>
+
+    <div class="tip-card">
+      💡 <b>ટિપ:</b> WhatsApp માં તમે જે રીતે યાદી લખો છો, એ જ રીતે અહીં લખો અથવા પેસ્ટ કરો.
+      દરેક વસ્તુ માટે — <b>નામ : ભાવ / એકમ</b> — એમ લખવાથી પૂરતું છે.
+    </div>
+
+    <div class="sect">
+      <div class="sect-label">📝 આ અઠવાડિયાની યાદી</div>
+      <div class="sect-hint">
+        ઉદાહરણ:<br>
+        <code>ભીંડા: 80/-kg</code> &nbsp; <code>દૂધી: 60/-kg</code> &nbsp; <code>કેસર કેરી: 160/-kg</code> &nbsp; <code>ગીર ઘી: 2700/-Lt</code>
+      </div>
+      <textarea class="big-ta" id="rawTa" placeholder="અહીં તમારી પેદાશની યાદી લખો/પેસ્ટ કરો...
+દા.ત.
+
+ભીંડા: 80/-kg
+દૂધી: 60/-kg
+ગલકા: 60/-kg
+પાલખ: 20/- જુડી
+કેસર કેરી: 160/-kg
+ગીર ગાય નું ઘી: 2700/-Lt
+લીંબુ: 120/-kg
+" oninput="onTextChange(this.value)">${esc(RAW_TEXT)}</textarea>
+      ${submittedTxt}
+    </div>
+
+    <div class="submit-bar">
+      <div class="submit-bar-inner">
+        <div class="submit-summary">
+          <b id="lineCount">${countLines(RAW_TEXT)} લાઇન</b>
+          હાટ #${esc(WK)} માટે
+        </div>
+        <button class="btn-submit" id="btnSubmit" onclick="submitRaw()">મોકલો ✓</button>
+      </div>
+    </div>
+  `;
+}
+
+function countLines(t){
+  if(!t) return 0;
+  return t.split('\n').filter(l=>l.trim().length>2).length;
+}
+function formatAgo(ts){
+  if(!ts) return "";
+  const m = Math.round((Date.now()-ts)/60000);
+  if(m<1)  return "હમણાં જ";
+  if(m<60) return m+" મિનિટ પહેલા";
+  const h = Math.round(m/60);
+  if(h<24) return h+" કલાક પહેલા";
+  return Math.round(h/24)+" દિવસ પહેલા";
+}
+
+window.onTextChange = (v) => {
+  RAW_TEXT = v;
+  const el = document.getElementById('lineCount');
+  if(el) el.textContent = countLines(v) + " લાઇન";
+};
+
+window.submitRaw = async () => {
+  const txt = (document.getElementById('rawTa')?.value || RAW_TEXT || "").trim();
+  if(txt.length < 6){ toast("ઓછામાં ઓછી એક વસ્તુ લખો","err"); return; }
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true; btn.textContent = "મોકલાય છે...";
+  try{
+    const payload = {
+      farmerId: FARMER.id,
+      farmerName: FARMER.name||"",
+      farmerPhone: String(FARMER.phone||"").replace(/[^0-9]/g,""),
+      farmerVillage: FARMER.village||"",
+      farmerDistrict: FARMER.district||"",
+      farmerHaat: FARMER.haat||"",
+      weekNum: WK,
+      rawText: txt,
+      submittedAt: firebase.database.ServerValue.TIMESTAMP,
+      updatedAt:   firebase.database.ServerValue.TIMESTAMP,
+    };
+    await fbRef('weekly/'+WK+'/submissions/'+FARMER.id).set(payload);
+    showState("✅","ધન્યવાદ!",`તમારી પેદાશ હાટ #${WK} માટે મોકલાઈ ગઈ છે.<br><br>જરૂર પડે તો શનિવાર સાંજ સુધી ફરી લોગ-ઇન કરી બદલી શકો છો.<br><br><button class="btn-primary" onclick="loadSubmission()" style="max-width:200px;margin-top:8px">↻ બદલવા જાઓ</button>`);
+  }catch(e){
+    console.error(e);
+    toast("મોકલવામાં ભૂલ. ફરી પ્રયત્ન કરો.","err");
+    btn.disabled = false; btn.textContent = "મોકલો ✓";
+  }
+};
+
+function showState(icon, title, body){
+  $('#wrap').innerHTML = `<div class="state">
+    <div class="state-icon">${icon}</div>
+    <div class="state-title">${title}</div>
+    <div class="state-body">${body}</div>
+  </div>`;
+}
+
+init().catch(e=>{ console.error(e); renderLogin(e.message||String(e)); });
+</script>
+</body>
+</html>

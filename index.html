@@ -564,7 +564,7 @@ tbody tr:last-child td{border-bottom:none}
         </div>
         <div>
           <div class="tag">Sristi Innovations</div>
-          <h1>Khedut Haat Tracker</h1>
+          <h1>Khedut Haat Tracker <span id="appVerBadge" style="font-size:10px;font-weight:700;letter-spacing:.08em;background:rgba(255,255,255,.12);color:#a5b4cf;border-radius:5px;padding:1px 6px;vertical-align:middle;text-transform:uppercase"></span></h1>
         </div>
       </div>
     </div>
@@ -1734,6 +1734,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
+const APP_VERSION = 'v11';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5092,6 +5093,8 @@ function donut(segs,centerNum,centerTxt){
 
 /* ============ NAV ============ */
 function renderNav(){
+  const _vb = document.getElementById('appVerBadge');
+  if(_vb) _vb.textContent = APP_VERSION;
   const hs=haatStats(),cs=convStats();
   // v8 — FC users see a reduced nav (no Settings, no Data & Backup, no Team).
   const adminMode = isAdminUser();
@@ -12295,7 +12298,7 @@ function renderPublicLanding(){
             <a href="tel:+919510386635" style="font-size:18px;font-weight:800;color:#1b2333;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">+91 95103 86635</a>
           </div>
         </div>
-        <p style="font-size:11.5px;color:#929fb5">Sristi Innovations · KRSF · Gujarat · 2026-27</p>
+        <p style="font-size:11.5px;color:#929fb5">Sristi Innovations · KRSF · Gujarat · 2026-27 &nbsp;·&nbsp; <span style="font-weight:700">Prakrutik Khedut Haat ${APP_VERSION.toUpperCase()}</span></p>
       </div>
     </div>
   `;

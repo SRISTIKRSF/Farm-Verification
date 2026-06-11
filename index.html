@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sristi Haat Tracker · v9</title>
+<title>Sristi Haat Tracker · v11</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -452,9 +452,11 @@ tbody tr:last-child td{border-bottom:none}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
   background:var(--navy);color:#fff;padding:11px 20px;border-radius:9px;font-size:13px;
   font-weight:600;box-shadow:var(--sh-3);z-index:200;opacity:0;
-  transition:.28s cubic-bezier(.32,.85,.3,1);display:flex;align-items:center;gap:9px}
+  transition:.28s cubic-bezier(.32,.85,.3,1);display:flex;align-items:center;gap:9px;max-width:420px;text-align:left}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-.toast svg{width:16px;height:16px;color:#7fd68f}
+.toast svg{width:16px;height:16px;flex-shrink:0;color:#7fd68f}
+.toast.err{background:var(--red)}
+.toast.err svg{color:#fca5a5}
 
 /* misc */
 .bigprog{display:flex;gap:3px;margin-top:9px}
@@ -578,11 +580,12 @@ tbody tr:last-child td{border-bottom:none}
         <input id="globalSearch" placeholder="Search name, ID, village…">
       </div>
       <div class="sync" id="syncPill"><span class="dot"></span><span class="sync-txt">Connecting…</span></div>
-      <!-- v8 — current-user pill. Clicking opens the switch-user modal. -->
-      <button id="userPill" style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--panel-2);border:1px solid var(--line-strong);border-radius:21px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--ink)">
+      <!-- v9: identity-only pill. Clicking signs out so the next user must
+           authenticate with their own password — no in-app account switch. -->
+      <button id="userPill" title="Sign out" style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--panel-2);border:1px solid var(--line-strong);border-radius:21px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--ink)">
         <span id="userAvatar" style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">A</span>
         <span id="userPillName">Admin</span>
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        <span style="font-size:11px;color:var(--ink-faint);margin-left:2px">· Sign out</span>
       </button>
       <button class="btn btn-primary" id="quickAdd">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -1091,8 +1094,8 @@ window.addEventListener('message', ev => {
         const d2 = JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}');
         const ageMin = d2.at ? Math.floor((Date.now()-new Date(d2.at).getTime())/60000) : 0;
         const ok = confirm(
-          'એક અધૂરો ફોર્મ મળ્યો ('+(ageMin<60?ageMin+' મિનિટ':Math.floor(ageMin/60)+' કલાક')+' જૂનો).\n' +
-          'An unfinished form was found ('+(ageMin<60?ageMin+' min':Math.floor(ageMin/60)+' hr')+' old).\n\n' +
+          'એક અધૂરો ફોર્મ મળ્યો ('+(ageMin<60?ageMin+' મિનિટ':Math.floor(ageMin/60)+' કલાક')+' જૂનો).\\n' +
+          'An unfinished form was found ('+(ageMin<60?ageMin+' min':Math.floor(ageMin/60)+' hr')+' old).\\n\\n' +
           'ચાલુ રાખવું છે? Resume?'
         );
         if(ok) restoreDraft(); else clearDraft();
@@ -1245,6 +1248,9 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 let CATEGORIES = [], QUESTIONS = [];
 let FARMER = {}, CLAIMS_BY_ID = {};
 let FARMER_PHOTOS = {};     /* qid -> [{name,type,data}] (uploaded by farmer at enrolment) */
+/* H2 — previous FC's observation, when this is a seasonal re-verification. */
+let PREV_VERIF_BY_ID = {};  /* qid -> {fcVerification, fcRetick, fcNote, fcAnswer} */
+let PREV_VERIF_META  = null;/* {submittedAt, byName} */
 const VERIFICATIONS = {};   /* qid -> 'verified' | 'not_verified' | 'na' (for askedOf:'both' questions) */
 const RETICK = {};          /* qid -> array (FC's observed items for multi) */
 const FC_ANSWERS = {};      /* qid -> FC's own answer for fc-only questions */
@@ -1371,6 +1377,28 @@ function renderQuestion(q){
       <div style="font-size:10.5px;color:var(--ink-faint);font-style:italic;margin-top:6px">📋 Pre-fetched from enrolment — no verification needed</div>
     </div>\`;
   }
+  /* H2 — render a "Previous FC observation" box if this is a seasonal
+     re-verification. Comes from PREV_VERIF_BY_ID populated by the parent. */
+  const prev = PREV_VERIF_BY_ID[q.id];
+  let prevBoxHtml = '';
+  if(prev && (prev.fcVerification || (prev.fcRetick && prev.fcRetick.length) || prev.fcNote || prev.fcAnswer)){
+    const verifLabel = prev.fcVerification === 'verified' ? '✓ Verified'
+                     : prev.fcVerification === 'not_verified' ? '✗ Not verified'
+                     : prev.fcVerification === 'na' ? '— N/A' : '';
+    const pillsHtml = Array.isArray(prev.fcRetick) && prev.fcRetick.length
+      ? '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">' + prev.fcRetick.map(x => {
+          if(x && typeof x === 'object') return '<span style="font-size:11px;background:#fff;border:1px solid #93c5fd;color:#1e40af;padding:2px 8px;border-radius:10px">'+esc(x.type||'')+' × <b>'+esc(String(x.count||'?'))+'</b></span>';
+          return '<span style="font-size:11px;background:#fff;border:1px solid #93c5fd;color:#1e40af;padding:2px 8px;border-radius:10px">'+esc(String(x))+'</span>';
+        }).join('') + '</div>'
+      : '';
+    const answerHtml = prev.fcAnswer ? '<div style="font-size:12.5px;color:#1e293b;margin-top:3px">'+esc(String(prev.fcAnswer))+'</div>' : '';
+    const noteHtml   = prev.fcNote ? '<div style="font-size:11.5px;color:#475569;font-style:italic;margin-top:4px;line-height:1.45">"'+esc(prev.fcNote)+'"</div>' : '';
+    prevBoxHtml = \`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:10px">
+      <div style="font-size:10.5px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">🚜 Previous FC observation</div>
+      \${verifLabel ? '<div style="font-size:12.5px;font-weight:700;color:#1e3a8a">'+verifLabel+'</div>' : ''}
+      \${pillsHtml}\${answerHtml}\${noteHtml}
+    </div>\`;
+  }
   return \`<div class="q-block" data-q="\${q.id}">
     <div class="q-label">\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
     <div class="q-desc">\${esc(q.en)}</div>
@@ -1378,6 +1406,7 @@ function renderQuestion(q){
       <div class="l">📋 Farmer's claim</div>
       <div class="v">\${fmtFarmerClaim(q, claim)}</div>
     </div>\` : ''}
+    \${prevBoxHtml}
     \${renderFcControls(q)}
   </div>\`;
 }
@@ -1535,6 +1564,22 @@ function paintFarmer(){
   $('#fAadhaar').textContent = FARMER.aadhaar || '—';
   $('#fSubmitted').textContent = FARMER.submittedAt ? new Date(FARMER.submittedAt).toLocaleDateString('en-GB') : '—';
   if(FARMER.photoUrl) $('#avatar').innerHTML = '<img src="'+FARMER.photoUrl+'" alt="">';
+  /* H2 — seasonal-cycle banner. Stands above the section list so the FC sees
+     immediately that they're re-verifying an already-onboarded farmer and that
+     the previous observation will appear next to each claim. */
+  const existing = document.getElementById('seasonalBanner');
+  if(existing) existing.remove();
+  if(PREV_VERIF_META){
+    const when = PREV_VERIF_META.submittedAt ? new Date(PREV_VERIF_META.submittedAt).toLocaleDateString('en-GB') : '—';
+    const who  = PREV_VERIF_META.byName || 'previous FC';
+    const banner = document.createElement('div');
+    banner.id = 'seasonalBanner';
+    banner.style.cssText = 'background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border:1px solid #93c5fd;border-radius:10px;padding:12px 16px;margin:14px 0';
+    banner.innerHTML = '<div style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">🔄 Seasonal re-verification</div>'
+      + '<div style="font-size:13px;color:#1e293b">Previous observation by <b>' + esc(who) + '</b> on <b>' + esc(when) + '</b> is shown beside each claim. Tick what you observe today.</div>';
+    const sectionsEl = document.getElementById('sections');
+    if(sectionsEl && sectionsEl.parentNode) sectionsEl.parentNode.insertBefore(banner, sectionsEl);
+  }
 }
 
 /* navigation */
@@ -1662,6 +1707,15 @@ window.addEventListener('message', ev => {
     if(Array.isArray(d.claims)){
       d.claims.forEach(c => { CLAIMS_BY_ID[c.id] = c; });
     }
+    /* H2 — seasonal re-verification: store previous FC observation. The
+       PREV_VERIF_BY_ID map is consulted in renderQuestion to draw a blue
+       "Previous FC observation" box above the current FC controls. */
+    PREV_VERIF_BY_ID = {};
+    PREV_VERIF_META = null;
+    if(d.prevVerif){
+      PREV_VERIF_META = {submittedAt: d.prevVerif.submittedAt||'', byName: d.prevVerif.byName||''};
+      (d.prevVerif.claims||[]).forEach(c => { if(c && c.id) PREV_VERIF_BY_ID[c.id] = c; });
+    }
     paintFarmer();
     buildSections();
   }
@@ -1750,17 +1804,10 @@ async function loadDB(){
         await pushFullDB();        // first ever run — seed cloud
       }
       attachLiveListener();
-      _lastSnap={
-        haatFarmers:arrToMap(DB.haatFarmers),
-        convFarmers:arrToMap(DB.convFarmers),
-        fcs:arrToMap(DB.fcs),
-        // v9 process-fix M6 — canonicalise on fcs. fieldCoordinators is just an
-        // in-memory alias (set in normaliseDB) — no need to write twice.
-        // fieldCoordinators:arrToMap(DB.fieldCoordinators||[]),
-        incomeRecords:arrToMap(DB.incomeRecords||[]),
-        pendingEnrolments:arrToMap(DB.pendingEnrolments||[]),
-        verificationPlans:arrToMap(DB.verificationPlans||[]),
-      };
+      // v10 — snapshot stores JSON strings, not object references (see
+      // snapAll/snapCol next to saveDB). With references, in-place edits
+      // mutated the snapshot too and saveDB's diff never saw any change.
+      _lastSnap=snapAll();
       window.addEventListener('online', ()=>{FB.online=true;setSyncPill('synced');});
       window.addEventListener('offline',()=>{FB.online=false;setSyncPill('offline');});
       setSyncPill(navigator.onLine?'synced':'offline');
@@ -2583,7 +2630,28 @@ function normaliseDB(d){
    so two farmers enrolling at the same moment write to different keys and can
    never overwrite each other. The app still works with arrays internally. */
 function mapToArr(m){return m?Object.keys(m).map(k=>m[k]):[];}
-function arrToMap(a){const m={};(a||[]).forEach(r=>{if(r&&r.id)m[r.id]=r;});return m;}
+// Strip session-only fields (e.g. _localTouchAt that leaked in earlier
+// builds) so they never round-trip through Firebase.
+// v11 — the heavy form payloads (enrollmentFormFull / verificationFormFull)
+// are also stripped: they live under forms/{farmerId} in Firebase and are
+// attached to the in-memory record on demand (loadForms). Keeping them out
+// of the farmer records is what keeps the whole-list sync within the free
+// 10 GB/month bandwidth tier at 5000 entries.
+const FORM_FIELDS = ['enrollmentFormFull','verificationFormFull'];
+function _stripEphemeral(r){
+  if(!r || typeof r !== 'object') return r;
+  if('_localTouchAt' in r || FORM_FIELDS.some(k => k in r)){
+    const c = Object.assign({}, r);
+    delete c._localTouchAt;
+    FORM_FIELDS.forEach(k => { delete c[k]; });
+    return c;
+  }
+  return r;
+}
+// JSON.stringify replacer matching _stripEphemeral — used wherever whole
+// collections are stringified (local cache, listener diff).
+function _stripReplacer(k, v){ return FORM_FIELDS.includes(k) ? undefined : v; }
+function arrToMap(a){const m={};(a||[]).forEach(r=>{if(r&&r.id)m[r.id]=_stripEphemeral(r);});return m;}
 function cloudToDB(c){
   return normaliseDB({
     haatFarmers:mapToArr(c.haatFarmers),
@@ -2605,11 +2673,33 @@ function cloudToDB(c){
   });
 }
 function cacheLocal(){
-  try{localStorage.setItem(STORE_KEY,JSON.stringify(DB));}catch(e){/* quota */}
+  // v11 — forms are excluded from the localStorage mirror (they're cached in
+  // IndexedDB instead, which has far more quota). Keeps the cache small.
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(DB,_stripReplacer));}catch(e){/* quota */}
 }
 
 /* live listener — remote changes (e.g. a farmer enrolling from their phone)
    appear here within ~1 second and refresh the UI automatically. */
+// v9 — session-local map of records THIS session touched, with expiry.
+// Used by the live listener to ignore the Firebase echo of OUR OWN write
+// (which races against the live snapshot and would otherwise revert).
+// Crucially this is per-session and NOT persisted to Firebase — so when
+// a DIFFERENT device writes, the other devices' listeners see it normally.
+const _localTouches = new Map();   // key: `${col}/${id}` -> expiresAt ms
+// v10 — optional `ms` so saveDB can hold the shield longer while a failed
+// cloud write waits for its retry (default stays 5 s).
+function markLocalTouch(col, id, ms){
+  if(!col || !id) return;
+  _localTouches.set(col+'/'+id, Date.now() + (ms || 5000));
+}
+function isLocallyProtected(col, id){
+  if(!col || !id) return false;
+  const expiry = _localTouches.get(col+'/'+id);
+  if(!expiry) return false;
+  if(Date.now() > expiry){ _localTouches.delete(col+'/'+id); return false; }
+  return true;
+}
+
 function attachLiveListener(){
   if(!FB.ready)return;
   fbRef('').on('value',snap=>{
@@ -2618,10 +2708,36 @@ function attachLiveListener(){
     // v9 audit-fix #2 — include new collections in the diff so cross-FC
     // plan visibility and Forms-Received auto-promotes actually refresh
     // the UI on remote devices.
-    const incoming=JSON.stringify(cloud.haatFarmers)+JSON.stringify(cloud.convFarmers)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[]);
-    const current=JSON.stringify(DB.haatFarmers)+JSON.stringify(DB.convFarmers)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[]);
+    // v11 — both sides stringified with _stripReplacer so locally-attached
+    // on-demand forms don't make the comparison permanently unequal.
+    const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[]);
+    const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[]);
     if(incoming!==current){
+      // For each record this session JUST touched, keep the local copy until
+      // the protection expires (5 s). All other records take the cloud value.
+      // Cross-device writes are NOT blocked because their record ids aren't
+      // in this session's _localTouches map.
+      ['haatFarmers','convFarmers','fcs','verificationPlans','pendingEnrolments','incomeRecords'].forEach(col => {
+        const localById = {};
+        (DB[col]||[]).forEach(r => { if(r && r.id) localById[r.id] = r; });
+        cloud[col] = (cloud[col]||[]).map(rec => {
+          if(!rec || !rec.id) return rec;
+          if(isLocallyProtected(col, rec.id) && localById[rec.id]) return localById[rec.id];
+          return rec;
+        });
+        // Also preserve locally-created records that the cloud snapshot
+        // doesn't yet know about (race: our write didn't reach Firebase yet).
+        const cloudIds = new Set((cloud[col]||[]).map(r => r && r.id).filter(Boolean));
+        (DB[col]||[]).forEach(r => {
+          if(r && r.id && !cloudIds.has(r.id) && isLocallyProtected(col, r.id)){
+            cloud[col].push(r);
+          }
+        });
+      });
       DB=cloud;
+      // v11 — re-attach any on-demand forms this session already loaded, so
+      // an open drawer doesn't lose them when the snapshot replaces records.
+      try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
       cacheLocal();
       if(typeof render==='function') render();   // refresh the UI
     }
@@ -2629,11 +2745,29 @@ function attachLiveListener(){
 }
 
 /* ---------- SAVE ---------- */
+/* v10 — sanitizer. Firebase rejects ANY write whose payload contains an
+   `undefined` value anywhere ("value argument contains undefined in
+   property ..."), and the whole multi-path update fails with it. A JSON
+   round-trip strips undefined properties, so one bad field can never again
+   block a record (this was half of the "verification never reaches the
+   cloud" bug). */
+function sanitizeForFB(v){ return v==null ? v : JSON.parse(JSON.stringify(v)); }
+/* v10 — value snapshot of a collection: id -> JSON string. _lastSnap used
+   to hold REFERENCES to the live DB record objects, so any in-place edit
+   (stage change, lock, visit push) mutated the snapshot too — the diff
+   compared the object with itself, found "no change", and the record was
+   silently NEVER written to Firebase. Activity still synced (new objects
+   every time), which is why the feed said "Verification submitted" while
+   the farmer stayed at verification_pending on every other device. Storing
+   JSON strings makes the snapshot immune to mutation. */
+const SYNC_COLS=['haatFarmers','convFarmers','fcs','incomeRecords','pendingEnrolments','verificationPlans'];
+function snapCol(arr){const m={};(arr||[]).forEach(r=>{if(r&&r.id)m[r.id]=JSON.stringify(_stripEphemeral(r));});return m;}
+function snapAll(){const s={};SYNC_COLS.forEach(col=>{s[col]=snapCol(DB[col]||[]);});return s;}
 /* pushFullDB — used only for first-time seeding. Writes everything as
    keyed maps so per-record writes work afterwards. */
 async function pushFullDB(){
   if(!FB.ready)return;
-  await fbRef('').set({
+  await fbRef('').set(sanitizeForFB({
     haatFarmers:arrToMap(DB.haatFarmers),
     convFarmers:arrToMap(DB.convFarmers),
     fcs:arrToMap(DB.fcs),
@@ -2646,7 +2780,7 @@ async function pushFullDB(){
     // v9 Batch 5: visit plans shared across FCs.
     verificationPlans:arrToMap(DB.verificationPlans||[]),
     meta:{haats:DB.haats,crops:DB.crops,months:DB.months,states:DB.states,convParams:DB.convParams,settings:DB.settings||{}},
-  });
+  }));
 }
 /* saveRecord — COLLISION-PROOF per-record write. Writes ONE node only, so
    simultaneous enrollments from different phones never overwrite each other.
@@ -2656,66 +2790,464 @@ async function saveRecord(collection,record){
   if(!FB.ready){setSyncPill('local');return;}
   setSyncPill('pending');
   try{
-    await fbRef(collection+'/'+record.id).set(record);
+    await fbRef(collection+'/'+record.id).set(sanitizeForFB(_stripEphemeral(record)));
     // also push the newest activity entries (small)
     if(DB.activity&&DB.activity.length){
-      await fbRef('activity').set(arrToMap(DB.activity));
+      await fbRef('activity').set(sanitizeForFB(arrToMap(DB.activity)));
     }
     setSyncPill(navigator.onLine?'synced':'offline');
   }catch(e){
     console.error('[Sristi] record save failed:',e);
     setSyncPill('error');
+    // v10 — never fail silently: the user must know the record is local-only.
+    toast('⚠ Cloud sync failed — record saved on this device only');
   }
 }
 /* saveDB — kept for compatibility with existing call sites. In Firebase mode
    it now writes per-record (collision-proof) rather than the whole DB.
    It diffs against a snapshot to find which records changed. */
 let _lastSnap=null;
+let _saveRetryCount=0;
 async function saveDB(silent){
   cacheLocal();
-  if(!FB.ready){setSyncPill('local');if(!silent)toast('Saved');return;}
+  if(!FB.ready){setSyncPill('local');if(!silent)toast('Saved');return true;}
   setSyncPill('pending');
-  try{
-    const updates={};
-    // v8.1 fix: incomeRecords added — without it, every income visit logged
-    // through the UI was written to localStorage only and lost the moment
-    // any other write happened. Now it diffs and syncs like everything else.
-    // v8.2: pendingEnrolments added so admin's "Accept" / "Reject" actions
-    // round-trip through Firebase to every other device.
-    // v9 Batch 5: verificationPlans synced so cross-FC plan visibility works.
-    // v9 process-fix M6: fieldCoordinators dropped from sync (in-memory alias of fcs).
-    ['haatFarmers','convFarmers','fcs','incomeRecords','pendingEnrolments','verificationPlans'].forEach(col=>{
-      const cur=arrToMap(DB[col]||[]);
-      const prev=_lastSnap?_lastSnap[col]:{};
-      // changed or new records
-      Object.keys(cur).forEach(id=>{
-        if(!prev[id]||JSON.stringify(prev[id])!==JSON.stringify(cur[id]))
-          updates[col+'/'+id]=cur[id];
-      });
-      // deleted records
-      Object.keys(prev||{}).forEach(id=>{ if(!cur[id]) updates[col+'/'+id]=null; });
+  // v10 — the diff now compares JSON strings (see snapCol above), the
+  // snapshot is captured BEFORE the await (so a slow write can't mark
+  // changes made meanwhile as "already synced"), every outgoing record is
+  // sanitized, dirty records are shielded from the live-listener echo, and
+  // a failed write retries instead of dying silently.
+  const updates={};
+  const snap={};
+  const dirty=[];
+  SYNC_COLS.forEach(col=>{
+    const cur=arrToMap(DB[col]||[]);
+    const prev=(_lastSnap&&_lastSnap[col])||{};
+    const sc={};
+    // changed or new records
+    Object.keys(cur).forEach(id=>{
+      const s=JSON.stringify(cur[id]);
+      sc[id]=s;
+      if(prev[id]!==s){
+        updates[col+'/'+id]=JSON.parse(s);   // parse(s) == deep copy with undefined stripped
+        dirty.push([col,id]);
+      }
     });
-    updates['activity']=arrToMap(DB.activity);
-    updates['meta']={haats:DB.haats,crops:DB.crops,months:DB.months,states:DB.states,convParams:DB.convParams,settings:DB.settings||{}};
+    // deleted records
+    Object.keys(prev).forEach(id=>{ if(!cur[id]) updates[col+'/'+id]=null; });
+    snap[col]=sc;
+  });
+  updates['activity']=sanitizeForFB(arrToMap(DB.activity));
+  updates['meta']=sanitizeForFB({haats:DB.haats,crops:DB.crops,months:DB.months,states:DB.states,convParams:DB.convParams,settings:DB.settings||{}});
+  // shield in-flight records so the Firebase echo can't revert them mid-write
+  dirty.forEach(([col,id])=>markLocalTouch(col,id));
+  try{
     await fbRef('').update(updates);     // atomic multi-path update
-    _lastSnap={
-      haatFarmers:arrToMap(DB.haatFarmers),
-      convFarmers:arrToMap(DB.convFarmers),
-      fcs:arrToMap(DB.fcs),
-      // v9 M6 — fieldCoordinators no longer synced (in-memory alias only)
-      incomeRecords:arrToMap(DB.incomeRecords||[]),
-      pendingEnrolments:arrToMap(DB.pendingEnrolments||[]),
-      verificationPlans:arrToMap(DB.verificationPlans||[]),
-    };
+    _lastSnap=snap;
+    _saveRetryCount=0;
     setSyncPill(navigator.onLine?'synced':'offline');
   }catch(e){
     console.error('[Sristi] cloud save failed:',e);
     setSyncPill('error');
-    if(!silent) toast('Saved locally — cloud sync failed');
-    return;
+    // _lastSnap NOT advanced — the same records re-diff as dirty on the next
+    // attempt, so nothing is lost. Keep them shielded until the retry runs.
+    dirty.forEach(([col,id])=>markLocalTouch(col,id,20000));
+    if(_saveRetryCount<3){
+      _saveRetryCount++;
+      setTimeout(()=>{saveDB(true);}, 4000*_saveRetryCount);
+      toast('⚠ Cloud sync failed — retrying…');
+    } else {
+      toast('⚠ Cloud sync FAILED — changes saved on this device only');
+    }
+    return false;
   }
   if(!silent) toast('Saved');
+  return true;
 }
+
+/* ============ v11 — PHOTO STORAGE (CLOUDINARY) + ON-DEMAND FORMS ============
+   Free-tier architecture. Two rules:
+   1. PHOTOS NEVER ENTER THE DATABASE. They are compressed on the device
+      (max 1280px JPEG), parked in an IndexedDB queue, uploaded to Cloudinary
+      (free unsigned preset — Settings → Photo storage), and the record keeps
+      only {photoId, url, w, h, bytes, name} (~150 bytes).
+   2. HEAVY FORM PAYLOADS (enrollmentFormFull / verificationFormFull) live at
+      forms/{farmerId} in Firebase, loaded on demand when a drawer /
+      verification / compare view opens. The always-synced farmer list stays
+      lean so 5000 entries fit the free 1 GB storage / 10 GB-month bandwidth.
+   Both queues (photo uploads + form writes) are durable in IndexedDB, so
+   work done offline in the field survives closing the tab.                  */
+
+/* ---------- Cloudinary config (stored in DB.settings → syncs to all devices) ---------- */
+function cloudinaryCfg(){
+  const c = (typeof DB!=='undefined' && DB && DB.settings && DB.settings.cloudinary) || {};
+  return { cloudName: String(c.cloudName||'').trim(), uploadPreset: String(c.uploadPreset||'').trim() };
+}
+function cloudinaryConfigured(){ const c = cloudinaryCfg(); return !!(c.cloudName && c.uploadPreset); }
+async function cloudinaryUpload(dataUrl, folder){
+  const cfg = cloudinaryCfg();
+  const fd = new FormData();
+  fd.append('file', dataUrl);
+  fd.append('upload_preset', cfg.uploadPreset);
+  if(folder) fd.append('folder', folder);
+  const res = await fetch('https://api.cloudinary.com/v1_1/'+encodeURIComponent(cfg.cloudName)+'/image/upload', {method:'POST', body: fd});
+  if(!res.ok){
+    let msg=''; try{ const j=await res.json(); msg=(j.error&&j.error.message)||''; }catch(e){}
+    throw new Error('Cloudinary '+res.status+(msg?' — '+msg:''));
+  }
+  const j = await res.json();
+  return { url: j.secure_url || j.url, publicId: j.public_id || '', bytes: j.bytes || 0, w: j.width || 0, h: j.height || 0 };
+}
+
+/* ---------- client-side compression: ~4 MB camera photo → ~150-250 KB ---------- */
+function compressImageDataUrl(dataUrl, maxDim, quality){
+  maxDim = maxDim || 1280; quality = quality || 0.72;
+  return new Promise(resolve => {
+    try{
+      const img = new Image();
+      img.onload = () => {
+        try{
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if(!w || !h){ resolve(dataUrl); return; }
+          const scale = Math.min(1, maxDim / Math.max(w, h));
+          w = Math.max(1, Math.round(w*scale)); h = Math.max(1, Math.round(h*scale));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          const out = cv.toDataURL('image/jpeg', quality);
+          resolve(out.length < dataUrl.length ? out : dataUrl);
+        }catch(e){ resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    }catch(e){ resolve(dataUrl); }
+  });
+}
+
+/* ---------- IndexedDB (photo queue + form cache + pending form writes) ---------- */
+let _idb = null;
+function idbOpen(){
+  return new Promise((resolve, reject) => {
+    if(_idb){ resolve(_idb); return; }
+    if(!window.indexedDB){ reject(new Error('no idb')); return; }
+    const req = indexedDB.open('sristi_v11_local', 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains('photoQueue')) db.createObjectStore('photoQueue', {keyPath:'photoId'});
+      if(!db.objectStoreNames.contains('forms'))      db.createObjectStore('forms',      {keyPath:'farmerId'});
+      if(!db.objectStoreNames.contains('formWrites')) db.createObjectStore('formWrites', {keyPath:'key'});
+    };
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbPut(store, val){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
+function idbGet(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).get(key); rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>rej(rq.error); })); }
+function idbAll(store){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
+function idbDel(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
+
+/* ---------- photo render helpers — accept every shape we've ever stored ----------
+   Legacy: plain dataURL string, or {name, type, data: dataURL}.
+   v11:    {photoId, url, w, h} after upload; {photoId, pending:true} while queued. */
+const _photoSession = {};   // photoId -> dataURL, this session only (instant local thumbs)
+function photoSrc(p){
+  if(!p) return '';
+  if(typeof p === 'string') return p;
+  if(p.url) return p.url;
+  if(p.data) return p.data;
+  if(p.photoId && _photoSession[p.photoId]) return _photoSession[p.photoId];
+  return '';
+}
+function photoThumb(p, w){
+  const src = photoSrc(p);
+  if(!src) return photoPendingPlaceholder();
+  // Cloudinary URLs get a real server-side thumbnail — ~10 KB instead of 200 KB.
+  if(src.indexOf('res.cloudinary.com') !== -1 && src.indexOf('/upload/') !== -1 && src.indexOf('/upload/w_') === -1){
+    return src.replace('/upload/', '/upload/w_'+(w||300)+',q_auto,f_auto/');
+  }
+  return src;
+}
+function photoPendingPlaceholder(){
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="78" height="78"><rect width="78" height="78" fill="#e2e8f0"/><text x="39" y="34" font-size="20" text-anchor="middle">📷</text><text x="39" y="56" font-size="9" text-anchor="middle" fill="#64748b">uploading…</text></svg>');
+}
+
+/* ---------- photo extraction: pull base64 out of any payload, queue uploads ----------
+   Deep-walks the payload, finds every {data:'data:image/...'} leaf (and bare
+   dataURL strings inside arrays), compresses it, queues it in IndexedDB and
+   mutates the leaf IN PLACE to {photoId, pending:true, name}. In-place
+   mutation matters: the verification payload holds the same photo array in
+   BOTH d.photos and claims[].fcAnswer — structured clone preserves identity,
+   so one mutation fixes both. If IndexedDB is unavailable the leaf is left
+   untouched (old base64-in-record behaviour as a fallback). */
+function _isDataUrlImage(v){ return typeof v==='string' && v.slice(0,11)==='data:image/' && v.slice(0,19)!=='data:image/svg+xml;'; }
+async function extractPhotos(payload, ctx){
+  ctx = ctx || {};
+  const leaves = [];
+  const visited = new WeakSet();
+  (function walk(o){
+    if(!o || typeof o !== 'object' || visited.has(o)) return;
+    visited.add(o);
+    if(Array.isArray(o)){
+      o.forEach((v,i) => {
+        if(_isDataUrlImage(v)) o[i] = {data:v};
+        if(o[i] && typeof o[i]==='object'){
+          if(_isDataUrlImage(o[i].data)) leaves.push(o[i]); else walk(o[i]);
+        }
+      });
+      return;
+    }
+    Object.keys(o).forEach(k => {
+      const v = o[k];
+      if(v && typeof v === 'object'){
+        if(_isDataUrlImage(v.data)) leaves.push(v); else walk(v);
+      }
+    });
+  })(payload);
+  let queued = 0;
+  for(const leaf of leaves){
+    if(leaf.photoId || !_isDataUrlImage(leaf.data)) continue;   // identity-shared duplicate already done
+    try{
+      const compressed = await compressImageDataUrl(leaf.data);
+      const photoId = 'PH' + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36);
+      await idbPut('photoQueue', {
+        photoId, dataUrl: compressed,
+        name: leaf.name || '', type: 'image/jpeg',
+        program: ctx.program || 'haat', farmerId: ctx.farmerId || '',
+        createdAt: new Date().toISOString(), tries: 0,
+      });
+      _photoSession[photoId] = compressed;
+      leaf.photoId = photoId;
+      leaf.pending = true;
+      delete leaf.data;
+      queued++;
+    }catch(e){
+      // IndexedDB unavailable — keep base64 embedded rather than lose the photo.
+      console.warn('[Sristi] photo queue failed, keeping inline:', e);
+    }
+  }
+  if(queued){ updatePhotoBadge(); setTimeout(flushPhotoQueue, 800); }
+  return queued;
+}
+
+/* ---------- background uploader ---------- */
+let _photoFlushBusy = false;
+let _photoFlushLastErr = '';
+async function flushPhotoQueue(){
+  if(_photoFlushBusy) return;
+  if(!navigator.onLine || !cloudinaryConfigured()){ updatePhotoBadge(); return; }
+  _photoFlushBusy = true;
+  let uploaded = 0, failed = 0;
+  try{
+    const items = await idbAll('photoQueue').catch(()=>[]);
+    // purge any SVG data-URLs that snuck in from form decoration — Cloudinary rejects them
+    for(const it of items){
+      if(it.dataUrl && it.dataUrl.slice(0,19)==='data:image/svg+xml;'){
+        await idbDel('photoQueue', it.photoId).catch(()=>{});
+      }
+    }
+    const realItems = items.filter(it => !(it.dataUrl && it.dataUrl.slice(0,19)==='data:image/svg+xml;'));
+    for(const it of realItems){
+      try{
+        const up = await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
+        const repl = { photoId: it.photoId, url: up.url, w: up.w, h: up.h, bytes: up.bytes, name: it.name || '' };
+        _photoSession[it.photoId] = _photoSession[it.photoId] || it.dataUrl;
+        applyPhotoUrl(it, repl);
+        await idbDel('photoQueue', it.photoId);
+        uploaded++;
+      }catch(e){
+        const msg = (e && e.message) ? e.message : String(e);
+        console.error('[Sristi] photo upload failed (will retry):', msg, it.photoId);
+        _photoFlushLastErr = msg;
+        it.tries = (it.tries||0) + 1;
+        await idbPut('photoQueue', it).catch(()=>{});
+        failed++;
+      }
+    }
+    if(failed && !uploaded){
+      toast('⚠ Photo upload failed: ' + _photoFlushLastErr.slice(0,120), 'error');
+    } else if(uploaded){
+      console.log('[Sristi] photo flush: '+uploaded+' uploaded, '+failed+' failed');
+    }
+  } finally {
+    _photoFlushBusy = false;
+    updatePhotoBadge();
+  }
+}
+function replacePhotoById(obj, photoId, repl){
+  let hit = false;
+  const visited = new WeakSet();
+  (function walk(o){
+    if(!o || typeof o !== 'object' || visited.has(o)) return;
+    visited.add(o);
+    const keys = Array.isArray(o) ? o.map((_,i)=>i) : Object.keys(o);
+    keys.forEach(k => {
+      const v = o[k];
+      if(v && typeof v === 'object'){
+        if(v.photoId === photoId){ o[k] = Object.assign({}, repl); hit = true; }
+        else walk(v);
+      }
+    });
+  })(obj);
+  return hit;
+}
+function applyPhotoUrl(it, repl){
+  let recTouched = false, formTouched = false;
+  const col = it.program === 'conv' ? 'convFarmers' : 'haatFarmers';
+  const rec = (DB[col]||[]).find(x => x.id === it.farmerId);
+  if(rec && replacePhotoById(rec, it.photoId, repl)){ markLocalTouch(col, rec.id); recTouched = true; }
+  const fc = FORMS_CACHE[it.farmerId];
+  if(fc){
+    ['enrol','verif'].forEach(kind => { if(fc[kind] && replacePhotoById(fc[kind], it.photoId, repl)) formTouched = true; });
+    if(formTouched) persistForms(it.farmerId);
+  }
+  if(recTouched) saveDB(true);
+  else if(formTouched) cacheLocal();
+}
+async function updatePhotoBadge(){
+  let n = 0;
+  try{ n = (await idbAll('photoQueue')).length; }catch(e){}
+  let el = document.getElementById('photoQueuePill');
+  if(!n){ if(el) el.style.display = 'none'; return; }
+  if(!el){
+    const sp = document.getElementById('syncPill');
+    if(!sp || !sp.parentNode) return;
+    el = document.createElement('div');
+    el.id = 'photoQueuePill';
+    el.className = 'sync pending';
+    sp.parentNode.insertBefore(el, sp);
+  }
+  el.style.display = '';
+  el.innerHTML = '<span class="dot"></span><span class="sync-txt">📷 ' + n + ' photo' + (n===1?'':'s') + ' pending</span>';
+  el.title = cloudinaryConfigured()
+    ? 'Photos waiting to upload to Cloudinary (auto-retries)'
+    : '⚠ Cloudinary not set up yet — Settings → Photo storage. Photos stay safe on this device until then.';
+}
+
+/* ---------- on-demand forms (forms/{farmerId} in Firebase) ---------- */
+const FORMS_CACHE = {};   // farmerId -> {enrol, verif, _attempted, _complete}
+function _attachFormsToRecord(farmerId){
+  const fc = FORMS_CACHE[farmerId]; if(!fc) return;
+  const rec = (DB && DB.haatFarmers || []).find(x => x.id === farmerId);
+  if(!rec) return;
+  if(fc.enrol) rec.enrollmentFormFull   = fc.enrol;
+  if(fc.verif) rec.verificationFormFull = fc.verif;
+}
+async function loadForms(farmerId){
+  if(!farmerId) return null;
+  const rec = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
+  const fc = FORMS_CACHE[farmerId];
+  // legacy records (pre-v11) still carry the forms inline — adopt them
+  if(rec){
+    if(rec.enrollmentFormFull   && !fc.enrol) fc.enrol = rec.enrollmentFormFull;
+    if(rec.verificationFormFull && !fc.verif) fc.verif = rec.verificationFormFull;
+  }
+  if(fc._complete){ _attachFormsToRecord(farmerId); return fc; }
+  // device cache (works offline)
+  try{
+    const cached = await idbGet('forms', farmerId);
+    if(cached){
+      if(cached.enrol && !fc.enrol) fc.enrol = cached.enrol;
+      if(cached.verif && !fc.verif) fc.verif = cached.verif;
+    }
+  }catch(e){}
+  // cloud — authoritative
+  if(FB && FB.ready && navigator.onLine){
+    try{
+      const snap = await fbRef('forms/'+farmerId).get();
+      if(snap.exists()){
+        const v = snap.val() || {};
+        if(v.enrol) fc.enrol = v.enrol;
+        if(v.verif) fc.verif = v.verif;
+      }
+      fc._complete = true;
+      idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null}).catch(()=>{});
+    }catch(e){ console.warn('[Sristi] forms load failed:', e); }
+  }
+  fc._attempted = true;
+  _attachFormsToRecord(farmerId);
+  return fc;
+}
+function setForms(farmerId, kind, data){   // kind: 'enrol' | 'verif'
+  FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
+  FORMS_CACHE[farmerId][kind] = data;
+  _attachFormsToRecord(farmerId);
+  idbPut('forms', {farmerId, enrol: FORMS_CACHE[farmerId].enrol||null, verif: FORMS_CACHE[farmerId].verif||null}).catch(()=>{});
+  persistForms(farmerId);
+}
+function persistForms(farmerId){
+  const fc = FORMS_CACHE[farmerId]; if(!fc) return;
+  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null});
+  // durable write queue — survives offline AND closing the tab
+  idbPut('formWrites', {key: farmerId, farmerId, payload, at: Date.now()})
+    .then(()=>flushFormWrites())
+    .catch(()=>{ // no IndexedDB: best-effort direct write
+      if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e=>console.warn('forms write:',e));
+    });
+}
+let _formFlushBusy = false;
+async function flushFormWrites(){
+  if(_formFlushBusy || !FB || !FB.ready || !navigator.onLine) return;
+  _formFlushBusy = true;
+  try{
+    const items = await idbAll('formWrites').catch(()=>[]);
+    for(const it of items){
+      try{
+        await fbRef('forms/'+it.farmerId).set(it.payload);
+        await idbDel('formWrites', it.key);
+      }catch(e){ console.warn('[Sristi] forms write failed (will retry):', e); }
+    }
+  } finally { _formFlushBusy = false; }
+}
+
+/* ---------- v11 auto-migration sweep (runs once per load, background) ----------
+   Moves legacy inline forms to forms/{id} and, once Cloudinary is configured,
+   extracts legacy base64 photos into the upload queue. Without this, the
+   first record edit after v11 would sync a stripped record and orphan the
+   inline forms that only existed in the cloud copy. */
+let _migrateSweepDone = false;
+async function migrateLegacyData(){
+  if(_migrateSweepDone || !DB) return;
+  _migrateSweepDone = true;
+  let movedForms = 0, queuedPhotos = 0;
+  try{
+    for(const f of (DB.haatFarmers||[])){
+      if(f.enrollmentFormFull || f.verificationFormFull){
+        FORMS_CACHE[f.id] = FORMS_CACHE[f.id] || {};
+        if(f.enrollmentFormFull   && !FORMS_CACHE[f.id].enrol) FORMS_CACHE[f.id].enrol = f.enrollmentFormFull;
+        if(f.verificationFormFull && !FORMS_CACHE[f.id].verif) FORMS_CACHE[f.id].verif = f.verificationFormFull;
+        if(cloudinaryConfigured()){
+          if(FORMS_CACHE[f.id].enrol) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].enrol, {program:'haat', farmerId:f.id});
+          if(FORMS_CACHE[f.id].verif) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].verif, {program:'haat', farmerId:f.id});
+        }
+        idbPut('forms', {farmerId:f.id, enrol:FORMS_CACHE[f.id].enrol||null, verif:FORMS_CACHE[f.id].verif||null}).catch(()=>{});
+        persistForms(f.id);
+        movedForms++;
+      }
+    }
+    if(cloudinaryConfigured()){
+      for(const f of (DB.convFarmers||[])){
+        const visits = (f.visits&&f.visits.length) ? f.visits : (f.observations||[]);
+        for(const v of visits){
+          if(v && Array.isArray(v.photos) && v.photos.some(p => p && (typeof p==='string' ? _isDataUrlImage(p) : _isDataUrlImage(p.data)))){
+            queuedPhotos += await extractPhotos(v.photos, {program:'conv', farmerId:f.id});
+            markLocalTouch('convFarmers', f.id);
+          }
+        }
+      }
+    }
+    if(movedForms || queuedPhotos){
+      console.log('[Sristi] v11 migration: '+movedForms+' form sets moved to forms/, '+queuedPhotos+' photos queued for upload');
+      if(queuedPhotos) saveDB(true);
+    }
+  }catch(e){ console.warn('[Sristi] migration sweep:', e); }
+}
+
+/* background pumps */
+setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); }, 30000);
+window.addEventListener('online', ()=>{ setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); }, 1500); });
+setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); updatePhotoBadge(); }, 5000);
 
 /* activity log — newest entries first */
 // v9 Batch 3 — accountability helpers. Every mutation in the app routes through
@@ -3001,11 +3533,15 @@ const initials=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
 const ACCENTS=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#16a34a','#2563eb','#d97706'];
 const accentFor=id=>ACCENTS[(id.charCodeAt(id.length-1)+id.charCodeAt(id.length-2||0))%ACCENTS.length];
 
-function toast(msg){
+function toast(msg, type){
   const t=$('#toast');
-  t.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>'+esc(msg);
+  const icon = type==='error'
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  t.innerHTML = icon + esc(msg);
+  t.classList.toggle('err', type==='error');
   t.classList.add('show');
-  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);
+  clearTimeout(t._t);t._t=setTimeout(()=>{ t.classList.remove('show','err'); }, type==='error'?6000:2400);
 }
 
 /* status meta */
@@ -3171,20 +3707,42 @@ window.QUESTIONS_V5 = [
   {id:'fc_visit_photos', cat:'opinion', gu:'ખેતર મુલાકાતના ફોટા (FC દ્વારા)', en:'Farm visit photos (uploaded by FC)', type:'photo', askedOf:'fc-only'},
 ];
 
-/* Gujarat district -> taluka master mapping for cascading address */
+/* Gujarat district -> taluka master mapping for cascading address.
+   Covers all 33 Gujarat districts with their major talukas. */
 window.DISTRICT_TALUKAS = {
+  'Ahmedabad (અમદાવાદ)':['Ahmedabad City','Bavla','Daskroi','Detroj-Rampura','Dhandhuka','Dholka','Dholera','Mandal','Sanand','Viramgam'],
+  'Amreli (અમરેલી)':['Amreli','Babra','Bagasara','Dhari','Jafrabad','Khambha','Kunkavav-Vadia','Lathi','Lilia','Rajula','Savarkundla'],
+  'Anand (આણંદ)':['Anand','Anklav','Borsad','Khambhat','Petlad','Sojitra','Tarapur','Umreth'],
   'Aravalli (અરવલ્લી)':['Bayad','Bhiloda','Dhansura','Malpur','Meghraj','Modasa','Vijaynagar'],
-  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Dantiwada','Deesa','Dhanera','Lakhani','Palanpur','Tharad','Vadgam','Vav','Suigam','Danta','Bhabhar','Diyodar','Kankrej'],
+  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Bhabhar','Danta','Dantiwada','Deesa','Dhanera','Diyodar','Kankrej','Lakhani','Palanpur','Suigam','Tharad','Vadgam','Vav'],
+  'Bharuch (ભરૂચ)':['Amod','Anklesvar','Bharuch','Hansot','Jambusar','Jhagadia','Vagra','Valia','Netrang'],
+  'Bhavnagar (ભાવનગર)':['Bhavnagar','Botad (now sep)','Gariadhar','Ghogha','Jesar','Mahuva','Palitana','Sihor','Talaja','Umrala','Vallabhipur'],
+  'Botad (બોટાદ)':['Barwala','Botad','Gadhada','Ranpur'],
+  'Chhota Udaipur (છોટાઉદેપુર)':['Bodeli','Chhota Udaipur','Jetpur Pavi','Kavant','Naswadi','Sankheda','Tilakwada'],
   'Dahod (દાહોદ)':['Dahod','Devgadhbaria','Dhanpur','Fatepura','Garbada','Jhalod','Limkheda','Sanjeli','Singvad'],
   'Dang (ડાંગ)':['Ahwa','Subir','Waghai'],
-  'Narmada (નર્મદા)':['Dediapada','Garudeshwar','Nandod','Sagbara','Tilakwada'],
-  'Sabarkantha (સાબરકાંઠા)':['Himmatnagar','Idar','Khedbrahma','Poshina','Prantij','Talod','Vadali','Vijaynagar'],
-  'Surat (સુરત)':['Bardoli','Choryasi','Kamrej','Mahuva','Mandvi','Mangrol','Olpad','Palsana','Umarpada'],
-  'Vadodara (વડોદરા)':['Dabhoi','Karjan','Padra','Savli','Sinor','Vadodara','Waghodia'],
-  'Ahmedabad (અમદાવાદ)':['Ahmedabad','Bavla','Daskroi','Detroj','Dhandhuka','Dholka','Mandal','Sanand','Viramgam'],
+  'Devbhoomi Dwarka (દેવભૂમિ દ્વારકા)':['Bhanvad','Dwarka','Kalyanpur','Khambhalia'],
+  'Gandhinagar (ગાંધીનગર)':['Dehgam','Gandhinagar','Kalol','Mansa'],
+  'Gir Somnath (ગીર સોમનાથ)':['Gir Gadhada','Kodinar','Sutrapada','Talala','Una','Veraval'],
+  'Jamnagar (જામનગર)':['Dhrol','Jamjodhpur','Jamnagar','Jodiya','Kalavad','Lalpur'],
+  'Junagadh (જૂનાગઢ)':['Bhesan','Junagadh City','Keshod','Malia-Hatina','Manavadar','Mangrol','Mendarda','Vanthali','Visavadar'],
+  'Kheda (ખેડા)':['Galteshwar','Kapadvanj','Kathlal','Kheda','Mahudha','Matar','Mehmedabad','Nadiad','Thasra','Vaso'],
+  'Kutch (કચ્છ)':['Abdasa','Anjar','Bhachau','Bhuj','Gandhidham','Lakhpat','Mandvi','Mundra','Nakhatrana','Rapar'],
+  'Mahisagar (મહીસાગર)':['Balasinor','Kadana','Khanpur','Lunavada','Santrampur','Virpur'],
   'Mehsana (મહેસાણા)':['Bechraji','Jotana','Kadi','Kheralu','Mehsana','Satlasana','Unjha','Vadnagar','Vijapur','Visnagar'],
-  'Patan (પાટણ)':['Chanasma','Harij','Patan','Radhanpur','Sami','Santalpur','Sarasvati','Sidhpur','Shankheshwar'],
-  'Bharuch (ભરૂચ)':['Amod','Anklesvar','Bharuch','Hansot','Jambusar','Jhagadia','Vagra','Valia'],
+  'Morbi (મોરબી)':['Halvad','Maliya','Morbi','Tankara','Wankaner'],
+  'Narmada (નર્મદા)':['Dediapada','Garudeshwar','Nandod','Sagbara','Tilakwada'],
+  'Navsari (નવસારી)':['Chikhli','Gandevi','Jalalpore','Khergam','Navsari','Vansda'],
+  'Panchmahal (પંચમહાલ)':['Ghoghamba','Godhra','Halol','Jambughoda','Kalol','Morwa Hadaf','Shehera'],
+  'Patan (પાટણ)':['Chanasma','Harij','Patan','Radhanpur','Sami','Santalpur','Sarasvati','Shankheshwar','Sidhpur'],
+  'Porbandar (પોરબંદર)':['Kutiyana','Porbandar','Ranavav'],
+  'Rajkot (રાજકોટ)':['Dhoraji','Gondal','Jamkandorna','Jasdan','Jetpur','Kotda Sangani','Lodhika','Paddhari','Rajkot','Upleta','Vinchhiya'],
+  'Sabarkantha (સાબરકાંઠા)':['Himmatnagar','Idar','Khedbrahma','Poshina','Prantij','Talod','Vadali','Vijaynagar'],
+  'Surat (સુરત)':['Bardoli','Choryasi','Kamrej','Mahuva','Mandvi','Mangrol','Olpad','Palsana','Surat City','Umarpada'],
+  'Surendranagar (સુરેન્દ્રનગર)':['Chotila','Chuda','Dasada','Dhrangadhra','Lakhtar','Limbdi','Muli','Sayla','Thangadh','Wadhwan'],
+  'Tapi (તાપી)':['Dolvan','Kukarmunda','Nizar','Songadh','Uchchhal','Valod','Vyara'],
+  'Vadodara (વડોદરા)':['Dabhoi','Desar','Karjan','Padra','Savli','Sinor','Vadodara City','Waghodia'],
+  'Valsad (વલસાડ)':['Dharampur','Kaprada','Pardi','Umbergaon','Valsad','Vapi'],
   'Other (અન્ય)':['Other (અન્ય)'],
 };
 
@@ -4149,6 +4707,8 @@ function openConvScoreModal(id){
     const vnext = (document.getElementById('vsNext') || {}).value || addMonthsISO(vdate, 3);
     const vnote = ((document.getElementById('vsNotes') || {}).value || '').trim();
     const vphotos = (window._vsPhotosCapture || []).slice();
+    // v11 — compress + queue the visit photos; the visit keeps tiny {photoId/url} stubs.
+    await extractPhotos(vphotos, {program:'conv', farmerId: f.id});
     // Snapshot the adopted practices (per B-section) so the visit log can
     // show "Jeevamrut, Vermicompost, Beejamrut adopted" later.
     const adoptedBySection = {};
@@ -4542,8 +5102,6 @@ function renderNav(){
   const items = adminMode ? [
     {sec:'Overview'},
     {id:'dashboard',label:'Dashboard',ico:I.dash},
-    {id:'farmMap',label:'Farm locations',ico:I.eye},
-    {id:'pending',label:'Forms received',ico:I.download,badge:pendingCount||undefined},
     {sec:'Organic Haat Program'},
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
@@ -4551,6 +5109,8 @@ function renderNav(){
     {id:'income',label:'Income Tracking',ico:I.rupee||I.haat},
     {sec:'Conversion Program'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
+    {sec:'Farm Locations'},
+    {id:'farmMap',label:'Farm locations',ico:I.eye},
     {sec:'Team'},
     {id:'fieldCoordinators',label:'Team',ico:I.fc,badge:(DB.fieldCoordinators||[]).length},
     {sec:'System'},
@@ -4560,7 +5120,6 @@ function renderNav(){
     // FC-only sidebar — task focused, mobile friendly.
     {sec:'My Work'},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
-    {id:'pending',label:'Forms received',ico:I.download,badge:pendingCount||undefined},
     {sec:'Farmers'},
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
@@ -4579,7 +5138,7 @@ function renderNav(){
 
 const TITLES={
   dashboard:['Overview','Dashboard'],
-  farmMap:['Overview','Farm Locations'],
+  farmMap:['Farm Locations','Farm Locations'],
   haat:['Organic Haat Program','Haat Farmers'],
   verification:['Organic Haat Program','Verification Queue'],
   haats:['Organic Haat Program','Haats & Markets'],
@@ -4605,7 +5164,90 @@ function viewDashboard(){
   const cs=convStats();
   const v=$('#view');
 
-  let h=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
+  // H1 — date-range filter for the inline submission panels below each tile grid.
+  if(!window.DASH_DATE) window.DASH_DATE = {preset:'30d', from:'', to:''};
+  const D = window.DASH_DATE;
+  function _inRange(iso){
+    if(!iso) return false;
+    if(D.preset === 'all') return true;
+    const t = new Date(iso).getTime();
+    if(!isFinite(t)) return false;
+    if(D.preset === 'custom'){
+      if(D.from && t < new Date(D.from + 'T00:00:00').getTime()) return false;
+      if(D.to   && t > new Date(D.to   + 'T23:59:59').getTime()) return false;
+      return true;
+    }
+    const ms = {today: 86400000, '7d': 7*86400000, '30d': 30*86400000};
+    return t >= (Date.now() - (ms[D.preset] || ms['30d']));
+  }
+  function _datePillsHtml(){
+    const opts = [['today','Today'],['7d','7 days'],['30d','30 days'],['all','All time'],['custom','Custom']];
+    const pills = opts.map(([k,lbl]) =>
+      `<button class="chip ${D.preset===k?'on':''}" data-dpreset="${k}" style="font-size:12px">${lbl}</button>`
+    ).join('');
+    const customInputs = D.preset==='custom'
+      ? `<input type="date" id="dashFrom" value="${esc(D.from||'')}" style="font-size:12px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:6px;margin-left:6px">
+         <span style="font-size:11px;color:var(--ink-faint)">to</span>
+         <input type="date" id="dashTo" value="${esc(D.to||'')}" style="font-size:12px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:6px">`
+      : '';
+    return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;margin-bottom:14px">
+      <span style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em">📅 Submitted</span>
+      ${pills}
+      ${customInputs}
+    </div>`;
+  }
+  function _submissionsPanelHtml(program){
+    const arr = program === 'haat' ? (DB.haatFarmers||[]) : (DB.convFarmers||[]);
+    const subs = arr
+      .filter(f => f.publicAppId || (f.source && /public/i.test(f.source)))
+      .filter(f => _inRange(f.submittedAt || f.createdAt))
+      .slice()
+      .sort((a,b)=> String(b.submittedAt||b.createdAt||'').localeCompare(String(a.submittedAt||a.createdAt||'')));
+    const title = program === 'haat' ? 'Recent Haat applications' : 'Recent Conversion applications';
+    let body = `<div class="card" style="padding:12px 16px;margin:8px 0 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em">📥 ${title} (${subs.length})</div>
+        <span style="font-size:11px;color:var(--ink-soft)">${D.preset==='all'?'All time':D.preset==='custom'?(D.from||'—')+' → '+(D.to||'—'):'last '+(D.preset==='today'?'24h':D.preset)}</span>
+      </div>`;
+    if(!subs.length){
+      body += `<div style="font-size:12.5px;color:var(--ink-soft);padding:14px 0;text-align:center">No public submissions in this date range.</div></div>`;
+      return body;
+    }
+    body += `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);border-bottom:1px solid var(--line)">
+      <th style="text-align:left;padding:7px 8px">Submitted</th>
+      <th style="text-align:left;padding:7px 8px">Farmer</th>
+      <th style="text-align:left;padding:7px 8px">Location</th>
+      <th style="text-align:left;padding:7px 8px">FC</th>
+      <th style="text-align:left;padding:7px 8px">Stage</th>
+    </tr></thead><tbody>`;
+    subs.slice(0,12).forEach(f => {
+      const fcRec = (DB.fcs||[]).find(x => x.id === f.fcId);
+      const fcLabel = fcRec ? fcRec.name : (f.fcId ? '—' : '<span style="color:var(--orange);font-weight:600">Unassigned</span>');
+      const stageBadge = f.stage === 'onboarded' || f.status === 'green'
+        ? '<span class="tag green" style="font-size:10px;padding:1px 6px"><span class="d"></span>Onboarded</span>'
+        : f.stage === 'senior_review' || f.stage === 'verified'
+          ? '<span class="tag blue" style="font-size:10px;padding:1px 6px"><span class="d"></span>Senior review</span>'
+          : f.stage === 'verification_pending'
+            ? '<span class="tag yellow" style="font-size:10px;padding:1px 6px"><span class="d"></span>Verification pending</span>'
+            : '<span class="tag grey" style="font-size:10px;padding:1px 6px"><span class="d"></span>'+esc(f.stage||'—')+'</span>';
+      body += `<tr style="border-bottom:1px solid var(--line-soft);cursor:pointer" data-go-farmer="${esc(f.id)}" data-program="${program}">
+        <td style="padding:8px 8px;color:var(--ink-soft);font-size:11.5px">${esc(fmtDate(f.submittedAt||f.createdAt||''))}</td>
+        <td style="padding:8px 8px"><b>${esc(f.name||'-')}</b></td>
+        <td style="padding:8px 8px;color:var(--ink-soft)">${esc([f.village,f.taluka,f.district].filter(Boolean).join(' / ')||'—')}</td>
+        <td style="padding:8px 8px">${fcLabel}</td>
+        <td style="padding:8px 8px">${stageBadge}</td>
+      </tr>`;
+    });
+    body += '</tbody></table>';
+    if(subs.length > 12){
+      body += `<div style="font-size:11.5px;color:var(--ink-faint);text-align:center;padding:6px 0">+ ${subs.length-12} more in this range</div>`;
+    }
+    body += '</div>';
+    return body;
+  }
+
+  let h = _datePillsHtml();
+  h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
   h+=`<div class="statbox-grid cols-6">
     ${dashBox('Forms received',hs.total,'var(--navy)',hs.total,
         'Total farmers enrolled','haat:')}
@@ -4783,6 +5425,26 @@ function viewDashboard(){
         else ROUTE=key;
       } else { ROUTE=nav; }
       render();
+    };
+  });
+  // H1 — wire up the date filter pills and custom date inputs
+  v.querySelectorAll('[data-dpreset]').forEach(b => {
+    b.onclick = () => {
+      window.DASH_DATE.preset = b.dataset.dpreset;
+      viewDashboard();   // re-render in place
+    };
+  });
+  const fromEl = v.querySelector('#dashFrom');
+  const toEl   = v.querySelector('#dashTo');
+  if(fromEl) fromEl.onchange = () => { window.DASH_DATE.from = fromEl.value; viewDashboard(); };
+  if(toEl)   toEl.onchange   = () => { window.DASH_DATE.to   = toEl.value;   viewDashboard(); };
+  // Clicking a submission row jumps to the farmer's drawer
+  v.querySelectorAll('[data-go-farmer]').forEach(row => {
+    row.onclick = () => {
+      const id = row.dataset.goFarmer;
+      const program = row.dataset.program;
+      if(program === 'haat' && typeof openHaatDrawer === 'function'){ openHaatDrawer(id); }
+      else if(program === 'conv' && typeof openConvDrawer === 'function'){ openConvDrawer(id); }
     };
   });
   // haat-wise table rows -> filter Haat Farmers by haat
@@ -4982,51 +5644,34 @@ function viewVerification(){
 
   // v9 Batch 4 — soft filtering removed. Both admin and FC see all farmers
   // in their team queue; FCs can still drill into "only my own" via toolbar.
-  const myFarmers    = filterByCurrentFc(DB.haatFarmers);
+  const myFarmers    = _excludeSeeds(filterByCurrentFc(DB.haatFarmers));
   // Compute the three buckets
   const newFarmers   = myFarmers.filter(f=>f.stage==='verification_pending');
   const seasonalDue  = myFarmers.filter(isSeasonalVerificationDue);
   const awaiting     = myFarmers.filter(f=>f.stage==='verified');
 
-  // v9 Batch 4 — FC-personalised greeting + task tile. Shows only when the
-  // signed-in user is an FC, surfacing their personal workload.
+  // FC greeting only — the Mine/Unclaimed/Seasonal counter tile was dropped
+  // (user feedback: noise; the tab counts above carry the same information).
   let h = '';
   const fcMine = currentFcId();
   if(fcMine){
     const myFc = (DB.fcs||[]).find(x => x.id === fcMine);
     const myName = (myFc && myFc.name) || SESSION.userName || 'FC';
-    const myPending = newFarmers.filter(f => f.fcId === fcMine).length;
-    const myUnclaimed = newFarmers.filter(f => !f.fcId).length;
-    const mySeasonal = seasonalDue.filter(f => f.fcId === fcMine).length;
-    h += `<div style="background:linear-gradient(135deg,#eef3fe 0%,#dcfce7 100%);border:1px solid var(--accent);border-radius:14px;padding:18px 20px;margin-bottom:18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px">
-        <div>
-          <div style="font-size:11.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">My work queue</div>
-          <div style="font-size:22px;font-weight:800;color:var(--ink);font-family:'Hind Vadodara','Plus Jakarta Sans',sans-serif">Hi ${esc(myName)} 👋</div>
-          <div style="font-size:13px;color:var(--ink-soft);margin-top:2px">Tap a farmer below to start verifying.</div>
-        </div>
-        <div style="display:flex;gap:18px;flex-wrap:wrap">
-          <div style="text-align:center">
-            <div style="font-size:24px;font-weight:800;color:var(--ink);line-height:1">${myPending}</div>
-            <div style="font-size:11px;color:var(--ink-faint);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Mine · pending visit</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:24px;font-weight:800;color:var(--orange);line-height:1">${myUnclaimed}</div>
-            <div style="font-size:11px;color:var(--ink-faint);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Unclaimed (anyone)</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:24px;font-weight:800;color:var(--ink);line-height:1">${mySeasonal}</div>
-            <div style="font-size:11px;color:var(--ink-faint);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Mine · seasonal due</div>
-          </div>
-        </div>
-      </div>
+    h += `<div style="background:linear-gradient(135deg,#eef3fe 0%,#dcfce7 100%);border:1px solid var(--accent);border-radius:14px;padding:14px 18px;margin-bottom:16px">
+      <div style="font-size:11.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">My work queue</div>
+      <div style="font-size:20px;font-weight:800;color:var(--ink);font-family:'Hind Vadodara','Plus Jakarta Sans',sans-serif">Hi ${esc(myName)} 👋</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">Tap a farmer below to start verifying.</div>
     </div>`;
   }
 
   // v9 Batch 5 — Planning tab counts only active (not completed/cancelled) plans
   const activePlans = (DB.verificationPlans||[]).filter(p => !p.status || p.status === 'planned');
 
-  // Tabs (4 tabs now — Planning added)
+  // Issue 9 — FCs don't see Awaiting decision (admin's bucket). If an FC lands
+  // on this tab via stale state, bounce them to 'new'.
+  const isFc = SESSION && SESSION.role === 'fc';
+  if(isFc && F.tab === 'awaiting') F.tab = 'new';
+
   h+=`<div class="tabs">
     <div class="tab ${F.tab==='new'?'on':''}" data-vt="new">
       🆕 New farmers (${newFarmers.length})
@@ -5034,9 +5679,9 @@ function viewVerification(){
     <div class="tab ${F.tab==='seasonal'?'on':''}" data-vt="seasonal">
       🔄 Seasonal verification (${seasonalDue.length})
     </div>
-    <div class="tab ${F.tab==='awaiting'?'on':''}" data-vt="awaiting">
+    ${isFc ? '' : `<div class="tab ${F.tab==='awaiting'?'on':''}" data-vt="awaiting">
       ⚖️ Awaiting decision (${awaiting.length})
-    </div>
+    </div>`}
     <div class="tab ${F.tab==='planning'?'on':''}" data-vt="planning">
       📅 Planning (${activePlans.length})
     </div>
@@ -5220,10 +5865,33 @@ function viewVerification(){
         </div>
       </div>`;
     }
-    hh += `<div class="toolbar" style="margin:14px 0 10px">
+    // Build unique FC and district options for filters
+    const fcIds = [...new Set(plans.map(p => p.fcId).filter(Boolean))];
+    const fcOpts = fcIds.map(id => { const fc=(DB.fcs||[]).find(x=>x.id===id); return `<option value="${esc(id)}"${(F.planFc||''===id)?'selected':''}>${esc(fc?fc.name:id)}</option>`; }).join('');
+    const districtSet = new Set();
+    plans.forEach(p => {
+      const fr = p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId);
+      if(fr && fr.district) districtSet.add(fr.district);
+    });
+    const distOpts = [...districtSet].sort().map(d=>`<option value="${esc(d)}"${(F.planDistrict||''===d)?'selected':''}>${esc(d)}</option>`).join('');
+
+    // Apply filters
+    const filterFc = F.planFc || '';
+    const filterDist = F.planDistrict || '';
+    let visPlans = plans;
+    if(filterFc) visPlans = visPlans.filter(p => p.fcId === filterFc);
+    if(filterDist) visPlans = visPlans.filter(p => {
+      const fr = p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId);
+      return fr && fr.district === filterDist;
+    });
+
+    const selStyle = 'padding:5px 9px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:12.5px;background:var(--panel);color:var(--ink);cursor:pointer';
+    hh += `<div class="toolbar" style="margin:14px 0 10px;flex-wrap:wrap;gap:8px">
       <button class="chip on" id="vqNewPlan">📅 Plan a visit</button>
+      <select id="vqPlanFc" style="${selStyle}"><option value="">All FCs</option>${fcOpts}</select>
+      <select id="vqPlanDist" style="${selStyle}"><option value="">All districts</option>${distOpts}</select>
       <div style="flex:1"></div>
-      <span style="font-size:11.5px;color:var(--ink-faint)">${plans.length} active plan${plans.length===1?'':'s'} · sorted by date</span>
+      <span style="font-size:11.5px;color:var(--ink-faint)">${visPlans.length}${visPlans.length!==plans.length?' of '+plans.length:''} active plan${plans.length===1?'':'s'} · sorted by date</span>
     </div>`;
 
     if(!plans.length){
@@ -5235,24 +5903,22 @@ function viewVerification(){
     hh += `<div class="table-wrap"><table><thead><tr>
       <th>Date</th>
       <th>Farmer</th>
-      <th>Village</th>
+      <th>Location</th>
       <th>FC</th>
       <th>Type</th>
       <th>Note</th>
       <th>Actions</th>
     </tr></thead><tbody>`;
 
-    plans.forEach(p => {
+    visPlans.forEach(p => {
       const farmer = p.farmerProgram === 'conv'
         ? (DB.convFarmers||[]).find(x => x.id === p.farmerId)
         : (DB.haatFarmers||[]).find(x => x.id === p.farmerId);
       const farmerName = farmer ? farmer.name : '<span style="color:var(--ink-faint)">(deleted)</span>';
-      const village    = farmer ? esc(farmer.village||'—') : '—';
+      const locParts   = farmer ? [farmer.village, farmer.taluka, farmer.district].filter(Boolean) : [];
+      const location   = locParts.length ? `<div style="font-size:12.5px">${esc(locParts[0]||'')}</div><div style="font-size:11px;color:var(--ink-soft)">${esc(locParts.slice(1).join(' / '))}</div>` : '—';
       const fc         = (DB.fcs||[]).find(x => x.id === p.fcId);
       const fcName     = fc ? esc(fc.name) : (p.fcId ? esc(p.fcId) : '— unassigned —');
-      // v9 audit-fix #12 — admin can act on every plan; FCs only on theirs.
-      // Split ownership from action permission so admin doesn't get a misleading
-      // "mine" pill.
       const isMine     = (p.fcId === me);
       const canAct     = isMine || isAdminUser();
       const rowBg      = isMine ? 'background:#eef3fe' : '';
@@ -5261,26 +5927,28 @@ function viewVerification(){
         : p.type === 'conv'
           ? '<span class="tag blue" style="font-size:10.5px"><span class="d"></span>Conversion</span>'
           : '<span class="tag green" style="font-size:10.5px"><span class="d"></span>New farmer</span>';
-      // Past-date warning
       const today = todayISO();
       const isOverdue = p.plannedDate && p.plannedDate < today;
       const dateCell  = `<b>${esc(fmtDate(p.plannedDate||''))}</b>${isOverdue?'<div style="font-size:10px;color:var(--red);font-weight:600;margin-top:2px">⚠ past due</div>':''}`;
-      // v9 audit-fix #9 — duplicate marker scoped to same farmer + program.
       const dupes = plans.filter(x => x.farmerId === p.farmerId && x.farmerProgram === p.farmerProgram && x.id !== p.id);
       const dupTag = dupes.length ? `<span class="tag red" style="font-size:9.5px;padding:1px 5px;margin-left:5px"><span class="d"></span>also planned by ${esc((dupes.map(d=>(DB.fcs||[]).find(x=>x.id===d.fcId)?.name||'FC').join(', ')))}</span>` : '';
       const fmtBy = fmtRecordedBy({recordedBy: p.recordedBy, recordedAt: p.recordedAt});
+      const isHaat = p.farmerProgram !== 'conv';
+      const actionsHtml = canAct
+        ? (isHaat
+            ? `<button class="btn btn-primary btn-sm" data-act="verify" data-plan="${esc(p.id)}" data-farmer="${esc(p.farmerId)}" style="font-size:12px">▶ Start verification</button>
+               <button class="btn btn-ghost btn-sm" data-act="cancel" data-plan="${esc(p.id)}" style="color:var(--red);font-size:11.5px;margin-left:4px">Cancel</button>`
+            : `<button class="btn btn-ghost btn-sm" data-act="done" data-plan="${esc(p.id)}">✓ Done</button>
+               <button class="btn btn-ghost btn-sm" data-act="cancel" data-plan="${esc(p.id)}" style="color:var(--red)">Cancel</button>`)
+        : `<span style="font-size:11px;color:var(--ink-faint)">read-only</span>`;
       hh += `<tr data-farmer="${esc(p.farmerId)}" data-program="${esc(p.farmerProgram||'haat')}" data-plan="${esc(p.id)}" style="cursor:pointer;${rowBg}">
         <td>${dateCell}</td>
         <td><b>${esc(farmerName)}</b>${dupTag}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(p.farmerId)}</div></td>
-        <td>${village}</td>
+        <td>${location}</td>
         <td>${fcName}${isMine?' <span class="tag green" style="font-size:9.5px;padding:1px 5px;margin-left:4px"><span class="d"></span>mine</span>':''}<div style="font-size:10px;color:var(--ink-faint);margin-top:2px">${esc(fmtBy)}</div></td>
         <td>${planType}</td>
-        <td style="font-size:12px;max-width:200px">${esc(p.note||'—')}</td>
-        <td style="white-space:nowrap">
-          ${canAct ? `<button class="btn btn-ghost btn-sm" data-act="done" data-plan="${esc(p.id)}">✓ Done</button>
-                     <button class="btn btn-ghost btn-sm" data-act="cancel" data-plan="${esc(p.id)}" style="color:var(--red)">Cancel</button>`
-                   : `<span style="font-size:11px;color:var(--ink-faint)">read-only</span>`}
-        </td>
+        <td style="font-size:12px;max-width:180px">${esc(p.note||'—')}</td>
+        <td style="white-space:nowrap">${actionsHtml}</td>
       </tr>`;
     });
     hh += '</tbody></table></div>';
@@ -5293,6 +5961,10 @@ function viewVerification(){
       if(prog === 'conv' && typeof openConvDrawer === 'function') openConvDrawer(id);
       else if(typeof openHaatDrawer === 'function') openHaatDrawer(id);
     });
+    bodyEl.querySelectorAll('[data-act="verify"]').forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      openVerificationForm(b.dataset.farmer);
+    });
     bodyEl.querySelectorAll('[data-act="done"]').forEach(b => b.onclick = async e => {
       e.stopPropagation();
       await updatePlanStatus(b.dataset.plan, 'completed');
@@ -5303,6 +5975,10 @@ function viewVerification(){
     });
     const nb = bodyEl.querySelector('#vqNewPlan');
     if(nb) nb.onclick = () => openCreatePlanModal();
+    const fcSel = bodyEl.querySelector('#vqPlanFc');
+    if(fcSel){ fcSel.value = filterFc; fcSel.onchange = e => { F.planFc = e.target.value; paintPlanning(bodyEl); }; }
+    const distSel = bodyEl.querySelector('#vqPlanDist');
+    if(distSel){ distSel.value = filterDist; distSel.onchange = e => { F.planDistrict = e.target.value; paintPlanning(bodyEl); }; }
   }
 
   v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{F.tab=t.dataset.vt;F.district='';F.selected={};paint();});
@@ -6225,7 +6901,7 @@ function openConvEnrollmentForm(){
         dup.record.lastDuplicateName = state.name.trim();
         logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(state.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
         if(FB && FB.ready){
-          fbRef(dup.program+'Farmers/'+dup.record.id).set(dup.record).catch(()=>{});
+          fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))).catch(()=>{});
         }
         cacheLocal();
         window._pfLastApp = dup.record;
@@ -6251,9 +6927,9 @@ function openConvEnrollmentForm(){
         // listener never observes a state with the farmer record but without
         // the matching activity entry (race wiped local activity in tests).
         const newAct = DB.activity[0];
-        const pushAct = (newAct && newAct.id) ? fbRef('activity/'+newAct.id).set(newAct) : Promise.resolve();
+        const pushAct = (newAct && newAct.id) ? fbRef('activity/'+newAct.id).set(sanitizeForFB(newAct)) : Promise.resolve();
         pushAct
-          .then(() => fbRef('convFarmers/'+rec.id).set(rec))
+          .then(() => fbRef('convFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))))
           .then(finish)
           .catch(e => { console.warn('public conv push:',e); finish(); });
       } else {
@@ -6761,6 +7437,35 @@ function renderV5EnrollmentSummary(f){
     if(textClaims.length>18) h += '<div style="color:var(--ink-faint);font-style:italic">+ ' + (textClaims.length-18) + ' more fields...</div>';
     h += '</div></div>';
   }
+  // Enrolment photos — uploaded by the farmer during the patrak. Stored as
+  // f.enrollmentFormFull.photos = { qid: [{name,type,data}] }. Each thumbnail
+  // wraps in <a href="data:image..."> so the global lightbox handler (Batch 2)
+  // opens it full-screen on click for both admin and FC accounts.
+  const photoMap = (f.enrollmentFormFull && f.enrollmentFormFull.photos) || {};
+  const photoQIds = Object.keys(photoMap).filter(k => Array.isArray(photoMap[k]) && photoMap[k].length);
+  if(photoQIds.length){
+    const qById = (window.QUESTIONS_V5||[]).reduce((a,q)=>{a[q.id]=q;return a;},{});
+    const totalCount = photoQIds.reduce((s,k)=>s+photoMap[k].length,0);
+    h += '<div class="card" style="padding:11px 13px;margin-bottom:10px;background:var(--panel-2);border-left:3px solid var(--accent)">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">&#128247; Farmer photos (' + totalCount + ') &mdash; <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10.5px">click to enlarge</span></div>';
+    photoQIds.forEach(qid => {
+      const q = qById[qid] || {gu:qid,en:''};
+      const arr = photoMap[qid];
+      h += '<div style="margin-bottom:8px">'
+        + '<div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">' + esc(q.gu || qid) + (q.en?' <span style="color:var(--ink-faint)">&middot; '+esc(q.en)+'</span>':'') + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      arr.forEach((p, i) => {
+        // v11 — photoSrc handles {url} (Cloudinary), legacy {data} base64,
+        // and still-uploading {photoId} (session copy or placeholder).
+        const url = photoSrc(p) || photoPendingPlaceholder();
+        const turl = photoThumb(p, 200);
+        const cap = (q.gu||q.en||qid) + ' #' + (i+1);
+        h += '<a href="' + url + '" data-photo data-photo-caption="' + esc(cap) + '" style="display:block;width:78px;height:78px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9;cursor:zoom-in"><img src="' + turl + '" alt="' + esc(cap) + '" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+      });
+      h += '</div></div>';
+    });
+    h += '</div>';
+  }
   if(f.enrollmentFormSubmittedAt){
     h += '<div style="font-size:11px;color:var(--ink-faint);margin:-2px 0 14px;padding:0 2px">'
       + 'Submitted ' + esc(new Date(f.enrollmentFormSubmittedAt).toLocaleDateString('en-GB'))
@@ -6867,6 +7572,8 @@ function openCropsEditor(farmerId){
       const newClaim = {id:'crops_table', cat:'farm', type:'crops_table', gu:'હાલ લેવાતા મુખ્ય પાક', en:'Current crops', answer: cleaned};
       if(cIdx >= 0) f.enrollmentFormFull.claims[cIdx] = newClaim;
       else f.enrollmentFormFull.claims.push(newClaim);
+      // v11 — the form lives at forms/{id} now; persist the claim edit there.
+      setForms(f.id, 'enrol', f.enrollmentFormFull);
     }
     if(typeof logActivity === 'function'){
       logActivity('edit', 'Crops updated for <b>' + esc(f.name) + '</b> - ' + cleaned.length + ' crop' + (cleaned.length===1?'':'s'));
@@ -7219,6 +7926,19 @@ function renderHaatEnrollmentData(f){
 
 function openHaatDrawer(id){
   const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
+  // v11 — forms (claims + photos) are on-demand. Kick off the fetch; when it
+  // lands, repaint the drawer once if it's still showing this farmer.
+  window._drawerFarmerId = id;
+  if(!(FORMS_CACHE[id] && (FORMS_CACHE[id]._complete || FORMS_CACHE[id]._attempted))){
+    const hadForms = !!(f.enrollmentFormFull || f.verificationFormFull);
+    loadForms(id).then(()=>{
+      const gotForms = !!(f.enrollmentFormFull || f.verificationFormFull);
+      const dr = $('#drawer');
+      if(!hadForms && gotForms && dr && dr.classList.contains('show') && window._drawerFarmerId === id){
+        openHaatDrawer(id);
+      }
+    });
+  }
   const fc=fcById(f.fcId),st=HAAT_STATUS[f.status];
   // v9 audit-fix #13 — surface who decided + when, plus the decision note.
   const decisionInfo = (f.decisionBy || f.decisionAt) ? (() => {
@@ -7254,8 +7974,9 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
       <div class="v">${f.crops.map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')}</div></div>
+    ${(typeof f.lat === 'number' && typeof f.lng === 'number' && isFinite(f.lat) && isFinite(f.lng)) ? `
     <div class="detail-cell full"><div class="k">Farm location</div>
-      <div class="v">${svg(I.pin,2).replace('<svg','<svg style=\"width:13px;height:13px;display:inline;vertical-align:-2px;color:var(--clay)\"')} ${f.lat}, ${f.lng}</div></div>
+      <div class="v">${svg(I.pin,2).replace('<svg','<svg style="width:13px;height:13px;display:inline;vertical-align:-2px;color:var(--clay)"')} ${f.lat.toFixed(5)}, ${f.lng.toFixed(5)} <a href="#farmMap" style="margin-left:8px;font-size:11px;color:var(--link)">View on map →</a></div></div>` : ''}
   </div>`;
 
   // actions
@@ -7264,7 +7985,7 @@ function openHaatDrawer(id){
     <button class="btn btn-primary btn-sm" data-d="decide">${svg(I.check,2.2)}Set status</button>
     ${f.status==='green'?`<button class="btn btn-clay btn-sm" data-d="haat">${svg(I.haat,2.2)}${f.haat?'Change haat':'Assign haat'}</button>`:''}
     ${f.status==='green'?`<button class="btn btn-ghost btn-sm" data-d="toggle">${svg(I.leaf,2.2)}Mark ${f.active?'inactive':'active'}</button>`:''}
-    ${(f.enrollmentFormFull||f.verificationFormFull)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
+    ${(f.enrollmentFormFull||f.verificationFormFull||f.enrollmentFormSubmittedAt||f.verificationFormSubmittedAt)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
     <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
   </div>`;
 
@@ -7285,17 +8006,25 @@ function openHaatDrawer(id){
       let paramsHtml='';
       if(isNew){
         const cv=vis.claimVerifications||{};
-        const rows=PRACTICES.map(p=>{
-          const e=cv[p.key]||{state:'not_specified',fcNote:''};
-          const st=VERIF_STATE[e.state]||VERIF_STATE.not_specified;
-          return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px">
-            <span style="font-size:13px">${p.emoji}</span>
-            <b style="flex-shrink:0">${esc(p.label)}:</b>
-            <span class="tag ${st.cls}" style="font-size:10px"><span class="d"></span>${st.label}</span>
-            ${e.fcNote?`<span style="color:var(--ink-soft);font-style:italic">— ${esc(e.fcNote)}</span>`:''}
-          </div>`;
-        }).join('');
-        paramsHtml=`<div style="margin:6px 0">${rows}</div>`;
+        // Issue 4 — drop pills with no recorded state. If nothing was filled,
+        // the whole row collapses.
+        const filteredPractices = PRACTICES.filter(p => {
+          const e = cv[p.key];
+          return e && e.state && e.state !== 'not_specified';
+        });
+        if(filteredPractices.length){
+          const rows = filteredPractices.map(p=>{
+            const e = cv[p.key];
+            const st = VERIF_STATE[e.state] || VERIF_STATE.not_specified;
+            return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px">
+              <span style="font-size:13px">${p.emoji}</span>
+              <b style="flex-shrink:0">${esc(p.label)}:</b>
+              <span class="tag ${st.cls}" style="font-size:10px"><span class="d"></span>${st.label}</span>
+              ${e.fcNote?`<span style="color:var(--ink-soft);font-style:italic">— ${esc(e.fcNote)}</span>`:''}
+            </div>`;
+          }).join('');
+          paramsHtml=`<div style="margin:6px 0">${rows}</div>`;
+        }
       } else if(vis.livingFence && vis.livingFence!=='—'){
         paramsHtml=`<div class="tl-params">
           <span class="pill">Living fence: ${vis.livingFence}</span>
@@ -7488,8 +8217,9 @@ function openConvDrawer(id){
       if(Array.isArray(o.photos) && o.photos.length){
         h+=`<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">`
          + o.photos.map(p => {
-             const url = (p && p.data) ? p.data : p;
-             return `<a href="${url}" target="_blank" style="display:block;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="${url}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>`;
+             const url = photoSrc(p) || photoPendingPlaceholder();
+             const turl = photoThumb(p, 160);
+             return `<a href="${url}" data-photo style="display:block;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="${turl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>`;
            }).join('')
          + `</div>`;
       }
@@ -8352,6 +9082,11 @@ async function deleteFieldCoordinator(id){
    side-by-side review (like the screenshot, but for all ~55 questions, grouped by category). */
 function openCompareFormsModal(id){
   const f = DB.haatFarmers.find(x=>x.id===id); if(!f) return;
+  // v11 — fetch the on-demand forms first (one retry, then render whatever exists).
+  if(!f.enrollmentFormFull && !f.verificationFormFull && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted)){
+    loadForms(id).then(()=>openCompareFormsModal(id));
+    return;
+  }
   const cats = window.CATEGORIES_V5 || [];
   const qs = window.QUESTIONS_V5 || [];
   const enroll = f.enrollmentFormFull || {};
@@ -8387,8 +9122,9 @@ function openCompareFormsModal(id){
   function renderPhotos(arr){
     if(!Array.isArray(arr) || !arr.length) return '';
     return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">' + arr.map(p => {
-      const url = (p && p.data) ? p.data : p;
-      return '<a href="'+url+'" target="_blank" style="display:block;width:72px;height:72px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+      const url = photoSrc(p) || photoPendingPlaceholder();
+      const turl = photoThumb(p, 200);
+      return '<a href="'+url+'" data-photo style="display:block;width:72px;height:72px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+turl+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
     }).join('') + '</div>';
   }
 
@@ -8456,6 +9192,20 @@ function openCompareFormsModal(id){
   }
 
   let body = '';
+  /* FC attribution banner — who did the survey. Issue 3: must be prominent. */
+  const fcRec = (DB.fcs || []).find(x => x.id === f.fcId);
+  const latestVisit = (f.visits || []).slice(-1)[0];
+  const fcName = (fcRec && fcRec.name)
+              || (latestVisit && (latestVisit.byName || latestVisit.fcName))
+              || (verif && verif._submittedByName)
+              || '—';
+  body += '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,#eef3fe 0%,#dcfce7 100%);border:1px solid var(--accent);border-radius:10px;margin-bottom:14px">'
+       +   '<div style="width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px;font-family:inherit;flex-shrink:0">' + esc(fcName.charAt(0).toUpperCase()) + '</div>'
+       +   '<div style="flex:1;min-width:0">'
+       +     '<div style="font-size:10.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.06em">Field verification by</div>'
+       +     '<div style="font-size:16px;font-weight:800;color:var(--ink);line-height:1.25;font-family:inherit">' + esc(fcName) + '</div>'
+       +   '</div>'
+       + '</div>';
   /* Submission strip */
   body += '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:11px 13px;background:var(--panel-2);border-radius:8px;margin-bottom:14px;font-size:11.5px;color:var(--ink-soft)">';
   body += '<span><b style="color:var(--ink)">Enrolment submitted:</b> ' + (f.enrollmentFormSubmittedAt?esc(fmtDate(f.enrollmentFormSubmittedAt)):'—') + '</span>';
@@ -8534,6 +9284,7 @@ function viewSettings(){
       <div class="tab ${cur==='scoring'?'on':''}" data-st="scoring">🌱 Organic practices &amp; scoring</div>
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
       <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Facilitators</div>
+      <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">🔐 Roles</div>
     </div>`;
   }
@@ -8757,6 +9508,92 @@ function viewSettings(){
       logActivity('edit',`Deleted facilitator <b>${esc(fc.name)}</b>`);
       await saveDB();render();toast('Facilitator deleted');
     });
+    return;
+  }
+  if(STab==='photos'){
+    // v11 — Cloudinary configuration (free unsigned-upload preset). Stored in
+    // DB.settings so it syncs to every device through Firebase.
+    const cfg = cloudinaryCfg();
+    const ok = cloudinaryConfigured();
+    let h = tabBar();
+    h += `<div class="card" style="padding:18px 20px;max-width:760px">
+      <div class="ct" style="font-size:14px;font-weight:700">📷 Photo storage — Cloudinary (free)</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
+        Photos are compressed on the device and uploaded to Cloudinary; the database keeps only a small link.
+        This keeps the app inside the free Firebase tier no matter how many photos the FCs take.
+      </div>
+      <div style="padding:10px 13px;border-radius:8px;margin-bottom:14px;font-size:12.5px;${ok
+        ? 'background:#f0fdf4;border:1px solid var(--green-line);color:var(--green)'
+        : 'background:#fffbeb;border:1px solid #fcd34d;color:#92400e'}">
+        ${ok ? '✓ Connected — photos upload to <b>'+esc(cfg.cloudName)+'</b>'
+             : '⚠ Not set up yet. Photos taken meanwhile stay safely on each device and upload automatically once this is filled in.'}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;max-width:420px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:4px">Cloud name</label>
+          <input id="cldName" value="${esc(cfg.cloudName)}" placeholder="e.g. dxyz12abc" style="width:100%;padding:9px 11px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:4px">Unsigned upload preset</label>
+          <input id="cldPreset" value="${esc(cfg.uploadPreset)}" placeholder="e.g. sristi_photos" style="width:100%;padding:9px 11px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" id="cldSave">${svg(I.check,2.2)}Save</button>
+          <button class="btn btn-ghost btn-sm" id="cldTest" ${ok?'':'disabled style="opacity:.5"'}>Test upload</button>
+          ${ok?'<button class="btn btn-ghost btn-sm" id="cldFlush">📤 Upload now</button>':''}
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:12px 14px;background:var(--panel-2);border-radius:8px;font-size:12px;color:var(--ink-soft);line-height:1.7">
+        <b style="color:var(--ink)">One-time setup (2 minutes):</b><br>
+        1. Sign up free at <b>cloudinary.com</b> (no card needed).<br>
+        2. Dashboard → your <b>Cloud name</b> is shown at the top — paste it above.<br>
+        3. Settings (gear) → <b>Upload</b> → <b>Upload presets</b> → Add upload preset →
+           set <b>Signing mode: Unsigned</b> → Save. Paste the preset name above.<br>
+        4. Save here once — every device gets the setting automatically.
+      </div>
+      <div id="cldQueueInfo" style="margin-top:12px;font-size:12px;color:var(--ink-soft)"></div>
+    </div>`;
+    v.innerHTML = h;
+    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
+    idbAll('photoQueue').then(items=>{
+      const el = document.getElementById('cldQueueInfo');
+      if(el) el.innerHTML = items.length
+        ? '📤 <b>'+items.length+'</b> photo'+(items.length===1?'':'s')+' on this device waiting to upload'+(ok?' (uploads run automatically).':' — they upload as soon as Cloudinary is connected.')
+        : 'No photos waiting on this device.';
+    }).catch(()=>{});
+    $('#cldSave').onclick = async () => {
+      DB.settings = DB.settings || {};
+      DB.settings.cloudinary = {
+        cloudName: ($('#cldName').value||'').trim(),
+        uploadPreset: ($('#cldPreset').value||'').trim(),
+      };
+      await saveDB();
+      // legacy base64 photos can now migrate + any queued photos can flush
+      _migrateSweepDone = false; migrateLegacyData();
+      flushPhotoQueue();
+      render();
+    };
+    const testBtn = $('#cldTest');
+    if(testBtn) testBtn.onclick = async () => {
+      testBtn.disabled = true; testBtn.textContent = 'Testing…';
+      try{
+        const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        const up = await cloudinaryUpload(px, 'sristi/_test');
+        toast('✓ Cloudinary working — test image uploaded');
+        console.log('[Sristi] Cloudinary test OK:', up.url);
+        flushPhotoQueue();
+      }catch(e){
+        alert('Cloudinary test failed:\n' + (e && e.message ? e.message : e) + '\n\nCheck the cloud name and that the preset is UNSIGNED.');
+      }
+      testBtn.disabled = false; testBtn.textContent = 'Test upload';
+    };
+    const flushBtn = $('#cldFlush');
+    if(flushBtn) flushBtn.onclick = async () => {
+      flushBtn.disabled = true; flushBtn.textContent = '📤 Uploading…';
+      await flushPhotoQueue();
+      flushBtn.disabled = false; flushBtn.textContent = '📤 Upload now';
+      render();
+    };
     return;
   }
   if(STab==='roles'){
@@ -10071,9 +10908,18 @@ window.addEventListener('message',async ev=>{
   if(d.type==='verif-ready' && _verifyTargetId){
     const f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);
     if(f){
+      // v11 — forms live at forms/{id}; fetch before building the prefill.
+      await loadForms(f.id);
       const e = f.enrollmentFormFull || {};
       const claims = Array.isArray(e.claims) ? e.claims : ((e._full && Array.isArray(e._full.claims)) ? e._full.claims : []);
-      const photos = e.photos || (e._full && e._full.photos) || {};
+      const rawPhotos = e.photos || (e._full && e._full.photos) || {};
+      // Resolve each photo to a displayable src (URL, legacy base64, or this
+      // session's local copy of a still-uploading photo) for the iframe.
+      const photos = {};
+      Object.keys(rawPhotos).forEach(qid => {
+        const arr = Array.isArray(rawPhotos[qid]) ? rawPhotos[qid] : [];
+        photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p) })).filter(p => p.data);
+      });
       const farmer = {
         id: f.id, name: f.name,
         village: f.village || '', taluka: f.taluka || '', district: f.district || '',
@@ -10083,9 +10929,25 @@ window.addEventListener('message',async ev=>{
         submittedAt: f.enrollmentFormSubmittedAt || ''
       };
       const schema = {categories: window.CATEGORIES_V5 || [], questions: window.QUESTIONS_V5 || []};
+      // H2 — seasonal re-verification: pass the previous FC observation so the
+      // form can show a yellow "Last FC observation" box beside the farmer claim.
+      const prevV = f.verificationFormFull || null;
+      // v11 — resolve previous FC photos to displayable srcs too.
+      const prevPhotosRaw = (prevV && prevV.photos) || {};
+      const prevPhotos = {};
+      Object.keys(prevPhotosRaw).forEach(qid => {
+        const arr = Array.isArray(prevPhotosRaw[qid]) ? prevPhotosRaw[qid] : [];
+        prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p) })).filter(p => p.data);
+      });
+      const prevVerif = prevV ? {
+        submittedAt: f.verificationFormSubmittedAt || '',
+        byName: (prevV._submittedByName) || ((DB.fcs||[]).find(x=>x.id===f.fcId)||{}).name || '',
+        claims: Array.isArray(prevV.claims) ? prevV.claims : [],
+        photos: prevPhotos
+      } : null;
       const frame = document.getElementById('verifyFrame');
       if(frame && frame.contentWindow){
-        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema}, '*');
+        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema, prevVerif}, '*');
       }
     }
     return;
@@ -10103,7 +10965,10 @@ window.addEventListener('message',async ev=>{
         const newId = window._lastPublicAppId;
         const rec = (DB.haatFarmers||[]).find(x => x.id === newId);
         if(rec){
-          rec.enrollmentFormFull = d.data;
+          // v11 — base64 photos go to the upload queue; the heavy form goes
+          // to forms/{id}; the record itself stays lean.
+          await extractPhotos(d.data, {program:'haat', farmerId: rec.id});
+          setForms(rec.id, 'enrol', d.data);
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
           const cropsClaim = claims.find(c => c.id === 'crops_table');
@@ -10111,7 +10976,7 @@ window.addEventListener('message',async ev=>{
             rec.crops = cropsClaim.answer.map(r => (r && r.name ? r.name.trim() : '')).filter(Boolean);
           }
           if(FB && FB.ready){
-            try { await fbRef('haatFarmers/'+rec.id).set(rec); } catch(e) { console.warn('haatFarmer full update:',e); }
+            try { await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))); } catch(e) { console.warn('haatFarmer full update:',e); }
           }
           cacheLocal();
         }
@@ -10125,7 +10990,9 @@ window.addEventListener('message',async ev=>{
         : null;
       const last = fresh || DB.haatFarmers[DB.haatFarmers.length-1];
       if(last){
-        last.enrollmentFormFull = d.data;
+        // v11 — photos to upload queue, form text to forms/{id}.
+        await extractPhotos(d.data, {program:'haat', farmerId: last.id});
+        setForms(last.id, 'enrol', d.data);
         last.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
         /* v6 - populate legacy f.crops from v5 crops_table claim so the Haat
            Farmers table CROPS column renders names. Also seed cropHistory[0]
@@ -10150,9 +11017,57 @@ window.addEventListener('message',async ev=>{
   if(d.type==='farm-verification-full' && d.data && _verifyTargetId){
     const f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);
     if(f){
-      f.verificationFormFull = d.data;
+      // (countFcPhotos is defined below, next to the farm-verification-done
+      // handler — function declarations hoist, so it's available here.)
+      // v9 — full processing (was: save-only, which left the drawer empty and
+      // the farmer stuck at verification_pending). Same logic the v6 form's
+      // `farm-verification-done` handler uses below.
+      const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
+      const markedCount = claims.filter(c => c.fcVerification && c.fcVerification!=='na' && c.fcVerification!=='not_specified').length;
+      // v9 — threshold removed per user instruction. Any submit transitions
+      // the farmer to verified, regardless of how many claims were marked.
+      const enoughEvidence = true;
+      // v11 — photos to upload queue, form text to forms/{id}.
+      await extractPhotos(d.data, {program:'haat', farmerId: f.id});
+      setForms(f.id, 'verif', d.data);
       f.verificationFormSubmittedAt = d.data._submittedAt || todayISO();
+      f.visits = f.visits || [];
+      f.visits.push(stamp({
+        date: (d.data.summary && d.data.summary.date) || todayISO(),
+        fc: f.fcId || '',
+        verifierName: (d.data.summary && d.data.summary.verifierName) || '',
+        claimVerifications: claims.reduce((a,c)=>{a[c.id]={state:c.fcVerification||'na',fcNote:c.fcNote||''};return a;},{}),
+        comments: d.data.comments || '',
+        photos: countFcPhotos(d.data.photos),
+        notes: 'FC verification — ' + ((d.data.summary&&d.data.summary.verifiedCount)||0) + '/' + ((d.data.summary&&d.data.summary.totalAsked)||0) + ' claims verified',
+        score: (d.data.summary && d.data.summary.score) || 0,
+        livingFence:'—',compost:'—',soilHealth:'—',pestControl:'—',
+        markedCount,
+        incomplete: !enoughEvidence,
+      }));
+      // v9 — transition from ANY pre-verify stage (was only 'verification_pending',
+      // which left farmers stuck if their stage was '' / undefined / 'enrolled' /
+      // 'assigned' / 'senior_review'). 'onboarded' / 'decided' / 'verified-cleared'
+      // are post-decision and must NOT be reverted.
+      const POST_DECISION = ['onboarded','decided','verified-cleared'];
+      if(enoughEvidence && !POST_DECISION.includes(f.stage)) f.stage='verified';
+      delete f.verificationLock;
+      // v9 — guard against the Firebase live-listener race wiping our writes.
+      // Tracks this farmer in a session-local Map (NOT persisted to Firebase,
+      // so cross-device updates from other users are NOT blocked).
+      markLocalTouch('haatFarmers', f.id);
+      delete f._localTouchAt;
+      if(enoughEvidence){
+        logActivity('visit',`Verification submitted for <b>${esc(f.name)}</b> — ${(d.data.summary&&d.data.summary.verifiedCount)||0}/${(d.data.summary&&d.data.summary.totalAsked)||0} claims verified`);
+      } else {
+        logActivity('alert',`⚠ Incomplete verification logged for <b>${esc(f.name)}</b> — only ${markedCount} claims marked. Stage stays "verification pending".`);
+      }
       saveDB(true);
+      if(typeof render==='function') render();
+      // Reopen the drawer so the FC immediately sees the new visit + stage.
+      if($('#drawer') && $('#drawer').classList.contains('show')){
+        openHaatDrawer(f.id);
+      }
     }
     return;
   }
@@ -10170,7 +11085,7 @@ window.addEventListener('message',async ev=>{
         dup.record.lastDuplicateAt   = new Date().toISOString();
         dup.record.lastDuplicateName = name;
         logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(f.phone)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
-        try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(dup.record); } catch(e) {}
+        try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))); } catch(e) {}
         cacheLocal();
         window._lastPublicAppId = dup.record.id;
         window._pfLastApp = dup.record;
@@ -10225,8 +11140,8 @@ window.addEventListener('message',async ev=>{
           // triggers our live listener, which pulls cloud state where the
           // activity entry is still missing and wipes our local entry.
           const newAct = DB.activity[0];   // the entry we just unshifted
-          if(newAct && newAct.id) await fbRef('activity/'+newAct.id).set(newAct);
-          await fbRef('haatFarmers/'+rec.id).set(rec);
+          if(newAct && newAct.id) await fbRef('activity/'+newAct.id).set(sanitizeForFB(newAct));
+          await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec)));
         }
       } catch(e) { console.warn('public Haat push:',e); }
     } else {
@@ -10242,9 +11157,60 @@ window.addEventListener('message',async ev=>{
       enterPublicMode('public_thanks');
       return;
     }
-    render();
-    toast('Enrollment received — farmer added to Forms received');
-    // leave the form's own success screen visible; user closes when ready
+    closeEnrollmentForm();
+    const newId = window._lastNewHaatId;
+    const newRec = newId && (DB.haatFarmers||[]).find(x => x.id === newId);
+    const enrolledByFc = !PUBLIC_MODE && SESSION && SESSION.role === 'fc';
+    if(newRec && enrolledByFc){
+      // FC enrolled this farmer in person → counts as on-site verification.
+      // Advance straight to 'verified' (awaiting admin decision) and log a visit.
+      newRec.stage = 'verified';
+      newRec.fcId  = newRec.fcId || currentFcId();
+      newRec.visits = newRec.visits || [];
+      newRec.visits.push(stamp({
+        date: todayISO(),
+        fc: currentFcId(),
+        verifierName: SESSION.userName || '',
+        comments: 'Enrolled and verified on-site by FC during enrollment visit.',
+        claimVerifications: {},
+        onSiteEnrollment: true,
+      }));
+      logActivity('verify', `✅ <b>${esc(newRec.name)}</b> enrolled and verified on-site by <b>${esc(SESSION.userName||'FC')}</b> — awaiting admin decision`);
+      await saveDB(true);
+      render();
+      toast('Farmer enrolled & verified — awaiting admin decision');
+    } else if(newRec && !PUBLIC_MODE){
+      // Admin enrolled → still needs an FC visit. Offer to open verification
+      // form now (e.g. if admin is on-site too).
+      render();
+      const modal = document.getElementById('modal');
+      const overlay = document.getElementById('overlay');
+      modal.innerHTML = `
+        <div style="padding:24px 26px;max-width:400px">
+          <div style="font-size:16px;font-weight:700;margin-bottom:6px">✅ Farmer enrolled</div>
+          <div style="font-size:13.5px;color:var(--ink-soft);margin-bottom:18px">
+            <b>${esc(newRec.name)}</b> has been added to the Verification Queue.<br>
+            Are you doing the farm verification <b>right now</b>?
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-primary" id="verifyNowBtn" style="flex:1">▶ Verify farm now</button>
+            <button class="btn btn-ghost" id="verifyLaterBtn" style="flex:1">Later</button>
+          </div>
+        </div>`;
+      overlay.classList.add('show');
+      modal.classList.add('show');
+      document.getElementById('verifyNowBtn').onclick = () => {
+        closeModal();
+        openVerificationForm(newId);
+      };
+      document.getElementById('verifyLaterBtn').onclick = () => {
+        closeModal();
+        toast('Farmer added to Verification Queue');
+      };
+    } else {
+      render();
+      toast('Enrollment received — farmer added to Verification Queue');
+    }
   }
 });
 
@@ -10679,6 +11645,18 @@ function closeVerificationForm(){
     openHaatDrawer(_verifyTargetId);
   }
 }
+/* v10 — the form's `photos` payload is an OBJECT {questionId: [dataURLs]},
+   not an array. The old `(d.photos||[]).length` evaluated to `undefined`
+   (objects have no .length), and one undefined inside visits[] made EVERY
+   Firebase write of that farmer throw "value argument contains undefined"
+   — silently, so the farmer never left "Field visit pending" on other
+   devices. This counts the photos properly whatever shape arrives. */
+function countFcPhotos(p){
+  if(!p) return 0;
+  if(Array.isArray(p)) return p.length;
+  if(typeof p === 'object') return Object.values(p).reduce((a,x)=>a+(Array.isArray(x)?x.length:(x?1:0)),0);
+  return 0;
+}
 /* receive the FC's completed verification form */
 window.addEventListener('message',async ev=>{
   const d=ev.data;
@@ -10693,8 +11671,11 @@ window.addEventListener('message',async ev=>{
         // the visit either way so the FC's work isn't lost, but flags the
         // record as "needs more verification".
         const markedCount = (d.claims||[]).filter(c => c.fcVerification && c.fcVerification!=='na' && c.fcVerification!=='not_specified').length;
-        const enoughEvidence = markedCount >= 3;
-        f.verificationFormFull = d;
+        // v9 — threshold removed per user instruction. Any submit transitions.
+        const enoughEvidence = true;
+        // v11 — photos to upload queue, form text to forms/{id}.
+        await extractPhotos(d, {program:'haat', farmerId: f.id});
+        setForms(f.id, 'verif', d);
         f.verificationFormSubmittedAt = d.submittedAt || todayISO();
         f.visits = f.visits || [];
         // v9 audit-fix #3 — stamp the iframe verification visit so the
@@ -10707,7 +11688,7 @@ window.addEventListener('message',async ev=>{
           // Old code read the wrong field and dropped the FC's notes on the floor.
           claimVerifications: (d.claims||[]).reduce((a,c)=>{a[c.id]={state:c.fcVerification||c.fcVerified||'na',fcNote:c.fcNote||''};return a;},{}),
           comments: d.comments || '',
-          photos: (d.photos||[]).length,
+          photos: countFcPhotos(d.photos),
           notes: 'FC verification — ' + (d.summary?.verifiedCount||0) + '/' + (d.summary?.totalAsked||0) + ' claims verified',
           score: d.summary?.score || 0,
           livingFence:'—',compost:'—',soilHealth:'—',pestControl:'—',
@@ -10717,9 +11698,16 @@ window.addEventListener('message',async ev=>{
         // v9 process-fix #38 — only advance to "verified" if the FC actually
         // verified things. Otherwise keep it as verification_pending and tell
         // the FC to come back with more evidence.
-        if(f.stage==='verification_pending' && enoughEvidence) f.stage='verified';
+        // v9 — transition from ANY pre-verify stage. See farm-verification-full
+        // handler for rationale.
+        const POST_DECISION_2 = ['onboarded','decided','verified-cleared'];
+        if(enoughEvidence && !POST_DECISION_2.includes(f.stage)) f.stage='verified';
         // v9 H2 — release the verification lock on successful submit.
         delete f.verificationLock;
+        // v9 — guard against the live-listener race wiping our writes.
+        // Tracks in a session-local Map; NOT persisted to Firebase.
+        markLocalTouch('haatFarmers', f.id);
+        if(f._localTouchAt) delete f._localTouchAt;
         if(enoughEvidence){
           logActivity('visit',`Verification submitted for <b>${esc(f.name)}</b> — ${d.summary?.verifiedCount||0}/${d.summary?.totalAsked||0} claims verified`);
         } else {
@@ -10740,7 +11728,10 @@ window.addEventListener('message',async ev=>{
         pestControl:s.pestControl||'—',
         notes:'ફાર્મ વેરિફિકેશન પત્રક completed'+(s.verifierName?' by '+s.verifierName:'')+'.',
       }));
-      if(f.stage==='verification_pending') f.stage='verified';
+      // v9 — permissive transition (was only verification_pending)
+      const POST_DECISION_3 = ['onboarded','decided','verified-cleared'];
+      if(!POST_DECISION_3.includes(f.stage)) f.stage='verified';
+      markLocalTouch('haatFarmers', f.id);
       logActivity('visit',`Farm verification (Gujarati patrak) completed for <b>${esc(f.name)}</b> (${f.id})${s.verifierName?' by '+esc(s.verifierName):''}`);
       await saveDB(true);
     }
@@ -11004,9 +11995,17 @@ $('#globalSearch').oninput=e=>{
   else if(window._q){ROUTE='haat';render();}
 };
 $('#quickAdd').onclick=quickAdd;
-// v8 — user pill: click → open switch-user modal. Paint the pill on init.
+// v9 — user pill now signs out instead of opening a switch-user modal.
+// Switching accounts must go through the proper login page (with password).
 const _userPill = document.getElementById('userPill');
-if(_userPill) _userPill.onclick = openSwitchUserModal;
+if(_userPill) _userPill.onclick = function(){
+  if(!confirm('Sign out and return to the login page?')) return;
+  try { sessionStorage.removeItem('sristi_session'); } catch(e){}
+  try { localStorage.removeItem('sristi_session'); } catch(e){}
+  SESSION = null;
+  location.hash = '#login';
+  location.reload();
+};
 paintUserPill();
 
 /* ================================================================
@@ -11246,7 +12245,7 @@ const PUBLIC_TIME_SLOTS = [
   ['any','કોઈપણ સમય / Any time']
 ];
 
-const PUBLIC_FC_WHATSAPP = '919879876543';  // fallback FC contact number; admin can edit in Settings later
+const SRISTI_OFFICE_WHATSAPP = '919510386635';  // SRISTI office WhatsApp — every public form points here
 
 // === PUBLIC LANDING ===
 function renderPublicLanding(){
@@ -11320,10 +12319,10 @@ function renderPublicLanding(){
 // the URL effectively has access; the password is a thin extra layer to keep
 // random visitors from poking around the admin UI).
 const SRISTI_CREDS = [
-  { id: 'admin',      password: 'admin@sristi',  role: 'admin', userId: '',      userName: 'Admin' },
-  { id: 'maheshbhai', password: 'mahesh@sristi', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
-  { id: 'ayush',      password: 'ayush@sristi',  role: 'fc',    userId: 'FC002', userName: 'Ayush' },
-  { id: 'harsh',      password: 'harsh@sristi',  role: 'fc',    userId: 'FC003', userName: 'Harsh' },
+  { id: 'admin',      password: 'sristi@2026', role: 'admin', userId: '',      userName: 'Admin' },
+  { id: 'maheshbhai', password: 'sristi@2026', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
+  { id: 'ayush',      password: 'sristi@2026', role: 'fc',    userId: 'FC002', userName: 'Ayush' },
+  { id: 'harsh',      password: 'sristi@2026', role: 'fc',    userId: 'FC003', userName: 'Harsh' },
 ];
 
 function openLoginModal(){
@@ -11637,7 +12636,7 @@ async function submitPublicForm(kind){
     DB.pendingEnrolments.push(submission);
     cacheLocal();
     if(FB && FB.ready){
-      await fbRef('pendingEnrolments/'+appId).set(submission);
+      await fbRef('pendingEnrolments/'+appId).set(sanitizeForFB(submission));
     }
     // Show thanks screen
     window._pfLastApp = submission;
@@ -11668,12 +12667,10 @@ function viewPublicThanks(){
   const v = $('#view');
   const app = window._pfLastApp || {};
   const isHaat = app.program === 'haat';
-  // v9 process-fix #48 — district-aware FC routing. Picks a real FC for the
-  // farmer's region. If none matches, falls back to the SRISTI office number
-  // on the landing.
-  const fcMatch = fcByDistrict(app.district || '');
-  const waPhone = fcMatch ? ('91' + fcMatch.phone) : PUBLIC_FC_WHATSAPP;
-  const fcDisplayName = fcMatch ? fcMatch.name : 'SRISTI office';
+  // Always route to SRISTI office (per user instruction). District FC routing
+  // happens internally during intake — the public-facing contact is SRISTI.
+  const waPhone = SRISTI_OFFICE_WHATSAPP;
+  const fcDisplayName = 'SRISTI office';
   const waMsg = encodeURIComponent(`નમસ્કાર, મેં સૃષ્ટિ ${isHaat?'ખેડૂત હાટ':'કન્વર્ઝન'} માટે અરજી કરી છે. અરજી નં: ${app.id||'-'}. કૃપા કરી સંપર્ક કરો.`);
   const waUrl = `https://wa.me/${waPhone}?text=${waMsg}`;
 
@@ -11849,7 +12846,7 @@ function viewPendingEnrolments(){
         <td style="font-size:12.5px;white-space:nowrap">${esc(landTxt)}</td>
         <td style="max-width:160px">${cropsCell||'<span style="color:var(--ink-faint)">—</span>'}</td>
         <td style="font-size:12px">${fcAssigned}</td>
-        <td style="font-size:11px;color:var(--ink-faint)">${r.enrollmentFormFull?'<span class="tag green" style="font-size:9.5px;padding:1px 5px"><span class="d"></span>full patrak</span>':r.intake?'<span class="tag blue" style="font-size:9.5px;padding:1px 5px"><span class="d"></span>intake form</span>':'—'}</td>
+        <td style="font-size:11px;color:var(--ink-faint)">${(r.enrollmentFormFull||r.enrollmentFormSubmittedAt)?'<span class="tag green" style="font-size:9.5px;padding:1px 5px"><span class="d"></span>full patrak</span>':r.intake?'<span class="tag blue" style="font-size:9.5px;padding:1px 5px"><span class="d"></span>intake form</span>':'—'}</td>
       </tr>`;
     });
     h += `</tbody></table></div>`;
@@ -12006,6 +13003,9 @@ window.addEventListener('hashchange', () => {
 (async function(){
   try {
     await loadDB();
+    // v11 — background sweep: move legacy inline forms to forms/{id} and
+    // queue legacy base64 photos for Cloudinary. Runs after first paint.
+    setTimeout(()=>{ migrateLegacyData(); }, 2500);
     // Decide entry mode AFTER DB is hydrated (so we know if there's a session).
     PUBLIC_MODE = detectPublicMode();
     if(PUBLIC_MODE){

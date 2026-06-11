@@ -6501,11 +6501,12 @@ const KRSF_CONCERNS = [
 
 function openConvEnrollmentForm(){
   const today = todayISO();
+  const isPublic = !!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE);
   const state = {
     name:'', mobile:'', age:'', gender:'',
     district:'', taluka:'', village:'',
     landBigha:'', incomeRange:'', incomeSource:'',
-    crops:[{crop:'',area:'',yield:'',income:''},{crop:'',area:'',yield:'',income:''},{crop:'',area:'',yield:'',income:''}],
+    crops:[{crop:'',area:''},{crop:'',area:''},{crop:'',area:''}],
     irrigation:'', waterAvail:'', usesChem:'', chemCost:'', fertTypes:[],
     livestock:{cow:'',buffalo:'',goat:'',other:''}, usesFYM:'',
     willingChemFree:'', convertBigha:'',
@@ -6514,9 +6515,14 @@ function openConvEnrollmentForm(){
     // by default (which forced a validation error on quick saves).
     // v9 audit-fix #30 — in public mode, blank fcName so the farmer's intake
     // doesn't falsely tag fcs[0] as their requested FC.
-    fcName: (typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) ? '' : ((DB.fcs[0] && DB.fcs[0].name) || ''),
+    fcName: isPublic ? '' : ((DB.fcs[0] && DB.fcs[0].name) || ''),
     surveyDate: today,
+    lang: isPublic ? 'gu' : 'en',
   };
+  // Language helpers
+  function L(en, gu){ return state.lang === 'gu' ? gu : en; }
+  // For bilingual "English (gu)" option strings: extract just the Gujarati part in gu mode
+  function guLabel(s){ const m = s && s.match(/\(([^)]+)\)$/); return (state.lang === 'gu' && m) ? m[1] : s; }
   // ===== Inject one-time mobile-first CSS for this form's inputs =====
   if(!document.getElementById('krsfFormStyles')){
     const css = document.createElement('style');
@@ -6567,11 +6573,12 @@ function openConvEnrollmentForm(){
           height:100dvh!important;max-height:100dvh!important;
           border-radius:0!important;transform:none!important;
           display:flex!important;flex-direction:column!important;
+          overflow-x:hidden!important;
         }
         .modal-head{flex-shrink:0;padding:14px 16px!important}
         .modal-head h3{font-size:15px!important}
         .modal-body{
-          flex:1!important;min-height:0!important;overflow-y:auto!important;
+          flex:1!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;
           -webkit-overflow-scrolling:touch;
           padding:14px 13px 20px!important;
         }
@@ -6585,6 +6592,7 @@ function openConvEnrollmentForm(){
     document.head.appendChild(css);
   }
   function fldHtml(label, inner, required){
+    // label is already a plain string (no HTML); esc() it for safety
     return '<div class="krsf-fld"><label>'+esc(label)+(required?' <span class="req">*</span>':'')+'</label>'+inner+'</div>';
   }
   function selOpts(list, current){
@@ -6594,151 +6602,162 @@ function openConvEnrollmentForm(){
     }).join('');
   }
   function sectionPersonal(){
+    const gOpts = [['','—'],['Male',L('Male','પુરુષ')],['Female',L('Female','સ્ત્રી')],['Other',L('Other','અન્ય')]];
     return '<div class="krsf-row">'
-      + fldHtml('Farmer name / ખેડૂતનું નામ', '<input id="krName" value="'+esc(state.name)+'" placeholder="Full name">', true)
-      + fldHtml('Mobile / મોબાઈલ (10-digit)', '<input id="krMobile" maxlength="10" inputmode="numeric" value="'+esc(state.mobile)+'" placeholder="9876543210">', true)
+      + fldHtml(L('Farmer name','ખેડૂતનું નામ'), '<input id="krName" value="'+esc(state.name)+'" placeholder="'+L('Full name','પૂરું નામ')+'">', true)
+      + fldHtml(L('Mobile (10-digit)','મોબાઈલ (10 અંક)'), '<input id="krMobile" maxlength="10" inputmode="numeric" value="'+esc(state.mobile)+'" placeholder="9876543210">', true)
       + '</div><div class="krsf-row">'
-      + fldHtml('Age / ઉંમર', '<input id="krAge" type="number" min="18" max="90" value="'+esc(state.age)+'">')
-      + fldHtml('Gender / લિંગ', '<select id="krGender">'+selOpts([['','— pick —'],'Male','Female','Other'], state.gender)+'</select>')
+      + fldHtml(L('Age','ઉંમર'), '<input id="krAge" type="number" min="18" max="90" value="'+esc(state.age)+'">')
+      + fldHtml(L('Gender','લિંગ'), '<select id="krGender">'+selOpts(gOpts, state.gender)+'</select>')
       + '</div>';
   }
   function sectionLocation(){
-    const districts = Object.keys(KRSF_DISTRICTS);
-    const districtOpts = '<option value="">— Pick district —</option>' + districts.map(d=>'<option '+(d===state.district?'selected':'')+'>'+esc(d)+'</option>').join('');
-    const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]) : [];
-    const talukaOpts = '<option value="">— Pick taluka —</option>' + talukas.map(t=>'<option '+(t===state.taluka?'selected':'')+'>'+esc(t)+'</option>').join('');
+    const districts = Object.keys(KRSF_DISTRICTS).sort();
+    const districtOpts = '<option value="">— '+L('Pick district','જિલ્લો પ'ȣ'ȣ'ȣ' કરો')+' —</option>'
+      + districts.map(d=>'<option value="'+esc(d)+'"'+(d===state.district?' selected':'')+'>'+esc(guLabel(d))+'</option>').join('');
+    const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]).slice().sort() : [];
+    const talukaOpts = '<option value="">— '+L('Pick taluka','તાલુકો પ'ȣ'ȣ'ȣ' કરો')+' —</option>'
+      + talukas.map(t=>'<option'+(t===state.taluka?' selected':'')+'>'+esc(t)+'</option>').join('');
     return '<div class="krsf-row">'
-      + fldHtml('District / જિલ્લો', '<select id="krDistrict">'+districtOpts+'</select>', true)
-      + fldHtml('Taluka / તાલુકો', '<select id="krTaluka"'+(!state.district?' disabled':'')+'>'+talukaOpts+'</select>', true)
+      + fldHtml(L('District','જિલ્લો'), '<select id="krDistrict">'+districtOpts+'</select>', true)
+      + fldHtml(L('Taluka','તાલુકો'), '<select id="krTaluka"'+(!state.district?' disabled':'')+'>'+talukaOpts+'</select>', true)
       + '</div><div class="krsf-row single">'
-      + fldHtml('Village / ગામ', '<input id="krVillage" value="'+esc(state.village)+'" placeholder="Name of your village">', true)
+      + fldHtml(L('Village','ગામ'), '<input id="krVillage" value="'+esc(state.village)+'" placeholder="'+L('Village name','ગામનું નામ')+'">', true)
       + '</div>';
   }
   function sectionLandIncome(){
+    const incRanges  = [['','—']].concat(KRSF_INCOME_RANGES.map((r,i)=>[r, L(r,['₹1 લાખ કરતા ઓછી','₹1 – 2 લાખ','₹2 – 5 લાખ','₹5 લાખ કરતા વધારે'][i])]));
+    const incSources = [['','—']].concat(KRSF_INCOME_SOURCES.map((s,i)=>[s, L(s,['ખેતી','મજૂરી','વ્યવસાય','પશુપાલન','નોકરી'][i])]));
     return '<div class="krsf-row">'
-      + fldHtml('Total land (bigha) / કુલ જમીન', '<input id="krLand" type="number" step="0.1" value="'+esc(state.landBigha)+'">', true)
-      + fldHtml('Annual family income', '<select id="krIncRange">'+selOpts([['','— pick —']].concat(KRSF_INCOME_RANGES.map(r=>[r,r])), state.incomeRange)+'</select>')
+      + fldHtml(L('Total land (bigha)','કુલ જમીન (વીઘા)'), '<input id="krLand" type="number" step="0.1" value="'+esc(state.landBigha)+'">', true)
+      + fldHtml(L('Annual income','વાર્ષિક આવક'), '<select id="krIncRange">'+selOpts(incRanges, state.incomeRange)+'</select>')
       + '</div><div class="krsf-row single">'
-      + fldHtml('Primary income source / મુખ્ય આવકનો સ્ત્રોત', '<select id="krIncSrc">'+selOpts([['','— pick —']].concat(KRSF_INCOME_SOURCES.map(s=>[s,s])), state.incomeSource)+'</select>')
+      + fldHtml(L('Primary income source','આવકનો સ્ત્રોત'), '<select id="krIncSrc">'+selOpts(incSources, state.incomeSource)+'</select>')
       + '</div>';
   }
   function sectionCrops(){
-    let h = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:9px">Add up to 3 main crops. તમારા મુખ્ય ૩ પાક ઉમેરો.</div>';
-    h += '<table class="krsf-crops"><thead><tr><th style="width:30px">#</th><th>Crop / પાક</th><th style="width:90px">Bigha</th><th style="width:130px">Yield / season</th><th style="width:110px">₹ / year</th></tr></thead><tbody>';
+    let h = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px">'+L('Select up to 3 main crops and area in bigha.','મુખ્ય ૩ પાક અને વીઘા ભરો.')+'</div>';
     state.crops.forEach((c,i)=>{
-      const cropOpts = '<option value="">— Pick crop —</option>' + KRSF_CROPS.map(crop=>'<option '+(crop===c.crop?'selected':'')+'>'+esc(crop)+'</option>').join('');
-      h += '<tr>'
-        + '<td data-l="#" style="color:var(--ink-faint);text-align:center;font-weight:700">'+(i+1)+'</td>'
-        + '<td data-l="Crop"><select data-kc="'+i+':crop">'+cropOpts+'</select></td>'
-        + '<td data-l="Bigha"><input type="number" step="0.5" data-kc="'+i+':area" value="'+esc(c.area)+'"></td>'
-        + '<td data-l="Yield / season"><input type="text" data-kc="'+i+':yield" value="'+esc(c.yield)+'" placeholder="e.g. 8 quintal"></td>'
-        + '<td data-l="₹ / year"><input type="number" data-kc="'+i+':income" value="'+esc(c.income)+'"></td>'
-        + '</tr>';
+      const cropOpts = '<option value="">—</option>'
+        + KRSF_CROPS.map(crop=>'<option value="'+esc(crop)+'"'+(crop===c.crop?' selected':'')+'>'+esc(guLabel(crop))+'</option>').join('');
+      h += '<div style="display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:end;margin-bottom:10px">'
+        + '<div class="krsf-fld"><label>Crop '+(i+1)+'</label><select data-kc="'+i+':crop">'+cropOpts+'</select></div>'
+        + '<div class="krsf-fld"><label>Bigha</label><input type="number" step="0.5" data-kc="'+i+':area" value="'+esc(c.area)+'" placeholder="0"></div>'
+        + '</div>';
     });
-    h += '</tbody></table>';
     return h;
   }
   function sectionInputs(){
-    const fertChecks = KRSF_FERT_TYPES.map(t=>'<label class="krsf-check'+(state.fertTypes.includes(t)?' checked':'')+'"><input type="checkbox" data-kf="'+esc(t)+'" '+(state.fertTypes.includes(t)?'checked':'')+'>'+esc(t)+'</label>').join('');
+    const fertChecks = KRSF_FERT_TYPES.map(t=>'<label class="krsf-check'+(state.fertTypes.includes(t)?' checked':'')+'">'
+      + '<input type="checkbox" data-kf="'+esc(t)+'" '+(state.fertTypes.includes(t)?'checked':'')+'>'
+      + esc(guLabel(t))+'</label>').join('');
     return '<div class="krsf-row">'
-      + fldHtml('Irrigation source / પિયત', '<select id="krIrr">'+selOpts([['','— pick —']].concat(KRSF_IRRIGATION.map(x=>[x,x])), state.irrigation)+'</select>')
-      + fldHtml('Water availability / પાણીની ઉપલબ્ધતા', '<select id="krWA">'+selOpts([['','— pick —']].concat(KRSF_WATER_AVAIL.map(x=>[x,x])), state.waterAvail)+'</select>')
+      + fldHtml(L('Irrigation source','પિયત'), '<select id="krIrr">'+selOpts([['','— બતાવો —']].concat(KRSF_IRRIGATION.map(x=>[x,x])), state.irrigation)+'</select>')
+      + fldHtml(L('Water availability','પાણીની ઉપલબ્ધતા'), '<select id="krWA">'+selOpts([['','— બતાવો —']].concat(KRSF_WATER_AVAIL.map(x=>[x,x])), state.waterAvail)+'</select>')
       + '</div><div class="krsf-row single">'
-      + fldHtml('Currently using chemical fertilizers / pesticides? / હાલમાં રાસાયણિક ખાતર/જંતુનાશક વાપરો છો?',
+      + fldHtml(L('Using chemical fertilizers / pesticides?','હાલમાં રાસાયણિક ખાતર/જંતુનાશક વાપરો છો?'),
           '<div class="krsf-yn" id="krChemYn">'
-          + '<button type="button" class="chip'+(state.usesChem==='no'?' on green-on':'')+'" data-v="no">No / નથી</button>'
-          + '<button type="button" class="chip'+(state.usesChem==='yes'?' on red-on':'')+'" data-v="yes">Yes / હા</button>'
+          + '<button type="button" class="chip'+(state.usesChem==="no"?' on green-on':'')+'" data-v="no">'+L('No','નથી')+'</button>'
+          + '<button type="button" class="chip'+(state.usesChem==="yes"?' on red-on':'')+'" data-v="yes">'+L('Yes','હા')+'</button>'
           + '</div>')
       + '</div>'
-      + '<div id="krChemDetails" style="'+(state.usesChem!=='yes'?'display:none':'')+'"><div class="krsf-row">'
-      + fldHtml('Annual chemical input cost (₹)', '<input id="krChemCost" type="number" value="'+esc(state.chemCost)+'">')
-      + fldHtml('Fertilizer types used', '<div class="krsf-checks">'+fertChecks+'</div>')
+      + '<div id="krChemDetails" style="'+(state.usesChem!=="yes"?'display:none':'')+'">'
+      + '<div class="krsf-row">'
+      + fldHtml(L('Annual chemical input cost (₹)','વાર્ષિક રાસાયણિક ખર્ચ (₹)'), '<input id="krChemCost" type="number" value="'+esc(state.chemCost)+'">')
+      + fldHtml(L('Fertilizer types used','ખાતરના પ્રકાર'), '<div class="krsf-checks">'+fertChecks+'</div>')
       + '</div></div>';
   }
   function sectionLivestock(){
     return '<div class="krsf-row">'
-      + fldHtml('Cows / ગાય', '<input id="krLsCow" type="number" min="0" value="'+esc(state.livestock.cow)+'">')
-      + fldHtml('Buffalo / ભેંસ', '<input id="krLsBuf" type="number" min="0" value="'+esc(state.livestock.buffalo)+'">')
+      + fldHtml(L('Cows','ગાય'), '<input id="krLsCow" type="number" min="0" value="'+esc(state.livestock.cow)+'">')
+      + fldHtml(L('Buffalo','ભેંસ'), '<input id="krLsBuf" type="number" min="0" value="'+esc(state.livestock.buffalo)+'">')
       + '</div><div class="krsf-row">'
-      + fldHtml('Goat / Sheep / બકરી / ઘેટું', '<input id="krLsGoat" type="number" min="0" value="'+esc(state.livestock.goat)+'">')
-      + fldHtml('Other (e.g. Poultry)', '<input id="krLsOther" value="'+esc(state.livestock.other)+'" placeholder="e.g. Poultry 25">')
+      + fldHtml(L('Goat / Sheep','બકરી / ઘેટું'), '<input id="krLsGoat" type="number" min="0" value="'+esc(state.livestock.goat)+'">')
+      + fldHtml(L('Other animals','અન્ય'), '<input id="krLsOther" value="'+esc(state.livestock.other)+'" placeholder="'+L('e.g. Poultry 25','દા.ત. મરઘી 25')+'">')
       + '</div><div class="krsf-row single">'
-      + fldHtml('Use farmyard manure (FYM) on field? / ગોબર ખાતર વાપરો છો?',
+      + fldHtml(L('Use farmyard manure (FYM)?','ગોબર ખાતર વાપરો છો?'),
           '<div class="krsf-yn" id="krFymYn">'
-          + '<button type="button" class="chip'+(state.usesFYM==='yes'?' on green-on':'')+'" data-v="yes">Yes / હા</button>'
-          + '<button type="button" class="chip'+(state.usesFYM==='no'?' on':'')+'" data-v="no">No / નથી</button>'
+          + '<button type="button" class="chip'+(state.usesFYM==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes','હા')+'</button>'
+          + '<button type="button" class="chip'+(state.usesFYM==="no"?' on':'')+'" data-v="no">'+L('No','નહીં')+'</button>'
           + '</div>')
       + '</div>';
   }
   function sectionCommitment(){
     return '<div class="krsf-row single">'
-      + fldHtml('Willing to adopt chemical-free farming? / પ્રાકૃતિક ખેતી અપનાવવા તૈયાર છો?',
+      + fldHtml(L('Willing to adopt natural farming?','પ્રાકૃતિક ખેતી અપનાવવા તૈયાર છો?'),
           '<div class="krsf-yn" id="krWillYn">'
-          + '<button type="button" class="chip'+(state.willingChemFree==='yes'?' on green-on':'')+'" data-v="yes">Yes — committed / સંપૂર્ણ તૈયાર</button>'
-          + '<button type="button" class="chip'+(state.willingChemFree==='maybe'?' on':'')+'" data-v="maybe">Maybe / કદાચ</button>'
-          + '<button type="button" class="chip'+(state.willingChemFree==='no'?' on red-on':'')+'" data-v="no">Not yet / નહીં</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes — committed','સંપૂર્ણ તૈયાર')+'</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="maybe"?' on':'')+'" data-v="maybe">'+L('Maybe','કદાચ')+'</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="no"?' on red-on':'')+'" data-v="no">'+L('Not yet','નહીં')+'</button>'
           + '</div>', true)
       + '</div><div class="krsf-row single">'
-      + fldHtml('Land area for organic conversion (bigha) / પ્રાકૃતિક ખેતી માટેનો વિસ્તાર',
-          '<input id="krConvBigha" type="number" step="0.1" value="'+esc(state.convertBigha)+'" placeholder="How much of the total land will go organic?">', true)
+      + fldHtml(L('Land for organic conversion (bigha)','પ્રાકૃતિક ખેતી માટેનો વિસ્તાર (વીઘા)'),
+          '<input id="krConvBigha" type="number" step="0.1" value="'+esc(state.convertBigha)+'" placeholder="'+L('Bigha count','વીઘા')+'">', true)
       + '</div>';
   }
   function multiChecks(opts, list, attr){
     return '<div class="krsf-checks">'
-      + opts.map(o => '<label class="krsf-check'+(list.includes(o)?' checked':'')+'"><input type="checkbox" data-'+attr+'="'+esc(o)+'" '+(list.includes(o)?'checked':'')+'>'+esc(o)+'</label>').join('')
+      + opts.map(o => {
+          const label = guLabel(o);
+          return '<label class="krsf-check'+(list.includes(o)?' checked':'')+'">'
+            + '<input type="checkbox" data-'+attr+'="'+esc(o)+'" '+(list.includes(o)?'checked':'')+'>'
+            + esc(label)+'</label>';
+        }).join('')
       + '</div>';
   }
   function sectionSupport(){
     return '<div class="krsf-row single">'
-      + fldHtml('Support needed / કેવી સહાય જોઈએ (tick all)', multiChecks(KRSF_SUPPORT_NEEDED, state.supportNeeded, 'ksp'))
+      + fldHtml(L('Support needed','કેવી સહાય જોઈએ'), multiChecks(KRSF_SUPPORT_NEEDED, state.supportNeeded, 'ksp'))
       + '</div><div class="krsf-row single">'
-      + fldHtml('Main concerns / મુખ્ય ચિંતા (tick all)', multiChecks(KRSF_CONCERNS, state.concerns, 'kcn'))
+      + fldHtml(L('Main concerns','મુખ્ય ચિંતા'), multiChecks(KRSF_CONCERNS, state.concerns, 'kcn'))
       + '</div>';
   }
   function sectionAdmin(){
-    // v8.2 — in public mode, hide the FC picker (the farmer can't pick their
-    // own FC). Admin assigns one when accepting the application.
     if(PUBLIC_MODE){
       return '<div class="krsf-row single">'
-        + '<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 2px">Sristi FC તમારી અરજી મળ્યા પછી તમને 7 દિવસમાં ફોન કરશે. <span style="color:var(--ink-faint)">An FC will call you within 7 days of submission.</span></div>'
+        + '<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 2px">Sristi FC તમારી અરજી મળ્યા પછી તમને 7 દિવસમાં ફોન કરશે.</div>'
         + '</div>';
     }
     const fcOpts = '<option value="">— Other / typed below —</option>' + DB.fcs.map(x=>'<option '+(x.name===state.fcName?'selected':'')+'>'+esc(x.name)+'</option>').join('');
     return '<div class="krsf-row">'
       + fldHtml('Field Coordinator / FC', '<select id="krFc">'+fcOpts+'</select>', true)
-      + fldHtml('Survey date / સર્વે તારીખ', '<input id="krDate" type="date" value="'+esc(state.surveyDate)+'">')
+      + fldHtml(L('Survey date','સર્વે તારીખ'), '<input id="krDate" type="date" value="'+esc(state.surveyDate)+'">')
       + '</div><div class="krsf-row single">'
       + fldHtml('Other FC name (if not in list above)', '<input id="krFcOther" placeholder="Type name if FC is not in the dropdown">')
       + '</div>';
   }
-  // Renders all sections as a single scrolling page (mobile-first).
-  function sectionCard(num, en, gu, body){
+  function sectionCard(num, en, body){
     return '<div class="krsf-sec">'
       + '<div class="krsf-sec-h">'+num+'. '+esc(en)+'</div>'
-      + '<div class="krsf-sec-gu">'+esc(gu)+'</div>'
-      + body
-      + '</div>';
+      + body + '</div>';
   }
   function renderForm(){
-    const body =
-        sectionCard('1','Personal details',          'વ્યક્તિગત માહિતી',                sectionPersonal())
-      + sectionCard('2','Location',                   'સ્થાન',                            sectionLocation())
-      + sectionCard('3','Land & Income',              'જમીન અને આવક',                   sectionLandIncome())
-      + sectionCard('4','Crops',                      'પાક',                              sectionCrops())
-      + sectionCard('5','Water & Chemical inputs',    'પાણી અને રાસાયણિક ઈનપુટ',         sectionInputs())
-      + sectionCard('6','Livestock',                  'પશુધન',                            sectionLivestock())
-      + sectionCard('7','Organic commitment',         'પ્રાકૃતિક ખેતી માટેની તૈયારી',    sectionCommitment())
-      + sectionCard('8','Support needed & concerns',  'સહાય અને ચિંતા',                  sectionSupport())
-      + sectionCard('9','Administrative',             'વહીવટ',                            sectionAdmin());
-    // v8.2 — public mode uses a farmer-facing title + Gujarati submit label.
+    const langBar = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">'
+      + ['en','gu'].map(v=>{
+          const on=state.lang===v;
+          return '<label style="cursor:pointer;font-size:14px;font-weight:700;padding:7px 18px;border-radius:20px;border:1.5px solid '+(on?'var(--accent)':'var(--line-strong)')+';background:'+(on?'var(--accent)':'#fff')+';color:'+(on?'#fff':'var(--ink)')+'"><input type="radio" name="krLang" value="'+v+'" style="position:absolute;opacity:0;width:0"'+(on?' checked':'')+'>'+( v==='en'?'EN':'gu')+'</label>';
+        }).join('')
+      + '</div>';
+    const S1 = L('Personal details','વ્યક્તિગત માહિતી');
+    const S2 = L('Location','સ્થાન');
+    const S3 = L('Land & Income','જમીન અને આવક');
+    const S4 = L('Crops','પાક');
+    const body = langBar
+      + sectionCard('1', S1,                    sectionPersonal())
+      + sectionCard('2', S2,                    sectionLocation())
+      + sectionCard('3', S3,                    sectionLandIncome())
+      + sectionCard('4', S4,                    sectionCrops())
+      + sectionCard('5', 'Water & Chemicals',   sectionInputs())
+      + sectionCard('6', 'Livestock',           sectionLivestock())
+      + sectionCard('7', 'Organic Commitment',  sectionCommitment())
+      + sectionCard('8', 'Support & Concerns',  sectionSupport())
+      + sectionCard('9', 'Administrative',      sectionAdmin());
     const modalTitle = PUBLIC_MODE
-      ? 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ · Apply for Conversion'
+      ? 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ'
       : 'Add new conversion farmer';
-    const saveLabel = PUBLIC_MODE
-      ? 'અરજી મોકલો · Submit application'
-      : 'Save farmer';
+    const saveLabel = PUBLIC_MODE ? 'અરજી મોકલો' : 'Save farmer';
     modalShell(modalTitle, body,
-      '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
+      '<button class="btn btn-ghost" onclick="closeModal()">Cancel+'</button>'
       + '<button class="btn btn-primary" id="krSave">'+svg(I.check)+saveLabel+'</button>');
     const modalEl = document.getElementById('modal'); if(modalEl) modalEl.classList.add('wide');
     wireInputs();
@@ -6758,14 +6777,16 @@ function openConvEnrollmentForm(){
     });
   }
   function wireInputs(){
+    // Language toggle — re-render entire form when EN/gu changes.
+    document.querySelectorAll('[name="krLang"]').forEach(r => r.onchange = () => { state.lang = r.value; renderForm(); });
     bind('krName','name'); bind('krMobile','mobile'); bind('krAge','age'); bind('krGender','gender');
-    // District change → reload Taluka options inline (no full re-render).
+    // District change → rebuild taluka list sorted alphabetically.
     const dEl = document.getElementById('krDistrict');
     const tEl = document.getElementById('krTaluka');
     if(dEl) dEl.onchange = () => {
       state.district = dEl.value; state.taluka = '';
       if(tEl){
-        const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]) : [];
+        const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]).slice().sort() : [];
         tEl.innerHTML = '<option value="">— Pick taluka —</option>' + talukas.map(t=>'<option>'+esc(t)+'</option>').join('');
         tEl.disabled = !state.district;
       }

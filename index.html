@@ -12394,6 +12394,18 @@ function openLoginModal(){
       }
       .login-modal-wrap .lm-submit:hover { background: #3550b5; }
       .login-modal-wrap .lm-submit:disabled { background: #929fb5; cursor: not-allowed; }
+      @media (max-width:640px){
+        .modal {
+          position:fixed!important; inset:0!important;
+          width:100vw!important; max-width:100vw!important;
+          height:100dvh!important; max-height:100dvh!important;
+          border-radius:0!important; transform:none!important;
+          display:flex!important; flex-direction:column!important;
+          overflow-x:hidden!important;
+        }
+        .modal-body { overflow-y:auto!important; overflow-x:hidden!important; }
+        .modal-foot { padding-bottom:max(12px,env(safe-area-inset-bottom))!important; }
+      }
     `;
     document.head.appendChild(css);
   }

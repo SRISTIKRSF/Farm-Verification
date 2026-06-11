@@ -13046,17 +13046,26 @@ window.addEventListener('hashchange', () => {
 
 (async function(){
   try {
-    await loadDB();
+    // Detect mode synchronously before any async work.
+    PUBLIC_MODE = detectPublicMode();
+    if(PUBLIC_MODE){
+      // Public visitor — paint the homepage immediately from local cache,
+      // then hydrate from Firebase in the background. No waiting.
+      document.body.classList.add('public-mode');
+      ROUTE = 'public_landing';
+      // Load local cache so DB is non-empty before first render.
+      try{ const raw=localStorage.getItem(STORE_KEY); if(raw){ DB=normaliseDB(JSON.parse(raw)); } }catch(e){}
+      render();
+      // Now connect to Firebase in background (non-blocking).
+      loadDB().catch(e => console.warn('[Sristi] Background DB load failed:', e));
+    } else {
+      // Admin/FC mode — need data before showing anything.
+      await loadDB();
+      render();
+    }
     // v11 — background sweep: move legacy inline forms to forms/{id} and
     // queue legacy base64 photos for Cloudinary. Runs after first paint.
     setTimeout(()=>{ migrateLegacyData(); }, 2500);
-    // Decide entry mode AFTER DB is hydrated (so we know if there's a session).
-    PUBLIC_MODE = detectPublicMode();
-    if(PUBLIC_MODE){
-      document.body.classList.add('public-mode');
-      ROUTE = 'public_landing';
-    }
-    render();
   } catch (e) {
     console.error('BOOT FAILED:', e);
     document.body.innerHTML =

@@ -5123,8 +5123,7 @@ function renderNav(){
     // FC-only sidebar — task focused, mobile friendly.
     {sec:'My Work'},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
-    {sec:'Farmers'},
-    {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
+    {sec:'My Farmers'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
   ];
   let h='';
@@ -6265,9 +6264,9 @@ function viewConversion(){
     <h3>Conversion Farmers</h3>
     <span class="meta">${rows.length} of ${DB.convFarmers.length} records</span>
     <div class="spacer"></div>
-    <button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button>
+    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
-    <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>
+    <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
   </div>`;
   h+=`<div class="table-wrap"><table><thead><tr>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
@@ -6612,12 +6611,12 @@ function openConvEnrollmentForm(){
       + '</div>';
   }
   function sectionLocation(){
-    const districts = Object.keys(KRSF_DISTRICTS).sort();
+    const districts = Object.keys(window.DISTRICT_TALUKAS||KRSF_DISTRICTS).sort();
     const dPh = L('— Pick district —', '— જિલ્લો —');
     const tPh = L('— Pick taluka —', '— તાલુકો —');
     const districtOpts = '<option value="">' + dPh + '</option>'
       + districts.map(d=>'<option value="'+esc(d)+'"'+(d===state.district?' selected':'')+'>'+esc(guLabel(d))+'</option>').join('');
-    const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]).slice().sort() : [];
+    const talukas = state.district ? ((window.DISTRICT_TALUKAS||KRSF_DISTRICTS)[state.district]||[]).slice().sort() : [];
     const talukaOpts = '<option value="">' + tPh + '</option>'
       + talukas.map(t=>'<option'+(t===state.taluka?' selected':'')+'>'+esc(t)+'</option>').join('');
     return '<div class="krsf-row">'
@@ -8032,7 +8031,7 @@ function openHaatDrawer(id){
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
     ${f.stage!=='decided'?`<button class="btn btn-clay btn-sm" data-d="verify">${svg(I.plus,2.2)}Field verification form</button>`:''}
     <button class="btn btn-primary btn-sm" data-d="decide">${svg(I.check,2.2)}Set status</button>
-    ${f.status==='green'?`<button class="btn btn-clay btn-sm" data-d="haat">${svg(I.haat,2.2)}${f.haat?'Change haat':'Assign haat'}</button>`:''}
+    ${(f.status==='green'&&isAdminUser())?`<button class="btn btn-clay btn-sm" data-d="haat">${svg(I.haat,2.2)}${f.haat?'Change haat':'Assign haat'}</button>`:''}
     ${f.status==='green'?`<button class="btn btn-ghost btn-sm" data-d="toggle">${svg(I.leaf,2.2)}Mark ${f.active?'inactive':'active'}</button>`:''}
     ${(f.enrollmentFormFull||f.verificationFormFull||f.enrollmentFormSubmittedAt||f.verificationFormSubmittedAt)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
     <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
@@ -10803,7 +10802,7 @@ function render(){
   // v9 Batch 4 — route guard: FCs are confined to their action surfaces.
   // Any analytics, system, or config route bounces them to their home
   // (Verification Queue).
-  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','income'].indexOf(ROUTE) >= 0){
+  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','income','haat'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
   renderNav();

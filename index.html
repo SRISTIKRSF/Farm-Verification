@@ -6320,9 +6320,9 @@ function viewConversion(){
   });
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;render();};};
   setF('state','cState');setF('district','cDistrict');setF('fc','cFc');
-  $('#cBulk').onclick=openBulkAssignModal;
+  const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
-  $('#cImport').onclick=openImportFormModal;
+  const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
 }
 

@@ -3109,7 +3109,7 @@ async function updatePhotoBadge(){
   let n = 0;
   try{ n = (await idbAll('photoQueue')).length; }catch(e){}
   let el = document.getElementById('photoQueuePill');
-  if(!n){ if(el) el.style.display = 'none'; return; }
+  if(!n || !cloudinaryConfigured()){ if(el) el.style.display = 'none'; return; }
   if(!el){
     const sp = document.getElementById('syncPill');
     if(!sp || !sp.parentNode) return;
@@ -5158,7 +5158,7 @@ const TITLES={
   public_haat_form:['Public','Haat Application'],
   public_conv_form:['Public','Conversion Application'],
   public_thanks:['Public','Application Received'],
-  pending:['Overview','Forms received'],
+  pending:['Overview','Farmers Reached'],
 };
 /* ============ VIEW: DASHBOARD ============ */
 function viewDashboard(){
@@ -5251,7 +5251,7 @@ function viewDashboard(){
   let h = _datePillsHtml();
   h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
   h+=`<div class="statbox-grid cols-6">
-    ${dashBox('Forms received',hs.total,'var(--navy)',hs.total,
+    ${dashBox('Farmers Reached',hs.total,'var(--navy)',hs.total,
         'Total farmers enrolled','haat:')}
     ${dashBox('Field visit pending',hs.pending,'var(--orange)',hs.total,
         'Facilitator has not visited the farm yet','haat:pending')}

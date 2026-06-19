@@ -1,12 +1,13 @@
-﻿// Sristi Farm Verification — Service Worker
+// Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v13';
+const CACHE = 'sristi-fv-v16';
 
 const SHELL = [
   './',
   './index.html',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
@@ -29,16 +30,18 @@ self.addEventListener('activate', e => {
 });
 
 // Fetch strategy:
-//   - Firebase RTDB / Cloudinary → network only (live data, never cache)
+//   - Firebase RTDB / Auth / Cloudinary → network only (live data, never cache)
 //   - Everything else → cache-first, update cache in background (stale-while-revalidate)
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
 
-  // Never intercept live-data endpoints
+  // Never intercept live-data or auth endpoints
   if (url.hostname.endsWith('firebasedatabase.app') ||
       url.hostname.endsWith('firebaseio.com') ||
+      url.hostname.endsWith('googleapis.com') ||   // Firebase Auth token exchange
+      url.hostname.endsWith('firebaseapp.com') ||  // Auth redirect domain
       url.hostname.endsWith('cloudinary.com')) {
     return; // let browser handle normally
   }

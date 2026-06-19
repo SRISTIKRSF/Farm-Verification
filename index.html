@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Farm Verify">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Sristi Haat Tracker · v13</title>
+<title>Sristi Haat Tracker · v16</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -403,9 +403,11 @@ tbody tr:last-child td{border-bottom:none}
 .field label{display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
 .field label .req{color:var(--orange)}
 .field input,.field select,.field textarea{
-  width:100%;padding:9px 11px;border:1px solid var(--line-strong);border-radius:7px;
+  width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:7px;
   background:var(--panel);transition:.13s;
+  font-size:13px;font-family:inherit;color:var(--ink);box-sizing:border-box;
 }
+.field input,.field select{min-height:38px}
 .field input:focus,.field select:focus,.field textarea:focus{
   outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,88,164,.1)}
 .field textarea{resize:vertical;min-height:64px;line-height:1.5}
@@ -564,6 +566,7 @@ body.is-offline .topbar{margin-top:34px}
 <!-- Firebase SDK (Realtime Database) — loaded before the app script -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 <div id="offlineBanner">Offline — showing cached data. Changes sync when back online.</div>
@@ -1767,7 +1770,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v16';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -1823,6 +1826,10 @@ async function loadDB(){
   if(fbConfigured() && typeof firebase!=='undefined'){
     try{
       FB.app=firebase.initializeApp(FB_CONFIG);
+      // Anonymous auth gates RTDB. SDK caches token in localStorage so
+      // offline visits after first load continue to work.
+      try{ await firebase.auth().signInAnonymously(); }
+      catch(e){ console.warn('[Auth] Anonymous sign-in failed (offline?):', e); }
       FB.db=firebase.database();
       FB.ready=true;
       const snap=await fbRef('').get();

@@ -1023,7 +1023,7 @@ function goto(i){
 $('#prevBtn').onclick = () => goto(cur-1);
 $('#nextBtn').onclick = () => { cur === sections().length-1 ? submit() : goto(cur+1); };
 
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
+function toast(m,type){const t=$('#toast');t.textContent=m;t.classList.toggle('err',type==='error');t.classList.add('show');setTimeout(()=>{t.classList.remove('show','err');},2000);}
 
 function submit(){
   /* validation: required fields */
@@ -1294,7 +1294,7 @@ let GENERAL_COMMENTS = '';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
+function toast(m,type){const t=$('#toast');t.textContent=m;t.classList.toggle('err',type==='error');t.classList.add('show');setTimeout(()=>{t.classList.remove('show','err');},2000);}
 
 function fmtFarmerClaim(q, c){
   if(!c) return '<span style="color:var(--ink-faint);font-style:italic">No claim from farmer</span>';
@@ -3284,7 +3284,7 @@ async function migrateLegacyData(){
 }
 
 /* background pumps */
-setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); }, 30000);
+setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); }, 30000 + Math.floor(Math.random()*10000));
 window.addEventListener('online', ()=>{ setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); }, 1500); });
 setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); updatePhotoBadge(); }, 5000);
 
@@ -3386,7 +3386,7 @@ function timeAgo(ts){
 /* ============ HELPERS ============ */
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=p=>p+Date.now().toString(36).slice(-5)+Math.floor(Math.random()*900+100);
 const monthLabel=m=>{const[y,mo]=m.split('-');return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
 const fcById=id=>DB.fcs.find(f=>f.id===id)||(DB.fieldCoordinators||[]).find(f=>f.id===id);
@@ -5671,6 +5671,7 @@ function exportHaatCSV(rows){
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
   }));
   download('haat-farmers.csv',toCSV(data));
+  toast('Downloaded: haat-farmers.csv');
 }
 /* ============ VIEW: VERIFICATION QUEUE ============
    Three tabs:
@@ -6008,11 +6009,15 @@ function viewVerification(){
     });
     bodyEl.querySelectorAll('[data-act="done"]').forEach(b => b.onclick = async e => {
       e.stopPropagation();
-      await updatePlanStatus(b.dataset.plan, 'completed');
+      b.disabled = true;
+      try { await updatePlanStatus(b.dataset.plan, 'completed'); } finally { b.disabled = false; }
     });
     bodyEl.querySelectorAll('[data-act="cancel"]').forEach(b => b.onclick = async e => {
       e.stopPropagation();
-      if(confirm('Cancel this planned visit?')) await updatePlanStatus(b.dataset.plan, 'cancelled');
+      if(confirm('Cancel this planned visit?')){
+        b.disabled = true;
+        try { await updatePlanStatus(b.dataset.plan, 'cancelled'); } finally { b.disabled = false; }
+      }
     });
     const nb = bodyEl.querySelector('#vqNewPlan');
     if(nb) nb.onclick = () => openCreatePlanModal();
@@ -8735,6 +8740,8 @@ function openBulkAssignModal(){
   $('#baGo').onclick=async()=>{
     const t=$('#baTaluka').value, fcId=$('#baFc').value;
     if(!fcId){toast('Pick an FC');return;}
+    const _cnt=byTaluka[t]||0, _fcN=(fcById(fcId)||{}).name||fcId;
+    if(!confirm(`Assign ${_cnt} farmer${_cnt===1?'':'s'} in "${t}" to ${_fcN}?`)) return;
     let n=0;
     // v9 audit-fix #5 — record bulk-assign actor on each farmer touched.
     const aB = actor();
@@ -8878,12 +8885,15 @@ function openFarmerModal(program,id){
   $('#saveFarmer').onclick=async()=>{
     const name=$('#ffName').value.trim();
     if(!name){toast('Farmer name is required');return;}
+    const _phone=$('#ffPhone').value.trim();
+    if(_phone && !/^\d{10}$/.test(_phone.replace(/\D/g,''))){ toast('Phone must be a 10-digit mobile number','error'); return; }
+    const _land=+$('#ffLand').value||0;
     const crops=[...$('#ffCrops').querySelectorAll('input:checked')].map(c=>c.value);
     const base={
-      name, phone:$('#ffPhone').value.trim(),
+      name, phone:_phone,
       village:$('#ffVillage').value.trim(), taluka:$('#ffTaluka').value.trim(),
       state:$('#ffState').value, district:$('#ffDistrict').value,
-      landAcres:+$('#ffLand').value||0, fcId:$('#ffFc').value, crops,
+      landAcres:_land, fcId:$('#ffFc').value, crops,
     };
     // Haat extras — farm description + per-practice claims
     let haatExtras=null;
@@ -9157,8 +9167,8 @@ function openFieldCoordinatorModal(id){
 }
 async function deleteFieldCoordinator(id){
   const fc=(DB.fieldCoordinators||[]).find(x=>x.id===id); if(!fc) return;
-  if(!confirm(`Delete Field Coordinator "${fc.name}"?`)) return;
-  DB.fieldCoordinators = DB.fieldCoordinators.filter(x=>x.id!==id);
+  if(!confirm(`Delete Field Coordinator "${fc.name}"?\n\nThey will be hidden but data is preserved.`)) return;
+  fc.deleted = true; fc.deletedAt = new Date().toISOString();
   logActivity('edit',`Field Coordinator deleted — <b>${esc(fc.name)}</b>`);
   await saveDB(); render();
   toast('Field Coordinator deleted');
@@ -10356,6 +10366,7 @@ function openIncomeAddModal(){
     const haatDate = $('#ivDate').value;
     const amount = +$('#ivAmt').value || 0;
     if(!farmerId || !haatName || !haatDate){ toast('Farmer, haat, and date are required'); return; }
+    if(!amount || amount <= 0){ toast('Amount must be greater than zero','error'); return; }
     // v9 process-fix #50 — warn if recording at a haat the farmer isn't assigned to.
     const _frmCheck = (DB.haatFarmers||[]).find(x => x.id === farmerId);
     if(_frmCheck && _frmCheck.haat && _frmCheck.haat !== haatName){

@@ -7420,6 +7420,9 @@ function renderV5EnrollmentSummary(f){
     });
     h += '</tbody></table></div>';
   }
+  if(!Array.isArray(f.cropHistory)||!f.cropHistory.length){
+    h+='<div style="font-size:12px;color:var(--ink-soft);padding:4px 0 8px">No crop history updates recorded yet.</div>';
+  }
   if(Array.isArray(f.cropHistory) && f.cropHistory.length){
     /* Inline crops-history card — shows each snapshot as a DIFF (what changed)
        against the previous snapshot, not the full crop list. The very first
@@ -11009,6 +11012,8 @@ function closeEnrollmentForm(){
   const host=$('#enrollHost');
   if(host){host.classList.remove('show');}
   document.body.style.overflow='';
+  const fr=$('#enrollFrame');
+  if(fr) fr.src='about:blank';
 }
 
 /* receive the farmer's submitted enrollment from the embedded form */
@@ -11752,6 +11757,11 @@ function openVerificationForm(farmerId){
   document.body.style.overflow='hidden';
 }
 function closeVerificationForm(){
+  // Release lock so other FCs aren't blocked after X-close (no submit).
+  if(_verifyTargetId){
+    const _lkF=DB.haatFarmers.find(x=>x.id===_verifyTargetId);
+    if(_lkF&&_lkF.verificationLock){delete _lkF.verificationLock;saveDB(true);}
+  }
   const host=$('#verifyHost');
   if(host) host.classList.remove('show');
   document.body.style.overflow='';

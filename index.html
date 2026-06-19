@@ -10015,7 +10015,7 @@ function viewHaats(){
     if(!confirm(`Delete "${name}"?${ct?'\n\n'+ct+' farmer(s) will become unassigned.':''}`)) return;
     DB.haats = DB.haats.filter(x => normHaat(x).name !== name);
     DB.haatFarmers.forEach(f => { if(f.haat === name) f.haat = ''; });
-    saveDB(); render();
+    saveDB().catch(()=>{}); render();
   });
   $('#haatAdd').onclick = () => openHaatEditModal(null);
 }

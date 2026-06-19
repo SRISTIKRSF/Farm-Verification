@@ -1838,6 +1838,7 @@ async function loadDB(){
         await pushFullDB();        // first ever run — seed cloud
       }
       attachLiveListener();
+      subscribeUsers();
       // v10 — snapshot stores JSON strings, not object references (see
       // snapAll/snapCol next to saveDB). With references, in-place edits
       // mutated the snapshot too and saveDB's diff never saw any change.
@@ -3445,12 +3446,9 @@ function openSwitchUserModal(){
     if(typeof openLoginModal === 'function') openLoginModal();
     return;
   }
-  // The 3 senior FCs — three equal boxes in a row.
-  const fcUsers = [
-    {id:'FC001', name:'Maheshbhai', color:'#16a34a', accent:'#dcfce7'},
-    {id:'FC002', name:'Ayush',      color:'#d97706', accent:'#fef3c7'},
-    {id:'FC003', name:'Harsh',      color:'#3b82f6', accent:'#dbeafe'},
-  ];
+  // Dynamic FC list from RTDB user cache (replaces hardcoded array)
+  const FC_SW_COLORS = ['#16a34a','#d97706','#3b82f6','#8b5cf6','#dc2626','#06b6d4'];
+  const fcUsers = getUsersList().filter(function(u){ return u.role === 'fc'; });
   const curR = SESSION.role, curId = SESSION.userId;
   const adminActive = curR === 'admin';
 
@@ -3508,16 +3506,17 @@ function openSwitchUserModal(){
     <div class="login-grid">
   `;
 
-  fcUsers.forEach(u => {
-    const fc = DB.fcs.find(x => x.id === u.id) || u;
-    const haatCount = DB.haatFarmers.filter(f => f.fcId === u.id).length;
-    const convCount = DB.convFarmers.filter(f => f.fcId === u.id).length;
-    const active = curR === 'fc' && curId === u.id;
+  fcUsers.forEach(function(u, i) {
+    const fcId = u.fcCode || u.id;
+    const haatCount = DB.haatFarmers.filter(f => f.fcId === fcId).length;
+    const convCount = DB.convFarmers.filter(f => f.fcId === fcId).length;
+    const active = curR === 'fc' && curId === fcId;
+    const fcColor = FC_SW_COLORS[i % FC_SW_COLORS.length];
     body += `
-      <button data-uchoice="fc|${esc(u.id)}" class="login-card ${active?'active':''}">
-        <span class="av" style="background:${u.color}">${esc(fc.name.charAt(0).toUpperCase())}</span>
+      <button data-uchoice="fc|${esc(fcId)}" class="login-card ${active?'active':''}">
+        <span class="av" style="background:${fcColor}">${esc(u.name.charAt(0).toUpperCase())}</span>
         <div>
-          <div class="nm">${esc(fc.name)}</div>
+          <div class="nm">${esc(u.name)}</div>
           <div class="ro">Field Coordinator</div>
         </div>
         <div class="stats">
@@ -3539,10 +3538,13 @@ function openSwitchUserModal(){
 
   document.querySelectorAll('[data-uchoice]').forEach(b => b.onclick = () => {
     const [role, id] = b.dataset.uchoice.split('|');
-    const fc = id ? DB.fcs.find(x => x.id === id) : null;
-    SESSION = role === 'admin'
-      ? {role:'admin', userId:'', userName:'Admin'}
-      : {role:'fc', userId:id, userName: (fc && fc.name) || 'FC'};
+    if (role === 'admin') {
+      const adminUser = getUsersList().find(u => u.role === 'admin');
+      SESSION = {role:'admin', userId:'', userName: (adminUser && adminUser.name) || 'Admin'};
+    } else {
+      const fcUser = getUsersList().find(u => (u.fcCode || u.id) === id);
+      SESSION = {role:'fc', userId:id, userName: (fcUser && fcUser.name) || 'FC'};
+    }
     saveSession(SESSION);
     closeModal();
     paintUserPill();
@@ -9366,7 +9368,7 @@ function viewSettings(){
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
       <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Facilitators</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
-      <div class="tab ${cur==='roles'?'on':''}" data-st="roles">🔐 Roles</div>
+      <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
     </div>`;
   }
   if(FILTERS.settings.tab==='scoring'){
@@ -9678,28 +9680,49 @@ function viewSettings(){
     return;
   }
   if(STab==='roles'){
-    const currentRole = localStorage.getItem('sristi_role')||'admin';
-    let h=tabBar();
-    h+=`<div class="card" style="padding:18px 20px;max-width:680px">
-      <div class="ct" style="font-size:14px;font-weight:700">User role (this device)</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">Pick the role you're operating under. This is a starting point for a real roles system — currently it only affects which dashboard tiles get highlighted. Server-side enforcement comes when Firebase auth is added.</div>
-      <div class="status-picker">
-        ${[
-          {v:'admin',label:'🛡️ Admin',desc:'Full access. Add haats, FCs, change practices, override decisions.'},
-          {v:'manager',label:'📊 Manager',desc:'Reviews verifications, makes onboarding decisions, plans visits.'},
-          {v:'fc',label:'🚜 Field Coordinator',desc:'Runs verification visits, logs observations, plans own field visits.'},
-          {v:'readonly',label:'👀 Read-only',desc:'Can view everything but cannot save changes.'},
-        ].map(o=>`<button class="status-opt ${currentRole===o.v?'on':''}" data-role="${o.v}">
-          <div class="so-label">${o.label}</div><div class="so-desc">${o.desc}</div></button>`).join('')}
+    const uList = getUsersList();
+    const canEdit = isAdminUser();
+    const isConnected = navigator.onLine && FB && FB.ready;
+    const FC_UC = ['#16a34a','#d97706','#3b82f6','#8b5cf6','#dc2626','#06b6d4'];
+    let h = tabBar();
+    h += '<div style="max-width:700px">';
+    h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">App Users</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Login accounts, passwords &amp; roles</div>
       </div>
+      ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add user</button>' : ''}
     </div>`;
-    v.innerHTML=h;
-    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    v.querySelectorAll('[data-role]').forEach(b=>b.onclick=()=>{
-      localStorage.setItem('sristi_role',b.dataset.role);
-      toast('Role set: '+b.dataset.role);
-      render();
-    });
+    if (!uList.length) {
+      h += `<div class="card" style="padding:24px;text-align:center;color:var(--ink-faint)">${isConnected ? 'No users found. Add the first user above.' : 'Offline — connect to load user list.'}</div>`;
+    } else {
+      h += '<div class="card" style="padding:0;overflow:hidden">';
+      uList.forEach(function(u, i) {
+        const isMe = SESSION && u.id === (SESSION.userId || (SESSION.role === 'admin' && u.role === 'admin' ? u.id : null));
+        const aColor = u.role === 'admin' ? 'var(--accent)' : FC_UC[i % FC_UC.length];
+        h += `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;${i?'border-top:1px solid var(--line)':''}">
+          <div style="width:36px;height:36px;border-radius:50%;background:${aColor};color:#fff;display:grid;place-items:center;font-size:15px;font-weight:800;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:600">${esc(u.name)}</div>
+            <div style="font-size:11.5px;color:var(--ink-faint)">@${esc(u.id)}${u.fcCode?' &middot; '+esc(u.fcCode):''}</div>
+          </div>
+          <span class="tag ${u.role==='admin'?'blue':'green'}" style="font-size:10.5px;flex-shrink:0">${u.role==='admin'?'Admin':'FC'}</span>
+          ${canEdit ? `
+            <button class="btn btn-ghost btn-sm" data-uedit="${esc(u.id)}" style="padding:4px 10px;flex-shrink:0">Edit</button>
+            ${SESSION && u.id !== SESSION.userId ? `<button class="btn btn-ghost btn-sm" data-udel="${esc(u.id)}" style="padding:4px 10px;color:var(--red);flex-shrink:0">Delete</button>` : ''}
+          ` : ''}
+        </div>`;
+      });
+      h += '</div>';
+    }
+    if (!isConnected) h += '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:10px;padding:8px 12px;background:var(--yellow-bg);border:1px solid var(--yellow-line);border-radius:7px">Offline — user changes require an internet connection.</div>';
+    h += '</div>';
+    v.innerHTML = h;
+    v.querySelectorAll('.tab').forEach(t => t.onclick = () => { FILTERS.settings.tab = t.dataset.st; render(); });
+    const addBtn = $('#uAddBtn');
+    if (addBtn) addBtn.onclick = () => openUserModal();
+    v.querySelectorAll('[data-uedit]').forEach(b => b.onclick = () => openUserModal(b.dataset.uedit));
+    v.querySelectorAll('[data-udel]').forEach(b => b.onclick = () => confirmDeleteUser(b.dataset.udel));
     return;
   }
   // Safety fallback: should never reach here (scoring/haats/facs/roles tabs
@@ -12403,6 +12426,180 @@ const SRISTI_CREDS = [
   { id: 'harsh',      password: 'sristi@2026', role: 'fc',    userId: 'FC003', userName: 'Harsh' },
 ];
 
+// === USER MANAGEMENT (v11) =============================================
+// Users are stored in RTDB at config/users/{uid}, with SHA-256 + random
+// salt password hashing (crypto.subtle, no external deps). Admin can
+// add / edit / delete users from Settings → Users. SRISTI_CREDS stays as
+// a bootstrap fallback for cold-start and offline scenarios.
+const USERS_CACHE_KEY = 'sristi_users_v1';
+let USERS_LIST = null; // populated from RTDB; null = not loaded yet
+
+function loadUsersCache() {
+  try { return JSON.parse(localStorage.getItem(USERS_CACHE_KEY) || 'null'); } catch(e) { return null; }
+}
+function saveUsersCache(u) {
+  try { localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(u)); } catch(e) {}
+}
+function getUsersList() {
+  return USERS_LIST || loadUsersCache() || [];
+}
+
+function generateSalt() {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  return Array.from(a).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function hashPassword(salt, password) {
+  const data = new TextEncoder().encode(salt + ':' + password);
+  const buf  = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function verifyCredentials(id, password) {
+  const users = getUsersList();
+  const user  = users.find(u => u.id === id && u.active !== false);
+  if (!user) return null;
+  if (user.salt && user.passwordHash) {
+    const hash = await hashPassword(user.salt, password);
+    return hash === user.passwordHash ? user : null;
+  }
+  // Legacy plain-text (pre-migration record)
+  if (user.password) return user.password === password ? user : null;
+  return null;
+}
+
+function subscribeUsers() {
+  if (!FB || !FB.ready) return;
+  fbRef('config/users').on('value', snap => {
+    if (!snap.exists()) { migrateDefaultUsers(); return; }
+    USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
+    saveUsersCache(USERS_LIST);
+  }, () => {});
+}
+
+async function migrateDefaultUsers() {
+  // One-time seed: write SRISTI_CREDS into RTDB with hashed passwords.
+  const updates = {};
+  for (const c of SRISTI_CREDS) {
+    const salt = generateSalt();
+    const hash = await hashPassword(salt, c.password);
+    updates['u_' + c.id] = {
+      id: c.id, name: c.userName, role: c.role,
+      fcCode: c.userId || '', salt, passwordHash: hash,
+      active: true, createdAt: Date.now(), migratedFrom: 'defaults',
+    };
+  }
+  try {
+    await fbRef('config/users').set(updates);
+    USERS_LIST = Object.values(updates);
+    saveUsersCache(USERS_LIST);
+    toast('User accounts created. Default password: sristi@2026 — change in Settings \u2192 Users');
+  } catch(e) { console.warn('[Users] migration failed:', e); }
+}
+
+function openUserModal(userId) {
+  const users   = getUsersList();
+  const editing = userId ? users.find(u => u.id === userId) : null;
+  const isNew   = !editing;
+  const body = `
+    <div style="display:flex;flex-direction:column;gap:13px;padding:4px 0">
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Display Name *</label>
+        <input id="umName" value="${editing ? esc(editing.name) : ''}" placeholder="e.g. Maheshbhai Patel"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Username (Login ID) *</label>
+        <input id="umId" value="${editing ? esc(editing.id) : ''}" placeholder="e.g. maheshbhai"
+          ${editing ? 'readonly' : ''}
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box;${editing?'background:var(--panel-2);color:var(--ink-soft)':''}">
+        ${isNew ? '<div style="font-size:11px;color:var(--ink-faint);margin-top:3px">Lowercase letters/numbers only, 2\u201320 chars. Cannot change later.</div>' : ''}
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">${isNew ? 'Password *' : 'New Password <span style=\"font-weight:400;color:var(--ink-faint)\">(blank = keep current)</span>'}</label>
+        <input id="umPw" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Role *</label>
+        <select id="umRole" style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;background:#fff">
+          <option value="admin" ${editing && editing.role==='admin' ? 'selected' : ''}>Admin \u2014 full access</option>
+          <option value="fc"    ${!editing || editing.role==='fc'    ? 'selected' : ''}>Field Coordinator</option>
+        </select>
+      </div>
+      <div id="umFcRow" style="${(!editing || editing.role==='fc') ? '' : 'display:none'}">
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">FC Code <span style="font-weight:400;color:var(--ink-faint)">(e.g. FC004)</span></label>
+        <input id="umFcCode" value="${editing ? esc(editing.fcCode||'') : ''}" placeholder="FC001"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div id="umErr"></div>
+    </div>`;
+  modalShell((isNew ? 'Add' : 'Edit') + ' User', body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="umSave">${isNew ? 'Create user' : 'Save changes'}</button>`);
+  const roleEl = $('#umRole'), fcRow = $('#umFcRow');
+  roleEl.onchange = () => { fcRow.style.display = roleEl.value === 'fc' ? '' : 'none'; };
+  $('#umSave').onclick = async () => {
+    const name   = ($('#umName').value||'').trim();
+    const uid    = editing ? editing.id : ($('#umId').value||'').trim().toLowerCase();
+    const pw     = ($('#umPw').value||'');
+    const role   = $('#umRole').value;
+    const fcCode = ($('#umFcCode').value||'').trim().toUpperCase();
+    const errEl  = $('#umErr');
+    const showErr = msg => { errEl.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:4px">${msg}</div>`; };
+    if (!name) return showErr('Display name is required.');
+    if (!uid || !/^[a-z0-9_]{2,20}$/.test(uid)) return showErr('Username: 2\u201320 lowercase letters or numbers only.');
+    if (isNew && !pw) return showErr('Password is required for new users.');
+    if (pw && pw.length < 6) return showErr('Password must be at least 6 characters.');
+    if (isNew && users.some(u => u.id === uid)) return showErr('Username already taken.');
+    const saveBtn = $('#umSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+    try {
+      const rtdbKey = 'config/users/u_' + uid;
+      const existSnap = await fbRef(rtdbKey).get();
+      const existing  = existSnap.exists() ? existSnap.val() : null;
+      const record = {
+        id: uid, name, role, fcCode: role === 'fc' ? fcCode : '',
+        active: true,
+        createdAt: (existing && existing.createdAt) || Date.now(),
+        updatedAt: Date.now(),
+      };
+      if (pw) {
+        record.salt = generateSalt();
+        record.passwordHash = await hashPassword(record.salt, pw);
+      } else if (existing) {
+        record.salt = existing.salt;
+        record.passwordHash = existing.passwordHash;
+      }
+      await fbRef(rtdbKey).set(record);
+      closeModal();
+      toast((isNew ? 'User created' : 'User updated') + ': ' + name);
+    } catch(e) {
+      saveBtn.disabled = false; saveBtn.textContent = isNew ? 'Create user' : 'Save changes';
+      showErr('Save failed: ' + (e && e.message ? e.message : 'Unknown error'));
+    }
+  };
+}
+
+async function confirmDeleteUser(userId) {
+  const users = getUsersList();
+  const user  = users.find(u => u.id === userId);
+  if (!user) return;
+  const admins = users.filter(u => u.role === 'admin' && u.active !== false);
+  if (user.role === 'admin' && admins.length <= 1) {
+    toast('Cannot delete the only admin account.', 'error'); return;
+  }
+  if (!confirm('Delete user "' + user.name + '" (@' + userId + ')?\n\nThis cannot be undone.')) return;
+  try {
+    await fbRef('config/users/u_' + userId).remove();
+    toast('User deleted.');
+  } catch(e) {
+    toast('Delete failed: ' + (e && e.message ? e.message : 'Error'), 'error');
+  }
+}
+// === END USER MANAGEMENT ===============================================
+
 function openLoginModal(){
   // Inject one-shot styles for the login modal fields (matches public-form styling)
   if(!document.getElementById('loginModalStyles')){
@@ -12460,7 +12657,7 @@ function openLoginModal(){
   modalShell('Sristi Login', body,
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>');
 
-  const attempt = () => {
+  const attempt = async () => {
     const idVal = ($('#lmId').value || '').trim().toLowerCase();
     const pwVal = $('#lmPw').value || '';
     const errEl = $('#lmErr');
@@ -12468,20 +12665,29 @@ function openLoginModal(){
       errEl.innerHTML = '<div class="lm-err">કૃપા કરી ID અને password બંને નાખો. Please enter both ID and password.</div>';
       return;
     }
-    const cred = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
-    if(!cred){
+    const submitBtn = $('#lmSubmit');
+    submitBtn.disabled = true; submitBtn.textContent = 'Signing in...';
+    let authUser = null;
+    try { authUser = await verifyCredentials(idVal, pwVal); } catch(e) {}
+    if (!authUser) {
+      const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
+      if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };
+    }
+    if(!authUser){
+      submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';
+
       errEl.innerHTML = '<div class="lm-err">⚠️ ખોટું ID કે Password. Invalid ID or password. કૃપા કરી ફરી પ્રયત્ન કરો.</div>';
       $('#lmPw').value = '';
       $('#lmPw').focus();
       return;
     }
     // Success — set session and flip to admin mode.
-    SESSION = { role: cred.role, userId: cred.userId, userName: cred.userName };
+    SESSION = { role: authUser.role, userId: authUser.fcCode || '', userName: authUser.name };
     saveSession(SESSION);
     // v9 process-fix M2 — multi-device warning. Track active sessions in
     // Firebase under activeSessions/{userId}. On sign-in, check if another
     // device's session is still fresh (< 8 hours) and warn the new login.
-    const userKey = (cred.userId || ('role-'+cred.role)).replace(/[.#$/[\]]/g,'_');
+    const userKey = ((authUser.fcCode||'') || ('role-'+authUser.role)).replace(/[.#$/[\]]/g,'_');
     if(FB && FB.ready){
       fbRef('activeSessions/'+userKey).get().then(snap => {
         const existing = snap.exists() ? snap.val() : null;
@@ -12489,7 +12695,7 @@ function openLoginModal(){
         if(existing && existing.at && (now - existing.at) < 8*60*60*1000 && existing.device !== navigator.userAgent){
           const minsAgo = Math.floor((now - existing.at)/60000);
           const ok = confirm(
-            cred.userName + ' is already signed in on another device (' + (minsAgo<60?minsAgo+' min ago':Math.floor(minsAgo/60)+' hr ago') + ').\n\n' +
+            authUser.name + ' is already signed in on another device (' + (minsAgo<60?minsAgo+' min ago':Math.floor(minsAgo/60)+' hr ago') + ').\n\n' +
             'Continuing here will leave both sessions active — risk of overwriting each other\'s changes.\n\nContinue anyway?'
           );
           if(!ok){
@@ -12499,8 +12705,8 @@ function openLoginModal(){
           }
         }
         fbRef('activeSessions/'+userKey).set({
-          userId: cred.userId,
-          userName: cred.userName,
+          userId: authUser.fcCode || '',
+          userName: authUser.name,
           at: now,
           device: navigator.userAgent.slice(0,80),
         });
@@ -12509,7 +12715,7 @@ function openLoginModal(){
     closeModal();
     enterAdminMode();
     paintUserPill();
-    toast('Signed in as ' + cred.userName);
+    toast('Signed in as ' + authUser.name);
   };
 
   $('#lmSubmit').onclick = attempt;

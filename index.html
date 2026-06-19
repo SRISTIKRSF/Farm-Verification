@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Farm Verify">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Sristi Haat Tracker · v16</title>
+<title>Sristi Haat Tracker · v17</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1770,7 +1770,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v16';
+const APP_VERSION = 'v17';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5893,7 +5893,7 @@ function viewVerification(){
     });
     if(sweptCount > 0){
       logActivity('alert', `Auto-cancelled <b>${sweptCount}</b> stale plan${sweptCount===1?'':'s'} (30+ days past due)`);
-      saveDB();   // fire-and-forget; render continues with swept state
+      saveDB().catch(()=>{}); // fire-and-forget; cacheLocal() already persisted; sweep re-runs each view
     }
     const plans = (DB.verificationPlans||[]).filter(p => !p.status || p.status === 'planned');
     plans.sort((a,b) => String(a.plannedDate||'').localeCompare(String(b.plannedDate||'')));
@@ -10983,7 +10983,9 @@ function buildEnrollmentInject(){
         /* Full-form payload on submit */
         const form = document.getElementById('form');
         if(form){
+          let _enSent=false;
           const sendFull = ()=>{
+            if(_enSent) return; _enSent=true;
             try{
               const fd=new FormData(form), data={};
               fd.forEach((v,k)=>{ if(data[k]==null) data[k]=v; else if(Array.isArray(data[k])) data[k].push(v); else data[k]=[data[k],v]; });
@@ -11065,7 +11067,7 @@ window.addEventListener('message',async ev=>{
       const photos = {};
       Object.keys(rawPhotos).forEach(qid => {
         const arr = Array.isArray(rawPhotos[qid]) ? rawPhotos[qid] : [];
-        photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p) })).filter(p => p.data);
+        photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder():'') })).filter(p => p.data);
       });
       const farmer = {
         id: f.id, name: f.name,
@@ -11084,7 +11086,7 @@ window.addEventListener('message',async ev=>{
       const prevPhotos = {};
       Object.keys(prevPhotosRaw).forEach(qid => {
         const arr = Array.isArray(prevPhotosRaw[qid]) ? prevPhotosRaw[qid] : [];
-        prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p) })).filter(p => p.data);
+        prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder():'') })).filter(p => p.data);
       });
       const prevVerif = prevV ? {
         submittedAt: f.verificationFormSubmittedAt || '',
@@ -11715,7 +11717,9 @@ function openVerificationForm(farmerId){
         /* 10) Item #9 — On form submit, send a FULL form-data message */
         const form = document.getElementById('form');
         if(form){
+          let _vfSent = false;
           const sendFull = () => {
+            if(_vfSent) return; _vfSent = true;
             try {
               const fd = new FormData(form);
               const data = {};
@@ -11772,7 +11776,7 @@ function openVerificationForm(farmerId){
   if(window._verifyBlobUrl){ URL.revokeObjectURL(window._verifyBlobUrl); }
   const blob = new Blob([html], {type:'text/html;charset=utf-8'});
   window._verifyBlobUrl = URL.createObjectURL(blob);
-  $('#verifyFrame').src = window._verifyBlobUrl;
+  const vf=$('#verifyFrame'); if(vf) vf.src=window._verifyBlobUrl;
   host.classList.add('show');
   document.body.style.overflow='hidden';
 }

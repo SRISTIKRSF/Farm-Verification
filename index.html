@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3b82f6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Farm Verify">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Sristi Haat Tracker · v11</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -547,12 +554,19 @@ tbody tr:last-child td{border-bottom:none}
 .bt-yellow {--bt-color:var(--yellow)}
 .bt-leaf   {--bt-color:var(--leaf)}
 .bt-green  {--bt-color:var(--green)}
+/* ── Offline banner ──────────────────────────────────────────────────────── */
+#offlineBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
+  padding:7px 16px;text-align:center;font-size:12.5px;font-weight:600;
+  background:#f59e0b;color:#fff;letter-spacing:.3px}
+body.is-offline #offlineBanner{display:block}
+body.is-offline .topbar{margin-top:34px}
 </style>
 <!-- Firebase SDK (Realtime Database) — loaded before the app script -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
+<div id="offlineBanner">Offline — showing cached data. Changes sync when back online.</div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
@@ -1116,6 +1130,25 @@ setTimeout(()=>{
   }
 }, 1500);
 <\/script>
+
+<script>
+// ── PWA: Service Worker + online/offline indicator ──────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js').catch(function(e) {
+      console.warn('[SW] registration failed:', e);
+    });
+  });
+}
+(function() {
+  function syncOnline() {
+    document.body.classList.toggle('is-offline', !navigator.onLine);
+  }
+  window.addEventListener('online',  syncOnline);
+  window.addEventListener('offline', syncOnline);
+  syncOnline();
+})();
+</script>
 </body>
 </html>`;
 const VERIF_FORM_HTML = `<!DOCTYPE html>

@@ -1,0 +1,6 @@
+# Dev patch scripts (used to edit index.html, not part of the app)
+_*.py
+_*.js
+
+# Claude Code session files
+.claude/

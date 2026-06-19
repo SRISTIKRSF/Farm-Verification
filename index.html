@@ -1596,7 +1596,7 @@ function paintFarmer(){
   $('#fPhone').textContent = FARMER.phone || '—';
   $('#fAadhaar').textContent = FARMER.aadhaar || '—';
   $('#fSubmitted').textContent = FARMER.submittedAt ? new Date(FARMER.submittedAt).toLocaleDateString('en-GB') : '—';
-  if(FARMER.photoUrl) $('#avatar').innerHTML = '<img src="'+FARMER.photoUrl+'" alt="">';
+  if(FARMER.photoUrl) $('#avatar').innerHTML = '<img src="'+esc(FARMER.photoUrl)+'" alt="">';
   /* H2 — seasonal-cycle banner. Stands above the section list so the FC sees
      immediately that they're re-verifying an already-onboarded farmer and that
      the previous observation will appear next to each claim. */
@@ -2925,7 +2925,11 @@ async function cloudinaryUpload(dataUrl, folder){
   fd.append('file', dataUrl);
   fd.append('upload_preset', cfg.uploadPreset);
   if(folder) fd.append('folder', folder);
-  const res = await fetch('https://api.cloudinary.com/v1_1/'+encodeURIComponent(cfg.cloudName)+'/image/upload', {method:'POST', body: fd});
+  const _ctrl = new AbortController();
+  const _timer = setTimeout(() => _ctrl.abort(), 20000);
+  let res;
+  try { res = await fetch('https://api.cloudinary.com/v1_1/'+encodeURIComponent(cfg.cloudName)+'/image/upload', {method:'POST', body: fd, signal: _ctrl.signal}); }
+  finally { clearTimeout(_timer); }
   if(!res.ok){
     let msg=''; try{ const j=await res.json(); msg=(j.error&&j.error.message)||''; }catch(e){}
     throw new Error('Cloudinary '+res.status+(msg?' — '+msg:''));
@@ -9698,7 +9702,10 @@ function viewSettings(){
     } else {
       h += '<div class="card" style="padding:0;overflow:hidden">';
       uList.forEach(function(u, i) {
-        const isMe = SESSION && u.id === (SESSION.userId || (SESSION.role === 'admin' && u.role === 'admin' ? u.id : null));
+        const isMe = SESSION && (
+          (SESSION.role === 'fc'    && u.id === SESSION.userId) ||
+          (SESSION.role === 'admin' && u.role === 'admin' && u.id === (SESSION.userId || u.id))
+        );
         const aColor = u.role === 'admin' ? 'var(--accent)' : FC_UC[i % FC_UC.length];
         h += `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;${i?'border-top:1px solid var(--line)':''}">
           <div style="width:36px;height:36px;border-radius:50%;background:${aColor};color:#fff;display:grid;place-items:center;font-size:15px;font-weight:800;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</div>
@@ -12420,10 +12427,10 @@ function renderPublicLanding(){
 // the URL effectively has access; the password is a thin extra layer to keep
 // random visitors from poking around the admin UI).
 const SRISTI_CREDS = [
-  { id: 'admin',      password: 'sristi@2026', role: 'admin', userId: '',      userName: 'Admin' },
-  { id: 'maheshbhai', password: 'sristi@2026', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
-  { id: 'ayush',      password: 'sristi@2026', role: 'fc',    userId: 'FC002', userName: 'Ayush' },
-  { id: 'harsh',      password: 'sristi@2026', role: 'fc',    userId: 'FC003', userName: 'Harsh' },
+  { id: 'admin',      password: '', role: 'admin', userId: '',      userName: 'Admin' },
+  { id: 'maheshbhai', password: '', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
+  { id: 'ayush',      password: '', role: 'fc',    userId: 'FC002', userName: 'Ayush' },
+  { id: 'harsh',      password: '', role: 'fc',    userId: 'FC003', userName: 'Harsh' },
 ];
 
 // === USER MANAGEMENT (v11) =============================================
@@ -12475,7 +12482,7 @@ function subscribeUsers() {
     if (!snap.exists()) { migrateDefaultUsers(); return; }
     USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
     saveUsersCache(USERS_LIST);
-  }, () => {});
+  }, err => { console.warn('[Users] Firebase sync error:', err); });
 }
 
 async function migrateDefaultUsers() {
@@ -12586,6 +12593,9 @@ async function confirmDeleteUser(userId) {
   const users = getUsersList();
   const user  = users.find(u => u.id === userId);
   if (!user) return;
+  if (SESSION && user.id === SESSION.userId) {
+    toast('You cannot delete your own account.', 'error'); return;
+  }
   const admins = users.filter(u => u.role === 'admin' && u.active !== false);
   if (user.role === 'admin' && admins.length <= 1) {
     toast('Cannot delete the only admin account.', 'error'); return;
@@ -12668,7 +12678,7 @@ function openLoginModal(){
     const submitBtn = $('#lmSubmit');
     submitBtn.disabled = true; submitBtn.textContent = 'Signing in...';
     let authUser = null;
-    try { authUser = await verifyCredentials(idVal, pwVal); } catch(e) {}
+    try { authUser = await verifyCredentials(idVal, pwVal); } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
     if (!authUser) {
       const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
       if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };
@@ -12722,7 +12732,7 @@ function openLoginModal(){
   // Enter key on either field submits.
   ['lmId','lmPw'].forEach(id => {
     const el = $('#'+id);
-    if(el) el.addEventListener('keypress', e => { if(e.key === 'Enter'){ e.preventDefault(); attempt(); } });
+    if(el) el.addEventListener('keypress', e => { if(e.key === 'Enter'){ e.preventDefault(); if(!$('#lmSubmit').disabled) attempt(); } });
   });
 }
 

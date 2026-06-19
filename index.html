@@ -9057,7 +9057,7 @@ async function deleteFacilitator(id){
 /* ============ VIEW: FIELD COORDINATORS ============ */
 function viewFieldCoordinators(){
   const v=$('#view');
-  const fcs=DB.fieldCoordinators||[];
+  const fcs=(DB.fieldCoordinators||[]).filter(x=>!x.deleted);
   const today=todayISO();
   const cutoff90=new Date(); cutoff90.setDate(cutoff90.getDate()-90);
 
@@ -9128,7 +9128,7 @@ function viewFieldCoordinators(){
         <td class="num"><b>${r.visitsLast3M}</b></td>
         <td class="num">${r.plannedUpcoming||'<span style="color:var(--ink-faint)">—</span>'}</td>
         <td class="num">${r.visitsTotal}</td>
-        <td style="font-size:11.5px">${r.lastVisitAt?fmtDate(r.lastVisitAt):'<span style="color:var(--ink-faint)">—</span>'}</td>
+        <td style="font-size:11.5px">${r.lastVisitAt?fmtDate(r.lastVisitAt):'<span style="color:var(--ink-faint);font-size:11px">No visits yet</span>'}</td>
         <td>
           <button class="btn-icon" data-edit-ffc="${fc.id}" title="Rename" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);margin-right:3px">${svg(I.edit,2)}</button>
           <button class="btn-icon" data-del-ffc="${fc.id}" title="Delete" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--red)">${svg(I.trash,2)}</button>
@@ -9170,11 +9170,24 @@ function openFieldCoordinatorModal(id){
 }
 async function deleteFieldCoordinator(id){
   const fc=(DB.fieldCoordinators||[]).find(x=>x.id===id); if(!fc) return;
-  if(!confirm(`Delete Field Coordinator "${fc.name}"?\n\nThey will be hidden but data is preserved.`)) return;
-  fc.deleted = true; fc.deletedAt = new Date().toISOString();
-  logActivity('edit',`Field Coordinator deleted — <b>${esc(fc.name)}</b>`);
+  const convLinked=(DB.convFarmers||[]).filter(x=>x.fcId===id).length;
+  const planLinked=(DB.verificationPlans||[]).filter(p=>p.fcId===id&&(!p.status||p.status==='planned')).length;
+  let msg=`Remove team member "${fc.name}"?\n\nVisit history is preserved for the audit trail.`;
+  if(convLinked) msg+=`\n\n${convLinked} conversion farmer${convLinked===1?'':'s'} will become unassigned.`;
+  if(planLinked) msg+=`\n${planLinked} active plan${planLinked===1?'':'s'} will be auto-cancelled.`;
+  if(!confirm(msg)) return;
+  (DB.convFarmers||[]).forEach(x=>{ if(x.fcId===id){ x.fcId=''; if(x.stage==='assigned') x.stage='enrolled'; }});
+  (DB.verificationPlans||[]).forEach(p=>{
+    if(p.fcId===id&&(!p.status||p.status==='planned')){
+      p.status='cancelled';p.statusChangedAt=new Date().toISOString();p.statusChangedBy='auto: FC removed';
+    }
+  });
+  fc.deleted=true; fc.deletedAt=new Date().toISOString();
+  logActivity('edit',`Field Coordinator removed — <b>${esc(fc.name)}</b>`
+    +(convLinked?` · ${convLinked} farmer${convLinked===1?'':'s'} unassigned`:'')
+    +(planLinked?` · ${planLinked} plan${planLinked===1?'':'s'} auto-cancelled`:''));
   await saveDB(); render();
-  toast('Field Coordinator deleted');
+  toast('Team member removed');
 }
 
 /* ============ MODAL: v5 — SIDE-BY-SIDE FORM COMPARISON ============
@@ -13015,7 +13028,7 @@ function viewPublicThanks(){
         <span style="font-size:22px">💬</span>
         <span>WhatsApp પર ${esc(fcDisplayName)} ને Message કરો</span>
       </a>
-      <p style="font-size:12px;color:#929fb5;margin-top:4px">Or wait — they'll call you.</p>
+      <p style="font-size:12px;color:#929fb5;margin-top:4px">If you don't hear back within 7 days, use the WhatsApp button above to follow up.</p>
       <a href="#farmer" class="home-link" id="pfHome">← Home page પર પાછા જાઓ</a>
     </div>
   `;
@@ -13118,8 +13131,9 @@ function viewPendingEnrolments(){
       <div class="sb-sub">FC assigned, visited or reviewed</div>
     </button>
   </div>`;
-  h += `<div class="hint" style="margin-bottom:14px">
-    Applications submitted by farmers via the public landing page. They are <b>auto-received and added to the verification pipeline immediately</b> — no manual approval needed. Click any row to open the farmer drawer; click the tiles above to filter.
+  h += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+    <div class="hint" style="flex:1;margin-bottom:0">Applications submitted by farmers via the public landing page. They are <b>auto-received and added to the verification pipeline immediately</b> — no manual approval needed. Click any row to open the farmer drawer; click the tiles above to filter.</div>
+    <button class="btn btn-ghost btn-sm" onclick="viewPendingEnrolments()" style="flex-shrink:0">↻ Refresh</button>
   </div>`;
 
   if(!list.length){

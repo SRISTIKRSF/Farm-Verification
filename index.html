@@ -640,6 +640,10 @@ body.fc-mode #fc-bnav{display:flex}
   letter-spacing:.05em;padding:4px 14px 4px;background:var(--panel-2)}
 .fc-empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13px}
 .fc-lv{font-size:10px;color:var(--ink-soft);display:flex;align-items:center;gap:3px}
+.fc-btn-edit{font-size:11px;padding:4px 9px;border-radius:7px;border:0.5px solid var(--line);color:var(--ink-soft);background:var(--panel);cursor:pointer;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.fc-btn-edit svg{width:12px;height:12px}
+.vs-crop-chip{font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);color:var(--ink-soft);background:var(--panel);cursor:pointer;margin:0;line-height:1.3}
+.vs-crop-chip.on{border-color:var(--leaf);color:var(--leaf);background:var(--green-bg,#f0fdf4)}
 .fc-av svg{width:20px;height:20px}
 .fc-srch svg{width:16px;height:16px;flex-shrink:0;color:var(--ink-faint)}
 .fc-lc svg{width:11px;height:11px;vertical-align:-1px;flex-shrink:0}
@@ -1848,7 +1852,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18k';
+const APP_VERSION = 'v18l';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4377,6 +4381,20 @@ const CONV_SCORE_FRAMEWORK = {
 const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2'];
 // All B-section keys (used by the scorer to iterate without hard-coding).
 const CONV_SCORE_B_KEYS = ['B1','B2','B3','B4'];
+const GJ_VISIT_CROPS = [
+  'ઘઉં (Wheat)','ડાંગર (Rice)','બાજરો (Pearl millet)','જુવાર (Sorghum)','મકાઈ (Maize)','રાગી (Finger millet)',
+  'કપાસ (Cotton)','મગફળી (Groundnut)','શેરડી (Sugarcane)','એરંડા (Castor)','તમાકુ (Tobacco)',
+  'તલ (Sesame)','સરસો (Mustard)','સૂર્યમુખી (Sunflower)','સોયાબીન (Soybean)','અળસી (Linseed)',
+  'તુવેર (Pigeon pea)','ચણા (Chickpea)','મગ (Green gram)','અડદ (Black gram)','ચોળા (Cowpea)','વાલ (Field bean)','મઠ (Moth bean)',
+  'ભીંડા (Lady\'s finger)','ટામેટા (Tomato)','ડુંગળી (Onion)','બટેટા (Potato)','રીંગણ (Brinjal)','મરચા (Chilli)',
+  'કારેલા (Bitter gourd)','દૂધી (Bottle gourd)','તુરિયા (Ridge gourd)','ગલકા (Sponge gourd)','કાકડી (Cucumber)',
+  'કોળું (Pumpkin)','કોબી (Cabbage)','ફૂલકોબી (Cauliflower)','ગ્વાર (Cluster beans)','વટાણા (Peas)',
+  'પાલક (Spinach)','મેથી (Fenugreek)','ગાજર (Carrot)','મૂળા (Radish)','સૂરણ (Yam)','બીટ (Beetroot)',
+  'જીરું (Cumin)','ધાણા (Coriander)','વરિયાળી (Fennel)','અજમો (Ajwain)','હળદર (Turmeric)','આદુ (Ginger)','લસણ (Garlic)',
+  'કેરી (Mango)','કેળ (Banana)','પપૈયા (Papaya)','દાડમ (Pomegranate)','ચીકુ (Sapota)','લીંબુ (Lemon)',
+  'જામફળ (Guava)','આમળા (Amla)','ટેટી (Muskmelon)','તડબૂચ (Watermelon)','ખારેક (Date palm)','બોર (Indian jujube)','નારિયેળ (Coconut)',
+  'સરગવો (Drumstick)','ચારો (Fodder)',
+];
 
 const CONV_SCORE_STATUS = {
   adopted:    { label:'Adopted',      gu:'અપનાવ્યું',         cls:'green', range:'80–100' },
@@ -4686,6 +4704,10 @@ function openConvScoreModal(id){
     + '</div>'
     + '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Observation (optional)</label>'
     + '<textarea id="vsNotes" placeholder="ખેડૂતે શું શરૂ કર્યું, શું જોવા મળ્યું…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;min-height:48px;resize:vertical"></textarea>'
+    + '<div style="margin-top:10px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Crops grown on selected plot</label>'
+    + '<div id="vsCropWrap" style="display:flex;flex-wrap:wrap;gap:6px">'
+    + GJ_VISIT_CROPS.map(c=>`<button type="button" class="vs-crop-chip" data-crop="${c}">${c}</button>`).join('')
+    + '</div></div>'
     // Farm-visit photos — multiple, stored as base64 in the visit record
     + '<div style="margin-top:10px">'
     +   '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:5px">📷 Farm visit photos (optional)</label>'
@@ -4768,6 +4790,10 @@ function openConvScoreModal(id){
   }
   // Expose vsPhotos to the save handler via closure capture below.
   window._vsPhotosCapture = vsPhotos;
+  // Crop chip toggles
+  document.querySelectorAll('.vs-crop-chip').forEach(btn=>{
+    btn.onclick=()=>btn.classList.toggle('on');
+  });
   const modalEl = document.getElementById('modal');
   if(modalEl) modalEl.classList.add('wide');
 
@@ -4904,6 +4930,7 @@ function openConvScoreModal(id){
     const vfcName = vfcVal === '__other__' ? vfcOther : '';
     const vnext = (document.getElementById('vsNext') || {}).value || addMonthsISO(vdate, 3);
     const vnote = ((document.getElementById('vsNotes') || {}).value || '').trim();
+    const vcrops = [...document.querySelectorAll('.vs-crop-chip.on')].map(b=>b.dataset.crop);
     const vphotos = (window._vsPhotosCapture || []).slice();
     // v11 — compress + queue the visit photos; the visit keeps tiny {photoId/url} stubs.
     await extractPhotos(vphotos, {program:'conv', farmerId: f.id});
@@ -4927,6 +4954,7 @@ function openConvScoreModal(id){
       date: vdate, fc: vfc,
       fcName: vfcName,                     // free-text FC name when "Other" picked
       notes: vnote,
+      cropsGrown: vcrops.length ? vcrops : undefined,
       nextVisitBy: vnext,
       score: cs.total,
       status: cs.status,
@@ -5436,13 +5464,15 @@ function _fcConvCards(farmers,F){
       <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
       <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
       <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>${btn}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>
+      <button class="fc-btn-edit" data-eid="${esc(f.id)}">${svg(I.edit,2)} Edit</button>${btn}</div>
     </div>`;
   }).join(''):'<div class="fc-empty">No farmers found</div>'}
   ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcCMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
   const mb=document.getElementById('fcCMore');if(mb)mb.onclick=()=>{F.lim+=50;_fcConvCards(farmers,F);};
   el.querySelectorAll('.fc-btn-vi,.fc-btn-ov').forEach(b=>{b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);};});
-  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-vi,.fc-btn-ov'))return;openFarmerModal('conv',c.dataset.id);};});
+  el.querySelectorAll('.fc-btn-edit').forEach(b=>{b.onclick=e=>{e.stopPropagation();openFarmerModal('conv',b.dataset.eid);};});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-vi,.fc-btn-ov,.fc-btn-edit'))return;openFarmerModal('conv',c.dataset.id);};});
 }
 function viewFcConversion(){
   const v=$('#view');
@@ -9293,18 +9323,16 @@ function openFarmerModal(program,id){
     ${fld('District',sel('ffDistrict',distOpts,f.district),true)}
   </div>
   <div class="field-row">
-    ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)}
-    ${fld('Facilitator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId),true)}
+    ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
+    }${program==='haat'?fld('Facilitator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId),true):''}
   </div>`;
   if(program==='haat'){
     body+=`<div class="field-row">
       ${fld('Years doing organic',`<input type="number" id="ffYears" value="${f.yearsOrganic||''}">`)}
       ${fld('Certification',sel('ffCert',['GOPCA','PGS','None (Tribal exemption)','Registration pending'],f.certification))}
     </div>`;
-  }else{
-    body+=fld('Next visit due',sel('ffNext',DB.months.map(m=>[m,monthLabel(m)]),f.nextVisitDue||DB.months[DB.months.length-1]));
+    body+=fld('Crops grown',`<div class="checkgrid" id="ffCrops">${cropChecks}</div>`);
   }
-  body+=fld('Crops grown',`<div class="checkgrid" id="ffCrops">${cropChecks}</div>`);
   // Haat-only: farmer's self-reported description + per-practice claims (shown to FC during verification)
   if(program==='haat'){
     const claims=f.selfReportedClaims||{};
@@ -9344,12 +9372,12 @@ function openFarmerModal(program,id){
     const _phone=$('#ffPhone').value.trim();
     if(_phone && !/^\d{10}$/.test(_phone.replace(/\D/g,''))){ toast('Phone must be a 10-digit mobile number','error'); return; }
     const _land=+$('#ffLand').value||0;
-    const crops=[...$('#ffCrops').querySelectorAll('input:checked')].map(c=>c.value);
+    const crops=program==='haat'?[...$('#ffCrops').querySelectorAll('input:checked')].map(c=>c.value):(f.crops||[]);
     const base={
       name, phone:_phone,
       village:$('#ffVillage').value.trim(), taluka:$('#ffTaluka').value.trim(),
       state:$('#ffState').value, district:$('#ffDistrict').value,
-      landAcres:_land, fcId:$('#ffFc').value, crops,
+      landAcres:_land, fcId:program==='haat'?$('#ffFc').value:(f.fcId||''), crops,
     };
     // Haat extras — farm description + per-practice claims
     let haatExtras=null;

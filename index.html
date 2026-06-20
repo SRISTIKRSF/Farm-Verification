@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18t';
+const APP_VERSION = 'v18u';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13240,16 +13240,17 @@ function openLoginModal(){
       .login-modal-wrap .lm-submit:hover { background: #3550b5; }
       .login-modal-wrap .lm-submit:disabled { background: #929fb5; cursor: not-allowed; }
       @media (max-width:640px){
+        #overlay.show { z-index:210!important; }
         .modal {
           position:fixed!important; inset:0!important;
           width:100vw!important; max-width:100vw!important;
           height:100dvh!important; max-height:100dvh!important;
           border-radius:0!important; transform:none!important;
           display:flex!important; flex-direction:column!important;
-          overflow-x:hidden!important;
+          overflow-x:hidden!important; z-index:211!important;
         }
-        .modal-body { overflow-y:auto!important; overflow-x:hidden!important; }
-        .modal-foot { padding-bottom:max(12px,env(safe-area-inset-bottom))!important; }
+        .modal-body { flex:1!important; min-height:0!important; overflow-y:auto!important; overflow-x:hidden!important; -webkit-overflow-scrolling:touch; }
+        .modal-foot { flex-shrink:0!important; padding-bottom:max(12px,env(safe-area-inset-bottom))!important; }
       }
     `;
     document.head.appendChild(css);

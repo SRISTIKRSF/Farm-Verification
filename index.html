@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Farm Verify">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Sristi Haat Tracker · v18f</title>
+<title>Sristi Haat Tracker · v18i</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -562,6 +562,91 @@ tbody tr:last-child td{border-bottom:none}
   background:#f59e0b;color:#fff;letter-spacing:.3px}
 body.is-offline #offlineBanner{display:block}
 body.is-offline .topbar{margin-top:34px}
+/* ===== FC MOBILE UI ===== */
+body.fc-mode .sidebar{display:none}
+body.fc-mode .main{padding-bottom:68px}
+body.fc-mode .topbar{display:none}
+#fc-bnav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--panel);
+  border-top:1px solid var(--line);z-index:200;
+  padding:8px 0 max(12px,env(safe-area-inset-bottom,12px))}
+body.fc-mode #fc-bnav{display:flex}
+.fc-ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:10px;color:var(--ink-faint);cursor:pointer;padding:4px 0;
+  border:none;background:none;font-family:inherit;line-height:1.2}
+.fc-ni.active{color:var(--leaf)}
+.fc-ni svg{width:22px;height:22px}
+.fc-ni .nb{position:relative;display:inline-flex;align-items:center;justify-content:center}
+.fc-ni .nd{position:absolute;top:-2px;right:-4px;width:7px;height:7px;
+  background:var(--red);border-radius:50%;border:1.5px solid var(--panel)}
+.fc-tb{background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:50}
+.fc-av{width:36px;height:36px;border-radius:50%;background:var(--leaf);
+  color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700;flex-shrink:0}
+.fc-stats{display:flex;gap:8px;padding:10px 14px;background:var(--panel-2)}
+.fc-stat{flex:1;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:8px 4px;text-align:center}
+.fc-stat .sv{font-size:17px;font-weight:700;display:block;line-height:1;margin-bottom:2px}
+.fc-stat .sl{font-size:10px;color:var(--ink-soft)}
+.fc-cards{display:flex;flex-direction:column;gap:8px;padding:8px 12px 4px}
+.fc-card{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;cursor:pointer;display:block}
+.fc-ct{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px}
+.fc-nm{font-size:14px;font-weight:600;color:var(--ink);margin:0}
+.fc-lc{font-size:11px;color:var(--ink-soft);margin:2px 0 0;display:flex;align-items:center;gap:3px}
+.fc-cm{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.fc-idchip{font-size:10px;color:var(--ink-soft);background:var(--grey-bg);
+  border:1px solid var(--line);border-radius:4px;padding:2px 6px;font-family:monospace;flex-shrink:0}
+.fc-b{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.fc-b.fnew{background:var(--blue-bg);color:var(--blue)}
+.fc-b.seasonal{background:var(--orange-bg);color:var(--orange)}
+.fc-b.fpending{background:var(--grey-bg);color:var(--grey)}
+.fc-b.fprogress{background:var(--orange-bg);color:var(--orange)}
+.fc-b.fadopted{background:var(--green-bg);color:var(--green)}
+.fc-b.fstruggling{background:var(--red-bg);color:var(--red)}
+.fc-pills{display:flex;gap:6px;padding:8px 12px;background:var(--panel-2);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.fc-pills::-webkit-scrollbar{display:none}
+.fc-pill{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;
+  white-space:nowrap;border:1px solid var(--line-strong);background:var(--panel);
+  color:var(--ink-soft);cursor:pointer}
+.fc-pill.active{background:var(--leaf);color:#fff;border-color:var(--leaf)}
+.fc-srch{margin:6px 12px 4px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:8px;display:flex;align-items:center;gap:8px;padding:8px 12px}
+.fc-srch input{border:none;background:none;outline:none;font-size:13px;
+  color:var(--ink);flex:1;font-family:inherit}
+.fc-prog{margin:8px 0 2px}
+.fc-prog-t{height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.fc-prog-f{height:100%;border-radius:2px}
+.fc-prog-l{display:flex;justify-content:space-between;margin-top:3px}
+.fc-prog-l span{font-size:9px;color:var(--ink-faint)}
+.fc-btn-v{background:var(--leaf);color:#fff;border:none;border-radius:7px;
+  padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+.fc-btn-vi{background:var(--panel);color:var(--leaf);border:1px solid var(--leaf);
+  border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+.fc-btn-ov{background:var(--panel);color:var(--red);border:1px solid var(--red);
+  border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+.fc-ttabs{display:flex;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+.fc-ttabs::-webkit-scrollbar{display:none}
+.fc-ttab{padding:10px 14px;font-size:12px;white-space:nowrap;color:var(--ink-soft);
+  border-bottom:2px solid transparent;cursor:pointer;display:flex;align-items:center;gap:5px}
+.fc-ttab.active{color:var(--leaf);border-bottom-color:var(--leaf);font-weight:600}
+.fc-tc{background:var(--leaf-bg);color:var(--leaf);font-size:10px;
+  padding:1px 6px;border-radius:10px;font-weight:600}
+.fc-ttab.active .fc-tc{background:var(--leaf);color:#fff}
+.fc-slbl{font-size:10px;color:var(--ink-faint);text-transform:uppercase;
+  letter-spacing:.05em;padding:4px 14px 4px;background:var(--panel-2)}
+.fc-empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13px}
+.fc-lv{font-size:10px;color:var(--ink-soft);display:flex;align-items:center;gap:3px}
+.fc-av svg{width:20px;height:20px}
+.fc-srch svg{width:16px;height:16px;flex-shrink:0;color:var(--ink-faint)}
+.fc-lc svg{width:11px;height:11px;vertical-align:-1px;flex-shrink:0}
+.fc-btn-v svg,.fc-btn-vi svg,.fc-btn-ov svg{width:13px;height:13px}
+.fc-lv svg{width:11px;height:11px}
+.fc-prog-l svg{width:11px;height:11px}
+.fc-tb svg{width:20px;height:20px}
 </style>
 <!-- Firebase SDK (Realtime Database) — loaded before the app script -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -1763,7 +1848,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18h';
+const APP_VERSION = 'v18j';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5207,6 +5292,7 @@ function donut(segs,centerNum,centerTxt){
 function renderNav(){
   const _vb = document.getElementById('appVerBadge');
   if(_vb) _vb.textContent = APP_VERSION;
+  if(!isAdminUser()){$('#nav').innerHTML='';return;}
   const hs=haatStats(),cs=convStats();
   // v8 — FC users see a reduced nav (no Settings, no Data & Backup, no Team).
   const adminMode = isAdminUser();
@@ -5248,6 +5334,227 @@ function renderNav(){
   $('#nav').querySelectorAll('.nav-item').forEach(b=>{
     b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
   });
+}
+
+/* ===== FC MOBILE UI ===== */
+function _fcMyName(){
+  const o=(DB.fcs||[]).find(f=>f.id===(SESSION&&SESSION.userId));
+  return o?o.name:(SESSION&&SESSION.userName)||'FC';
+}
+function _fcTopbar(av,sub,title,extra=''){
+  return `<div class="fc-tb"><div class="fc-av">${av}</div><div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">${sub}</div><div style="font-size:15px;font-weight:700">${title}</div></div>${extra}</div>`;
+}
+function renderFcBottomNav(){
+  let el=document.getElementById('fc-bnav');
+  if(!el){el=document.createElement('div');el.id='fc-bnav';document.body.appendChild(el);}
+  const hasPending=(DB.haatFarmers||[]).some(f=>f.stage==='verification_pending')||
+                   (DB.haatFarmers||[]).some(isSeasonalVerificationDue);
+  const dot=hasPending?'<div class="nd"></div>':'';
+  const tabs=[
+    {r:'haat',      p:I.haat,  label:'Haat'},
+    {r:'conversion',p:I.leaf,  label:'Conversion'},
+    {r:'verification',p:I.check,label:'Queue',dot},
+    {r:'fc_visits', p:I.clock, label:'Visits'},
+    {r:'fc_profile',p:I.user,  label:'Profile'},
+  ];
+  el.innerHTML=tabs.map(t=>`
+    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}">
+      <div class="nb">${svg(t.p,1.8)}${t.dot||''}</div>
+      <span>${t.label}</span>
+    </button>`).join('');
+  el.querySelectorAll('.fc-ni').forEach(b=>{
+    b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
+  });
+}
+function viewFcHaat(){
+  const v=$('#view');
+  const name=_fcMyName();
+  const farmers=DB.haatFarmers||[];
+  const hs=haatStats();
+  const planned=farmers.reduce((n,f)=>n+((f.plannedVisits||[]).filter(p=>p.date>=todayISO()).length),0);
+  if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50};
+  const F=FILTERS.fcH;
+  let rows=[...farmers];
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  const visible=rows.slice(0,F.lim), more=rows.length-F.lim;
+  v.innerHTML=`
+    ${_fcTopbar(esc(name[0]||'F').toUpperCase(),'Haat farmers',esc(name))}
+    <div class="fc-stats">
+      <div class="fc-stat"><span class="sv">${farmers.length}</span><span class="sl">Total</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--red)">${hs.pending}</span><span class="sl">Pending</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${farmers.filter(isSeasonalVerificationDue).length}</span><span class="sl">Seasonal</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--blue)">${planned}</span><span class="sl">Planned</span></div>
+    </div>
+    <div style="background:var(--panel-2)">
+      <div class="fc-srch">${svg(I.filter,2)}<input id="fcHSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
+      <div class="fc-slbl">${rows.length} farmers</div>
+    </div>
+    <div class="fc-cards">
+      ${visible.length?visible.map(f=>{
+        const isPending=f.stage==='verification_pending';
+        const isSeasonal=isSeasonalVerificationDue(f);
+        const badge=isSeasonal?'<span class="fc-b seasonal">SEASONAL</span>':isPending?'<span class="fc-b fnew">NEW</span>':'';
+        const btn=(isPending||isSeasonal)?`<button class="fc-btn-v" data-act="vfy" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button>`:'';
+        return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
+          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>${badge}</div>
+          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}${btn}</div>
+        </div>`;
+      }).join(''):'<div class="fc-empty">No farmers found</div>'}
+      ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcHMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}
+    </div>`;
+  const si=$('#fcHSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;viewFcHaat();};
+  const mb=$('#fcHMore');if(mb)mb.onclick=()=>{F.lim+=50;viewFcHaat();};
+  v.querySelectorAll('[data-act="vfy"]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
+  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('[data-act="vfy"]'))return;openFarmerModal('haat',c.dataset.id);};});
+}
+function viewFcConversion(){
+  const v=$('#view');
+  const name=_fcMyName();
+  const farmers=DB.convFarmers||[];
+  const cs=convStats();
+  if(!FILTERS.fcC) FILTERS.fcC={q:'',cat:'',lim:50};
+  const F=FILTERS.fcC;
+  const catLabel={'pending':'Pending','red':'Struggling','yellow':'In Progress','green':'Adopted'};
+  const catCls={'pending':'fpending','red':'fstruggling','yellow':'fprogress','green':'fadopted'};
+  const catCol={'pending':'var(--grey)','red':'var(--red)','yellow':'var(--orange)','green':'var(--green)'};
+  const catProg={'pending':15,'red':30,'yellow':60,'green':100};
+  let rows=[...farmers];
+  if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  const now=Date.now();
+  const visible=rows.slice(0,F.lim), more=rows.length-F.lim;
+  v.innerHTML=`
+    ${_fcTopbar(svg(I.leaf,2),'Conversion farmers',esc(name))}
+    <div class="fc-stats">
+      <div class="fc-stat"><span class="sv">${farmers.length}</span><span class="sl">Total</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--grey)">${cs.pending}</span><span class="sl">Pending</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${cs.yellow}</span><span class="sl">In Progress</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--green)">${cs.green}</span><span class="sl">Adopted</span></div>
+    </div>
+    <div style="background:var(--panel-2)">
+      <div class="fc-pills">
+        ${['','pending','yellow','red','green'].map(k=>`<div class="fc-pill${F.cat===k?' active':''}" data-cat="${k}">${k?catLabel[k]:'All'}</div>`).join('')}
+      </div>
+      <div class="fc-srch">${svg(I.filter,2)}<input id="fcCSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
+      <div class="fc-slbl">${rows.length} farmers</div>
+    </div>
+    <div class="fc-cards">
+      ${visible.length?visible.map(f=>{
+        const cat=convCategory(f);
+        const lv=lastVisitDate(f);
+        const daysAgo=lv?Math.floor((now-new Date(lv).getTime())/86400000):null;
+        const overdue=daysAgo!==null&&daysAgo>21;
+        const lvText=daysAgo===null?'No visits yet':`${daysAgo}d ago`;
+        const btn=overdue
+          ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.alert,2.5)} Overdue</button>`
+          :`<button class="fc-btn-vi" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit</button>`;
+        return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
+          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
+          <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
+          <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
+          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>${btn}</div>
+        </div>`;
+      }).join(''):'<div class="fc-empty">No farmers found</div>'}
+      ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcCMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}
+    </div>`;
+  v.querySelectorAll('.fc-pill').forEach(p=>{p.onclick=()=>{F.cat=p.dataset.cat;F.lim=50;viewFcConversion();};});
+  const si=$('#fcCSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;viewFcConversion();};
+  const mb=$('#fcCMore');if(mb)mb.onclick=()=>{F.lim+=50;viewFcConversion();};
+  v.querySelectorAll('.fc-btn-vi,.fc-btn-ov').forEach(b=>{b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);};});
+  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-vi,.fc-btn-ov'))return;openFarmerModal('conv',c.dataset.id);};});
+}
+function viewFcQueue(){
+  const v=$('#view');
+  if(!FILTERS.fcQ) FILTERS.fcQ={tab:'new'};
+  const F=FILTERS.fcQ;
+  const farmers=DB.haatFarmers||[];
+  const newF=farmers.filter(f=>f.stage==='verification_pending');
+  const seasonal=farmers.filter(isSeasonalVerificationDue);
+  const today=todayISO();
+  const planned=[];
+  farmers.forEach(f=>(f.plannedVisits||[]).forEach(p=>{if(p.date>=today)planned.push({f,p});}));
+  planned.sort((a,b)=>a.p.date>b.p.date?1:-1);
+  const lists={new:newF,seasonal,planning:planned.map(x=>x.f)};
+  const cur=lists[F.tab]||[];
+  v.innerHTML=`
+    <div class="fc-tb">
+      <div class="fc-av" style="background:var(--accent)">${svg(I.check,2)}</div>
+      <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">Verification queue</div>
+      <div style="font-size:15px;font-weight:700">${cur.length} pending</div></div>
+    </div>
+    <div class="fc-ttabs">
+      <div class="fc-ttab${F.tab==='new'?' active':''}" data-t="new">New <span class="fc-tc">${newF.length}</span></div>
+      <div class="fc-ttab${F.tab==='seasonal'?' active':''}" data-t="seasonal">Seasonal <span class="fc-tc">${seasonal.length}</span></div>
+      <div class="fc-ttab${F.tab==='planning'?' active':''}" data-t="planning">Planning <span class="fc-tc">${planned.length}</span></div>
+    </div>
+    <div class="fc-slbl">${cur.length} farmers</div>
+    <div class="fc-cards">
+      ${cur.length?cur.map(f=>{
+        const isSea=F.tab==='seasonal';
+        const planDate=F.tab==='planning'?(planned.find(x=>x.f.id===f.id)||{p:{}}).p.date:'';
+        return`<div class="fc-card">
+          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
+          <span class="fc-b ${isSea?'seasonal':planDate?'fnew':'fnew'}">${isSea?'SEASONAL':planDate?fmtDate(planDate):'NEW'}</span></div>
+          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
+          ${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}
+          <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
+        </div>`;
+      }).join(''):'<div class="fc-empty">All clear — no pending verifications</div>'}
+    </div>`;
+  v.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;viewFcQueue();};});
+  v.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=()=>openVerificationForm(b.dataset.id);});
+}
+function viewFcVisits(){
+  const v=$('#view');
+  const today=todayISO();
+  const planned=[];
+  (DB.haatFarmers||[]).forEach(f=>(f.plannedVisits||[]).forEach(p=>{if(p.date>=today)planned.push({f,p});}));
+  planned.sort((a,b)=>a.p.date>b.p.date?1:-1);
+  v.innerHTML=`
+    ${_fcTopbar(svg(I.clock,2),'Upcoming visits',`${planned.length} planned`)}
+    <div class="fc-slbl">${planned.length} upcoming visits</div>
+    <div class="fc-cards">
+      ${planned.length?planned.map(({f,p})=>`
+        <div class="fc-card" data-act="open" data-id="${esc(f.id)}">
+          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
+          <span class="fc-b fnew">${fmtDate(p.date)}</span></div>
+          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
+          ${p.note?`<span class="fc-lv">${esc(p.note.slice(0,28))}</span>`:''}
+          <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
+        </div>`).join(''):'<div class="fc-empty">No visits planned yet</div>'}
+    </div>`;
+  v.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
+  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-v'))return;openFarmerModal('haat',c.dataset.id);};});
+}
+function viewFcProfile(){
+  const v=$('#view');
+  const fcId=SESSION&&SESSION.userId;
+  const fcObj=(DB.fcs||[]).find(f=>f.id===fcId)||{};
+  const name=fcObj.name||(SESSION&&SESSION.userName)||'FC';
+  const now=Date.now();const cutoff=new Date();cutoff.setDate(cutoff.getDate()-90);
+  let visits90=0;
+  (DB.haatFarmers||[]).forEach(f=>(f.visits||[]).forEach(visit=>{
+    if(visit.fc===fcId&&visit.date&&new Date(visit.date)>=cutoff)visits90++;
+  }));
+  v.innerHTML=`
+    ${_fcTopbar(esc((name[0]||'F').toUpperCase()),'My profile',esc(name))}
+    <div class="fc-stats">
+      <div class="fc-stat"><span class="sv">${(DB.haatFarmers||[]).length}</span><span class="sl">Haat</span></div>
+      <div class="fc-stat"><span class="sv">${(DB.convFarmers||[]).length}</span><span class="sl">Conversion</span></div>
+      <div class="fc-stat"><span class="sv">${visits90}</span><span class="sl">Visits (90d)</span></div>
+    </div>
+    <div class="fc-cards">
+      <div class="fc-card" style="cursor:default">
+        <div style="display:flex;flex-direction:column;gap:12px;font-size:13px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">Name</span><span style="font-weight:600">${esc(name)}</span></div>
+          ${fcObj.phone?`<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">Phone</span><span>${esc(fcObj.phone)}</span></div>`:''}
+          ${fcObj.district?`<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">District</span><span>${esc(fcObj.district)}</span></div>`:''}
+          ${fcObj.partner?`<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">Partner</span><span>${esc(fcObj.partner)}</span></div>`:''}
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">FC ID</span><span class="fc-idchip">${esc(fcId||'—')}</span></div>
+        </div>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:4px;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';toast('Signed out');">Sign out</button>
+    </div>`;
 }
 
 const TITLES={
@@ -11023,10 +11330,22 @@ function render(){
   // v9 Batch 4 — route guard: FCs are confined to their action surfaces.
   // Any analytics, system, or config route bounces them to their home
   // (Verification Queue).
-  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','income','haat'].indexOf(ROUTE) >= 0){
+  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','income'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
+  document.body.classList.toggle('fc-mode', !isAdminUser());
   renderNav();
+  if(!isAdminUser()){
+    renderFcBottomNav();
+    ({haat:viewFcHaat,conversion:viewFcConversion,verification:viewFcQueue,
+      fc_visits:viewFcVisits,fc_profile:viewFcProfile,
+      public_landing:renderPublicLanding,
+      public_haat_form:viewPublicHaatForm,
+      public_conv_form:viewPublicConvForm,
+      public_thanks:viewPublicThanks,
+    }[ROUTE]||viewFcQueue)();
+    return;
+  }
   const[crumb,title]=TITLES[ROUTE]||['',''];
   // page title with optional record count — uses role-filtered counts.
   let count='';
@@ -11039,12 +11358,9 @@ function render(){
   else pc.style.display='none';
   ({dashboard:viewDashboard,haat:viewHaat,verification:viewVerification,
     haats:viewHaats,conversion:viewConversion,
-    /* v9 L4 — fcInbox removed: dead route, no sidebar entry */
-    // v8 unified: 'fcs' route is gone, Team (fieldCoordinators) is canonical.
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
     farmMap:viewFarmMap, income:viewIncomeTracking,
-    // v8.2 — public mode + admin queue for self-enrolments
     public_landing:renderPublicLanding,
     public_haat_form:viewPublicHaatForm,
     public_conv_form:viewPublicConvForm,

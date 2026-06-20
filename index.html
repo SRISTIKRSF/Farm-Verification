@@ -1226,6 +1226,10 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(function(e) {
       console.warn('[SW] registration failed:', e);
     });
+    // Auto-reload when a new SW takes over — picks up the latest version silently
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      window.location.reload();
+    });
   });
 }
 (function() {
@@ -1854,7 +1858,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18n';
+const APP_VERSION = 'v18o';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18x';
+const APP_VERSION = 'v18y';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5029,7 +5029,7 @@ function openConvScoreModal(id){
       areaCur:  cs.currentArea,
       photos: vphotos,
     });
-    const sameDayIdx = f.visits.findIndex(v => v && v.date === vdate && v.fc === vfc);
+    const sameDayIdx = f.visits.findIndex(v => v && v.date === vdate && (!vfc || v.fc === vfc));
     if(sameDayIdx >= 0){
       visitPayload.editedFromVisitAt = f.visits[sameDayIdx].recordedAt;
       f.visits[sameDayIdx] = visitPayload;
@@ -9419,6 +9419,13 @@ function openFarmerModal(program,id){
       </div></div>`;
   }
 
+  if(program==='conv'){
+    body+=`<div class="field-row">
+      ${fld('Next visit due',`<input type="date" id="ffNext" value="${esc(f.nextVisitDue||'')}">`)}
+      ${fld('Facilitator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId))}
+    </div>`;
+  }
+
   modalShell((editing?'Edit ':'New ')+(program==='haat'?'Haat':'Conversion')+' farmer',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="saveFarmer">${svg(I.check)}${editing?'Save changes':'Add farmer'}</button>`);
@@ -9440,7 +9447,7 @@ function openFarmerModal(program,id){
       name, phone:_phone,
       village:$('#ffVillage').value.trim(), taluka:$('#ffTaluka').value.trim(),
       state:$('#ffState').value, district:$('#ffDistrict').value,
-      landAcres:_land, fcId:program==='haat'?$('#ffFc').value:(f.fcId||''), crops,
+      landAcres:_land, fcId:$('#ffFc')?.value||(f.fcId||''), crops,
     };
     // Haat extras — farm description + per-practice claims
     let haatExtras=null;
@@ -9489,7 +9496,7 @@ function openFarmerModal(program,id){
         f.yearsOrganic=+$('#ffYears').value||0;
         f.certification=$('#ffCert').value;
         Object.assign(f,haatExtras);
-      }else{f.nextVisitDue=$('#ffNext').value;}
+      }else{f.nextVisitDue=$('#ffNext')?.value||'';}
       // v9 audit-fix #5 — record who edited and when.
       const aE = actor();
       f.editedBy   = aE.name;
@@ -9513,7 +9520,7 @@ function openFarmerModal(program,id){
         DB.convFarmers.push({
           id:uid('CF'),program:'conversion',...base,
           enrolledMonth:m,transitionStatus:'red',
-          nextVisitDue:$('#ffNext').value,observations:[],lat:null,lng:null,
+          nextVisitDue:$('#ffNext')?.value||'',observations:[],lat:null,lng:null,
         });
         logActivity('enroll',`New conversion farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }
@@ -11415,7 +11422,9 @@ function render(){
   // the login screen. Otherwise their writes carry an orphan fcId.
   if(SESSION && SESSION.role === 'fc' && SESSION.userId){
     const myFc = (DB && DB.fcs ? DB.fcs : []).find(x => x.id === SESSION.userId);
-    if(!myFc || myFc.deleted){
+    // Only bounce if the FC roster entry EXISTS but has been explicitly deleted.
+    // If no entry exists at all (e.g. user created via Settings without a roster profile), allow through.
+    if(myFc && myFc.deleted){
       try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
       SESSION = null;
       location.hash = '';
@@ -12756,7 +12765,7 @@ function enterAdminMode(){
   // surface) instead of the Dashboard analytics page. Admin still defaults
   // to Dashboard.
   const isFc = SESSION && SESSION.role === 'fc';
-  ROUTE = isFc ? 'verification' : 'dashboard';
+  ROUTE = isFc ? 'conversion' : 'dashboard';
   render();
 }
 

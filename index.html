@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18w';
+const APP_VERSION = 'v18x';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13125,10 +13125,10 @@ function openUserModal(userId) {
       </div>
       <div>
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Username (Login ID) *</label>
-        <input id="umId" value="${editing ? esc(editing.id) : ''}" placeholder="e.g. maheshbhai"
-          ${editing ? 'readonly' : ''}
-          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box;${editing?'background:var(--panel-2);color:var(--ink-soft)':''}">
-        ${isNew ? '<div style="font-size:11px;color:var(--ink-faint);margin-top:3px">Lowercase letters/numbers only, 2\u201320 chars. Cannot change later.</div>' : ''}
+        <input id="umId" value="${editing ? esc(editing.id) : ''}" placeholder="e.g. maheshbhai or phone number"
+          data-orig="${editing ? esc(editing.id) : ''}"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+        <div style="font-size:11px;color:var(--ink-faint);margin-top:3px">Lowercase letters/numbers only, 2\u201320 chars.</div>
       </div>
       <div>
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">${isNew ? 'Password *' : 'New Password <span style=\"font-weight:400;color:var(--ink-faint)\">(blank = keep current)</span>'}</label>
@@ -13155,23 +13155,26 @@ function openUserModal(userId) {
   const roleEl = $('#umRole'), fcRow = $('#umFcRow');
   roleEl.onchange = () => { fcRow.style.display = roleEl.value === 'fc' ? '' : 'none'; };
   $('#umSave').onclick = async () => {
-    const name   = ($('#umName').value||'').trim();
-    const uid    = editing ? editing.id : ($('#umId').value||'').trim().toLowerCase();
-    const pw     = ($('#umPw').value||'');
-    const role   = $('#umRole').value;
-    const fcCode = ($('#umFcCode').value||'').trim().toUpperCase();
-    const errEl  = $('#umErr');
+    const name    = ($('#umName').value||'').trim();
+    const uid     = ($('#umId').value||'').trim().toLowerCase();
+    const origId  = ($('#umId').dataset.orig||'').trim().toLowerCase();
+    const pw      = ($('#umPw').value||'');
+    const role    = $('#umRole').value;
+    const fcCode  = ($('#umFcCode').value||'').trim().toUpperCase();
+    const errEl   = $('#umErr');
     const showErr = msg => { errEl.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:4px">${msg}</div>`; };
     if (!name) return showErr('Display name is required.');
     if (!uid || !/^[a-z0-9_]{2,20}$/.test(uid)) return showErr('Username: 2\u201320 lowercase letters or numbers only.');
     if (isNew && !pw) return showErr('Password is required for new users.');
-    if (pw && pw.length < 6) return showErr('Password must be at least 6 characters.');
+    if (pw && pw.length < 4) return showErr('Password must be at least 4 characters.');
     if (isNew && users.some(u => u.id === uid)) return showErr('Username already taken.');
+    if (!isNew && uid !== origId && users.some(u => u.id === uid)) return showErr('Username already taken.');
     const saveBtn = $('#umSave');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
     try {
-      const rtdbKey = 'config/users/u_' + uid;
-      const existSnap = await fbRef(rtdbKey).get();
+      const oldKey  = 'config/users/u_' + (origId || uid);
+      const newKey  = 'config/users/u_' + uid;
+      const existSnap = await fbRef(oldKey).get();
       const existing  = existSnap.exists() ? existSnap.val() : null;
       const record = {
         id: uid, name, role, fcCode: role === 'fc' ? fcCode : '',
@@ -13186,8 +13189,17 @@ function openUserModal(userId) {
         record.salt = existing.salt;
         record.passwordHash = existing.passwordHash;
       }
-      await fbRef(rtdbKey).set(record);
+      if (!isNew && origId && origId !== uid) {
+        // ID changed — write to new key and delete old key atomically
+        const updates = {};
+        updates[newKey] = record;
+        updates[oldKey] = null;
+        await fbRef('').update(updates);
+      } else {
+        await fbRef(newKey).set(record);
+      }
       closeModal();
+      render();
       toast((isNew ? 'User created' : 'User updated') + ': ' + name);
     } catch(e) {
       saveBtn.disabled = false; saveBtn.textContent = isNew ? 'Create user' : 'Save changes';
@@ -13210,6 +13222,7 @@ async function confirmDeleteUser(userId) {
   if (!confirm('Delete user "' + user.name + '" (@' + userId + ')?\n\nThis cannot be undone.')) return;
   try {
     await fbRef('config/users/u_' + userId).remove();
+    render();
     toast('User deleted.');
   } catch(e) {
     toast('Delete failed: ' + (e && e.message ? e.message : 'Error'), 'error');

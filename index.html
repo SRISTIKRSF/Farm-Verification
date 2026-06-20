@@ -624,10 +624,10 @@ body.fc-mode #fc-bnav{display:flex}
   display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
 .fc-btn-vi{background:var(--panel);color:var(--leaf);border:1px solid var(--leaf);
   border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;
-  display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+  display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
 .fc-btn-ov{background:var(--panel);color:var(--red);border:1px solid var(--red);
   border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;
-  display:flex;align-items:center;gap:4px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+  display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
 .fc-ttabs{display:flex;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
 .fc-ttabs::-webkit-scrollbar{display:none}
 .fc-ttab{padding:10px 14px;font-size:12px;white-space:nowrap;color:var(--ink-soft);
@@ -1858,7 +1858,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18p';
+const APP_VERSION = 'v18q';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5523,7 +5523,7 @@ function _fcConvCards(farmers,F){
       <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
       <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
       <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>
-      <button class="fc-btn-edit" data-eid="${esc(f.id)}">${svg(I.edit,2)} Edit</button>${btn}</div>
+      <div style="display:flex;gap:6px;margin-left:auto"><button class="fc-btn-edit" data-eid="${esc(f.id)}">${svg(I.edit,2)} Edit</button>${btn}</div></div>
     </div>`;
   }).join(''):'<div class="fc-empty">No farmers found</div>'}
   ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcCMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;

@@ -1848,7 +1848,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18j';
+const APP_VERSION = 'v18k';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5366,6 +5366,27 @@ function renderFcBottomNav(){
     b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
   });
 }
+function _fcHaatCards(farmers,F){
+  let rows=[...farmers];
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  const visible=rows.slice(0,F.lim),more=rows.length-F.lim;
+  const ce=document.getElementById('fcHCount');if(ce)ce.textContent=rows.length+' farmers';
+  const el=document.getElementById('fcHCards');if(!el)return;
+  el.innerHTML=`${visible.length?visible.map(f=>{
+    const isPending=f.stage==='verification_pending';
+    const isSeasonal=isSeasonalVerificationDue(f);
+    const badge=isSeasonal?'<span class="fc-b seasonal">SEASONAL</span>':isPending?'<span class="fc-b fnew">NEW</span>':'';
+    const btn=(isPending||isSeasonal)?`<button class="fc-btn-v" data-act="vfy" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button>`:'';
+    return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
+      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>${badge}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}${btn}</div>
+    </div>`;
+  }).join(''):'<div class="fc-empty">No farmers found</div>'}
+  ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcHMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
+  const mb=document.getElementById('fcHMore');if(mb)mb.onclick=()=>{F.lim+=50;_fcHaatCards(farmers,F);};
+  el.querySelectorAll('[data-act="vfy"]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('[data-act="vfy"]'))return;openFarmerModal('haat',c.dataset.id);};});
+}
 function viewFcHaat(){
   const v=$('#view');
   const name=_fcMyName();
@@ -5374,9 +5395,6 @@ function viewFcHaat(){
   const planned=farmers.reduce((n,f)=>n+((f.plannedVisits||[]).filter(p=>p.date>=todayISO()).length),0);
   if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50};
   const F=FILTERS.fcH;
-  let rows=[...farmers];
-  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
-  const visible=rows.slice(0,F.lim), more=rows.length-F.lim;
   v.innerHTML=`
     ${_fcTopbar(esc(name[0]||'F').toUpperCase(),'Haat farmers',esc(name))}
     <div class="fc-stats">
@@ -5387,25 +5405,44 @@ function viewFcHaat(){
     </div>
     <div style="background:var(--panel-2)">
       <div class="fc-srch">${svg(I.filter,2)}<input id="fcHSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
-      <div class="fc-slbl">${rows.length} farmers</div>
+      <div class="fc-slbl" id="fcHCount"></div>
     </div>
-    <div class="fc-cards">
-      ${visible.length?visible.map(f=>{
-        const isPending=f.stage==='verification_pending';
-        const isSeasonal=isSeasonalVerificationDue(f);
-        const badge=isSeasonal?'<span class="fc-b seasonal">SEASONAL</span>':isPending?'<span class="fc-b fnew">NEW</span>':'';
-        const btn=(isPending||isSeasonal)?`<button class="fc-btn-v" data-act="vfy" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button>`:'';
-        return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
-          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>${badge}</div>
-          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}${btn}</div>
-        </div>`;
-      }).join(''):'<div class="fc-empty">No farmers found</div>'}
-      ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcHMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}
+    <div class="fc-cards" id="fcHCards"></div>`;
+  const si=$('#fcHSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcHaatCards(farmers,F);};
+  _fcHaatCards(farmers,F);
+}
+function _fcConvCards(farmers,F){
+  const catLabel={'pending':'Pending','red':'Struggling','yellow':'In Progress','green':'Adopted'};
+  const catCls={'pending':'fpending','red':'fstruggling','yellow':'fprogress','green':'fadopted'};
+  const catCol={'pending':'var(--grey)','red':'var(--red)','yellow':'var(--orange)','green':'var(--green)'};
+  const catProg={'pending':15,'red':30,'yellow':60,'green':100};
+  let rows=[...farmers];
+  if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  const now=Date.now(),visible=rows.slice(0,F.lim),more=rows.length-F.lim;
+  const ce=document.getElementById('fcCCount');if(ce)ce.textContent=rows.length+' farmers';
+  document.querySelectorAll('.fc-pill').forEach(p=>p.classList.toggle('active',p.dataset.cat===F.cat));
+  const el=document.getElementById('fcCCards');if(!el)return;
+  el.innerHTML=`${visible.length?visible.map(f=>{
+    const cat=convCategory(f);
+    const lv=lastVisitDate(f);
+    const daysAgo=lv?Math.floor((now-new Date(lv).getTime())/86400000):null;
+    const overdue=daysAgo!==null&&daysAgo>21;
+    const lvText=daysAgo===null?'No visits yet':`${daysAgo}d ago`;
+    const btn=overdue
+      ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.alert,2.5)} Overdue</button>`
+      :`<button class="fc-btn-vi" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit</button>`;
+    return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
+      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
+      <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
+      <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>${btn}</div>
     </div>`;
-  const si=$('#fcHSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;viewFcHaat();};
-  const mb=$('#fcHMore');if(mb)mb.onclick=()=>{F.lim+=50;viewFcHaat();};
-  v.querySelectorAll('[data-act="vfy"]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
-  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('[data-act="vfy"]'))return;openFarmerModal('haat',c.dataset.id);};});
+  }).join(''):'<div class="fc-empty">No farmers found</div>'}
+  ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcCMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
+  const mb=document.getElementById('fcCMore');if(mb)mb.onclick=()=>{F.lim+=50;_fcConvCards(farmers,F);};
+  el.querySelectorAll('.fc-btn-vi,.fc-btn-ov').forEach(b=>{b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);};});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-vi,.fc-btn-ov'))return;openFarmerModal('conv',c.dataset.id);};});
 }
 function viewFcConversion(){
   const v=$('#view');
@@ -5415,14 +5452,6 @@ function viewFcConversion(){
   if(!FILTERS.fcC) FILTERS.fcC={q:'',cat:'',lim:50};
   const F=FILTERS.fcC;
   const catLabel={'pending':'Pending','red':'Struggling','yellow':'In Progress','green':'Adopted'};
-  const catCls={'pending':'fpending','red':'fstruggling','yellow':'fprogress','green':'fadopted'};
-  const catCol={'pending':'var(--grey)','red':'var(--red)','yellow':'var(--orange)','green':'var(--green)'};
-  const catProg={'pending':15,'red':30,'yellow':60,'green':100};
-  let rows=[...farmers];
-  if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
-  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
-  const now=Date.now();
-  const visible=rows.slice(0,F.lim), more=rows.length-F.lim;
   v.innerHTML=`
     ${_fcTopbar(svg(I.leaf,2),'Conversion farmers',esc(name))}
     <div class="fc-stats">
@@ -5436,32 +5465,31 @@ function viewFcConversion(){
         ${['','pending','yellow','red','green'].map(k=>`<div class="fc-pill${F.cat===k?' active':''}" data-cat="${k}">${k?catLabel[k]:'All'}</div>`).join('')}
       </div>
       <div class="fc-srch">${svg(I.filter,2)}<input id="fcCSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
-      <div class="fc-slbl">${rows.length} farmers</div>
+      <div class="fc-slbl" id="fcCCount"></div>
     </div>
-    <div class="fc-cards">
-      ${visible.length?visible.map(f=>{
-        const cat=convCategory(f);
-        const lv=lastVisitDate(f);
-        const daysAgo=lv?Math.floor((now-new Date(lv).getTime())/86400000):null;
-        const overdue=daysAgo!==null&&daysAgo>21;
-        const lvText=daysAgo===null?'No visits yet':`${daysAgo}d ago`;
-        const btn=overdue
-          ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.alert,2.5)} Overdue</button>`
-          :`<button class="fc-btn-vi" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit</button>`;
-        return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
-          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
-          <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
-          <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
-          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>${btn}</div>
-        </div>`;
-      }).join(''):'<div class="fc-empty">No farmers found</div>'}
-      ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcCMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}
+    <div class="fc-cards" id="fcCCards"></div>`;
+  document.querySelectorAll('.fc-pill').forEach(p=>{p.onclick=()=>{F.cat=p.dataset.cat;F.lim=50;_fcConvCards(farmers,F);};});
+  const si=$('#fcCSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcConvCards(farmers,F);};
+  _fcConvCards(farmers,F);
+}
+function _fcQueueCards(lists,planned,F){
+  const cur=lists[F.tab]||[];
+  document.querySelectorAll('.fc-ttab').forEach(t=>t.classList.toggle('active',t.dataset.t===F.tab));
+  const he=document.getElementById('fcQHead');if(he)he.textContent=cur.length+' pending';
+  const ce=document.getElementById('fcQCount');if(ce)ce.textContent=cur.length+' farmers';
+  const el=document.getElementById('fcQCards');if(!el)return;
+  el.innerHTML=`${cur.length?cur.map(f=>{
+    const isSea=F.tab==='seasonal';
+    const planDate=F.tab==='planning'?(planned.find(x=>x.f.id===f.id)||{p:{}}).p.date:'';
+    return`<div class="fc-card">
+      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
+      <span class="fc-b ${isSea?'seasonal':'fnew'}">${isSea?'SEASONAL':planDate?fmtDate(planDate):'NEW'}</span></div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
+      ${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}
+      <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
     </div>`;
-  v.querySelectorAll('.fc-pill').forEach(p=>{p.onclick=()=>{F.cat=p.dataset.cat;F.lim=50;viewFcConversion();};});
-  const si=$('#fcCSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;viewFcConversion();};
-  const mb=$('#fcCMore');if(mb)mb.onclick=()=>{F.lim+=50;viewFcConversion();};
-  v.querySelectorAll('.fc-btn-vi,.fc-btn-ov').forEach(b=>{b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);};});
-  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-vi,.fc-btn-ov'))return;openFarmerModal('conv',c.dataset.id);};});
+  }).join(''):'<div class="fc-empty">All clear — no pending verifications</div>'}`;
+  el.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=()=>openVerificationForm(b.dataset.id);});
 }
 function viewFcQueue(){
   const v=$('#view');
@@ -5475,34 +5503,21 @@ function viewFcQueue(){
   farmers.forEach(f=>(f.plannedVisits||[]).forEach(p=>{if(p.date>=today)planned.push({f,p});}));
   planned.sort((a,b)=>a.p.date>b.p.date?1:-1);
   const lists={new:newF,seasonal,planning:planned.map(x=>x.f)};
-  const cur=lists[F.tab]||[];
   v.innerHTML=`
     <div class="fc-tb">
       <div class="fc-av" style="background:var(--accent)">${svg(I.check,2)}</div>
       <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">Verification queue</div>
-      <div style="font-size:15px;font-weight:700">${cur.length} pending</div></div>
+      <div style="font-size:15px;font-weight:700" id="fcQHead"></div></div>
     </div>
     <div class="fc-ttabs">
-      <div class="fc-ttab${F.tab==='new'?' active':''}" data-t="new">New <span class="fc-tc">${newF.length}</span></div>
-      <div class="fc-ttab${F.tab==='seasonal'?' active':''}" data-t="seasonal">Seasonal <span class="fc-tc">${seasonal.length}</span></div>
-      <div class="fc-ttab${F.tab==='planning'?' active':''}" data-t="planning">Planning <span class="fc-tc">${planned.length}</span></div>
+      <div class="fc-ttab" data-t="new">New <span class="fc-tc">${newF.length}</span></div>
+      <div class="fc-ttab" data-t="seasonal">Seasonal <span class="fc-tc">${seasonal.length}</span></div>
+      <div class="fc-ttab" data-t="planning">Planning <span class="fc-tc">${planned.length}</span></div>
     </div>
-    <div class="fc-slbl">${cur.length} farmers</div>
-    <div class="fc-cards">
-      ${cur.length?cur.map(f=>{
-        const isSea=F.tab==='seasonal';
-        const planDate=F.tab==='planning'?(planned.find(x=>x.f.id===f.id)||{p:{}}).p.date:'';
-        return`<div class="fc-card">
-          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
-          <span class="fc-b ${isSea?'seasonal':planDate?'fnew':'fnew'}">${isSea?'SEASONAL':planDate?fmtDate(planDate):'NEW'}</span></div>
-          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
-          ${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}
-          <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
-        </div>`;
-      }).join(''):'<div class="fc-empty">All clear — no pending verifications</div>'}
-    </div>`;
-  v.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;viewFcQueue();};});
-  v.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=()=>openVerificationForm(b.dataset.id);});
+    <div class="fc-slbl" id="fcQCount"></div>
+    <div class="fc-cards" id="fcQCards"></div>`;
+  document.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;_fcQueueCards(lists,planned,F);};});
+  _fcQueueCards(lists,planned,F);
 }
 function viewFcVisits(){
   const v=$('#view');

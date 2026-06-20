@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18s';
+const APP_VERSION = 'v18t';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7153,6 +7153,7 @@ function openConvEnrollmentForm(){
         .krsf-crops tr{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:10px}
         .krsf-crops td{padding:5px 0}
         .krsf-crops td::before{display:block;content:attr(data-l);font-size:11px;color:var(--ink-faint);margin-bottom:3px;font-weight:600}
+        #overlay.show{z-index:210!important}
         .modal{
           position:fixed!important;inset:0!important;
           width:100vw!important;max-width:100vw!important;
@@ -7160,6 +7161,7 @@ function openConvEnrollmentForm(){
           border-radius:0!important;transform:none!important;
           display:flex!important;flex-direction:column!important;
           overflow-x:hidden!important;
+          z-index:211!important;
         }
         .modal-head{flex-shrink:0;padding:14px 16px!important}
         .modal-head h3{font-size:15px!important}

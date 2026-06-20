@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Farm Verify">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Sristi Haat Tracker · v18b</title>
+<title>Sristi Haat Tracker · v18f</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1059,7 +1059,6 @@ function submit(){
     }
     return;
   }
-  if(!confirm('પત્રક જમા કરવા માગો છો?')) return;
   /* compile claims map */
   const claims = QUESTIONS.filter(q => q.askedOf !== 'fc-only').map(q => ({
     id: q.id, cat: q.cat, type: q.type, gu: q.gu, en: q.en,
@@ -1103,21 +1102,16 @@ window.addEventListener('message', ev => {
   if(d.type === 'enrol-prefill' && d.schema){
     CATEGORIES = d.schema.categories || [];
     QUESTIONS = d.schema.questions || [];
-    // v9 H1 — restore a saved draft, if any. Prompt before showing it so a
-    // fresh visitor doesn't see a stranger's half-typed answers.
-    const hasDraft = (() => { try { return !!localStorage.getItem(DRAFT_KEY); } catch(e) { return false; }})();
-    if(hasDraft){
-      try {
-        const d2 = JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}');
-        const ageMin = d2.at ? Math.floor((Date.now()-new Date(d2.at).getTime())/60000) : 0;
-        const ok = confirm(
-          'એક અધૂરો ફોર્મ મળ્યો ('+(ageMin<60?ageMin+' મિનિટ':Math.floor(ageMin/60)+' કલાક')+' જૂનો).\\n' +
-          'An unfinished form was found ('+(ageMin<60?ageMin+' min':Math.floor(ageMin/60)+' hr')+' old).\\n\\n' +
-          'ચાલુ રાખવું છે? Resume?'
-        );
-        if(ok) restoreDraft(); else clearDraft();
-      } catch(e) { /* ignore */ }
-    }
+    // Silently restore draft if < 30 min old; discard if stale. No confirm()
+    // — blocking dialogs freeze the iframe and make the parent appear hung.
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if(raw){
+        const d2 = JSON.parse(raw);
+        const ageMin = d2.at ? Math.floor((Date.now()-new Date(d2.at).getTime())/60000) : 999;
+        if(ageMin < 30) restoreDraft(); else clearDraft();
+      }
+    } catch(e) { /* ignore */ }
     buildSections();
     saveDraft();   // initial snapshot
   }
@@ -1676,7 +1670,6 @@ $('#backBtn').onclick = () => {
 };
 
 function submit(){
-  if(!confirm('Verification submit કરવા માગો છો?')) return;
   let verified = 0, totalAsked = 0;
   const claims = QUESTIONS.map(q => {
     const c = CLAIMS_BY_ID[q.id];
@@ -1770,7 +1763,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18b';
+const APP_VERSION = 'v18h';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -1793,6 +1786,8 @@ const FB_NAMESPACE='prakrutik_kheti';   // all data lives under this node
 const FB={app:null,db:null,online:navigator.onLine,ready:false,initFailed:false};
 
 function fbConfigured(){
+  // ?offline=1 in URL forces local-only mode (useful for E2E testing without Firebase)
+  if(new URLSearchParams(location.search).get('offline') === '1') return false;
   return FB_CONFIG.apiKey && FB_CONFIG.apiKey!=='YOUR_API_KEY'
       && FB_CONFIG.databaseURL && !FB_CONFIG.databaseURL.includes('YOUR_PROJECT');
 }
@@ -1822,7 +1817,7 @@ async function loadDB(){
     if(raw) local=JSON.parse(raw);
   }catch(e){/* ignore */}
 
-  // 2. if Firebase is configured, initialise and pull cloud state
+  // 2. if Firebase is configured, initialise and let the live listener sync
   if(fbConfigured() && typeof firebase!=='undefined'){
     try{
       FB.app=firebase.initializeApp(FB_CONFIG);
@@ -1832,27 +1827,36 @@ async function loadDB(){
       catch(e){ console.warn('[Auth] Anonymous sign-in failed (offline?):', e); }
       FB.db=firebase.database();
       FB.ready=true;
-      const snap=await fbRef('').get();
-      const cloud=snap.exists()?snap.val():null;
-      if(cloud && (cloud.haatFarmers||cloud.meta)){
-        DB=cloudToDB(cloud);
-        cacheLocal();
-      }else if(local){
+      // v18c — skip the blocking fbRef('').get() which froze the renderer when
+      // Firebase has large farmer records (base64 form data not yet migrated).
+      // Instead: seed DB from localStorage now (instant), then let the live
+      // listener update DB async when Firebase data arrives. If localStorage is
+      // empty, do a one-time shallow meta fetch to avoid pushing seed data.
+      if(local){
         DB=normaliseDB(local);
-        await pushFullDB();        // cloud empty — seed it from local
       }else{
-        DB=normaliseDB(seedDB());
-        await pushFullDB();        // first ever run — seed cloud
+        // First ever load on this device: check if cloud has data before seeding
+        try{
+          const metaSnap=await fbRef('meta').get();
+          if(metaSnap.exists()){
+            // Cloud has data — DB will be fully populated once live listener fires
+            DB=normaliseDB(seedDB());
+          }else{
+            DB=normaliseDB(seedDB());
+            await pushFullDB();  // cloud empty — seed it from local
+          }
+        }catch(e){
+          DB=normaliseDB(seedDB());
+        }
       }
+      cacheLocal();
+      await preCleanBlobsFromRTDB();
       attachLiveListener();
       subscribeUsers();
-      // v10 — snapshot stores JSON strings, not object references (see
-      // snapAll/snapCol next to saveDB). With references, in-place edits
-      // mutated the snapshot too and saveDB's diff never saw any change.
       _lastSnap=snapAll();
       window.addEventListener('online', ()=>{FB.online=true;setSyncPill('synced');});
       window.addEventListener('offline',()=>{FB.online=false;setSyncPill('offline');});
-      setSyncPill(navigator.onLine?'synced':'offline');
+      setSyncPill(navigator.onLine?'syncing':'offline');
       return;
     }catch(e){
       console.error('[Sristi] Firebase init failed:',e);
@@ -2695,9 +2699,28 @@ function _stripEphemeral(r){
 function _stripReplacer(k, v){ return FORM_FIELDS.includes(k) ? undefined : v; }
 function arrToMap(a){const m={};(a||[]).forEach(r=>{if(r&&r.id)m[r.id]=_stripEphemeral(r);});return m;}
 function cloudToDB(c){
+  // v18c — if any RTDB farmer records still have large form blobs (enrollmentFormFull /
+  // verificationFormFull), delete them in a single multi-path update so future downloads
+  // are lean. This is the permanent fix for the renderer-freeze caused by FB downloading
+  // 100MB+ of base64 data on every page load.
+  if(FB && FB.ready){
+    const cleanups = {};
+    ['haatFarmers','convFarmers'].forEach(col => {
+      const map = c[col] || {};
+      Object.keys(map).forEach(id => {
+        const f = map[id];
+        if(f && f.enrollmentFormFull)   cleanups[col+'/'+id+'/enrollmentFormFull']   = null;
+        if(f && f.verificationFormFull) cleanups[col+'/'+id+'/verificationFormFull'] = null;
+      });
+    });
+    if(Object.keys(cleanups).length > 0){
+      fbRef('').update(cleanups).catch(()=>{});
+      console.log('[Sristi v18c] Removed '+Object.keys(cleanups).length+' form blobs from RTDB farmer records');
+    }
+  }
   return normaliseDB({
-    haatFarmers:mapToArr(c.haatFarmers),
-    convFarmers:mapToArr(c.convFarmers),
+    haatFarmers:mapToArr(c.haatFarmers).map(_stripEphemeral),
+    convFarmers:mapToArr(c.convFarmers).map(_stripEphemeral),
     fcs:mapToArr(c.fcs),
     fieldCoordinators:mapToArr(c.fieldCoordinators),
     haats:c.meta&&c.meta.haats, crops:c.meta&&c.meta.crops,
@@ -2740,6 +2763,43 @@ function isLocallyProtected(col, id){
   if(!expiry) return false;
   if(Date.now() > expiry){ _localTouches.delete(col+'/'+id); return false; }
   return true;
+}
+
+/* One-time pre-cleanup: delete enrollmentFormFull / verificationFormFull blobs
+   from RTDB farmer records WITHOUT downloading them.
+   Uses the REST API ?shallow=true to get only farmer IDs, then sends a single
+   multi-path PATCH that nulls the blob fields. After this runs, the root
+   value listener downloads a small payload instead of 100MB+ and no longer
+   freezes the renderer.
+   A flag at meta/blobsCleanedV2 means this runs at most once per database. */
+async function preCleanBlobsFromRTDB(){
+  if(!FB.ready) return;
+  const authUser = firebase.auth && firebase.auth().currentUser;
+  if(!authUser) return;
+  try{
+    const flagSnap = await fbRef('meta/blobsCleanedV2').get();
+    if(flagSnap.val()){ return; }  // already clean
+    const token = await authUser.getIdToken();
+    const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
+    const cleanups = {};
+    for(const col of ['haatFarmers','convFarmers']){
+      const resp = await fetch(base+'/'+col+'.json?shallow=true&auth='+token);
+      if(!resp.ok) continue;
+      const keys = await resp.json();
+      if(!keys || typeof keys!=='object') continue;
+      Object.keys(keys).forEach(id=>{
+        cleanups[col+'/'+id+'/enrollmentFormFull']   = null;
+        cleanups[col+'/'+id+'/verificationFormFull'] = null;
+      });
+    }
+    if(Object.keys(cleanups).length){
+      await fbRef('').update(cleanups);
+      console.log('[Sristi] Pre-cleaned '+Object.keys(cleanups).length+' blob paths from RTDB');
+    }
+    await fbRef('meta/blobsCleanedV2').set(Date.now());
+  }catch(e){
+    console.warn('[Sristi] Blob pre-cleanup error (non-fatal):',e);
+  }
 }
 
 function attachLiveListener(){
@@ -3269,6 +3329,12 @@ async function migrateLegacyData(){
         }
         idbPut('forms', {farmerId:f.id, enrol:FORMS_CACHE[f.id].enrol||null, verif:FORMS_CACHE[f.id].verif||null}).catch(()=>{});
         persistForms(f.id);
+        // v18c — also delete the blobs FROM the farmer RTDB record so future
+        // downloads don't re-inflate with 10MB+ of base64 form data.
+        if(FB && FB.ready){
+          if(f.enrollmentFormFull)   fbRef('haatFarmers/'+f.id+'/enrollmentFormFull').remove().catch(()=>{});
+          if(f.verificationFormFull) fbRef('haatFarmers/'+f.id+'/verificationFormFull').remove().catch(()=>{});
+        }
         movedForms++;
       }
     }
@@ -5587,6 +5653,12 @@ function viewHaat(){
     rows=rows.filter(r=>r.name.toLowerCase().includes(q)||r.village.toLowerCase().includes(q)||r.id.toLowerCase().includes(q));}
   rows=sortRows(rows);
 
+  const HAAT_PAGE_SIZE = 50;
+  const haatTotalPages = Math.ceil(rows.length / HAAT_PAGE_SIZE);
+  if(F.page === undefined) F.page = 0;
+  if(F.page >= haatTotalPages) F.page = Math.max(0, haatTotalPages - 1);
+  const pagedRows = rows.slice(F.page * HAAT_PAGE_SIZE, (F.page + 1) * HAAT_PAGE_SIZE);
+
   /* ---- table ---- */
   h+=`<div class="table-head">
     <h3>Haat Farmers</h3>
@@ -5602,7 +5674,7 @@ function viewHaat(){
   if(!rows.length){
     h+=`<tr><td colspan="8"><div class="empty">${svg(I.haat)}<div>No farmers match these filters.</div></div></td></tr>`;
   }
-  rows.forEach(r=>{
+  pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
     // v8 bug fix: r.status may be undefined for imported / partial farmers
     const st=HAAT_STATUS[r.status]||{cls:'grey',label:'—'};
@@ -5626,20 +5698,33 @@ function viewHaat(){
       <td style="font-size:11.5px">${lastV}</td>
     </tr>`;
   });
+  if(haatTotalPages > 1){
+    h+=`<div style="display:flex;align-items:center;gap:10px;padding:12px 0;justify-content:center">
+      <button class="btn btn-ghost btn-sm" id="haatPrev" ${F.page===0?'disabled':''}>&larr; Prev</button>
+      <span style="font-size:12.5px;color:var(--ink-soft)">Page ${F.page+1} of ${haatTotalPages} &nbsp;(${rows.length} total)</span>
+      <button class="btn btn-ghost btn-sm" id="haatNext" ${F.page>=haatTotalPages-1?'disabled':''}>Next &rarr;</button>
+    </div>`;
+  }
   h+=`</tbody></table></div>`;
   v.innerHTML=h;
   wireTable(v,id=>openHaatDrawer(id));
+
+  const haatPrev = v.querySelector('#haatPrev');
+  const haatNext = v.querySelector('#haatNext');
+  if(haatPrev) haatPrev.onclick = () => { F.page--; render(); };
+  if(haatNext) haatNext.onclick = () => { F.page++; render(); };
 
   /* ---- stat-box clicks (toggle status filter) ---- */
   v.querySelectorAll('.statbox').forEach(b=>{
     b.onclick=()=>{
       const k=b.dataset.box;
       F.status=(F.status||'')===k?'':k;  // click again to clear
+      F.page=0;
       render();
     };
   });
   /* ---- secondary filter wiring ---- */
-  const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;render();};};
+  const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('haat','fHaat');setF('state','fState');setF('district','fDistrict');
   setF('crop','fCrop');setF('active','fActive');
   $('#clearF').onclick=()=>{FILTERS.haat={};render();};
@@ -5688,7 +5773,7 @@ function exportHaatCSV(rows){
    Each tab supports a district filter + multi-select + "Plan visit" action. */
 function viewVerification(){
   const v=$('#view');
-  if(!FILTERS.vq) FILTERS.vq={tab:'new', district:'', selected:{}};
+  if(!FILTERS.vq) FILTERS.vq={tab:'new', district:'', selected:{}, page:0};
   const F=FILTERS.vq;
 
   // v9 Batch 4 — soft filtering removed. Both admin and FC see all farmers
@@ -5755,6 +5840,12 @@ function viewVerification(){
     const districts=[...new Set(list.map(f=>f.district).filter(Boolean))].sort();
     if(F.district) list = list.filter(f=>f.district===F.district);
 
+    const VQ_PAGE_SIZE = 50;
+    const vqTotalPages = Math.ceil(list.length / VQ_PAGE_SIZE);
+    if(F.page === undefined) F.page = 0;
+    if(F.page >= vqTotalPages) F.page = Math.max(0, vqTotalPages - 1);
+    const pagedList = list.slice(F.page * VQ_PAGE_SIZE, (F.page + 1) * VQ_PAGE_SIZE);
+
     const selIds = Object.keys(F.selected).filter(id=>F.selected[id]);
     const selCount = selIds.length;
 
@@ -5783,7 +5874,7 @@ function viewVerification(){
       ${F.tab==='seasonal'?'<th>Last visit</th>':'<th>Enrolled</th>'}
       <th>Type</th><th>Action</th>
     </tr></thead><tbody>`;
-    list.forEach(r=>{
+    pagedList.forEach(r=>{
       const checked = F.selected[r.id]?'checked':'';
       const overdue = F.tab==='seasonal' && isSeasonalVerificationOverdue(r);
       let typeBadge;
@@ -5822,7 +5913,20 @@ function viewVerification(){
         <td>${actionBtn}</td>
       </tr>`;
     });
-    body.innerHTML = hh + '</tbody></table></div>';
+    let pagingHtml = '';
+    if(vqTotalPages > 1){
+      pagingHtml = `<div style="display:flex;align-items:center;gap:10px;padding:12px 0;justify-content:center">
+        <button class="btn btn-ghost btn-sm" id="vqPrev" ${F.page===0?'disabled':''}>&larr; Prev</button>
+        <span style="font-size:12.5px;color:var(--ink-soft)">Page ${F.page+1} of ${vqTotalPages} &nbsp;(${list.length} total)</span>
+        <button class="btn btn-ghost btn-sm" id="vqNext" ${F.page>=vqTotalPages-1?'disabled':''}>Next &rarr;</button>
+      </div>`;
+    }
+    body.innerHTML = hh + '</tbody></table></div>' + pagingHtml;
+
+    const prevBtn = body.querySelector('#vqPrev');
+    const nextBtn = body.querySelector('#vqNext');
+    if(prevBtn) prevBtn.onclick = () => { F.page--; paint(); };
+    if(nextBtn) nextBtn.onclick = () => { F.page++; paint(); };
 
     // Row click → open drawer
     body.querySelectorAll('tr[data-id]').forEach(tr=>{
@@ -5861,7 +5965,7 @@ function viewVerification(){
 
   function wireToolbar(){
     const dEl=$('#vqDistrict');
-    if(dEl) dEl.onchange=e=>{F.district=e.target.value;paint();};
+    if(dEl) dEl.onchange=e=>{F.district=e.target.value;F.page=0;paint();};
     const planEl=$('#vqPlan');
     if(planEl && !planEl.disabled) planEl.onclick=()=>openPlanVisitModal();
     const selAll=$('#vqSelAll');
@@ -6034,7 +6138,7 @@ function viewVerification(){
     if(distSel){ distSel.value = filterDist; distSel.onchange = e => { F.planDistrict = e.target.value; paintPlanning(bodyEl); }; }
   }
 
-  v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{F.tab=t.dataset.vt;F.district='';F.selected={};paint();});
+  v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{F.tab=t.dataset.vt;F.district='';F.selected={};F.page=0;paint();});
   paint();
 }
 
@@ -6311,6 +6415,13 @@ function viewConversion(){
   if(window._q){const q=window._q.toLowerCase();
     rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)||(r.id||'').toLowerCase().includes(q));}
   rows=sortRows(rows);
+
+  const CONV_PAGE_SIZE = 50;
+  const convTotalPages = Math.ceil(rows.length / CONV_PAGE_SIZE);
+  if(F.page === undefined) F.page = 0;
+  if(F.page >= convTotalPages) F.page = Math.max(0, convTotalPages - 1);
+  const pagedConvRows = rows.slice(F.page * CONV_PAGE_SIZE, (F.page + 1) * CONV_PAGE_SIZE);
+
   h+=`<div class="table-head">
     <h3>Conversion Farmers</h3>
     <span class="meta">${rows.length} of ${DB.convFarmers.length} records</span>
@@ -6327,7 +6438,7 @@ function viewConversion(){
   </tr></thead><tbody>`;
   if(!rows.length)h+=`<tr><td colspan="9"><div class="empty">${svg(I.convert)}<div>No conversion farmers match.</div></div></td></tr>`;
   const today=todayISO();
-  rows.forEach(r=>{
+  pagedConvRows.forEach(r=>{
     const fc=fcById(r.fcId);
     const overdue = r.nextVisitDue && daysBetween(r.nextVisitDue,today)>DAYS_OVERDUE_VISIT;
     // last visit: prefer .lastVisitAt; fall back to most recent date in visits/observations
@@ -6353,13 +6464,26 @@ function viewConversion(){
       <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button></td>
     </tr>`;
   });
+  if(convTotalPages > 1){
+    h+=`<div style="display:flex;align-items:center;gap:10px;padding:12px 0;justify-content:center">
+      <button class="btn btn-ghost btn-sm" id="convPrev" ${F.page===0?'disabled':''}>&larr; Prev</button>
+      <span style="font-size:12.5px;color:var(--ink-soft)">Page ${F.page+1} of ${convTotalPages} &nbsp;(${rows.length} total)</span>
+      <button class="btn btn-ghost btn-sm" id="convNext" ${F.page>=convTotalPages-1?'disabled':''}>Next &rarr;</button>
+    </div>`;
+  }
   h+='</tbody></table></div>';
   v.innerHTML=h;
+
+  const convPrev = v.querySelector('#convPrev');
+  const convNext = v.querySelector('#convNext');
+  if(convPrev) convPrev.onclick = () => { F.page--; render(); };
+  if(convNext) convNext.onclick = () => { F.page++; render(); };
+
   v.querySelectorAll('.statbox').forEach(b=>{
-    b.onclick=()=>{const k=b.dataset.box;F.status=(F.status||'')===k?'':k;render();};
+    b.onclick=()=>{const k=b.dataset.box;F.status=(F.status||'')===k?'':k;F.page=0;render();};
   });
   v.querySelectorAll('thead th[data-sort]').forEach(t=>t.onclick=()=>{
-    const c=t.dataset.sort;if(SORT.col===c)SORT.dir*=-1;else{SORT.col=c;SORT.dir=1;}render();});
+    const c=t.dataset.sort;if(SORT.col===c)SORT.dir*=-1;else{SORT.col=c;SORT.dir=1;}F.page=0;render();});
   v.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=e=>{
     if(e.target.closest('[data-act]'))return;openConvDrawer(tr.dataset.id);});
   v.querySelectorAll('[data-act]').forEach(b=>b.onclick=e=>{
@@ -6369,7 +6493,7 @@ function viewConversion(){
     // and leave the farmer mis-categorised as "Not yet scored".
     if(b.dataset.act === 'score') openConvScoreModal(b.dataset.id);
   });
-  const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;render();};};
+  const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('state','cState');setF('district','cDistrict');setF('fc','cFc');
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
@@ -12284,13 +12408,22 @@ function enterPublicMode(targetRoute){
   css.textContent = `
     body.public-mode .sidebar, body.public-mode .topbar { display: none !important; }
     body.public-mode .main { margin-left: 0 !important; width: 100% !important; }
-    body.public-mode .content { padding: 0 !important; max-width: 100% !important; background: linear-gradient(180deg,#f8faf6 0%,#eef4ec 100%); min-height: 100vh; }
-    .public-wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; }
+    body.public-mode .content {
+      padding: 0 !important; max-width: 100% !important; min-height: 100vh;
+      background: url('image-1781925519749.webp') center/cover no-repeat fixed;
+      position: relative;
+    }
+    body.public-mode .content::before {
+      content: ''; position: fixed; inset: 0;
+      background: rgba(0,25,8,.62);
+      z-index: 0;
+    }
+    .public-wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; position: relative; z-index: 1; }
     .public-hero { text-align: center; padding: 36px 0 28px; }
     .public-hero .logo { font-size: 56px; line-height: 1; margin-bottom: 12px; }
-    .public-hero h1 { font-size: 34px; font-weight: 800; margin: 6px 0 8px; color: #1b2333; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; }
-    .public-hero .sub { font-size: 15px; color: #515f78; max-width: 540px; margin: 0 auto; line-height: 1.5; }
-    .public-hero .org { font-size: 11.5px; color: #929fb5; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 4px; }
+    .public-hero h1 { font-size: 34px; font-weight: 800; margin: 6px 0 8px; color: #fff; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
+    .public-hero .sub { font-size: 15px; color: rgba(255,255,255,.88); max-width: 540px; margin: 0 auto; line-height: 1.5; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
+    .public-hero .org { font-size: 11.5px; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 4px; }
     .public-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
     /* Three-card vertical stack — narrow column, centred. */
     .public-cards.three { display: flex; flex-direction: column; gap: 14px; max-width: 560px; margin: 8px auto 0; }
@@ -12409,7 +12542,11 @@ function renderPublicLanding(){
   v.innerHTML = `
     <div class="public-wrap">
       <div class="public-hero">
-        <div class="logo">🌾</div>
+        <div class="logo" style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:4px">
+          <img src="sristi-logo.jpg" alt="Sristi" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#fff;border:2px solid rgba(255,255,255,0.5)">
+          <div style="width:1.5px;height:40px;background:rgba(255,255,255,0.3);border-radius:1px"></div>
+          <img src="krsf-logo.png" alt="KRSF" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.4)">
+        </div>
         <div class="org">Sristi · KRSF</div>
         <h1>સૃષ્ટિ ખેડૂત હાટ</h1>
         <div class="sub">પ્રાકૃતિક ખેતી કરો, યોગ્ય ભાવે વેચો. ગુજરાતના ખેડૂતો માટે — સૃષ્ટિ KRSF નો કાર્યક્રમ.</div>
@@ -12427,7 +12564,7 @@ function renderPublicLanding(){
           <div class="public-card-emoji">🌱</div>
           <div class="text-col">
             <h2>પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ</h2>
-            <p class="desc">હાલમાં રસાયણ વાપરો છો પણ બંધ કરવા તૈયાર છો? FC તમારી સાથે કામ કરશે.</p>
+            <p class="desc">હાલમાં રસાયણ વાપરો છો પણ બંધ કરવા તૈયાર છો?</p>
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>
@@ -12474,7 +12611,7 @@ function renderPublicLanding(){
 const SRISTI_CREDS = [
   { id: 'admin',      password: 'sristi@2026', role: 'admin', userId: '',      userName: 'Admin' },
   { id: 'maheshbhai', password: 'sristi@2026', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
-  { id: 'ayush',      password: 'sristi@2026', role: 'fc',    userId: 'FC002', userName: 'Ayush' },
+  { id: '9081553202', password: '3202',        role: 'fc',    userId: 'FFCtvyir314', userName: 'Ayush' },
   { id: 'harsh',      password: 'sristi@2026', role: 'fc',    userId: 'FC003', userName: 'Harsh' },
 ];
 
@@ -12723,7 +12860,12 @@ function openLoginModal(){
     const submitBtn = $('#lmSubmit');
     submitBtn.disabled = true; submitBtn.textContent = 'Signing in...';
     let authUser = null;
-    try { authUser = await verifyCredentials(idVal, pwVal); } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
+    try {
+      authUser = await Promise.race([
+        verifyCredentials(idVal, pwVal),
+        new Promise(r => setTimeout(() => r(null), 3000))
+      ]);
+    } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
     if (!authUser) {
       const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
       if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };

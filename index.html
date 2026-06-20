@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18u';
+const APP_VERSION = 'v18v';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5066,7 +5066,7 @@ function openConvScoreModal(id){
     await saveDB(true);
     closeModal();
     if(typeof render === 'function') render();
-    if(typeof openConvDrawer === 'function') openConvDrawer(f.id);
+    if(typeof openConvDrawer === 'function' && !document.body.classList.contains('fc-mode')) openConvDrawer(f.id);
     toast('Visit updated · ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label);
   };
 }

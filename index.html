@@ -382,7 +382,7 @@ tbody tr:last-child td{border-bottom:none}
 .modal-head{padding:17px 22px;border-bottom:1px solid var(--line);
   display:flex;align-items:center;gap:11px;background:var(--panel);border-radius:var(--r-lg) var(--r-lg) 0 0}
 .modal-head h3{font-size:17px;flex:1;font-weight:700}
-.modal-body{padding:20px 22px;overflow-y:auto}
+.modal-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0}
 .modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:9px;
   justify-content:flex-end;background:var(--panel);border-radius:0 0 var(--r-lg) var(--r-lg)}
 
@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18r';
+const APP_VERSION = 'v18s';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

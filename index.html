@@ -640,8 +640,10 @@ body.fc-mode #fc-bnav{display:flex}
   letter-spacing:.05em;padding:4px 14px 4px;background:var(--panel-2)}
 .fc-empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13px}
 .fc-lv{font-size:10px;color:var(--ink-soft);display:flex;align-items:center;gap:3px}
-.fc-btn-edit{font-size:11px;padding:4px 9px;border-radius:7px;border:0.5px solid var(--line);color:var(--ink-soft);background:var(--panel);cursor:pointer;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
-.fc-btn-edit svg{width:12px;height:12px}
+.fc-btn-edit{background:var(--panel);color:#534AB7;border:1px solid #7F77DD;
+  border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
+.fc-btn-edit svg{width:13px;height:13px}
 .vs-crop-chip{font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);color:var(--ink-soft);background:var(--panel);cursor:pointer;margin:0;line-height:1.3}
 .vs-crop-chip.on{border-color:var(--leaf);color:var(--leaf);background:var(--green-bg,#f0fdf4)}
 .fc-av svg{width:20px;height:20px}
@@ -1852,7 +1854,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18m';
+const APP_VERSION = 'v18n';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3125,12 +3127,13 @@ function idbOpen(){
   return new Promise((resolve, reject) => {
     if(_idb){ resolve(_idb); return; }
     if(!window.indexedDB){ reject(new Error('no idb')); return; }
-    const req = indexedDB.open('sristi_v11_local', 1);
+    const req = indexedDB.open('sristi_v11_local', 2);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if(!db.objectStoreNames.contains('photoQueue')) db.createObjectStore('photoQueue', {keyPath:'photoId'});
-      if(!db.objectStoreNames.contains('forms'))      db.createObjectStore('forms',      {keyPath:'farmerId'});
-      if(!db.objectStoreNames.contains('formWrites')) db.createObjectStore('formWrites', {keyPath:'key'});
+      if(!db.objectStoreNames.contains('photoQueue'))         db.createObjectStore('photoQueue',         {keyPath:'photoId'});
+      if(!db.objectStoreNames.contains('forms'))              db.createObjectStore('forms',              {keyPath:'farmerId'});
+      if(!db.objectStoreNames.contains('formWrites'))         db.createObjectStore('formWrites',         {keyPath:'key'});
+      if(!db.objectStoreNames.contains('pendingEnrolments'))  db.createObjectStore('pendingEnrolments',  {keyPath:'id'});
     };
     req.onsuccess = () => { _idb = req.result; resolve(_idb); };
     req.onerror = () => reject(req.error);
@@ -3445,10 +3448,25 @@ async function migrateLegacyData(){
   }catch(e){ console.warn('[Sristi] migration sweep:', e); }
 }
 
+let _enrolFlushBusy = false;
+async function flushPendingEnrolments(){
+  if(_enrolFlushBusy || !FB || !FB.ready || !navigator.onLine) return;
+  _enrolFlushBusy = true;
+  try{
+    const items = await idbAll('pendingEnrolments').catch(()=>[]);
+    for(const sub of items){
+      try{
+        await fbRef('pendingEnrolments/'+sub.id).set(sanitizeForFB(sub));
+        await idbDel('pendingEnrolments', sub.id);
+      }catch(e){ console.warn('[Sristi] enrolment sync failed (will retry):', e); }
+    }
+  } finally { _enrolFlushBusy = false; }
+}
+
 /* background pumps */
-setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); }, 30000 + Math.floor(Math.random()*10000));
-window.addEventListener('online', ()=>{ setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); }, 1500); });
-setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); updatePhotoBadge(); }, 5000);
+setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); }, 30000 + Math.floor(Math.random()*10000));
+window.addEventListener('online', ()=>{ setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); }, 1500); });
+setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); updatePhotoBadge(); }, 5000);
 
 /* activity log — newest entries first */
 // v9 Batch 3 — accountability helpers. Every mutation in the app routes through
@@ -4381,19 +4399,33 @@ const CONV_SCORE_FRAMEWORK = {
 const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2'];
 // All B-section keys (used by the scorer to iterate without hard-coding).
 const CONV_SCORE_B_KEYS = ['B1','B2','B3','B4'];
-const GJ_VISIT_CROPS = [
-  'ઘઉં (Wheat)','ડાંગર (Rice)','બાજરો (Pearl millet)','જુવાર (Sorghum)','મકાઈ (Maize)','રાગી (Finger millet)',
-  'કપાસ (Cotton)','મગફળી (Groundnut)','શેરડી (Sugarcane)','એરંડા (Castor)','તમાકુ (Tobacco)',
-  'તલ (Sesame)','સરસો (Mustard)','સૂર્યમુખી (Sunflower)','સોયાબીન (Soybean)','અળસી (Linseed)',
-  'તુવેર (Pigeon pea)','ચણા (Chickpea)','મગ (Green gram)','અડદ (Black gram)','ચોળા (Cowpea)','વાલ (Field bean)','મઠ (Moth bean)',
-  'ભીંડા (Lady\'s finger)','ટામેટા (Tomato)','ડુંગળી (Onion)','બટેટા (Potato)','રીંગણ (Brinjal)','મરચા (Chilli)',
-  'કારેલા (Bitter gourd)','દૂધી (Bottle gourd)','તુરિયા (Ridge gourd)','ગલકા (Sponge gourd)','કાકડી (Cucumber)',
-  'કોળું (Pumpkin)','કોબી (Cabbage)','ફૂલકોબી (Cauliflower)','ગ્વાર (Cluster beans)','વટાણા (Peas)',
-  'પાલક (Spinach)','મેથી (Fenugreek)','ગાજર (Carrot)','મૂળા (Radish)','સૂરણ (Yam)','બીટ (Beetroot)',
-  'જીરું (Cumin)','ધાણા (Coriander)','વરિયાળી (Fennel)','અજમો (Ajwain)','હળદર (Turmeric)','આદુ (Ginger)','લસણ (Garlic)',
-  'કેરી (Mango)','કેળ (Banana)','પપૈયા (Papaya)','દાડમ (Pomegranate)','ચીકુ (Sapota)','લીંબુ (Lemon)',
-  'જામફળ (Guava)','આમળા (Amla)','ટેટી (Muskmelon)','તડબૂચ (Watermelon)','ખારેક (Date palm)','બોર (Indian jujube)','નારિયેળ (Coconut)',
-  'સરગવો (Drumstick)','ચારો (Fodder)',
+const GJ_VISIT_CROP_CATS = [
+  { cat:'ધાન્ય · Cereals & millets', crops:[
+    'ઘઉં (Wheat)','ડાંગર (Rice)','બાજરો (Pearl millet)','જુવાર (Sorghum)','મકાઈ (Maize)','રાગી (Finger millet)',
+  ]},
+  { cat:'કઠોળ · Pulses', crops:[
+    'તુવેર (Pigeon pea)','ચણા (Chickpea)','મગ (Green gram)','અડદ (Black gram)','ચોળા (Cowpea)','વાલ (Field bean)','મઠ (Moth bean)',
+  ]},
+  { cat:'રોકડ પાક · Cash crops', crops:[
+    'કપાસ (Cotton)','મગફળી (Groundnut)','શેરડી (Sugarcane)','એરંડા (Castor)','તમાકુ (Tobacco)',
+  ]},
+  { cat:'તેલીબિયાં · Oilseeds', crops:[
+    'તલ (Sesame)','સરસો (Mustard)','સૂર્યમુખી (Sunflower)','સોયાબીન (Soybean)','અળસી (Linseed)',
+  ]},
+  { cat:'શાકભાજી · Vegetables', crops:[
+    'ભીંડા (Lady\'s finger)','ટામેટા (Tomato)','ડુંગળી (Onion)','બટેટા (Potato)','રીંગણ (Brinjal)','મરચા (Chilli)',
+    'કારેલા (Bitter gourd)','દૂધી (Bottle gourd)','તુરિયા (Ridge gourd)','ગલકા (Sponge gourd)','કાકડી (Cucumber)',
+    'કોળું (Pumpkin)','કોબી (Cabbage)','ફૂલકોબી (Cauliflower)','ગ્વાર (Cluster beans)','વટાણા (Peas)',
+    'પાલક (Spinach)','મેથી (Fenugreek)','ગાજર (Carrot)','મૂળા (Radish)','સૂરણ (Yam)','બીટ (Beetroot)','સરગવો (Drumstick)',
+  ]},
+  { cat:'મસાલા · Spices', crops:[
+    'જીરું (Cumin)','ધાણા (Coriander)','વરિયાળી (Fennel)','અજમો (Ajwain)','હળદર (Turmeric)','આદુ (Ginger)','લસણ (Garlic)',
+  ]},
+  { cat:'ફળ · Fruits', crops:[
+    'કેરી (Mango)','કેળ (Banana)','પપૈયા (Papaya)','દાડમ (Pomegranate)','ચીકુ (Sapota)','લીંબુ (Lemon)',
+    'જામફળ (Guava)','આમળા (Amla)','ટેટી (Muskmelon)','તડબૂચ (Watermelon)','ખારેક (Date palm)','બોર (Indian jujube)','નારિયેળ (Coconut)',
+  ]},
+  { cat:'અન્ય · Other', crops:['ચારો (Fodder)'] },
 ];
 
 const CONV_SCORE_STATUS = {
@@ -4705,8 +4737,13 @@ function openConvScoreModal(id){
     + '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Observation (optional)</label>'
     + '<textarea id="vsNotes" placeholder="ખેડૂતે શું શરૂ કર્યું, શું જોવા મળ્યું…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;min-height:48px;resize:vertical"></textarea>'
     + '<div style="margin-top:10px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Crops grown on selected plot</label>'
-    + '<div id="vsCropWrap" style="display:flex;flex-wrap:wrap;gap:6px">'
-    + GJ_VISIT_CROPS.map(c=>`<button type="button" class="vs-crop-chip" data-crop="${c}">${c}</button>`).join('')
+    + '<div id="vsCropWrap">'
+    + GJ_VISIT_CROP_CATS.map(({cat,crops})=>
+        '<div style="font-size:10px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line)">'+ cat +'</div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:5px">'
+        + crops.map(c=>`<button type="button" class="vs-crop-chip" data-crop="${c}">${c}</button>`).join('')
+        +'</div>'
+      ).join('')
     + '</div></div>'
     // Farm-visit photos — multiple, stored as base64 in the visit record
     + '<div style="margin-top:10px">'
@@ -13483,13 +13520,15 @@ async function submitPublicForm(kind){
     submission.convertBigha = +($('#pfConvert').value||0);
   }
 
-  // Save to local + Firebase
+  // Save to local + Firebase (queue in IDB if offline for later flush)
   try {
     DB.pendingEnrolments = DB.pendingEnrolments || [];
     DB.pendingEnrolments.push(submission);
     cacheLocal();
-    if(FB && FB.ready){
+    if(FB && FB.ready && navigator.onLine){
       await fbRef('pendingEnrolments/'+appId).set(sanitizeForFB(submission));
+    } else {
+      await idbPut('pendingEnrolments', submission).catch(()=>{});
     }
     // Show thanks screen
     window._pfLastApp = submission;

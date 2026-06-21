@@ -4,3 +4,6 @@ _*.js
 
 # Claude Code session files
 .claude/
+
+# Local version backups (keep on disk, don't push to GitHub)
+index-V*.html

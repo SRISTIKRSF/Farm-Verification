@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v19d';
+const APP_VERSION = 'v20';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4641,8 +4641,8 @@ function openConvScoreModal(id){
       +   '<b data-earned="' + key + '" style="color:' + (earned ? 'var(--green)' : 'var(--red)') + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + earned + ' / ' + fw.marks + '</b></div>'
       // Decision buttons — compact
       + '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
-      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="no">' + svg(I.check,2) + 'No (' + fw.marks + ')</button>'
-      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="yes">✗ Yes (0)</button>'
+      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="no">' + svg(I.check,2) + 'Chemical-free ✓ (' + fw.marks + ')</button>'
+      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="yes">✗ Found chemicals (0)</button>'
       // Evidence pills in the SAME row (saves vertical space)
       +   '<div style="display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:280px;align-items:center" data-aev="' + key + '">'
       +     '<span style="font-size:9.5px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:4px">Reference:</span>'
@@ -4939,6 +4939,9 @@ function openConvScoreModal(id){
       const ok = confirm('No practices ticked and chemical-free area is 0. This will save A1/A2 only (≤50/100).\n\nContinue anyway?');
       if(!ok) return;
     }
+    const saveBtn = document.getElementById('scoreSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+    try {
     // ===== Push the OUTGOING score into history before overwriting =====
     // Each visit/re-score gets its own row so admin can see the trail
     // 0 → 55 → 75 → 82 over time.
@@ -5068,6 +5071,10 @@ function openConvScoreModal(id){
     if(typeof render === 'function') render();
     if(typeof openConvDrawer === 'function' && !document.body.classList.contains('fc-mode')) openConvDrawer(f.id);
     toast('Visit updated · ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label);
+    } catch(e) {
+      saveBtn.disabled = false; saveBtn.textContent = 'Save visit';
+      toast('Save failed — please try again.');
+    }
   };
 }
 
@@ -5517,7 +5524,7 @@ function _fcConvCards(farmers,F){
     const overdue=daysAgo!==null&&daysAgo>21;
     const lvText=daysAgo===null?'No visits yet':`${daysAgo}d ago`;
     const btn=overdue
-      ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.alert,2.5)} Overdue</button>`
+      ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit now</button>`
       :`<button class="fc-btn-vi" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit</button>`;
     return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
       <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
@@ -5551,7 +5558,7 @@ function viewFcConversion(){
     </div>
     <div style="background:var(--panel-2)">
       <div class="fc-pills">
-        ${['','pending','yellow','red','green'].map(k=>`<div class="fc-pill${F.cat===k?' active':''}" data-cat="${k}">${k?catLabel[k]:'All'}</div>`).join('')}
+        ${['','pending','red','yellow','green'].map(k=>`<div class="fc-pill${F.cat===k?' active':''}" data-cat="${k}">${k?catLabel[k]:'All'}</div>`).join('')}
       </div>
       <div class="fc-srch">${svg(I.filter,2)}<input id="fcCSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
       <div class="fc-slbl" id="fcCCount"></div>
@@ -5644,7 +5651,7 @@ function viewFcProfile(){
     ${_fcTopbar(esc((name[0]||'F').toUpperCase()),'My profile',esc(name))}
     <div class="fc-stats">
       <div class="fc-stat"><span class="sv">${(DB.haatFarmers||[]).length}</span><span class="sl">Haat</span></div>
-      <div class="fc-stat"><span class="sv">${(DB.convFarmers||[]).length}</span><span class="sl">Conversion</span></div>
+      <div class="fc-stat"><span class="sv">${(DB.convFarmers||[]).filter(f=>f.fcId===fcId).length}</span><span class="sl">My Conversion</span></div>
       <div class="fc-stat"><span class="sv">${visits90}</span><span class="sl">Visits (90d)</span></div>
     </div>
     <div class="fc-cards">
@@ -5657,7 +5664,9 @@ function viewFcProfile(){
           <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">FC ID</span><span class="fc-idchip">${esc(fcId||'—')}</span></div>
         </div>
       </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:4px;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';toast('Signed out');">Sign out</button>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+        <button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';toast('Signed out');">Sign out</button>
+      </div>
     </div>`;
 }
 
@@ -13307,7 +13316,7 @@ function openLoginModal(){
       <div id="lmErr"></div>
       <div class="lm-fld">
         <label>User ID</label>
-        <input id="lmId" autocomplete="username" placeholder="admin / maheshbhai / ayush / harsh" autofocus>
+        <input id="lmId" autocomplete="username" placeholder="Your phone number or username" autofocus>
       </div>
       <div class="lm-fld">
         <label>Password</label>

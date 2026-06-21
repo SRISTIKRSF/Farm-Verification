@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v18z';
+const APP_VERSION = 'v19a';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13317,6 +13317,12 @@ function openLoginModal(){
     if (!authUser) {
       const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
       if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };
+    }
+    // If Firebase returned a user but their fcCode doesn't match SRISTI_CREDS, trust SRISTI_CREDS.
+    // Guards against stale/wrong fcCode in Firebase config/users corrupting the session.
+    if (authUser) {
+      const canonical = SRISTI_CREDS.find(c => c.id === authUser.id);
+      if (canonical && canonical.userId) authUser.fcCode = canonical.userId;
     }
     if(!authUser){
       submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';

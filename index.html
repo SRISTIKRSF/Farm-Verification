@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v19a';
+const APP_VERSION = 'v19b';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5426,8 +5426,7 @@ function renderNav(){
 
 /* ===== FC MOBILE UI ===== */
 function _fcMyName(){
-  const o=(DB.fcs||[]).find(f=>f.id===(SESSION&&SESSION.userId));
-  return o?o.name:(SESSION&&SESSION.userName)||'FC';
+  return (SESSION&&SESSION.userName)||'FC';
 }
 function _fcTopbar(av,sub,title,extra=''){
   return `<div class="fc-tb"><div class="fc-av">${av}</div><div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">${sub}</div><div style="font-size:15px;font-weight:700">${title}</div></div>${extra}</div>`;

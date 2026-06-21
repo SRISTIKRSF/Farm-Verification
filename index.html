@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v19b';
+const APP_VERSION = 'v19c';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13041,11 +13041,11 @@ function renderPublicLanding(){
 // random visitors from poking around the admin UI).
 const SRISTI_CREDS = [
   { id: 'admin',      password: 'sristi@2026', role: 'admin', userId: '',      userName: 'Admin' },
-  { id: 'maheshbhai', password: 'sristi@2026', role: 'fc',    userId: 'FC001', userName: 'Maheshbhai' },
-  { id: '9081553202', password: '3202',        role: 'fc',    userId: 'FFCtvyir314', userName: 'Ayush' },
-  { id: 'harsh',      password: 'sristi@2026', role: 'fc',    userId: 'FC003',       userName: 'Harsh' },
-  { id: '9979187853', password: '7853',        role: 'fc',    userId: 'FC003',       userName: 'Harsh' },
-  { id: '0000000000', password: '0000',        role: 'fc',    userId: 'FC_DEMO',     userName: 'Demo FC' },
+  { id: '9081553202', password: '3202',        role: 'fc',    userId: 'FC001', userName: 'Ayush' },
+  { id: '9875288782', password: '8782',        role: 'fc',    userId: 'FC004', userName: 'Jaydip' },
+  { id: '9924289598', password: '9598',        role: 'fc',    userId: 'FC003', userName: 'Mayur' },
+  { id: '9979187853', password: '7853',        role: 'fc',    userId: 'FC002', userName: 'Harsh' },
+  { id: '1234567890', password: '7890',        role: 'fc',    userId: 'FC000', userName: 'Demo FC' },
 ];
 
 // === USER MANAGEMENT (v11) =============================================
@@ -13316,12 +13316,6 @@ function openLoginModal(){
     if (!authUser) {
       const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
       if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };
-    }
-    // If Firebase returned a user but their fcCode doesn't match SRISTI_CREDS, trust SRISTI_CREDS.
-    // Guards against stale/wrong fcCode in Firebase config/users corrupting the session.
-    if (authUser) {
-      const canonical = SRISTI_CREDS.find(c => c.id === authUser.id);
-      if (canonical && canonical.userId) authUser.fcCode = canonical.userId;
     }
     if(!authUser){
       submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';

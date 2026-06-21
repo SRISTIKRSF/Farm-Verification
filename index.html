@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v20a';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4641,8 +4641,8 @@ function openConvScoreModal(id){
       +   '<b data-earned="' + key + '" style="color:' + (earned ? 'var(--green)' : 'var(--red)') + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + earned + ' / ' + fw.marks + '</b></div>'
       // Decision buttons — compact
       + '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
-      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="no">' + svg(I.check,2) + 'Chemical-free ✓ (' + fw.marks + ')</button>'
-      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="yes">✗ Found chemicals (0)</button>'
+      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="no">' + svg(I.check,2) + (key==='A1'?'No chemical fertilizer ✓':'No pesticide/herbicide ✓') + ' (' + fw.marks + ')</button>'
+      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:11.5px;padding:6px 10px" data-aset="' + key + '" data-av="yes">✗ ' + (key==='A1'?'Fertilizer found':'Pesticide found') + ' (0)</button>'
       // Evidence pills in the SAME row (saves vertical space)
       +   '<div style="display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:280px;align-items:center" data-aev="' + key + '">'
       +     '<span style="font-size:9.5px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:4px">Reference:</span>'

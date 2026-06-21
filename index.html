@@ -807,6 +807,7 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
     <div class="ico">✓</div>
     <h2>પત્રક સફળતાપૂર્વક જમા થયું!</h2>
     <p>તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</p>
+    <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
   </div>
 </div>
 
@@ -920,7 +921,7 @@ function renderField(q){
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="multi-count" data-multicount="\${id}" style="display:flex;flex-direction:column">\${opts}</div></div>\`;
   }
   if(q.type==='photo'){
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="photo-grid" data-photos="\${id}"><label class="photo-add">+<input type="file" accept="image/*" capture="environment" multiple></label></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="photo-grid" data-photos="\${id}"><label class="photo-add">+<input type="file" accept="image/*" multiple></label></div></div>\`;
   }
   if(q.type==='crops_table'){
     return \`<div class="field" data-q="\${id}">\${lbl}<table class="crops-table" id="cropsTbl"><thead><tr><th>#</th><th>પાક</th><th style="width:80px">વીઘા</th><th style="width:110px">ઉત્પાદન/સીઝન</th><th style="width:100px">આવક (₹/વર્ષ)</th></tr></thead><tbody id="cropRows"></tbody></table></div>\`;
@@ -1181,6 +1182,8 @@ function submit(){
   clearDraft();
   $('#formWrap').querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   $('#successScreen').classList.add('show');
+  const _ref = $('#successRef');
+  if(_ref){ const _d=new Date(); _ref.innerHTML='નામ: <b>'+(ANSWERS.name||'—')+'</b><br>સંદર્ભ: <b>'+_d.getFullYear()+String(_d.getMonth()+1).padStart(2,'0')+String(_d.getDate()).padStart(2,'0')+'-'+String(_d.getHours()).padStart(2,'0')+String(_d.getMinutes()).padStart(2,'0')+'</b>'; }
   $('#actionsBar').style.display = 'none';
   $('#dotsWrap').style.display = 'none';
   $('#progressFill').style.width = '100%';
@@ -1425,7 +1428,7 @@ function renderFcControls(q){
       h += '<div class="l">FC answer</div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit">હા / Yes</button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit">ના / No</button></div>';
     } else if(q.type === 'photo'){
       h += '<div class="l">FC photo upload</div>';
-      h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" capture="environment" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
+      h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
     } else {
       /* text / textarea */
       const ph = q.type==='textarea' ? 'FC writes their observation here…' : 'FC answer';
@@ -1452,7 +1455,7 @@ function renderFcControls(q){
      their own verification photo in addition to the radio. */
   if(q.type==='photo'){
     h += '<div class="fc-photo-row" style="margin-top:10px"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">📷 FC verification photo (optional)</div>'
-       + '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" capture="environment" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div></div>';
+       + '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div></div>';
   }
   if(q.type==='multi'){
     const claim = CLAIMS_BY_ID[q.id];
@@ -1859,7 +1862,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20a';
+const APP_VERSION = 'v20b';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4607,6 +4610,8 @@ function openConvScoreModal(id){
       saveBtn.style.opacity = mandatoryMissing ? '.5' : '1';
       saveBtn.style.pointerEvents = mandatoryMissing ? 'none' : 'auto';
       saveBtn.title = mandatoryMissing ? 'Set A1 and A2 first' : '';
+      const saveHint = document.getElementById('saveHint');
+      if(saveHint) saveHint.style.display = mandatoryMissing ? 'block' : 'none';
     }
     // Live per-section earned/max badges (A1, A2, B1, B2, B3, B4, C).
     const setBadge = (key, earned, max) => {
@@ -4774,7 +4779,7 @@ function openConvScoreModal(id){
     +   '<div id="vsPhotoGrid" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
     +     '<label style="width:64px;height:64px;border:1.5px dashed var(--line-strong);border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff" title="Add photo">'
     +       '<span style="font-size:22px;line-height:1">+</span>'
-    +       '<input type="file" id="vsPhotoInput" accept="image/*" capture="environment" multiple style="display:none">'
+    +       '<input type="file" id="vsPhotoInput" accept="image/*" multiple style="display:none">'
     +     '</label>'
     +   '</div>'
     + '</div>'
@@ -4792,7 +4797,8 @@ function openConvScoreModal(id){
 
   modalShell('Log visit + score · ' + esc(f.name), body,
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
-    + '<button class="btn btn-primary" id="scoreSave">' + svg(I.check) + 'Save visit</button>');
+    + '<button class="btn btn-primary" id="scoreSave">' + svg(I.check) + 'Save visit</button>'
+    + '<div id="saveHint" style="width:100%;text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:none">Answer A1 and A2 above to enable save</div>');
   // === Visit-detail wiring (date sync + Other FC reveal + photo upload) ===
   const vsPhotos = [];                          // captured photos, base64
   const vsDateEl = document.getElementById('vsDate');
@@ -6572,8 +6578,8 @@ function openPlanVisitModal(){
   const defaultDate=addDaysISO(today,7);
   const body=`<div class="hint" style="margin-bottom:12px"><b>${ids.length}</b> farmer${ids.length===1?'':'s'} selected. Pick a planned visit date and (optionally) which Field Coordinator will do the visit.</div>
     <div class="field-row">
-      ${fld('Planned visit date',`<input type="date" id="pvDate" value="${defaultDate}">`,true)}
-      ${fld('Field Coordinator',sel('pvFc',[['','— select FC —'],...(DB.fieldCoordinators||[]).map(x=>[x.id,x.name])]))}
+      ${fld('Planned visit date',`<input type="date" id="pvDate" value="${defaultDate}" min="${today}">`,true)}
+      ${fld('Field Coordinator',sel('pvFc',[['','— select FC —'],...(DB.fieldCoordinators||[]).map(x=>[x.id,x.name])],currentFcId()||''))}
     </div>
     ${fld('Note (optional)',`<input id="pvNote" placeholder="e.g. cluster visit to Bhiloda taluka">`)}
   `;
@@ -9383,7 +9389,7 @@ function openFarmerModal(program,id){
 
   let body=`<div class="field-row">
     ${fld('Farmer name',`<input id="ffName" value="${esc(f.name||'')}" placeholder="Surname last">`,true)}
-    ${fld('Phone',`<input id="ffPhone" value="${esc(f.phone||'')}" placeholder="10-digit mobile">`)}
+    ${fld('Phone',`<input id="ffPhone" type="tel" inputmode="numeric" value="${esc(f.phone||'')}" placeholder="10-digit mobile">`)}
   </div>
   <div class="field-row">
     ${fld('Village',`<input id="ffVillage" value="${esc(f.village||'')}">`,true)}
@@ -9549,7 +9555,7 @@ function openFcModal(id){
   const distOpts = DB.states[cur.state||stateOpts[0]];
   const body=`<div class="field-row">
     ${fld('Facilitator name',`<input id="fcName" placeholder="Full name" value="${esc(cur.name||'')}">`,true)}
-    ${fld('Phone',`<input id="fcPhone" placeholder="10-digit mobile" value="${esc(cur.phone||'')}">`,true)}
+    ${fld('Phone',`<input id="fcPhone" type="tel" inputmode="numeric" placeholder="10-digit mobile" value="${esc(cur.phone||'')}">`,true)}
   </div>
   <div class="field-row">
     ${fld('State',sel('fcState',stateOpts,cur.state),true)}
@@ -9707,7 +9713,7 @@ function openFieldCoordinatorModal(id){
   if(editing && !fc) return;
   const body=`<div class="field-row">
     ${fld('Name',`<input id="ffcName" placeholder="e.g. Maheshbhai" value="${esc(fc?.name||'')}">`,true)}
-    ${fld('Phone (optional)',`<input id="ffcPhone" placeholder="10-digit mobile" value="${esc(fc?.phone||'')}">`)}
+    ${fld('Phone (optional)',`<input id="ffcPhone" type="tel" inputmode="numeric" placeholder="10-digit mobile" value="${esc(fc?.phone||'')}">`)}
   </div>`;
   modalShell(editing?'Edit Field Coordinator':'Add Field Coordinator',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -13167,11 +13173,15 @@ function openUserModal(userId) {
           data-orig="${editing ? esc(editing.id) : ''}"
           style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
         <div style="font-size:11px;color:var(--ink-faint);margin-top:3px">Lowercase letters/numbers only, 2\u201320 chars.</div>
+        <div id="umIdWarn" style="display:none;font-size:11.5px;color:var(--orange);margin-top:4px">\u26a0 Login ID will change \u2014 they must use the new ID to sign in.</div>
       </div>
       <div>
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">${isNew ? 'Password *' : 'New Password <span style=\"font-weight:400;color:var(--ink-faint)\">(blank = keep current)</span>'}</label>
-        <input id="umPw" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-          style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+        <div style="position:relative">
+          <input id="umPw" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+            style="width:100%;padding:10px 40px 10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+          <button type="button" id="umPwToggle" onclick="(function(){const i=document.getElementById('umPw');const b=document.getElementById('umPwToggle');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'Show':'Hide';})()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:12px;color:var(--ink-soft);cursor:pointer;padding:4px">Show</button>
+        </div>
       </div>
       <div>
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Role *</label>
@@ -13192,6 +13202,7 @@ function openUserModal(userId) {
      <button class="btn btn-primary" id="umSave">${isNew ? 'Create user' : 'Save changes'}</button>`);
   const roleEl = $('#umRole'), fcRow = $('#umFcRow');
   roleEl.onchange = () => { fcRow.style.display = roleEl.value === 'fc' ? '' : 'none'; };
+  if(editing){ const umIdEl=$('#umId'); umIdEl.oninput=()=>{ const w=$('#umIdWarn'); if(w) w.style.display=umIdEl.value.trim().toLowerCase()!==(umIdEl.dataset.orig||'')?'block':'none'; }; }
   $('#umSave').onclick = async () => {
     const name    = ($('#umName').value||'').trim();
     const uid     = ($('#umId').value||'').trim().toLowerCase();

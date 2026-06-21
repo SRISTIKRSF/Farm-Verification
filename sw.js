@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v20a';
+const CACHE = 'sristi-fv-v20b';
 
 const SHELL = [
   './',

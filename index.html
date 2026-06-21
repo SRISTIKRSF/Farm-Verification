@@ -801,6 +801,11 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
 <div class="dots" id="dotsWrap"></div>
 
+<div id="draftBanner" style="display:none;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;align-items:center;gap:10px;flex-wrap:wrap">
+  <span style="flex:1">અધૂરી Entry મળી. ચાલુ રાખવી? (Unsaved entry found. Continue where you left off?)</span>
+  <button type="button" onclick="restoreDraft();document.getElementById('draftBanner').style.display='none';buildSections();" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">Restore</button>
+  <button type="button" onclick="clearDraft();document.getElementById('draftBanner').style.display='none';" style="background:none;border:1px solid #d97706;border-radius:6px;padding:6px 14px;font-size:12px;color:#92400e;cursor:pointer">Start fresh</button>
+</div>
 <div class="wrap" id="formWrap">
   <div id="sections"></div>
   <div class="success" id="successScreen">
@@ -891,6 +896,8 @@ function showIf(q){
 function renderField(q){
   const id = q.id;
   const lbl = \`<div class="q-label">\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
+  if(q.id==='aadhaar')
+    return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.type==='text' || q.type==='date')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="\${q.type==='date'?'date':'text'}" data-val="\${id}"></div>\`;
   if(q.type==='number')
@@ -900,7 +907,7 @@ function renderField(q){
   if(q.type==='textarea')
     return \`<div class="field" data-q="\${id}">\${lbl}<textarea data-val="\${id}" style="min-height:80px"></textarea></div>\`;
   if(q.type==='yn')
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes">હા / Yes</button><button type="button" data-v="no" class="on">ના / No</button></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes">હા / Yes</button><button type="button" data-v="no">ના / No</button></div></div>\`;
   if(q.type==='select'){
     const opts = (q.options||[]).map(o => \`<option>\${esc(o)}</option>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<select data-val="\${id}"><option value="">— પસંદ કરો —</option>\${opts}</select></div>\`;
@@ -1004,8 +1011,8 @@ function wireFields(){
   /* yn chips */
   $$('.yn[data-yn]').forEach(yn => {
     const q = yn.dataset.yn;
-    /* default to "no" */
-    ANSWERS[q] = ANSWERS[q] || 'no';
+    /* no silent default — require explicit tap. Sync visual state from ANSWERS if already set (draft restore). */
+    if(ANSWERS[q]) yn.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === ANSWERS[q]));
     yn.querySelectorAll('button').forEach(b => b.onclick = () => {
       yn.querySelectorAll('button').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
@@ -1145,10 +1152,23 @@ function submit(){
       if(what.length) msg = what.join(' / ') + ' ભરો';
     }
     toast(msg);
-    /* Jump to the section containing the missing question */
+    /* Jump to the section and highlight the missing field */
     const ss = sections();
     for(let i=0;i<ss.length;i++){
-      if(ss[i].querySelector('[data-q="'+q.id+'"]')){ goto(i); break; }
+      const el = ss[i].querySelector('[data-q="'+q.id+'"]');
+      if(el){
+        goto(i);
+        el.style.outline = '2px solid #ef4444';
+        el.style.borderRadius = '6px';
+        el.style.padding = '4px';
+        let errEl = el.querySelector('.field-err');
+        if(!errEl){ errEl = document.createElement('div'); errEl.className='field-err'; errEl.style.cssText='font-size:12px;color:#ef4444;margin-top:4px;font-weight:600'; el.appendChild(errEl); }
+        errEl.textContent = '⚠ ' + msg;
+        /* Clear highlight once user interacts */
+        el.addEventListener('click', ()=>{ el.style.outline=''; el.style.padding=''; if(errEl) errEl.remove(); }, {once:true});
+        el.addEventListener('input', ()=>{ el.style.outline=''; el.style.padding=''; if(errEl) errEl.remove(); }, {once:true});
+        break;
+      }
     }
     return;
   }
@@ -1197,14 +1217,14 @@ window.addEventListener('message', ev => {
   if(d.type === 'enrol-prefill' && d.schema){
     CATEGORIES = d.schema.categories || [];
     QUESTIONS = d.schema.questions || [];
-    // Silently restore draft if < 30 min old; discard if stale. No confirm()
-    // — blocking dialogs freeze the iframe and make the parent appear hung.
+    // Show draft restore banner if a recent draft exists; let the user decide.
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if(raw){
         const d2 = JSON.parse(raw);
         const ageMin = d2.at ? Math.floor((Date.now()-new Date(d2.at).getTime())/60000) : 999;
-        if(ageMin < 30) restoreDraft(); else clearDraft();
+        if(ageMin < 30){ const hasContent = d2.answers && Object.values(d2.answers).some(v=>Array.isArray(v)?v.length>0:(v!==null&&v!==''&&v!==undefined)); if(hasContent){ const b=document.getElementById('draftBanner'); if(b){ b.style.display='flex'; b.style.alignItems='center'; } } else clearDraft(); }
+        else clearDraft();
       }
     } catch(e) { /* ignore */ }
     buildSections();
@@ -1862,7 +1882,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20b';
+const APP_VERSION = 'v20c';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9448,6 +9468,15 @@ function openFarmerModal(program,id){
   $('#ffState').onchange=()=>{
     const ds=DB.states[$('#ffState').value];
     $('#ffDistrict').innerHTML=ds.map(d=>`<option>${esc(d)}</option>`).join('');
+  };
+
+  // phone inline validation on blur
+  $('#ffPhone').onblur=()=>{
+    const v=$('#ffPhone').value.trim();
+    let err=$('#ffPhoneErr');
+    if(!err){ err=document.createElement('div'); err.id='ffPhoneErr'; err.style.cssText='font-size:12px;color:#ef4444;margin-top:4px'; $('#ffPhone').insertAdjacentElement('afterend',err); }
+    if(v && !/^\d{10}$/.test(v.replace(/\D/g,''))){ err.textContent='⚠ 10-digit mobile number required'; $('#ffPhone').style.borderColor='#ef4444'; }
+    else { err.textContent=''; $('#ffPhone').style.borderColor=''; }
   };
 
   $('#saveFarmer').onclick=async()=>{

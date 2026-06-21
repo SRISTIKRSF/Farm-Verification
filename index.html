@@ -1859,7 +1859,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v19c';
+const APP_VERSION = 'v19d';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10302,6 +10302,7 @@ function viewSettings(){
     h += '</div>';
     v.innerHTML = h;
     v.querySelectorAll('.tab').forEach(t => t.onclick = () => { FILTERS.settings.tab = t.dataset.st; render(); });
+    if (reconcileFcsFromUsers()) saveDB(true);
     const addBtn = $('#uAddBtn');
     if (addBtn) addBtn.onclick = () => openUserModal();
     v.querySelectorAll('[data-uedit]').forEach(b => b.onclick = () => openUserModal(b.dataset.uedit));
@@ -13120,6 +13121,26 @@ async function migrateDefaultUsers() {
   } catch(e) { console.warn('[Users] migration failed:', e); }
 }
 
+// Rebuilds DB.fcs (= DB.fieldCoordinators alias) from config/users FC accounts.
+// config/users is the single source of truth — the Team roster follows it.
+// Returns true if DB changed and caller should saveDB().
+function reconcileFcsFromUsers() {
+  const fcUsers = getUsersList().filter(u => u.role === 'fc' && u.active !== false && u.fcCode);
+  if (!fcUsers.length) return false;
+  const existing = DB.fcs || [];
+  const newFcs = fcUsers.map(u => {
+    const prev = existing.find(x => x.id === u.fcCode) || existing.find(x => x.name === u.name);
+    return Object.assign({}, prev || {}, {
+      id:    u.fcCode,
+      name:  u.name,
+      phone: /^\d{10}$/.test(u.id) ? u.id : (prev && prev.phone) || '',
+    });
+  });
+  if (JSON.stringify(newFcs) === JSON.stringify(existing)) return false;
+  DB.fcs = newFcs;
+  return true;
+}
+
 function openUserModal(userId) {
   const users   = getUsersList();
   const editing = userId ? users.find(u => u.id === userId) : null;
@@ -13206,6 +13227,7 @@ function openUserModal(userId) {
       } else {
         await fbRef(newKey).set(record);
       }
+      if (reconcileFcsFromUsers()) await saveDB(true);
       closeModal();
       render();
       toast((isNew ? 'User created' : 'User updated') + ': ' + name);
@@ -13230,6 +13252,7 @@ async function confirmDeleteUser(userId) {
   if (!confirm('Delete user "' + user.name + '" (@' + userId + ')?\n\nThis cannot be undone.')) return;
   try {
     await fbRef('config/users/u_' + userId).remove();
+    if (reconcileFcsFromUsers()) await saveDB(true);
     render();
     toast('User deleted.');
   } catch(e) {

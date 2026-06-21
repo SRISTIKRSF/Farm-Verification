@@ -1953,7 +1953,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20e';
+const APP_VERSION = 'v20f';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3505,47 +3505,65 @@ async function flushFormWrites(){
    first record edit after v11 would sync a stripped record and orphan the
    inline forms that only existed in the cloud copy. */
 let _migrateSweepDone = false;
+let _migrateSweepBusy = false;
 async function migrateLegacyData(){
-  if(_migrateSweepDone || !DB) return;
-  _migrateSweepDone = true;
-  let movedForms = 0, queuedPhotos = 0;
+  // _migrateSweepDone = permanent "no more legacy data" latch (set only after a
+  // clean sweep). _migrateSweepBusy = single-flight guard so two triggers (the
+  // 2.5s boot timer + an admin saving Cloudinary config) can't run concurrently.
+  if(_migrateSweepDone || _migrateSweepBusy || !DB) return;
+  _migrateSweepBusy = true;
+  let movedForms = 0, queuedPhotos = 0, farmerErrors = 0;
   try{
     for(const f of (DB.haatFarmers||[])){
       if(f.enrollmentFormFull || f.verificationFormFull){
-        FORMS_CACHE[f.id] = FORMS_CACHE[f.id] || {};
-        if(f.enrollmentFormFull   && !FORMS_CACHE[f.id].enrol) FORMS_CACHE[f.id].enrol = f.enrollmentFormFull;
-        if(f.verificationFormFull && !FORMS_CACHE[f.id].verif) FORMS_CACHE[f.id].verif = f.verificationFormFull;
-        if(cloudinaryConfigured()){
-          if(FORMS_CACHE[f.id].enrol) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].enrol, {program:'haat', farmerId:f.id});
-          if(FORMS_CACHE[f.id].verif) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].verif, {program:'haat', farmerId:f.id});
-        }
-        idbPut('forms', {farmerId:f.id, enrol:FORMS_CACHE[f.id].enrol||null, verif:FORMS_CACHE[f.id].verif||null}).catch(()=>{});
-        persistForms(f.id);
-        // v18c — also delete the blobs FROM the farmer RTDB record so future
-        // downloads don't re-inflate with 10MB+ of base64 form data.
-        if(FB && FB.ready){
-          if(f.enrollmentFormFull)   fbRef('haatFarmers/'+f.id+'/enrollmentFormFull').remove().catch(()=>{});
-          if(f.verificationFormFull) fbRef('haatFarmers/'+f.id+'/verificationFormFull').remove().catch(()=>{});
-        }
-        movedForms++;
+        // Per-farmer guard: one bad record must not abort the rest of the sweep.
+        try{
+          FORMS_CACHE[f.id] = FORMS_CACHE[f.id] || {};
+          if(f.enrollmentFormFull   && !FORMS_CACHE[f.id].enrol) FORMS_CACHE[f.id].enrol = f.enrollmentFormFull;
+          if(f.verificationFormFull && !FORMS_CACHE[f.id].verif) FORMS_CACHE[f.id].verif = f.verificationFormFull;
+          if(cloudinaryConfigured()){
+            if(FORMS_CACHE[f.id].enrol) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].enrol, {program:'haat', farmerId:f.id});
+            if(FORMS_CACHE[f.id].verif) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].verif, {program:'haat', farmerId:f.id});
+          }
+          idbPut('forms', {farmerId:f.id, enrol:FORMS_CACHE[f.id].enrol||null, verif:FORMS_CACHE[f.id].verif||null}).catch(()=>{});
+          persistForms(f.id);
+          // v18c — also delete the blobs FROM the farmer RTDB record so future
+          // downloads don't re-inflate with 10MB+ of base64 form data.
+          if(FB && FB.ready){
+            if(f.enrollmentFormFull)   fbRef('haatFarmers/'+f.id+'/enrollmentFormFull').remove().catch(()=>{});
+            if(f.verificationFormFull) fbRef('haatFarmers/'+f.id+'/verificationFormFull').remove().catch(()=>{});
+          }
+          movedForms++;
+        }catch(e){ farmerErrors++; console.warn('[Sristi] migration: haat farmer '+f.id+' skipped (will retry):', e); }
       }
     }
     if(cloudinaryConfigured()){
       for(const f of (DB.convFarmers||[])){
-        const visits = (f.visits&&f.visits.length) ? f.visits : (f.observations||[]);
-        for(const v of visits){
-          if(v && Array.isArray(v.photos) && v.photos.some(p => p && (typeof p==='string' ? _isDataUrlImage(p) : _isDataUrlImage(p.data)))){
-            queuedPhotos += await extractPhotos(v.photos, {program:'conv', farmerId:f.id});
-            markLocalTouch('convFarmers', f.id);
+        try{
+          const visits = (f.visits&&f.visits.length) ? f.visits : (f.observations||[]);
+          for(const v of visits){
+            if(v && Array.isArray(v.photos) && v.photos.some(p => p && (typeof p==='string' ? _isDataUrlImage(p) : _isDataUrlImage(p.data)))){
+              queuedPhotos += await extractPhotos(v.photos, {program:'conv', farmerId:f.id});
+              markLocalTouch('convFarmers', f.id);
+            }
           }
-        }
+        }catch(e){ farmerErrors++; console.warn('[Sristi] migration: conv farmer '+f.id+' skipped (will retry):', e); }
       }
     }
     if(movedForms || queuedPhotos){
       console.log('[Sristi] v11 migration: '+movedForms+' form sets moved to forms/, '+queuedPhotos+' photos queued for upload');
       if(queuedPhotos) saveDB(true);
     }
-  }catch(e){ console.warn('[Sristi] migration sweep:', e); }
+    // Latch as done ONLY when every farmer processed cleanly. If any threw, leave
+    // the flag false so the next trigger (reload, or admin re-saving config) retries
+    // the skipped records instead of permanently abandoning them.
+    if(farmerErrors === 0){ _migrateSweepDone = true; }
+    else { console.warn('[Sristi] migration: '+farmerErrors+' farmer(s) skipped — sweep will retry on next trigger'); }
+  }catch(e){
+    console.warn('[Sristi] migration sweep (structural):', e);   // flag stays false → retries later
+  }finally{
+    _migrateSweepBusy = false;
+  }
 }
 
 let _enrolFlushBusy = false;
@@ -3579,10 +3597,18 @@ async function flushOfflineWrites(){
   } finally { _offlineWritesBusy = false; }
 }
 
-/* background pumps */
-setInterval(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); }, 30000 + Math.floor(Math.random()*10000));
-window.addEventListener('online', ()=>{ setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); }, 1500); });
-setTimeout(()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); updatePhotoBadge(); }, 5000);
+/* background pumps — started by startBackgroundPumps() only AFTER loadDB()
+   resolves (Firebase init complete), so the periodic flush no longer spins dead
+   iterations on every page load before FB.ready. Idempotent: safe to call twice. */
+let _pumpsStarted = false;
+function startBackgroundPumps(){
+  if(_pumpsStarted) return;
+  _pumpsStarted = true;
+  const pump = ()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); };
+  setInterval(pump, 30000 + Math.floor(Math.random()*10000));
+  window.addEventListener('online', ()=>{ setTimeout(pump, 1500); });
+  setTimeout(()=>{ pump(); updatePhotoBadge(); }, 2000);   // initial kick shortly after load
+}
 
 /* activity log — newest entries first */
 // v9 Batch 3 — accountability helpers. Every mutation in the app routes through
@@ -14101,11 +14127,14 @@ window.addEventListener('hashchange', () => {
       if(!DB) DB = normaliseDB(seedDB());
       render();
       // Now connect to Firebase in background (non-blocking).
-      loadDB().catch(e => console.warn('[Sristi] Background DB load failed:', e));
+      loadDB()
+        .then(startBackgroundPumps)   // pumps start once Firebase init resolves
+        .catch(e => console.warn('[Sristi] Background DB load failed:', e));
     } else {
       // Admin/FC mode — need data before showing anything.
       await loadDB();
       render();
+      startBackgroundPumps();   // pumps start now that Firebase init is done
     }
     // v11 — background sweep: move legacy inline forms to forms/{id} and
     // queue legacy base64 photos for Cloudinary. Runs after first paint.

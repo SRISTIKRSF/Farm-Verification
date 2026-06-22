@@ -1974,7 +1974,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20j';
+const APP_VERSION = 'v20k';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13560,8 +13560,13 @@ function openLoginModal(){
     // Firebase under activeSessions/{userId}. On sign-in, check if another
     // device's session is still fresh (< 8 hours) and warn the new login.
     const userKey = ((authUser.fcCode||'') || ('role-'+authUser.role)).replace(/[.#$/[\]]/g,'_');
+    // #20 — AWAIT the multi-device check. Previously this was fire-and-forget
+    // (.then) while closeModal()/enterAdminMode() ran synchronously below, so the
+    // user was dropped into admin mode BEFORE the confirm resolved — and clicking
+    // "Cancel" then nulled SESSION while already inside the app (half-authenticated).
     if(FB && FB.ready){
-      fbRef('activeSessions/'+userKey).get().then(snap => {
+      try {
+        const snap = await fbRef('activeSessions/'+userKey).get();
         const existing = snap.exists() ? snap.val() : null;
         const now = Date.now();
         if(existing && existing.at && (now - existing.at) < 8*60*60*1000 && existing.device !== navigator.userAgent){
@@ -13573,16 +13578,17 @@ function openLoginModal(){
           if(!ok){
             sessionStorage.removeItem(USER_SESSION_KEY);
             SESSION = null;
-            return;
+            submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';
+            return;   // stay on the login modal — do NOT enter admin mode
           }
         }
-        fbRef('activeSessions/'+userKey).set({
+        await fbRef('activeSessions/'+userKey).set({
           userId: authUser.fcCode || '',
           userName: authUser.name,
           at: now,
           device: navigator.userAgent.slice(0,80),
         });
-      }).catch(()=>{});
+      } catch(e) { /* non-fatal — proceed with login */ }
     }
     closeModal();
     enterAdminMode();
@@ -13596,6 +13602,9 @@ function openLoginModal(){
     const el = $('#'+id);
     if(el) el.addEventListener('keypress', e => { if(e.key === 'Enter'){ e.preventDefault(); if(!$('#lmSubmit').disabled) attempt(); } });
   });
+  // #23 — the HTML `autofocus` attribute does not fire on a modal injected after
+  // page parse, so focus the ID field explicitly once the modal is in the DOM.
+  setTimeout(() => { const el = $('#lmId'); if(el) el.focus(); }, 60);
 }
 
 // === PUBLIC HAAT FORM ===

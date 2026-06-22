@@ -1974,7 +1974,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20l';
+const APP_VERSION = 'v20n';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3785,131 +3785,6 @@ function paintUserPill(){
       ['#16a34a','#d97706','#dc2626','#8b5cf6'][((SESSION.userId||'').charCodeAt(0)+1) % 4];
   }
   pill.title = SESSION.role === 'admin' ? 'Logged in as Admin · click to switch' : 'Logged in as ' + name + ' (Field Coordinator) · click to switch';
-}
-function openSwitchUserModal(){
-  // v9 audit-fix #7 — null-guard. If somehow called with no session, bounce
-  // through the login flow instead of crashing on SESSION.role.
-  if(!SESSION){
-    if(typeof openLoginModal === 'function') openLoginModal();
-    return;
-  }
-  // Dynamic FC list from RTDB user cache (replaces hardcoded array)
-  const FC_SW_COLORS = ['#16a34a','#d97706','#3b82f6','#8b5cf6','#dc2626','#06b6d4'];
-  const fcUsers = getUsersList().filter(function(u){ return u.role === 'fc'; });
-  const curR = SESSION.role, curId = SESSION.userId;
-  const adminActive = curR === 'admin';
-
-  // Inject one-shot styles for the login screen (idempotent)
-  if(!document.getElementById('loginUiStyles')){
-    const css = document.createElement('style');
-    css.id = 'loginUiStyles';
-    css.textContent = `
-      .login-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 4px; }
-      @media (max-width: 640px) { .login-grid { grid-template-columns: 1fr; } }
-      .login-card {
-        display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-        gap: 12px; padding: 28px 16px 22px; background: #fff;
-        border: 2px solid var(--line); border-radius: 16px;
-        cursor: pointer; font-family: inherit; text-align: center;
-        transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-        min-height: 240px;
-      }
-      .login-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(27,35,51,0.10); }
-      .login-card.active { border-color: var(--accent); background: var(--accent-soft); }
-      .login-card .av { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 28px; font-weight: 800; font-family: 'Plus Jakarta Sans',sans-serif; box-shadow: 0 4px 12px rgba(27,35,51,0.18); }
-      .login-card .nm { font-size: 17px; font-weight: 700; color: var(--ink); margin: 6px 0 2px; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; }
-      .login-card .ro { font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
-      .login-card .stats { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--ink-soft); }
-      .login-card .stats b { display: block; font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1.1; }
-      .login-card .active-tag { background: var(--green); color: #fff; font-size: 10px; padding: 3px 9px; border-radius: 999px; font-weight: 700; letter-spacing: 0.04em; }
-      .login-admin {
-        display: inline-flex; align-items: center; gap: 9px;
-        padding: 8px 16px 8px 8px; background: #fff;
-        border: 1.5px solid var(--line); border-radius: 999px;
-        cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
-        color: var(--ink); transition: all 0.15s;
-      }
-      .login-admin:hover { border-color: var(--accent); background: var(--accent-soft); }
-      .login-admin.active { border-color: var(--accent); background: var(--accent-soft); }
-      .login-admin .av-small { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
-    `;
-    document.head.appendChild(css);
-  }
-
-  let body = `
-    <div style="text-align:center;margin-bottom:22px">
-      <div style="font-size:22px;font-weight:800;color:var(--ink);margin-bottom:4px;font-family:'Hind Vadodara','Plus Jakarta Sans',sans-serif">તમે કોણ છો?</div>
-      <div style="font-size:13px;color:var(--ink-soft)">Pick your profile to sign in</div>
-    </div>
-
-    <div style="text-align:center;margin-bottom:22px">
-      <button data-uchoice="admin|" class="login-admin ${adminActive?'active':''}">
-        <span class="av-small">A</span>
-        <span>Admin</span>
-        ${adminActive ? '<span class="active-tag">Active</span>' : ''}
-      </button>
-    </div>
-
-    <div class="login-grid">
-  `;
-
-  fcUsers.forEach(function(u, i) {
-    const fcId = u.fcCode || u.id;
-    const haatCount = DB.haatFarmers.filter(f => f.fcId === fcId).length;
-    const convCount = DB.convFarmers.filter(f => f.fcId === fcId).length;
-    const active = curR === 'fc' && curId === fcId;
-    const fcColor = FC_SW_COLORS[i % FC_SW_COLORS.length];
-    body += `
-      <button data-uchoice="fc|${esc(fcId)}" class="login-card ${active?'active':''}">
-        <span class="av" style="background:${fcColor}">${esc(u.name.charAt(0).toUpperCase())}</span>
-        <div>
-          <div class="nm">${esc(u.name)}</div>
-          <div class="ro">Field Coordinator</div>
-        </div>
-        <div class="stats">
-          <div><b>${haatCount}</b><span>Haat</span></div>
-          <div><b>${convCount}</b><span>Conv</span></div>
-        </div>
-        ${active ? '<span class="active-tag">Active</span>' : ''}
-      </button>
-    `;
-  });
-  body += '</div>';
-
-  modalShell('Switch user · સ્વિચ યુઝર', body,
-    '<button class="btn btn-ghost" onclick="closeModal()">Close</button>'
-    + '<button class="btn btn-ghost btn-sm" id="signOutBtn" style="color:#d9543f">Sign out & return to homepage</button>');
-  // Make the modal wider so 3 cards breathe
-  const modalEl = document.getElementById('modal');
-  if(modalEl) modalEl.classList.add('wide');
-
-  document.querySelectorAll('[data-uchoice]').forEach(b => b.onclick = () => {
-    const [role, id] = b.dataset.uchoice.split('|');
-    if (role === 'admin') {
-      const adminUser = getUsersList().find(u => u.role === 'admin');
-      SESSION = {role:'admin', userId:'', userName: (adminUser && adminUser.name) || 'Admin'};
-    } else {
-      const fcUser = getUsersList().find(u => (u.fcCode || u.id) === id);
-      SESSION = {role:'fc', userId:id, userName: (fcUser && fcUser.name) || 'FC'};
-    }
-    saveSession(SESSION);
-    closeModal();
-    paintUserPill();
-    if(typeof renderNav === 'function') renderNav();
-    if(typeof render === 'function') render();
-    toast('Switched to ' + SESSION.userName);
-  });
-
-  // v9 — sign out: clear session, drop the #admin hash, return to landing.
-  const signOutBtn = document.getElementById('signOutBtn');
-  if(signOutBtn) signOutBtn.onclick = () => {
-    try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
-    try { localStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
-    SESSION = null;
-    closeModal();
-    location.hash = '';   // triggers hashchange → enterPublicMode
-    toast('Signed out');
-  };
 }
 
 const initials=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -6175,6 +6050,28 @@ async function restoreFarmers(p, ids){
   ARCH_SEL[p].clear();
   await saveDB(); render(); toast(n+' farmer'+(n===1?'':'s')+' restored');
 }
+// Permanent delete — only allowed on records that are ALREADY archived (you must
+// archive first). Removes them from the DB entirely; saveDB() syncs the deletion
+// to every device. IRREVERSIBLE — there is no restore after this.
+async function deleteFarmersPermanently(p, ids){
+  if(!ids || !ids.length) return;
+  const store = _archStore(p) || [];
+  const removable = new Set(store.filter(f => ids.includes(f.id) && f._archived).map(f => f.id));
+  if(!removable.size) return;
+  const kept = store.filter(f => !removable.has(f.id));
+  if(p==='haat') DB.haatFarmers = kept; else DB.convFarmers = kept;
+  removable.forEach(id => markLocalTouch(_archCol(p), id));   // shield the deletion from the live listener
+  ARCH_SEL[p].clear();
+  await saveDB(); render(); toast(removable.size+' farmer'+(removable.size===1?'':'s')+' permanently deleted');
+}
+async function _confirmAndDelete(p, ids){
+  if(!ids || !ids.length) return;
+  const ok = await confirmModal({
+    title:`Permanently delete ${ids.length} farmer${ids.length===1?'':'s'}?`,
+    message:`This removes ${ids.length===1?'this record':'these records'} from the database for every device. This CANNOT be undone — there is no restore after deleting.\n\nIf you might need them again, use Restore instead.`,
+    confirmLabel:'Delete permanently', danger:true });
+  if(ok) await deleteFarmersPermanently(p, ids);
+}
 // "Show archived (N)" toggle button for a list header.
 function archToggleHtml(p){
   const n = archivedCount(p), on = ARCH_SHOW[p];
@@ -6189,7 +6086,8 @@ function archBarHtml(p){
   return `<div class="arch-bar" style="position:sticky;bottom:0;display:flex;align-items:center;gap:10px;padding:11px 14px;margin-top:6px;background:var(--panel-2,#f1f5f9);border:1px solid var(--line-strong,#cbd5e1);border-radius:10px;z-index:5">
     <span style="font-size:13px;font-weight:700;color:var(--ink)">${sel.size} selected</span>
     ${showing
-      ? `<button class="btn btn-sm" id="archDo_${p}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)} Restore selected</button>`
+      ? `<button class="btn btn-sm" id="archDo_${p}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)} Restore selected</button>
+         <button class="btn btn-danger btn-sm" id="archDel_${p}">${svg(I.trash,2)} Delete permanently</button>`
       : `<button class="btn btn-danger btn-sm" id="archDo_${p}">${svg(I.trash,2)} Archive selected</button>`}
     <button class="btn btn-ghost btn-sm" id="archClear_${p}">Clear</button>
   </div>`;
@@ -6227,6 +6125,12 @@ function wireArch(v, p, pagedIds){
   // per-row Restore button (archived view)
   v.querySelectorAll('.arch-restore').forEach(b=>{
     b.onclick = e => { e.stopPropagation(); restoreFarmers(p, [b.dataset.rid]); };
+  });
+  // permanent delete (archived view) — multi-select bar + per-row
+  const delBtn = v.querySelector('#archDel_'+p);
+  if(delBtn) delBtn.onclick = () => _confirmAndDelete(p, [...sel]);
+  v.querySelectorAll('.arch-del').forEach(b=>{
+    b.onclick = e => { e.stopPropagation(); _confirmAndDelete(p, [b.dataset.rid]); };
   });
 }
 function viewHaat(){
@@ -6353,7 +6257,7 @@ function viewHaat(){
       <td><span class="tag ${st.cls}"><span class="d"></span>${st.label}</span></td>
       <td>${activeCell}</td>
       <td style="font-size:11.5px">${lastV}</td>
-      ${ARCH_SHOW.haat?`<td><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button></td>`:''}
+      ${ARCH_SHOW.haat?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
   if(haatTotalPages > 1){
@@ -7129,7 +7033,7 @@ function viewConversion(){
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
       <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button></td>
-      ${ARCH_SHOW.conv?`<td><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button></td>`:''}
+      ${ARCH_SHOW.conv?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
   if(convTotalPages > 1){
@@ -7228,9 +7132,11 @@ function _normPhone(p){
 function findFarmerByPhone(phone){
   const ph = _normPhone(phone);
   if(!ph || ph.length !== 10) return null;
-  const haat = (DB.haatFarmers||[]).find(f => _normPhone(f.phone) === ph);
+  // Used only for duplicate detection — ignore archived records so a re-submission
+  // after archiving (data cleanup) isn't blocked by the old, hidden record.
+  const haat = (DB.haatFarmers||[]).find(f => !f._archived && _normPhone(f.phone) === ph);
   if(haat) return { record: haat, program: 'haat' };
-  const conv = (DB.convFarmers||[]).find(f => _normPhone(f.phone) === ph);
+  const conv = (DB.convFarmers||[]).find(f => !f._archived && _normPhone(f.phone) === ph);
   if(conv) return { record: conv, program: 'conv' };
   return null;
 }
@@ -7936,7 +7842,10 @@ function openImportFormModal(){
     parsed.forEach(p=>{
       const {_unmatchedFcName, ...rec} = p;
       const ph = normPhone(rec.phone), nm = normName(rec.name);
-      const dup = DB.convFarmers.find(x => (ph && normPhone(x.phone)===ph) || (nm && normName(x.name)===nm && normName(x.village)===normName(rec.village)));
+      // Dedup against ACTIVE farmers only — archived records must NOT count as
+      // duplicates, otherwise re-importing a dataset you just archived (to clean
+      // data) is blocked entirely. Archived ones can be purged separately.
+      const dup = DB.convFarmers.find(x => !x._archived && ((ph && normPhone(x.phone)===ph) || (nm && normName(x.name)===nm && normName(x.village)===normName(rec.village))));
       if(dup){ skipped++; return; }
       DB.convFarmers.push(rec);
       added++;
@@ -9175,42 +9084,6 @@ const sel=(id,opts,val)=>`<select id="${id}">${opts.map(o=>{
   const[v,t]=Array.isArray(o)?o:[o,o];
   return `<option value="${esc(v)}" ${v===val?'selected':''}>${esc(t)}</option>`;}).join('')}</select>`;
 
-/* ============ MODAL: RECORD FARM VISIT (haat) ============ */
-function openVisitModal(id){
-  const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
-  const today=new Date().toISOString().slice(0,10);
-  const body=fld('Visit date',`<input type="date" id="vDate" value="${today}">`,true)
-    +fld('Facilitator',sel('vFc',DB.fcs.map(x=>[x.id,x.name]),currentFcId()||f.fcId),true)
-    +`<div class="field-row">
-      ${fld('Living fence present',sel('vFence',['Yes','No']))}
-      ${fld('Compost unit present',sel('vCompost',['Yes','No']))}
-    </div>
-    <div class="field-row">
-      ${fld('Soil health',sel('vSoil',['Good','Average','Poor']))}
-      ${fld('Verification score (0–100)',`<input type="number" id="vScore" min="0" max="100" value="75">`)}
-    </div>`
-    +fld('Pest-control method observed',sel('vPest',['Neem extract','Jivamrut','Cow urine spray','Mixed cropping','Trap crops','Other']))
-    +fld('Facilitator notes',`<textarea id="vNotes" placeholder="Observations from the farm visit…"></textarea>`)
-    +`<div class="hint">Recording a visit moves a "pending" farmer to "verified — awaiting decision".</div>`;
-  modalShell('Record farm visit — '+esc(f.name),body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="saveVisit">${svg(I.check)}Save visit</button>`);
-  $('#saveVisit').onclick=async()=>{
-    f.visits.push(stamp({
-      date:$('#vDate').value||today, fc:$('#vFc').value,
-      livingFence:$('#vFence').value, compost:$('#vCompost').value,
-      soilHealth:$('#vSoil').value, pestControl:$('#vPest').value,
-      score:Math.max(0,Math.min(100,+$('#vScore').value||0)),
-      notes:$('#vNotes').value.trim()||'No additional notes.',
-    }));
-    if(f.stage==='verification_pending')f.stage='verified';
-    f.fcId=$('#vFc').value;
-    logActivity('visit',`Farm visit recorded for <b>${esc(f.name)}</b> (${f.id}) by ${esc((fcById($('#vFc').value)||{}).name||'FC')}`);
-    await saveDB();closeModal();render();
-    if($('#drawer').classList.contains('show'))openHaatDrawer(id);
-    toast('Farm visit recorded');
-  };
-}
 
 /* ============ MODAL: ADMIN DECISION (haat) ============ */
 function openDecisionModal(id){
@@ -9501,8 +9374,6 @@ function openAssignHaatModal(id){
 // and the table's "Organic progress" column never goes stale. Both old entry
 // points (openVisitLogModal, openObsModal) now redirect to openConvScoreModal
 // so any deep-link / legacy call lands on the right modal.
-function openVisitLogModal(id){ return openConvScoreModal(id); }
-function openObsModal(id){ return openConvScoreModal(id); }
 
 /* ============ MODAL: ASSIGN FC ============ */
 function openAssignFcModal(id){
@@ -12757,244 +12628,6 @@ window.addEventListener('message',async ev=>{
 /* ============ MODAL: HAAT FARM VERIFICATION (in-app, alternate flow) ============
    Kept around as a fallback / quick-check option but not currently wired to any
    button. The primary verification flow is the Gujarati patrak above.            */
-function openHaatVerifyModal(id){
-  const f=DB.haatFarmers.find(x=>x.id===id); if(!f) return;
-  const today=todayISO();
-  const claims=f.selfReportedClaims||{};
-  // ----- farmer info panel
-  let body=`<div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:8px">Farmer details — prefilled from enrollment</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12.5px">
-      <div><b>${esc(f.name)}</b> <span style="color:var(--ink-faint);font-size:10.5px">${esc(f.id)}</span></div>
-      <div>📞 ${f.phone?`<a href="tel:${esc(f.phone)}" style="color:var(--accent);text-decoration:none">${esc(f.phone)}</a>`:'—'}</div>
-      <div>${esc(f.village)}${f.taluka?', '+esc(f.taluka):''}</div>
-      <div>${esc(f.district)}, ${esc(f.state)}</div>
-      <div>${f.landAcres||0} acres · ${f.yearsOrganic||0} yr organic</div>
-      <div>${esc(f.certification||'—')}</div>
-    </div>
-    ${f.crops&&f.crops.length?`<div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)"><b>Crops:</b> ${f.crops.map(c=>esc(cropDisplayName(c))).join(', ')}</div>`:''}
-  </div>`;
-  // ----- farmer's description
-  if(f.selfReportedDescription){
-    body+=`<div style="margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px">Farmer's description of the farm</div>
-      <div style="padding:10px 12px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;font-size:12.5px;font-style:italic;line-height:1.5;white-space:pre-wrap">"${esc(f.selfReportedDescription)}"</div>
-    </div>`;
-  } else {
-    body+=`<div style="margin-bottom:14px;padding:8px 12px;background:var(--yellow-bg);border:1px dashed var(--yellow-line);border-radius:6px;font-size:11.5px;color:var(--ink-soft);font-style:italic">No farm description was captured during enrollment.</div>`;
-  }
-  // ----- visit metadata (verifier = one of the 3 Field Coordinators)
-  const fcList = DB.fieldCoordinators||[];
-  body+=`<div class="field-row">
-    ${fld('Visit date',`<input type="date" id="hvDate" value="${today}">`,true)}
-    ${fld('Verifier (Field Coordinator)',sel('hvFc',[['','— select —'],...fcList.map(x=>[x.id,x.name])],f.fcId||''),true)}
-  </div>`;
-  // ----- per-practice verification
-  body+=`<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:6px 0 10px">Verify each practice</div>
-  <div id="hvPractices" style="display:flex;flex-direction:column;gap:10px">`;
-  PRACTICES.forEach(p=>{
-    const c=claims[p.key]||{claimed:false,note:''};
-    const farmerSaid=c.claimed
-      ? `<span style="color:var(--green);font-weight:700">✓ Yes</span>${c.note?` — <i>${esc(c.note)}</i>`:''}`
-      : `<span style="color:var(--ink-faint)">Not mentioned</span>`;
-    body+=`<div data-row="${p.key}" style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:11px 12px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:17px">${p.emoji}</span>
-        <b style="font-size:13px">${esc(p.label)}</b>
-      </div>
-      <div style="font-size:11.5px;color:var(--ink-soft);margin:0 0 9px 28px">Farmer said: ${farmerSaid}</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 8px 28px" data-state-row="${p.key}">
-        <button type="button" class="chip hv-st" data-k="${p.key}" data-v="verified">✓ Verified</button>
-        <button type="button" class="chip hv-st" data-k="${p.key}" data-v="partial">◐ Partial</button>
-        <button type="button" class="chip hv-st" data-k="${p.key}" data-v="not_verified">✗ Not verified</button>
-        <button type="button" class="chip hv-st" data-k="${p.key}" data-v="na">— N/A</button>
-      </div>
-      <input type="text" data-fc-note="${p.key}" placeholder="Facilitator's note (optional)"
-        style="width:calc(100% - 28px);margin-left:28px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff">
-    </div>`;
-  });
-  body+=`</div>`;
-  // ----- FC OBSERVATION QUESTIONS (what was actually seen on the visit)
-  // Single-pick chip helper — works the same way as the per-practice rows.
-  const chipRow=(group,opts)=>`<div data-fc-group="${group}" style="display:flex;gap:5px;flex-wrap:wrap">
-    ${opts.map(o=>`<button type="button" class="chip fc-q" data-g="${group}" data-v="${esc(o.v)}">${esc(o.label)}</button>`).join('')}
-  </div>`;
-  body+=`<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:14px 0 10px">FC field observations — what you saw on the visit</div>
-  <div style="display:flex;flex-direction:column;gap:11px">
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">🪴 Living fence around the farm?</div>
-      ${chipRow('livingFence',[{v:'full',label:'Yes — full perimeter'},{v:'partial',label:'Partial'},{v:'none',label:'No'}])}
-      <input type="text" id="fcLivingFenceDetail" placeholder="Species / what is planted (e.g. મેંદી, ગુલમહોર)" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">♻️ Compost / vermicompost unit visible?</div>
-      ${chipRow('compostUnit',[{v:'yes_vermi',label:'Yes — vermicompost bed'},{v:'yes_pit',label:'Yes — compost pit'},{v:'yes_both',label:'Both'},{v:'no',label:'No'}])}
-      <input type="text" id="fcCompostDetail" placeholder="How many beds / size / active?" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">💧 Jeevamrut / bio-pesticide drum on site?</div>
-      ${chipRow('jeevamrutOnSite',[{v:'yes_recent',label:'Yes — recently used'},{v:'yes_old',label:'Yes — looks unused'},{v:'no',label:'No drum seen'}])}
-      <input type="text" id="fcJeevamrutDetail" placeholder="Count / smell / contents (e.g. 200L, ગાય-મૂત્ર + ગોળ)" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">⛔ Chemical containers / fertilizer bags seen?</div>
-      ${chipRow('chemSeen',[{v:'none',label:'None'},{v:'pesticide',label:'Pesticide bottles'},{v:'fertilizer',label:'Fertilizer bags'},{v:'both',label:'Both'}])}
-      <input type="text" id="fcChemDetail" placeholder="Where / what type (note if FC suspects use)" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">🌾 Mulching coverage</div>
-      ${chipRow('mulching',[{v:'heavy',label:'Heavy'},{v:'partial',label:'Partial'},{v:'none',label:'None'}])}
-      <input type="text" id="fcMulchingDetail" placeholder="On which crops / biomass used" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">🟤 Soil health</div>
-        ${chipRow('soilHealth',[{v:'good',label:'Good'},{v:'average',label:'Average'},{v:'poor',label:'Poor'}])}
-      </div>
-      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">🐛 Earthworms in soil sample</div>
-        ${chipRow('earthworms',[{v:'many',label:'Many'},{v:'some',label:'Some'},{v:'none',label:'None'}])}
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">🐝 Bees observed</div>
-        ${chipRow('beesSeen',[{v:'many',label:'Many'},{v:'some',label:'Some'},{v:'none',label:'None'}])}
-      </div>
-      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">🐦 Birds observed</div>
-        ${chipRow('birdsSeen',[{v:'many',label:'Many'},{v:'some',label:'Some'},{v:'none',label:'None'}])}
-      </div>
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">🪲 Pest pressure</div>
-      ${chipRow('pestPressure',[{v:'none',label:'None / Low'},{v:'minor',label:'Minor'},{v:'major',label:'Major'}])}
-      <input type="text" id="fcPestDetail" placeholder="What pests, on which crop, what method farmer uses" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">🐄 Livestock count — actual seen vs claimed</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11.5px">
-        ${['cow','buffalo','goat','hen'].map(k=>{
-          const claimed=(f.formData?.livestock?.[k])||0;
-          return `<div>
-            <div style="color:var(--ink-faint);font-size:10.5px">${k}</div>
-            <div style="font-size:11px;margin-bottom:3px">Claimed: <b>${claimed}</b></div>
-            <input type="number" id="fcLs_${k}" min="0" placeholder="Seen" style="width:100%;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff;font-variant-numeric:tabular-nums">
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-
-    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">👥 Neighbours consulted during visit?</div>
-      ${chipRow('neighboursConsulted',[{v:'yes',label:'Yes'},{v:'no',label:'No'}])}
-      <input type="text" id="fcNeighbourSummary" placeholder="How many spoken to, what they said about the farmer" style="width:100%;margin-top:6px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-    </div>
-
-  </div>`;
-
-  // ----- general observations + score + recommendation
-  body+=`<div style="margin-top:14px">
-    ${fld('General observations / red flags / surprises',`<textarea id="hvObs" rows="3" placeholder="e.g. Farmer also uses mulching (not declared). Has 4 cows but only saw 2. Land well-demarcated. Suspicious bag in storage shed."></textarea>`)}
-  </div>
-  ${fld('Overall verification score (0–100)',`<input type="number" id="hvScore" min="0" max="100" value="75">`)}
-  <div style="margin-top:6px">
-    <div style="font-size:11.5px;font-weight:600;margin-bottom:6px">FC's recommendation</div>
-    ${chipRow('recommendation',[{v:'onboard',label:'🟢 Onboard'},{v:'hold',label:'🟡 Put on hold'},{v:'reject',label:'🔴 Reject'}])}
-    <input type="text" id="fcRecReason" placeholder="Reason / what's needed before next decision" style="width:100%;margin-top:6px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff">
-  </div>`;
-
-  modalShell('Farm verification — '+esc(f.name),body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="hvSave">${svg(I.check)}Submit verification</button>`);
-
-  // state-chip selection — single-pick per row (per-practice verification)
-  const chosen={};   // practiceKey -> state
-  document.querySelectorAll('button.hv-st').forEach(btn=>{
-    btn.onclick=()=>{
-      const k=btn.dataset.k, v=btn.dataset.v;
-      chosen[k]=v;
-      document.querySelectorAll(`[data-state-row="${k}"] .hv-st`).forEach(b=>b.classList.toggle('on',b===btn));
-    };
-  });
-  // FC observation chip-groups — single-pick per group
-  const fcAnswers={};   // group -> value
-  document.querySelectorAll('button.fc-q').forEach(btn=>{
-    btn.onclick=()=>{
-      const g=btn.dataset.g, v=btn.dataset.v;
-      fcAnswers[g]=v;
-      document.querySelectorAll(`[data-fc-group="${g}"] .fc-q`).forEach(b=>b.classList.toggle('on',b===btn));
-    };
-  });
-
-  // submit
-  $('#hvSave').onclick=async()=>{
-    const fcId=$('#hvFc').value;
-    if(!fcId){toast('Pick a Field Coordinator');return;}
-    const date=$('#hvDate').value||today;
-    const score=Math.max(0,Math.min(100,+$('#hvScore').value||0));
-    const claimVerifications={};
-    let verifiedCount=0, totalChecked=0;
-    PRACTICES.forEach(p=>{
-      const state=chosen[p.key]||'not_specified';
-      const noteEl=document.querySelector(`input[data-fc-note="${p.key}"]`);
-      claimVerifications[p.key]={state, fcNote:(noteEl?.value||'').trim()};
-      if(state==='verified'){verifiedCount++; totalChecked++;}
-      else if(state==='partial'||state==='not_verified'){totalChecked++;}
-    });
-    // FC field observations (the bigger questionnaire)
-    const fcObs={
-      livingFence:    {value:fcAnswers.livingFence||'',     detail:($('#fcLivingFenceDetail')?.value||'').trim()},
-      compostUnit:    {value:fcAnswers.compostUnit||'',     detail:($('#fcCompostDetail')?.value||'').trim()},
-      jeevamrutOnSite:{value:fcAnswers.jeevamrutOnSite||'', detail:($('#fcJeevamrutDetail')?.value||'').trim()},
-      chemSeen:       {value:fcAnswers.chemSeen||'',        detail:($('#fcChemDetail')?.value||'').trim()},
-      mulching:       {value:fcAnswers.mulching||'',        detail:($('#fcMulchingDetail')?.value||'').trim()},
-      soilHealth:     fcAnswers.soilHealth||'',
-      earthworms:     fcAnswers.earthworms||'',
-      beesSeen:       fcAnswers.beesSeen||'',
-      birdsSeen:      fcAnswers.birdsSeen||'',
-      pestPressure:   {value:fcAnswers.pestPressure||'',    detail:($('#fcPestDetail')?.value||'').trim()},
-      livestockSeen:  {
-        cow:     +($('#fcLs_cow')?.value)     ||null,
-        buffalo: +($('#fcLs_buffalo')?.value) ||null,
-        goat:    +($('#fcLs_goat')?.value)    ||null,
-        hen:     +($('#fcLs_hen')?.value)     ||null,
-      },
-      neighboursConsulted:{value:fcAnswers.neighboursConsulted||'', detail:($('#fcNeighbourSummary')?.value||'').trim()},
-      recommendation: {value:fcAnswers.recommendation||'',  reason:($('#fcRecReason')?.value||'').trim()},
-    };
-    // chemical-use flag if FC saw containers
-    const sawChem = fcObs.chemSeen.value==='pesticide'||fcObs.chemSeen.value==='fertilizer'||fcObs.chemSeen.value==='both';
-    f.visits.push({
-      date, fc:fcId, verifierName:(fcById(fcId)||{}).name||'',
-      score, claimVerifications, fcObservations:fcObs,
-      observations:($('#hvObs').value||'').trim(),
-      // legacy fields kept so the older drawer paths still read OK
-      livingFence:fcObs.livingFence.value||'—',
-      compost:fcObs.compostUnit.value||'—',
-      soilHealth:fcObs.soilHealth||'—',
-      pestControl:fcObs.pestPressure.value||'—',
-      notes:`In-app farm verification: ${verifiedCount}/${totalChecked||PRACTICES.length} practices verified. Score ${score}.${sawChem?' ⚠ Chemicals seen on farm.':''}`,
-    });
-    if(f.stage==='verification_pending') f.stage='verified';
-    f.fcId=fcId;
-    const recLabel={onboard:'recommend onboard',hold:'recommend hold',reject:'recommend reject'}[fcObs.recommendation.value]||'verification done';
-    logActivity('visit',`<b>${esc(f.name)}</b> — ${recLabel} by ${esc((fcById(fcId)||{}).name||'FC')} (score ${score}/100, ${verifiedCount} practices verified)`);
-    await saveDB();
-    closeModal(); render();
-    if($('#drawer').classList.contains('show')) openHaatDrawer(id);
-    toast('Verification recorded');
-  };
-}
 
 
 /* ============ BOOTSTRAP ============ */

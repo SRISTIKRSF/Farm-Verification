@@ -1953,7 +1953,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20h';
+const APP_VERSION = 'v20i';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5645,9 +5645,13 @@ function _fcConvCards(farmers,F){
   const el=document.getElementById('fcCCards');if(!el)return;
   el.innerHTML=`${visible.length?visible.map(f=>{
     const cat=convCategory(f);
-    const lv=lastVisitDate(f);
+    // #12 — conv farmers logged via the score modal store f.lastVisitAt and may have
+    // no visits[] rows; fall back to the visits array only when lastVisitAt is absent.
+    const lv=f.lastVisitAt||lastVisitDate(f);
     const daysAgo=lv?Math.floor((now-new Date(lv).getTime())/86400000):null;
-    const overdue=daysAgo!==null&&daysAgo>21;
+    // #13 — overdue keyed on nextVisitDue + DAYS_OVERDUE_VISIT (15), matching the
+    // admin table/inbox (was a hardcoded days-since-visit > 21, inconsistent).
+    const overdue=!!f.nextVisitDue && daysBetween(f.nextVisitDue,todayISO())>DAYS_OVERDUE_VISIT;
     const lvText=daysAgo===null?'No visits yet':`${daysAgo}d ago`;
     const btn=overdue
       ?`<button class="fc-btn-ov" data-id="${esc(f.id)}">${svg(I.plus,2.5)} Visit now</button>`

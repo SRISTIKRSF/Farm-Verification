@@ -1974,7 +1974,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20k';
+const APP_VERSION = 'v20l';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4439,7 +4439,7 @@ function _excludeSeeds(arr){
 function haatStats(){
   // v8 — FC users see only their own farmers in the dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
-  const f=_excludeSeeds(filterByCurrentFc(DB.haatFarmers));
+  const f=_excludeSeeds(filterByCurrentFc(DB.haatFarmers)).filter(x=>!x._archived);
   return{
     total:f.length,
     pending:f.filter(x=>x.stage==='verification_pending').length,
@@ -5383,7 +5383,7 @@ function convScoreCard(f){
 function convStats(){
   // v8 — FC users see only their own conversion farmers in dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
-  const f=_excludeSeeds(filterByCurrentFc(DB.convFarmers));
+  const f=_excludeSeeds(filterByCurrentFc(DB.convFarmers)).filter(x=>!x._archived);
   const today=todayISO();
   let pending=0, red=0, yellow=0, green=0;
   let enrolled=0, assigned=0, inProgress=0, adopted=0, chemFlag=0, firstVisitDue=0, overdue=0, readyToAdopt=0;
@@ -5631,7 +5631,7 @@ function _fcHaatCards(farmers,F){
 function viewFcHaat(){
   const v=$('#view');
   const name=_fcMyName();
-  const farmers=DB.haatFarmers||[];
+  const farmers=(DB.haatFarmers||[]).filter(f=>!f._archived);   // archived hidden from FCs
   const hs=haatStats();
   const planned=farmers.reduce((n,f)=>n+((f.plannedVisits||[]).filter(p=>p.date>=todayISO()).length),0);
   if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50};
@@ -5694,7 +5694,7 @@ function _fcConvCards(farmers,F){
 function viewFcConversion(){
   const v=$('#view');
   const name=_fcMyName();
-  const farmers=DB.convFarmers||[];
+  const farmers=(DB.convFarmers||[]).filter(f=>!f._archived);   // archived hidden from FCs
   const cs=convStats();
   if(!FILTERS.fcC) FILTERS.fcC={q:'',cat:'',lim:50};
   const F=FILTERS.fcC;
@@ -6150,6 +6150,85 @@ function dashBox(label,num,color,total,sub,nav){
   </button>`;
 }
 /* ============ VIEW: HAAT FARMERS ============ */
+/* ============ ARCHIVE (soft-delete) — admin multi-select ============
+   Farmers carry `_archived:true` (+ archivedAt/archivedBy). Archived farmers are
+   hidden from every list/count (admin + FC + dashboard) unless the admin flips the
+   per-list "Show archived" toggle. Recoverable via Restore — nothing is destroyed. */
+const ARCH_SEL  = { haat:new Set(), conv:new Set() };   // selected ids per list
+const ARCH_SHOW = { haat:false, conv:false };           // "show archived" toggle per list
+function _archStore(p){ return p==='haat' ? DB.haatFarmers : DB.convFarmers; }
+function _archCol(p){ return p==='haat' ? 'haatFarmers' : 'convFarmers'; }
+function archivedCount(p){ return (_archStore(p)||[]).filter(f=>f._archived).length; }
+async function archiveFarmers(p, ids){
+  if(!ids || !ids.length) return;
+  const who = (actor()||{}).name || 'admin';
+  const at = new Date().toISOString();
+  let n=0;
+  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && !f._archived){ f._archived=true; f.archivedAt=at; f.archivedBy=who; markLocalTouch(_archCol(p), f.id); n++; } });
+  ARCH_SEL[p].clear();
+  await saveDB(); render(); toast(n+' farmer'+(n===1?'':'s')+' archived');
+}
+async function restoreFarmers(p, ids){
+  if(!ids || !ids.length) return;
+  let n=0;
+  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && f._archived){ delete f._archived; delete f.archivedAt; delete f.archivedBy; markLocalTouch(_archCol(p), f.id); n++; } });
+  ARCH_SEL[p].clear();
+  await saveDB(); render(); toast(n+' farmer'+(n===1?'':'s')+' restored');
+}
+// "Show archived (N)" toggle button for a list header.
+function archToggleHtml(p){
+  const n = archivedCount(p), on = ARCH_SHOW[p];
+  const onStyle = on ? 'background:#fef3c7;color:#92400e;border-color:#fcd34d;' : '';
+  return `<button class="btn btn-sm btn-ghost" id="archToggle_${p}" style="margin-left:8px;${onStyle}">${svg(on?I.eye:I.trash,2)} ${on?'Showing archived':'Show archived'} (${n})</button>`;
+}
+// Sticky action bar shown when ≥1 row is selected.
+function archBarHtml(p){
+  const sel = ARCH_SEL[p];
+  if(!sel.size) return '';
+  const showing = ARCH_SHOW[p];
+  return `<div class="arch-bar" style="position:sticky;bottom:0;display:flex;align-items:center;gap:10px;padding:11px 14px;margin-top:6px;background:var(--panel-2,#f1f5f9);border:1px solid var(--line-strong,#cbd5e1);border-radius:10px;z-index:5">
+    <span style="font-size:13px;font-weight:700;color:var(--ink)">${sel.size} selected</span>
+    ${showing
+      ? `<button class="btn btn-sm" id="archDo_${p}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)} Restore selected</button>`
+      : `<button class="btn btn-danger btn-sm" id="archDo_${p}">${svg(I.trash,2)} Archive selected</button>`}
+    <button class="btn btn-ghost btn-sm" id="archClear_${p}">Clear</button>
+  </div>`;
+}
+// Wire checkboxes, select-all, the toggle and the action-bar buttons for a list.
+function wireArch(v, p, pagedIds){
+  const sel = ARCH_SEL[p];
+  v.querySelectorAll('.arch-cb').forEach(cb=>{
+    cb.onclick = e => {
+      e.stopPropagation();                       // don't open the farmer drawer
+      const aid = cb.dataset.aid;
+      if(cb.checked) sel.add(aid); else sel.delete(aid);
+      render();
+    };
+  });
+  const selAll = v.querySelector('#archSelAll_'+p);
+  if(selAll) selAll.onclick = e => {
+    e.stopPropagation();
+    if(selAll.checked) (pagedIds||[]).forEach(id=>sel.add(id)); else (pagedIds||[]).forEach(id=>sel.delete(id));
+    render();
+  };
+  const tg = v.querySelector('#archToggle_'+p);
+  if(tg) tg.onclick = () => { ARCH_SHOW[p] = !ARCH_SHOW[p]; sel.clear(); render(); };
+  const clr = v.querySelector('#archClear_'+p);
+  if(clr) clr.onclick = () => { sel.clear(); render(); };
+  const doBtn = v.querySelector('#archDo_'+p);
+  if(doBtn) doBtn.onclick = async () => {
+    const ids = [...sel];
+    if(ARCH_SHOW[p]){ await restoreFarmers(p, ids); return; }
+    const ok = await confirmModal({ title:`Archive ${ids.length} farmer${ids.length===1?'':'s'}?`,
+      message:`They will be hidden from all lists and dashboard counts. You can restore them anytime from "Show archived".`,
+      confirmLabel:'Archive', danger:true });
+    if(ok) await archiveFarmers(p, ids);
+  };
+  // per-row Restore button (archived view)
+  v.querySelectorAll('.arch-restore').forEach(b=>{
+    b.onclick = e => { e.stopPropagation(); restoreFarmers(p, [b.dataset.rid]); };
+  });
+}
 function viewHaat(){
   const v=$('#view');
   const F=FILTERS.haat;
@@ -6208,6 +6287,8 @@ function viewHaat(){
   /* ---- filtering ---- */
   // v8 — role filter: FC users see only their own farmers.
   let rows=filterByCurrentFc(DB.haatFarmers).slice();
+  // archive: hide archived farmers unless the "Show archived" toggle is on (then show ONLY archived)
+  rows = rows.filter(r => ARCH_SHOW.haat ? r._archived : !r._archived);
   // status box keys: pending & verified are pipeline STAGES; green/yellow/red are decision STATUSES
   if(F.status==='pending') rows=rows.filter(r=>r.stage==='verification_pending');
   else if(F.status==='verified') rows=rows.filter(r=>r.stage==='verified');
@@ -6235,15 +6316,19 @@ function viewHaat(){
     <h3>Haat Farmers</h3>
     <span class="meta">${rows.length} of ${DB.haatFarmers.length} records</span>
     <div class="spacer"></div>
+    ${archToggleHtml('haat')}
     <button class="btn btn-excel btn-sm" id="exportHaat">${svg(I.download,2.2)}Export CSV</button>
   </div>`;
+  const _haatAllSel = pagedRows.length && pagedRows.every(r=>ARCH_SEL.haat.has(r.id));
   h+=`<div class="table-wrap"><table><thead><tr>
+    <th style="width:34px"><input type="checkbox" id="archSelAll_haat" ${_haatAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>${th('haat','Haat')}
     ${th('status','Status')}<th>Active</th><th>Last visit</th>
+    ${ARCH_SHOW.haat?'<th></th>':''}
   </tr></thead><tbody>`;
   if(!rows.length){
-    h+=`<tr><td colspan="8"><div class="empty">${svg(I.haat)}<div>No farmers match these filters.</div></div></td></tr>`;
+    h+=`<tr><td colspan="10"><div class="empty">${svg(I.haat)}<div>${ARCH_SHOW.haat?'No archived farmers.':'No farmers match these filters.'}</div></div></td></tr>`;
   }
   pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
@@ -6259,6 +6344,7 @@ function viewHaat(){
         ? '<span class="tag green" style="font-size:10.5px"><span class="d"></span>Active</span>'
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
     h+=`<tr data-id="${r.id}">
+      <td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>
       <td><span class="id-code">${r.id}</span></td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres} acres · ${r.yearsOrganic} yr organic</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
@@ -6267,6 +6353,7 @@ function viewHaat(){
       <td><span class="tag ${st.cls}"><span class="d"></span>${st.label}</span></td>
       <td>${activeCell}</td>
       <td style="font-size:11.5px">${lastV}</td>
+      ${ARCH_SHOW.haat?`<td><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button></td>`:''}
     </tr>`;
   });
   if(haatTotalPages > 1){
@@ -6277,8 +6364,10 @@ function viewHaat(){
     </div>`;
   }
   h+=`</tbody></table></div>`;
+  h+=archBarHtml('haat');
   v.innerHTML=h;
   wireTable(v,id=>openHaatDrawer(id));
+  wireArch(v, 'haat', pagedRows.map(r=>r.id));
 
   const haatPrev = v.querySelector('#haatPrev');
   const haatNext = v.querySelector('#haatNext');
@@ -6978,6 +7067,8 @@ function viewConversion(){
   </div>`;
   // v8 — role filter: FC users see only their own farmers.
   let rows=filterByCurrentFc(DB.convFarmers).slice();
+  // archive: hide archived unless "Show archived" is on (then show ONLY archived)
+  rows = rows.filter(r => ARCH_SHOW.conv ? r._archived : !r._archived);
   if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>r.district===F.district);
@@ -6997,17 +7088,21 @@ function viewConversion(){
     <h3>Conversion Farmers</h3>
     <span class="meta">${rows.length} of ${DB.convFarmers.length} records</span>
     <div class="spacer"></div>
+    ${archToggleHtml('conv')}
     ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
   </div>`;
+  const _convAllSel = pagedConvRows.length && pagedConvRows.every(r=>ARCH_SEL.conv.has(r.id));
   h+=`<div class="table-wrap"><table><thead><tr>
+    <th style="width:34px"><input type="checkbox" id="archSelAll_conv" ${_convAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>
     ${th('fcId','Facilitator')}<th>Organic progress</th>
     ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}<th>Action</th>
+    ${ARCH_SHOW.conv?'<th></th>':''}
   </tr></thead><tbody>`;
-  if(!rows.length)h+=`<tr><td colspan="9"><div class="empty">${svg(I.convert)}<div>No conversion farmers match.</div></div></td></tr>`;
+  if(!rows.length)h+=`<tr><td colspan="11"><div class="empty">${svg(I.convert)}<div>${ARCH_SHOW.conv?'No archived farmers.':'No conversion farmers match.'}</div></div></td></tr>`;
   const today=todayISO();
   pagedConvRows.forEach(r=>{
     const fc=fcById(r.fcId);
@@ -7024,6 +7119,7 @@ function viewConversion(){
         + (cropsArr.length>3 ? `<span style="font-size:10.5px;color:var(--ink-faint)"> +${cropsArr.length-3}</span>` : '')
       : '<span style="color:var(--ink-faint)">—</span>';
     h+=`<tr data-id="${r.id}">
+      <td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>
       <td><span class="id-code">${esc(r.id)}</span></td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres||0} acres</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
@@ -7033,6 +7129,7 @@ function viewConversion(){
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
       <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button></td>
+      ${ARCH_SHOW.conv?`<td><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button></td>`:''}
     </tr>`;
   });
   if(convTotalPages > 1){
@@ -7043,6 +7140,7 @@ function viewConversion(){
     </div>`;
   }
   h+='</tbody></table></div>';
+  h+=archBarHtml('conv');
   v.innerHTML=h;
 
   const convPrev = v.querySelector('#convPrev');
@@ -7070,6 +7168,7 @@ function viewConversion(){
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
   const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
+  wireArch(v, 'conv', pagedConvRows.map(r=>r.id));
 }
 
 /* ============ IMPORT FROM FORM (CSV or JSON paste) ============
@@ -11090,7 +11189,7 @@ function openIncomeAddModal(){
   // v9 process-fix #50 — only show green + active farmers in the income
   // dropdown. Inactive/suspended/yellow/red/pending farmers shouldn't have
   // income recorded against them.
-  const eligibleFarmers = DB.haatFarmers.filter(f => f.status === 'green' && f.active !== false);
+  const eligibleFarmers = DB.haatFarmers.filter(f => f.status === 'green' && f.active !== false && !f._archived);
   const farmerOpts = '<option value="">— Select farmer —</option>' +
     eligibleFarmers.map(f => `<option value="${esc(f.id)}" data-haat="${esc(f.haat||'')}">${esc(f.name)} (${esc(f.id)})${f.haat?' · '+esc(f.haat):''}</option>`).join('');
   const haatOpts = haats.map(h => `<option value="${esc(h.name)}">${esc(h.name)}</option>`).join('');

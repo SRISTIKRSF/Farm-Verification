@@ -1953,7 +1953,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20f';
+const APP_VERSION = 'v20g';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9025,6 +9025,24 @@ function modalShell(title,bodyHtml,footHtml){
     <div class="modal-foot">${footHtml}</div>`;
   openModal();
 }
+// In-app confirmation (replaces native confirm() for irreversible actions so the
+// dialog is DOM-driven — styleable, testable, and consistent with the modal system).
+// Resolves true only when the confirm button is pressed; ANY other close
+// (Cancel, ✕, overlay click, Escape) resolves false so destructive code never runs.
+function confirmModal({title, message, confirmLabel='Confirm', danger=false}){
+  return new Promise(resolve=>{
+    const foot=`<button class="btn btn-ghost" id="cfmCancel">Cancel</button>`
+              +`<button class="btn ${danger?'btn-danger':'btn-primary'}" id="cfmOk">${esc(confirmLabel)}</button>`;
+    modalShell(esc(title), `<div class="hint" style="line-height:1.65;white-space:pre-line">${esc(message)}</div>`, foot);
+    const modal=$('#modal');
+    let done=false;
+    const obs=new MutationObserver(()=>{ if(!modal.classList.contains('show')) finish(false); });
+    function finish(v){ if(done) return; done=true; obs.disconnect(); resolve(v); }
+    obs.observe(modal,{attributes:true,attributeFilter:['class']});
+    $('#cfmOk').onclick=()=>{ finish(true); closeModal(); };
+    $('#cfmCancel').onclick=()=>{ closeModal(); };   // observer fires finish(false)
+  });
+}
 const fld=(label,inner,req)=>`<div class="field"><label>${label}${req?' <span class="req">*</span>':''}</label>${inner}</div>`;
 const sel=(id,opts,val)=>`<select id="${id}">${opts.map(o=>{
   const[v,t]=Array.isArray(o)?o:[o,o];
@@ -11524,19 +11542,29 @@ function viewData(){
     r.onload=async()=>{
       try{
         const d=JSON.parse(r.result);
-        if(!d.haatFarmers||!d.fcs)throw 0;
-        DB=d;await saveDB();render();toast('Backup restored');
+        // Require the core shape before we offer to replace everything.
+        if(!d || typeof d!=='object' || !Array.isArray(d.haatFarmers) || !Array.isArray(d.fcs)) throw 0;
+        const ok=await confirmModal({title:'Restore backup?', message:'This REPLACES all current data on this device with the backup and syncs the result to the cloud.\n\nThis cannot be undone.', confirmLabel:'Restore', danger:true});
+        if(!ok){ e.target.value=''; return; }
+        // normaliseDB() fills any structural keys the backup is missing
+        // (states/crops/months/settings/…) so a partial backup can't white-screen the app.
+        DB=normaliseDB(d);await saveDB();render();toast('Backup restored');
       }catch(_){toast('Invalid backup file');}
+      e.target.value='';
     };
     r.readAsText(file);
   };
   $('#reseed').onclick=async()=>{
-    DB={fcs:SEED.fcs,haatFarmers:SEED.haatFarmers,convFarmers:SEED.convFarmers,
-        haats:SEED.haats,crops:SEED.crops,months:SEED.months,states:SEED.states,
-        convParams:["vermicompost","jivamRoot","biopesticide"],activity:[]};
+    const ok=await confirmModal({title:'Reload demo data?', message:'This REPLACES all current farmer data on this device with the sample dataset and syncs to the cloud.\n\nThis cannot be undone.', confirmLabel:'Reload demo data', danger:true});
+    if(!ok) return;
+    // Route through the canonical seed+normalise path so live keys
+    // (settings, fieldCoordinators, incomeRecords, pendingEnrolments, …) aren't dropped.
+    DB=normaliseDB(seedDB());
     await saveDB();render();toast('Demo data reloaded');
   };
   $('#wipe').onclick=async()=>{
+    const ok=await confirmModal({title:'Erase all farmer data?', message:'This permanently deletes ALL Haat and Conversion farmers and syncs the deletion to the cloud for every device.\n\nThis cannot be undone.', confirmLabel:'Erase everything', danger:true});
+    if(!ok) return;
     DB.haatFarmers=[];DB.convFarmers=[];
     await saveDB();render();toast('All farmer data erased');
   };

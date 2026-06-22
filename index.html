@@ -904,7 +904,7 @@ function renderField(q){
   if(q.id==='aadhaar')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.id==='farm_gps')
-    return \`<div class="field" data-q="\${id}">\${lbl}<div style="display:flex;gap:8px;align-items:center"><input type="text" data-val="\${id}" placeholder="lat,lng અથવા Google Maps link" style="flex:1"><button type="button" onclick="useGps(this)" aria-label="Use my GPS location" style="display:inline-flex;align-items:center;gap:5px;padding:8px 13px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>GPS</button></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div style="display:flex;gap:8px;align-items:center"><input type="text" data-val="\${id}" placeholder="lat,lng અથવા Google Maps link" style="flex:1"><button type="button" onclick="useGps(this)" aria-label="Use my GPS location" style="display:inline-flex;align-items:center;gap:5px;padding:8px 13px;background:var(--leaf);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>GPS</button></div></div>\`;
   if(q.type==='text' || q.type==='date')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="\${q.type==='date'?'date':'text'}" data-val="\${id}"></div>\`;
   if(q.type==='number')
@@ -1003,13 +1003,13 @@ function buildCropRows(){
     wrap.appendChild(card);
   });
   wrap.querySelectorAll('input,select').forEach(el => {
-    el.oninput = el.onchange = () => { CROP_ROWS[+el.dataset.crop][el.dataset.f] = el.value; };
+    el.oninput = el.onchange = () => { CROP_ROWS[+el.dataset.crop][el.dataset.f] = el.value; scheduleDraftSave(); };
   });
   wrap.querySelectorAll('[data-delidx]').forEach(btn => {
-    btn.onclick = () => { CROP_ROWS.splice(+btn.dataset.delidx, 1); buildCropRows(); };
+    btn.onclick = () => { CROP_ROWS.splice(+btn.dataset.delidx, 1); buildCropRows(); scheduleDraftSave(); };
   });
   const addBtn = $('#addCropBtn');
-  if(addBtn) addBtn.onclick = () => { CROP_ROWS.push({}); buildCropRows(); };
+  if(addBtn) addBtn.onclick = () => { CROP_ROWS.push({}); buildCropRows(); scheduleDraftSave(); };
 }
 
 function wireFields(){
@@ -1048,16 +1048,19 @@ function wireFields(){
       b.classList.add('on');
       ANSWERS[q] = b.dataset.v;
       applyConditionalVisibility();
+      scheduleDraftSave();   // #3
     });
   });
   /* multi-select chips */
   $$('.chips[data-multi]').forEach(ch => {
     const q = ch.dataset.multi;
     ANSWERS[q] = ANSWERS[q] || [];
+    // #2 — restore the visual selection from a loaded draft
+    ch.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', ANSWERS[q].includes(c.dataset.v)));
     ch.querySelectorAll('.chip').forEach(c => c.onclick = () => {
       c.classList.toggle('on');
-      const arr = [...ch.querySelectorAll('.chip.on')].map(x => x.dataset.v);
-      ANSWERS[q] = arr;
+      ANSWERS[q] = [...ch.querySelectorAll('.chip.on')].map(x => x.dataset.v);
+      scheduleDraftSave();   // #3
     });
   });
   /* multi-count: chip + numeric input. Answer = [{type, count}]. */
@@ -1068,7 +1071,17 @@ function wireFields(){
       ANSWERS[q] = [...mc.querySelectorAll('.mc-row')]
         .filter(r => r.querySelector('.mc-toggle').classList.contains('on'))
         .map(r => ({type: r.dataset.mc, count: r.querySelector('.mc-count').value || ''}));
+      scheduleDraftSave();   // #3
     };
+    // #2 — restore toggle state + counts from a loaded draft
+    mc.querySelectorAll('.mc-row').forEach(r => {
+      const saved = (ANSWERS[q]||[]).find(e => e.type === r.dataset.mc);
+      if(saved){
+        r.querySelector('.mc-toggle').classList.add('on');
+        const inp = r.querySelector('.mc-count');
+        inp.style.display = 'inline-block'; inp.value = saved.count || '';
+      }
+    });
     mc.querySelectorAll('.mc-toggle').forEach(btn => btn.onclick = () => {
       btn.classList.toggle('on');
       const row = btn.closest('.mc-row');
@@ -1089,6 +1102,7 @@ function wireFields(){
         const rd = new FileReader();
         rd.onload = () => {
           PHOTOS[q].push({name:f.name, type:f.type, data:rd.result});
+          scheduleDraftSave();   // #3
           const t = document.createElement('div');
           t.className = 'photo-thumb';
           t.innerHTML = '<img src="'+rd.result+'"><span class="x">×</span>';
@@ -1097,6 +1111,7 @@ function wireFields(){
             const idx = PHOTOS[q].findIndex(x => x.data===rd.result);
             if(idx>=0) PHOTOS[q].splice(idx,1);
             t.remove();
+            scheduleDraftSave();   // #3
           };
         };
         rd.readAsDataURL(f);
@@ -1199,6 +1214,7 @@ function useGps(btn){
   );
 }
 
+let _submitting = false;
 function submit(){
   /* validation: required fields */
   const missing = QUESTIONS.filter(q => {
@@ -1243,6 +1259,8 @@ function submit(){
     }
     return;
   }
+  if(_submitting) return;   // #5 — guard against a second tap re-posting the enrollment
+  _submitting = true;
   /* compile claims map */
   const claims = QUESTIONS.filter(q => q.askedOf !== 'fc-only').map(q => ({
     id: q.id, cat: q.cat, type: q.type, gu: q.gu, en: q.en,
@@ -1274,7 +1292,7 @@ function submit(){
   $('#formWrap').querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   $('#successScreen').classList.add('show');
   const _ref = $('#successRef');
-  if(_ref){ const _d=new Date(); _ref.innerHTML='નામ: <b>'+(ANSWERS.name||'—')+'</b><br>સંદર્ભ: <b>'+_d.getFullYear()+String(_d.getMonth()+1).padStart(2,'0')+String(_d.getDate()).padStart(2,'0')+'-'+String(_d.getHours()).padStart(2,'0')+String(_d.getMinutes()).padStart(2,'0')+'</b>'; }
+  if(_ref){ const _d=new Date(); _ref.innerHTML='નામ: <b>'+(ANSWERS.farmer_name||'—')+'</b><br>સંદર્ભ: <b>'+_d.getFullYear()+String(_d.getMonth()+1).padStart(2,'0')+String(_d.getDate()).padStart(2,'0')+'-'+String(_d.getHours()).padStart(2,'0')+String(_d.getMinutes()).padStart(2,'0')+'</b>'; }
   $('#actionsBar').style.display = 'none';
   $('#dotsWrap').style.display = 'none';
   $('#progressFill').style.width = '100%';
@@ -1299,7 +1317,10 @@ window.addEventListener('message', ev => {
       }
     } catch(e) { /* ignore */ }
     buildSections();
-    saveDraft();   // initial snapshot
+    // #3 — do NOT saveDraft() here. It overwrote an existing content-ful draft with
+    // the empty initial ANSWERS the instant the form opened (right after showing the
+    // Restore banner), so Restore always loaded an empty draft — silently breaking the
+    // whole feature. Drafts are written on the first real edit (scheduleDraftSave).
   }
 });
 
@@ -1953,7 +1974,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20i';
+const APP_VERSION = 'v20j';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

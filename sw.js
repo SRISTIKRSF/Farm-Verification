@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v20n';
+const CACHE = 'sristi-fv-v21';
 
 const SHELL = [
   './',
@@ -29,9 +29,13 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch strategy:
+// Fetch strategy (#42):
 //   - Firebase RTDB / Auth / Cloudinary → network only (live data, never cache)
-//   - Everything else → cache-first, update cache in background (stale-while-revalidate)
+//   - App shell (index.html / navigations) → NETWORK-FIRST so a new deploy is
+//     picked up immediately when online; fall back to cache only when offline.
+//     (The old stale-while-revalidate served the previous build for a whole extra
+//     session after every deploy — the recurring "stuck on old version" bug.)
+//   - Versioned CDN libs (leaflet/sheetjs/firebase) → cache-first (immutable).
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
@@ -46,6 +50,24 @@ self.addEventListener('fetch', e => {
     return; // let browser handle normally
   }
 
+  const isShell = e.request.mode === 'navigate' ||
+                  url.pathname.endsWith('/') ||
+                  url.pathname.endsWith('/index.html');
+
+  if (isShell) {
+    // Network-first: fresh when online, cached when offline.
+    e.respondWith(
+      caches.open(CACHE).then(cache =>
+        fetch(e.request).then(response => {
+          if (response && response.ok) cache.put(e.request, response.clone());
+          return response;
+        }).catch(() => cache.match(e.request).then(c => c || cache.match('./index.html')))
+      )
+    );
+    return;
+  }
+
+  // Cache-first for everything else (versioned/immutable assets), revalidate in background.
   e.respondWith(
     caches.open(CACHE).then(cache =>
       cache.match(e.request).then(cached => {

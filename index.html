@@ -1953,7 +1953,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v20g';
+const APP_VERSION = 'v20h';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5155,7 +5155,10 @@ function openConvScoreModal(id){
       areaCur:  cs.currentArea,
       photos: vphotos,
     });
-    const sameDayIdx = f.visits.findIndex(v => v && v.date === vdate && (!vfc || v.fc === vfc));
+    // Only de-dupe in place when a real FC is attached. A blank FC ("Other") has
+    // no stable identity, so `!vfc` previously matched the FIRST same-day visit by
+    // ANY FC and silently overwrote it — push a new row instead.
+    const sameDayIdx = vfc ? f.visits.findIndex(v => v && v.date === vdate && v.fc === vfc) : -1;
     if(sameDayIdx >= 0){
       visitPayload.editedFromVisitAt = f.visits[sameDayIdx].recordedAt;
       f.visits[sameDayIdx] = visitPayload;
@@ -9492,7 +9495,8 @@ function openConvStatusModal(id){
   function paint(){pickWrap.querySelectorAll('.status-opt').forEach(o=>o.classList.toggle('on',o.dataset.v===pick));}
   pickWrap.querySelectorAll('.status-opt').forEach(o=>o.onclick=()=>{pick=o.dataset.v;paint();});
   paint();
-  $('#saveConvStatus').onclick=async()=>{
+  $('#saveConvStatus').onclick=async(ev)=>{
+    const btn=ev.currentTarget; if(btn.disabled) return; btn.disabled=true; const _lbl=btn.innerHTML; btn.textContent='Saving…';
     f.stage=pick;
     // v8 — sync transitionStatus for every stage so the colour reflects the
     // current stage (was previously stale when demoting to enrolled/assigned).
@@ -9505,9 +9509,11 @@ function openConvStatusModal(id){
     f.stageOverrideById = aOv.id;
     f.stageOverrideAt   = new Date().toISOString();
     logActivity('status',`<b>${esc(f.name)}</b> (${esc(f.id)}) stage set to "${esc(CONV_STATUS[pick].label)}"`);
-    await saveDB();closeModal();render();
-    if($('#drawer').classList.contains('show'))openConvDrawer(id);
-    toast('Stage updated');
+    try{
+      await saveDB();closeModal();render();
+      if($('#drawer').classList.contains('show'))openConvDrawer(id);
+      toast('Stage updated');
+    }catch(e){ console.warn('[Sristi] stage save failed:',e); btn.disabled=false; btn.innerHTML=_lbl; toast('Save failed — check connection and try again'); }
   };
 }
 /* ============ MODAL: ADD / EDIT FARMER ============ */

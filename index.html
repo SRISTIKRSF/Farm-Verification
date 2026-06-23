@@ -1336,18 +1336,13 @@ setTimeout(()=>{
 <\/script>
 
 <script>
-// ── PWA: Service Worker + online/offline indicator ──────────────────────
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js').catch(function(e) {
-      console.warn('[SW] registration failed:', e);
-    });
-    // Auto-reload when a new SW takes over — picks up the latest version silently
-    navigator.serviceWorker.addEventListener('controllerchange', function() {
-      window.location.reload();
-    });
-  });
-}
+// ── PWA: online/offline indicator ──────────────────────────────────────
+// v22 — the Service Worker is now registered ONCE from the MAIN app document, not
+// from inside this embedded enrollment form. Registering it here reloaded the form
+// mid-entry whenever a new SW took over (controllerchange) — the root of the FC
+// "can't add farmer" / "app closes after update" bugs. The form is same-origin
+// (srcdoc) so it stays controlled by the main app's SW; it just no longer manages
+// the SW lifecycle.
 (function() {
   function syncOnline() {
     document.body.classList.toggle('is-offline', !navigator.onLine);
@@ -1974,7 +1969,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3345,8 +3340,14 @@ async function extractPhotos(payload, ctx){
     });
   })(payload);
   let queued = 0;
+  const _canUpload = cloudinaryConfigured();   // v22 bug#5a
   for(const leaf of leaves){
     if(leaf.photoId || !_isDataUrlImage(leaf.data)) continue;   // identity-shared duplicate already done
+    // v22 bug#5a — if Cloudinary isn't configured, flushPhotoQueue can NEVER upload,
+    // so stripping the base64 here would make the photo invisible to admin/other
+    // devices forever ("status complete but no photo"). Keep it inline instead — it
+    // syncs in the record/form and stays visible (just a larger record).
+    if(!_canUpload) continue;
     try{
       const compressed = await compressImageDataUrl(leaf.data);
       const photoId = 'PH' + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36);
@@ -3401,7 +3402,10 @@ async function flushPhotoQueue(){
         const msg = (e && e.message) ? e.message : String(e);
         console.error('[Sristi] photo upload failed (will retry):', msg, it.photoId);
         _photoFlushLastErr = msg;
-        it.tries = (it.tries||0) + 1;
+        // v22 bug#5a — only PERMANENT failures (Cloudinary 4xx: bad image/preset/auth)
+        // count toward the #38 give-up cap. Transient failures (network drop, timeout,
+        // 5xx) keep retrying, so a flaky field connection never permanently drops a photo.
+        if(/Cloudinary 4\d\d/.test(msg)) it.tries = (it.tries||0) + 1;
         await idbPut('photoQueue', it).catch(()=>{});
         failed++;
       }
@@ -12479,7 +12483,7 @@ window.addEventListener('message',async ev=>{
         // drawer timeline + activity feed know who/when this happened.
         f.visits.push(stamp({
           date: (d.summary?.date) || todayISO(),
-          fc: f.fcId || '',
+          fc: currentFcId() || f.fcId || '',  // v22 bug#2 — stamp the actual verifying FC, not the farmer's (usually empty) assigned fcId, so "Visits (90d)" counts it
           verifierName: d.summary?.verifierName || '',
           // v6 fix: form sends fcVerification (not fcVerified), and a per-claim fcNote.
           // Old code read the wrong field and dropped the FC's notes on the floor.
@@ -12510,14 +12514,17 @@ window.addEventListener('message',async ev=>{
         } else {
           logActivity('alert',`⚠ Incomplete verification logged for <b>${esc(f.name)}</b> — only ${markedCount} claims marked. Stage stays "verification pending".`);
         }
-        saveDB(true);
+        // v22 bug#5b — durably queue the 'verified' record so a flaky/failed cloud
+        // write isn't lost and reverted to "pending" on reopen; flushOfflineWrites
+        // replays it on reconnect. Queued only on failure (no clobber when it lands).
+        saveDB(true).then(ok=>{ if(!ok) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{}); });
         if(typeof render==='function') render();
         return;
       }
       const s=d.summary||{};
       f.visits.push(stamp({
         date:s.date||todayISO(),
-        fc:f.fcId||'', verifierName:s.verifierName||'',
+        fc: currentFcId() || f.fcId || '', verifierName:s.verifierName||'',  // v22 bug#2 — actual verifier
         score:s.score||0,
         livingFence:s.livingFence||'—',
         compost:s.compost||'—',
@@ -12530,7 +12537,9 @@ window.addEventListener('message',async ev=>{
       if(!POST_DECISION_3.includes(f.stage)) f.stage='verified';
       markLocalTouch('haatFarmers', f.id);
       logActivity('visit',`Farm verification (Gujarati patrak) completed for <b>${esc(f.name)}</b> (${f.id})${s.verifierName?' by '+esc(s.verifierName):''}`);
-      await saveDB(true);
+      // v22 bug#5b — durable backstop: if the cloud write didn't land, queue the
+      // 'verified' record so it re-syncs on reconnect instead of reverting to pending.
+      if(!(await saveDB(true))) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{});
     }
   }
   if(d.type==='farm-verification-closed'){
@@ -13864,6 +13873,28 @@ window.addEventListener('hashchange', () => {
       + '</div>';
   }
 })();
+</script>
+<script>
+// v22 — register the Service Worker from the MAIN app document. Previously the ONLY
+// registration lived inside the enrollment iframe (KISAN_FORM_HTML), which meant:
+//   • an FC who never opened "add farmer" stayed on the old build after a deploy
+//     ("stuck on old version"), and
+//   • when the SW DID update, the iframe's controllerchange→reload tore down the
+//     farmer form mid-entry ("can't add farmer" / "app closes after update").
+// Registering here, once, with a guarded reload fixes all of that.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function (e) {
+      console.warn('[SW] registration failed:', e);
+    });
+    var _swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (_swRefreshing) return;   // guard: reload at most once (no reload loop)
+      _swRefreshing = true;
+      window.location.reload();
+    });
+  });
+}
 </script>
 </body>
 </html>

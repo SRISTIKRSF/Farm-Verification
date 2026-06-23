@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v21';
+const CACHE = 'sristi-fv-v22';
 
 const SHELL = [
   './',
@@ -13,14 +13,29 @@ const SHELL = [
   'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
 ];
 
-// Pre-cache app shell on install
+// Pre-cache app shell on install.
+// v22: TOLERANT precache. addAll() is all-or-nothing, so one failing CDN (common on
+// a flaky field connection) used to leave the WHOLE cache empty → offline reopen
+// served nothing. allSettled lets each entry fail independently; the same-origin
+// shell ('./' , './index.html') is what MUST cache for offline reopen and is the most
+// reliable to fetch — CDN libs are best-effort.
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(cache => Promise.allSettled(SHELL.map(u => {
+        // v22: fetch the same-origin shell with cache:'reload' so the precached
+        // index.html is the FRESHLY-DEPLOYED build, not a stale copy from the browser
+        // HTTP cache (that staleness is the real "stuck on old version" cause). Install
+        // only runs on a new/bumped sw.js, so fetching fresh here is exactly right.
+        // Versioned CDN libs are immutable — a normal cached add is fine.
+        const req = (u === './' || u === './index.html') ? new Request(u, { cache: 'reload' }) : u;
+        return cache.add(req);
+      })))
+      .then(() => self.skipWaiting())
   );
 });
 
-// Remove old caches on activate
+// Remove old caches on activate, then take control.
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
@@ -29,12 +44,15 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch strategy (#42):
-//   - Firebase RTDB / Auth / Cloudinary → network only (live data, never cache)
-//   - App shell (index.html / navigations) → NETWORK-FIRST so a new deploy is
-//     picked up immediately when online; fall back to cache only when offline.
-//     (The old stale-while-revalidate served the previous build for a whole extra
-//     session after every deploy — the recurring "stuck on old version" bug.)
+// Fetch strategy (v22 — reverted to CACHE-FIRST for field reliability):
+//   - Firebase RTDB / Auth / Cloudinary → network only (live data, never cache).
+//   - App shell (index.html / navigations) → CACHE-FIRST: serve the cached shell
+//     INSTANTLY (works fully offline and on weak signal), revalidate in background so
+//     the next launch is fresh. New deploys still apply promptly: a bumped sw.js
+//     installs a fresh shell, skipWaiting()s, and the MAIN app (not the old iframe)
+//     does a single guarded reload on controllerchange.
+//     (v21 used network-first, which made EVERY launch depend on a live fetch of the
+//      ~1.3MB shell — fatal offline / on flaky field networks. Reverted.)
 //   - Versioned CDN libs (leaflet/sheetjs/firebase) → cache-first (immutable).
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
@@ -55,13 +73,17 @@ self.addEventListener('fetch', e => {
                   url.pathname.endsWith('/index.html');
 
   if (isShell) {
-    // Network-first: fresh when online, cached when offline.
+    // Cache-first on the canonical './index.html' (ignores any ?query so every
+    // navigation maps to the same cached entry), revalidate in the background.
     e.respondWith(
       caches.open(CACHE).then(cache =>
-        fetch(e.request).then(response => {
-          if (response && response.ok) cache.put(e.request, response.clone());
-          return response;
-        }).catch(() => cache.match(e.request).then(c => c || cache.match('./index.html')))
+        cache.match('./index.html').then(cached => {
+          const networkFetch = fetch(e.request).then(resp => {
+            if (resp && resp.ok) cache.put('./index.html', resp.clone());
+            return resp;
+          }).catch(() => cached); // offline / flaky — fall back to the cached shell
+          return cached || networkFetch; // instant if cached; else go to network
+        })
       )
     );
     return;

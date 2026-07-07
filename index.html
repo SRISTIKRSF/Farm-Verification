@@ -900,7 +900,8 @@ function showIf(q){
 
 function renderField(q){
   const id = q.id;
-  const lbl = \`<div class="q-label">\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
+  const qn = QUESTIONS.indexOf(q) + 1;
+  const lbl = \`<div class="q-label">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
   if(q.id==='aadhaar')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.id==='farm_gps')
@@ -996,7 +997,7 @@ function buildCropRows(){
       + (CROP_ROWS.length > 1 ? '<button type="button" class="crop-del" data-delidx="'+i+'" title="Remove">✕</button>' : '') + '</div>'
       + '<div class="crop-fields">'
       + '<div><label>પાક (Crop)</label><select data-crop="'+i+'" data-f="name"><option value="">— પસંદ કરો —</option>'+CROPS.map(c=>'<option'+(r.name===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
-      + '<div><label>વીઘા (Area)</label><input type="number" step="0.5" data-crop="'+i+'" data-f="area" value="'+(r.area||'')+'" placeholder="0.0"></div>'
+      + '<div><label>એકર (Area)</label><input type="number" step="0.5" data-crop="'+i+'" data-f="area" value="'+(r.area||'')+'" placeholder="0.0"></div>'
       + '<div><label>ઉત્પાદન (Yield)</label><input type="text" data-crop="'+i+'" data-f="yield" value="'+(r.yield||'')+'" placeholder="400 kg"></div>'
       + '<div><label>આવક ₹ (Income)</label><input type="number" data-crop="'+i+'" data-f="income" value="'+(r.income||'')+'" placeholder="0"></div>'
       + '</div>';
@@ -1521,7 +1522,7 @@ function fmtFarmerClaim(q, c){
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
   if(q.type==='yn') return a==='yes' ? '<b style="color:var(--green)">Yes</b>' : a==='no' ? '<b style="color:var(--red)">No</b>' : '—';
   if(q.type==='crops_table') return Array.isArray(a) && a.length
-    ? '<div style="display:flex;flex-direction:column;gap:4px">' + a.map(r => '<span class="pill" style="display:inline-block">' + esc(r.name||'') + ' · ' + esc(String(r.area||'0')) + ' વીઘા · ' + esc(String(r.yield||'?')) + ' · ₹' + esc(String(r.income||'0')) + '/yr</span>').join('') + '</div>'
+    ? '<div style="display:flex;flex-direction:column;gap:4px">' + a.map(r => '<span class="pill" style="display:inline-block">' + esc(r.name||'') + ' · ' + esc(String(r.area||'0')) + ' એકર · ' + esc(String(r.yield||'?')) + ' · ₹' + esc(String(r.income||'0')) + '/yr</span>').join('') + '</div>'
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
   if(a==null || a==='') return '<span style="color:var(--ink-faint);font-style:italic">Not answered</span>';
   return '<b>'+esc(String(a))+'</b>';
@@ -1599,13 +1600,14 @@ function renderFcControls(q){
 
 function renderQuestion(q){
   const claim = CLAIMS_BY_ID[q.id];
+  const qn = QUESTIONS.indexOf(q) + 1;
   /* displayOnly questions: identity facts that the FC cannot meaningfully verify
      (name, age, mobile etc.) — show value, no FC controls. */
   if(q.displayOnly){
     return \`<div class="q-block" data-q="\${q.id}" style="background:#f8fafc;border-radius:8px;padding:11px 13px;margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${esc(q.gu)}</div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}</div>
           <div style="font-size:11px;color:var(--ink-soft);margin-top:1px">\${esc(q.en)}</div>
         </div>
         <div style="text-align:right;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5">\${fmtFarmerClaim(q, claim)}</div>
@@ -1636,7 +1638,7 @@ function renderQuestion(q){
     </div>\`;
   }
   return \`<div class="q-block" data-q="\${q.id}">
-    <div class="q-label">\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
+    <div class="q-label">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
     <div class="q-desc">\${esc(q.en)}</div>
     \${q.askedOf !== 'fc-only' ? \`<div class="farmer-claim-box">
       <div class="l">📋 Farmer's claim</div>
@@ -1969,7 +1971,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -2552,12 +2554,12 @@ function seedVanshitaDemo(d){
       {type:'Buffalo (ભેંસ)', count:'1'},
       {type:'Poultry (કુક્કુટ)', count:'25'},
     ],
-    has_tractor: 'yes',
-    tractor_hp: '35',
+    has_tractor: 'Small tractor (નાનું ટ્રેક્ટર)',
     has_weeds: 'yes',
     weed_types: 'ધરો, મોથ, રસ્તાની ધાર પર ક્યારેક પાર્થેનિયમ',
     weed_photo: '',
     chem_weedicide: 'no',
+    weed_removal_method: 'હાથથી નિંદામણ + દર 15 દિવસે આંતરખેડ',
     does_mulching: 'yes',
     mulch_type: 'શેરડીનો કચરો + ઘઉંનું ભૂસું — રીંગણની હાર વચ્ચે; કપાસ વાવતા પહેલા જીવંત મલ્ચ (સનહેમ્પ).',
     manure_methods: ['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','FYM (ગોબર ખાતર)'],
@@ -3893,11 +3895,11 @@ window.QUESTIONS_V5 = [
 
   /* ============ 2. FARM, LAND & CROPS ============ */
   {id:'survey_no',    cat:'farm', gu:'સર્વે નંબર',                     en:'Survey number',        type:'text',   askedOf:'both'},
-  {id:'total_bigha',  cat:'farm', gu:'કુલ જમીન (વીઘા)',                en:'Total land (bigha)',   type:'number', askedOf:'both'},
+  {id:'total_bigha',  cat:'farm', gu:'કુલ જમીન (એકર)',                en:'Total land (acre)',   type:'number', askedOf:'both'},
   {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         type:'textarea',askedOf:'both'},
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
-  {id:'crops_table',  cat:'farm', gu:'હાલ લેવાતા મુખ્ય પાક (3 સુધી)', en:'Main crops grown (up to 3)', type:'crops_table', askedOf:'both'},
+  {id:'crops_table',  cat:'farm', gu:'અત્યારના ઉગેલા પાક', en:'Main crops grown (up to 3)', type:'crops_table', askedOf:'both'},
 
   /* ============ 3. ORGANIC CERTIFICATE ============ */
   {id:'has_cert',    cat:'cert', gu:'ઓર્ગેનિક સર્ટિફિકેટ છે?',         en:'Has organic certificate?', type:'yn',   askedOf:'both'},
@@ -3916,18 +3918,19 @@ window.QUESTIONS_V5 = [
   /* ============ 5. LIVESTOCK & EQUIPMENT ============ */
   {id:'livestock_types', cat:'livestock', gu:'પશુધનમાં શું છે? (દરેક માટે સંખ્યા લખો)', en:'Livestock present (tick + enter count for each)', type:'multi_count',
     options:['Cow (ગાય)','Buffalo (ભેંસ)','Goat (બકરી)','Sheep (ઘેટું)','Bullock (બળદ)','Poultry (કુક્કુટ)','None (કોઈ નહીં)'], askedOf:'both'},
-  {id:'has_tractor', cat:'livestock', gu:'ટ્રેક્ટર છે?',  en:'Has tractor?', type:'yn',     askedOf:'both'},
-  {id:'tractor_hp',  cat:'livestock', gu:'ટ્રેક્ટરની HP', en:'Tractor HP',   type:'number', askedOf:'both', onlyIf:{id:'has_tractor',equals:'yes'}},
+  {id:'has_tractor', cat:'livestock', gu:'હાલમાં ખેડાણ કેવી રીતે કરો છો?',  en:'How do you currently plow?', type:'select',
+    options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'], askedOf:'both'},
 
   /* ============ 6. WEEDS, MULCHING & MANURE ============ */
   {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          type:'yn',    askedOf:'both'},
   {id:'weed_types',      cat:'practices', gu:'ખેતરમાં કયું નિંદામણ છે?',                en:'Which weeds?',                    type:'text',  askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
   {id:'weed_photo',      cat:'practices', gu:'નિંદામણનો ફોટો',                          en:'Weeds photo',                     type:'photo', askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
   {id:'chem_weedicide',  cat:'practices', gu:'નિંદામણ દૂર કરવા રાસાયણિક દવા વાપરો છો?', en:'Uses chemical weedicide?',        type:'yn',    askedOf:'both'},
+  {id:'weed_removal_method', cat:'practices', gu:'તો નિંદામણ કેવી રીતે દૂર કરો છો?', en:'How do you remove weeds then?', type:'text', askedOf:'both', onlyIf:{id:'chem_weedicide',equals:'no'}},
   {id:'does_mulching',   cat:'practices', gu:'મલ્ચિંગ / આચ્છાદન કરે છે?',                en:'Does mulching?',                  type:'yn',    askedOf:'both'},
   {id:'mulch_type',      cat:'practices', gu:'કયા પ્રકારનું મલ્ચિંગ કરો છો?',           en:'Type of mulching',                type:'text',  askedOf:'both', onlyIf:{id:'does_mulching',equals:'yes'}},
   {id:'manure_methods',  cat:'practices', gu:'સેન્દ્રિય ખાતર બનાવવા કઈ વ્યવસ્થા છે? (બધા)', en:'Manure systems (multi)', type:'multi',
-    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Other (અન્ય)'], askedOf:'both'},
+    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Oil cake (ખોળ)','Bio-culture (બાયો-કલ્ચર)','Algae/BGA (લીલ)'], askedOf:'both'},
   {id:'manure_photo',    cat:'practices', gu:'ખાતર બનાવવાના એકમના ફોટા',               en:'Manure setup photos',             type:'photo', askedOf:'both'},
 
   /* ============ 7. IRRIGATION & PLANT PROTECTION ============ */
@@ -8413,7 +8416,7 @@ function openCropsEditor(farmerId){
     if(f.enrollmentFormFull){
       f.enrollmentFormFull.claims = f.enrollmentFormFull.claims || [];
       const cIdx = f.enrollmentFormFull.claims.findIndex(c => c.id === 'crops_table');
-      const newClaim = {id:'crops_table', cat:'farm', type:'crops_table', gu:'હાલ લેવાતા મુખ્ય પાક', en:'Current crops', answer: cleaned};
+      const newClaim = {id:'crops_table', cat:'farm', type:'crops_table', gu:'અત્યારના ઉગેલા પાક', en:'Current crops', answer: cleaned};
       if(cIdx >= 0) f.enrollmentFormFull.claims[cIdx] = newClaim;
       else f.enrollmentFormFull.claims.push(newClaim);
       // v11 — the form lives at forms/{id} now; persist the claim edit there.
@@ -10009,7 +10012,7 @@ function openCompareFormsModal(id){
       : '<span style="color:var(--ink-faint)">None</span>';
     if(q.type === 'yn') return a==='yes' ? '<b style="color:var(--green)">Yes</b>' : a==='no' ? '<b style="color:var(--red)">No</b>' : '—';
     if(q.type === 'crops_table') return Array.isArray(a) && a.length
-      ? pillRow(a.map(r=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.name||'')+(r.area?' · '+esc(r.area)+' વીઘા':'')+'</span>').join(''))
+      ? pillRow(a.map(r=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.name||'')+(r.area?' · '+esc(r.area)+' એકર':'')+'</span>').join(''))
       : '—';
     if(a == null || a === '') return '<span style="color:var(--ink-faint)">—</span>';
     return esc(String(a));

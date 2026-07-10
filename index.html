@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Farm Verify">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Sristi Haat Tracker · v18i</title>
+<title>Sristi Farm Verification</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -675,7 +675,7 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
         </div>
         <div>
           <div class="tag">Sristi</div>
-          <h1>Khedut Haat Tracker <span id="appVerBadge" style="font-size:10px;font-weight:700;letter-spacing:.08em;background:rgba(255,255,255,.12);color:#a5b4cf;border-radius:5px;padding:1px 6px;vertical-align:middle;text-transform:uppercase"></span></h1>
+          <h1>Farm Verification <span id="appVerBadge" style="font-size:10px;font-weight:700;letter-spacing:.08em;background:rgba(255,255,255,.12);color:#a5b4cf;border-radius:5px;padding:1px 6px;vertical-align:middle;text-transform:uppercase"></span></h1>
         </div>
       </div>
     </div>
@@ -1971,7 +1971,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v24';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3871,15 +3871,11 @@ const HAAT_STATUS={
    ============================================================= */
 window.CATEGORIES_V5 = [
   {key:'basic',     gu:'ખેડૂતની મૂળભૂત માહિતી',                    en:'Basic information'},
-  {key:'farm',      gu:'ફાર્મ, જમીન અને પાક',                       en:'Farm, land & crops'},
-  {key:'cert',      gu:'ઓર્ગેનિક સર્ટિફિકેટ',                          en:'Organic certificate'},
-  {key:'condition', gu:'ખેતરની પરિસ્થિતિ અને ખેતી પદ્ધતિ',          en:'Farm condition & farming method'},
+  {key:'farm',      gu:'ખેતર, જમીન, પાક અને મૂલ્યવર્ધન',            en:'Farm, land, crops & value addition'},
+  {key:'cert',      gu:'ઓર્ગેનિક સર્ટિફિકેટ તથા બજાર',                en:'Organic certificate & market'},
   {key:'livestock', gu:'પશુધન અને સાધનો',                           en:'Livestock & equipment'},
-  {key:'practices', gu:'નિંદામણ, મલ્ચિંગ અને ખાતર',                 en:'Weeds, mulching & manure'},
-  {key:'irrigation',gu:'પિયત અને પાક સંરક્ષણ',                       en:'Irrigation & plant protection'},
-  {key:'sales',     gu:'બીજ, વેચાણ અને મૂલ્યવર્ધન',                  en:'Seeds, sale & value addition'},
-  {key:'digital',   gu:'વેચાણના પડકારો અને ડિજિટલ તૈયારી',           en:'Sale challenges & digital readiness'},
-  {key:'opinion',   gu:'અભિપ્રાય, અવલોકન અને પ્રેરણા',                en:'Opinions, observation & inspiration'},
+  {key:'practices', gu:'નીંદામણ, મલ્ચિંગ, પિયત',                     en:'Weeding, mulching & irrigation'},
+  {key:'irrigation',gu:'ખાતર, પાક સંરક્ષણ, બિયારણ',                  en:'Manure, plant protection & seeds'},
 ];
 
 window.QUESTIONS_V5 = [
@@ -3893,35 +3889,39 @@ window.QUESTIONS_V5 = [
   {id:'address',     cat:'basic', gu:'સંપૂર્ણ સરનામું',               en:'Full address',            type:'textarea', askedOf:'both'},
   {id:'village_taluka_district', cat:'basic', gu:'જિલ્લો / તાલુકો / ગામ / પિનકોડ', en:'District / Taluka / Village / Pincode', type:'address_cascade', askedOf:'both', req:true},
 
-  /* ============ 2. FARM, LAND & CROPS ============ */
+  /* ============ 2. FARM, LAND, CROPS & VALUE ADDITION ============ */
   {id:'survey_no',    cat:'farm', gu:'સર્વે નંબર',                     en:'Survey number',        type:'text',   askedOf:'both'},
   {id:'total_bigha',  cat:'farm', gu:'કુલ જમીન (એકર)',                en:'Total land (acre)',   type:'number', askedOf:'both'},
   {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         type:'textarea',askedOf:'both'},
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
   {id:'crops_table',  cat:'farm', gu:'અત્યારના ઉગેલા પાક', en:'Main crops grown (up to 3)', type:'crops_table', askedOf:'both'},
+  {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', type:'number', askedOf:'both'},
+  {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
+  {id:'farming_who',      cat:'farm', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], askedOf:'both'},
+  {id:'years_organic',     cat:'farm', gu:'કેટલા વર્ષથી પ્રાકૃતિક ખેતી કરો છો?', en:'Years of organic farming',     type:'number',   askedOf:'both'},
+  {id:'chem_runoff',      cat:'farm', gu:'બાજુના રાસાયણિક ખેતરનું પાણી તમારા ખેતરમાં આવે છે?', en:'Chemical runoff from neighbouring farm?', type:'yn', askedOf:'both'},
+  {id:'has_living_fence', cat:'farm', gu:'ખેતરની ચારેબાજુ લીલી વાડ છે?',                     en:'Has living fence around the farm?',       type:'yn', askedOf:'both'},
+  {id:'flora_around',     cat:'farm', gu:'ખેતરમાં કઈ વનસ્પતિ, વૃક્ષો, વેલીઓ જોવા મળે છે?',     en:'Flora / trees / creepers on farm',         type:'textarea', askedOf:'both'},
+  {id:'seed_source',    cat:'farm', gu:'બીજ અને ધરું ક્યાંથી લાવો છો?', en:'Seeds & seedlings source', type:'text',  askedOf:'both'},
+  {id:'does_value_add', cat:'farm', gu:'કોઈ ખેત પેદાશમાં મૂલ્યવર્ધન કરો છો?',          en:'Does any value addition?',           type:'yn',       askedOf:'both'},
+  {id:'value_products', cat:'farm', gu:'કઈ પેદાશમાંથી શું બનાવો છો?',                  en:'What products do you make?',         type:'textarea', askedOf:'both', onlyIf:{id:'does_value_add',equals:'yes'}},
 
-  /* ============ 3. ORGANIC CERTIFICATE ============ */
+  /* ============ 3. ORGANIC CERTIFICATE & MARKET ============ */
   {id:'has_cert',    cat:'cert', gu:'ઓર્ગેનિક સર્ટિફિકેટ છે?',         en:'Has organic certificate?', type:'yn',   askedOf:'both'},
   {id:'cert_agency', cat:'cert', gu:'સર્ટિફિકેટ કઈ સંસ્થાનું છે?',       en:'Certificate agency',       type:'text', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
   {id:'cert_expiry', cat:'cert', gu:'સર્ટિફિકેટ કઈ તારીખ સુધી માન્ય છે?', en:'Certificate valid until', type:'date', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
   {id:'cert_photo',  cat:'cert', gu:'સર્ટિફિકેટનો ફોટો',                en:'Certificate photo',        type:'photo',askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
+  {id:'sale_channels',  cat:'cert', gu:'અગાઉના વર્ષે ઉપજનું વેચાણ ક્યાં કર્યું? (બધા)', en:'Sale channels last year (multi)', type:'multi',
+    options:['Local market (સ્થાનિક બજાર)','APMC','Khedut Haat (ખેડૂતહાટ)','Direct to customer (સીધું)','Wholesale (થોકવેચાણ)','Online','None / self-use (પોતા માટે)'], askedOf:'both'},
 
-  /* ============ 4. FARM CONDITION & FARMING METHOD ============ */
-  {id:'chem_runoff',      cat:'condition', gu:'બાજુના રાસાયણિક ખેતરનું પાણી તમારા ખેતરમાં આવે છે?', en:'Chemical runoff from neighbouring farm?', type:'yn', askedOf:'both'},
-  {id:'has_living_fence', cat:'condition', gu:'ખેતરની ચારેબાજુ લીલી વાડ છે?',                     en:'Has living fence around the farm?',       type:'yn', askedOf:'both'},
-  {id:'flora_around',     cat:'condition', gu:'ખેતરમાં કઈ વનસ્પતિ, વૃક્ષો, વેલીઓ જોવા મળે છે?',     en:'Flora / trees / creepers on farm',         type:'textarea', askedOf:'both'},
-  {id:'flora_photo',      cat:'condition', gu:'વનસ્પતિ / વૃક્ષોના ફોટા',                          en:'Flora photos',                             type:'photo', askedOf:'both'},
-  {id:'land_ownership',   cat:'condition', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
-  {id:'farming_who',      cat:'condition', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], askedOf:'both'},
-
-  /* ============ 5. LIVESTOCK & EQUIPMENT ============ */
+  /* ============ 4. LIVESTOCK & EQUIPMENT ============ */
   {id:'livestock_types', cat:'livestock', gu:'પશુધનમાં શું છે? (દરેક માટે સંખ્યા લખો)', en:'Livestock present (tick + enter count for each)', type:'multi_count',
     options:['Cow (ગાય)','Buffalo (ભેંસ)','Goat (બકરી)','Sheep (ઘેટું)','Bullock (બળદ)','Poultry (કુક્કુટ)','None (કોઈ નહીં)'], askedOf:'both'},
   {id:'has_tractor', cat:'livestock', gu:'હાલમાં ખેડાણ કેવી રીતે કરો છો?',  en:'How do you currently plow?', type:'select',
     options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'], askedOf:'both'},
 
-  /* ============ 6. WEEDS, MULCHING & MANURE ============ */
+  /* ============ 5. WEEDING, MULCHING & IRRIGATION ============ */
   {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          type:'yn',    askedOf:'both'},
   {id:'weed_types',      cat:'practices', gu:'ખેતરમાં કયું નિંદામણ છે?',                en:'Which weeds?',                    type:'text',  askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
   {id:'weed_photo',      cat:'practices', gu:'નિંદામણનો ફોટો',                          en:'Weeds photo',                     type:'photo', askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
@@ -3929,14 +3929,14 @@ window.QUESTIONS_V5 = [
   {id:'weed_removal_method', cat:'practices', gu:'તો નિંદામણ કેવી રીતે દૂર કરો છો?', en:'How do you remove weeds then?', type:'text', askedOf:'both', onlyIf:{id:'chem_weedicide',equals:'no'}},
   {id:'does_mulching',   cat:'practices', gu:'મલ્ચિંગ / આચ્છાદન કરે છે?',                en:'Does mulching?',                  type:'yn',    askedOf:'both'},
   {id:'mulch_type',      cat:'practices', gu:'કયા પ્રકારનું મલ્ચિંગ કરો છો?',           en:'Type of mulching',                type:'text',  askedOf:'both', onlyIf:{id:'does_mulching',equals:'yes'}},
-  {id:'manure_methods',  cat:'practices', gu:'સેન્દ્રિય ખાતર બનાવવા કઈ વ્યવસ્થા છે? (બધા)', en:'Manure systems (multi)', type:'multi',
-    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Oil cake (ખોળ)','Bio-culture (બાયો-કલ્ચર)','Algae/BGA (લીલ)'], askedOf:'both'},
-  {id:'manure_photo',    cat:'practices', gu:'ખાતર બનાવવાના એકમના ફોટા',               en:'Manure setup photos',             type:'photo', askedOf:'both'},
-
-  /* ============ 7. IRRIGATION & PLANT PROTECTION ============ */
-  {id:'irrigation_methods', cat:'irrigation', gu:'પિયત કયું છે? (બધા પસંદ કરો)', en:'Irrigation methods (multi)', type:'multi',
+  {id:'irrigation_methods', cat:'practices', gu:'પિયત કયું છે? (બધા પસંદ કરો)', en:'Irrigation methods (multi)', type:'multi',
     options:['Borewell (બોરવેલ)','Well (કૂવો)','Canal (નહેર)','River (નદી)','Pond (તળાવ)','Rain-fed (વરસાદ)','Drip (ટપક)','Sprinkler (ફુવારો)'], askedOf:'both'},
-  {id:'irrigation_photo',   cat:'irrigation', gu:'પિયત પદ્ધતિનો ફોટો',                en:'Irrigation photo',           type:'photo',    askedOf:'both'},
+  {id:'irrigation_photo',   cat:'practices', gu:'પિયત પદ્ધતિનો ફોટો',                en:'Irrigation photo',           type:'photo',    askedOf:'both'},
+
+  /* ============ 6. MANURE, PLANT PROTECTION & SEEDS ============ */
+  {id:'manure_methods',  cat:'irrigation', gu:'સેન્દ્રિય ખાતર બનાવવા કઈ વ્યવસ્થા છે? (બધા)', en:'Manure systems (multi)', type:'multi',
+    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Oil cake (ખોળ)','Bio-culture (બાયો-કલ્ચર)','Algae/BGA (લીલ)'], askedOf:'both'},
+  {id:'manure_photo',    cat:'irrigation', gu:'ખાતર બનાવવાના એકમના ફોટા',               en:'Manure setup photos',             type:'photo', askedOf:'both'},
   {id:'protection_methods', cat:'irrigation', gu:'પાક સંરક્ષણ માટે શું કરો છો? (બધા પસંદ કરો)', en:'Plant protection methods (multi-select organic IPM)', type:'multi', askedOf:'both',
     options:[
       'પીળા ચીકણા સાપળા (Yellow sticky traps)',
@@ -3970,33 +3970,6 @@ window.QUESTIONS_V5 = [
   {id:'friendly_insects',   cat:'irrigation', gu:'ખેતરમાં મિત્ર કીટકો જોવા મળે છે?',  en:'Beneficial insects observed', type:'text',    askedOf:'both'},
   {id:'pests_observed',     cat:'irrigation', gu:'ખેતરમાં રોગ, જીવાત કે કીટકો જોવા મળે છે?', en:'Pests / disease observed', type:'text',   askedOf:'both'},
   {id:'pests_photo',        cat:'irrigation', gu:'કીટકોના ફોટા',                       en:'Pest photos',                type:'photo',    askedOf:'both'},
-
-  /* ============ 8. SEEDS, SALE & VALUE ADDITION ============ */
-  {id:'seed_source',    cat:'sales', gu:'બીજ અને ધરું ક્યાંથી લાવો છો?', en:'Seeds & seedlings source', type:'text',  askedOf:'both'},
-  {id:'sale_channels',  cat:'sales', gu:'અગાઉના વર્ષે ઉપજનું વેચાણ ક્યાં કર્યું? (બધા)', en:'Sale channels last year (multi)', type:'multi',
-    options:['Local market (સ્થાનિક બજાર)','APMC','Khedut Haat (ખેડૂતહાટ)','Direct to customer (સીધું)','Wholesale (થોકવેચાણ)','Online','None / self-use (પોતા માટે)'], askedOf:'both'},
-  {id:'does_value_add', cat:'sales', gu:'કોઈ ખેત પેદાશમાં મૂલ્યવર્ધન કરો છો?',          en:'Does any value addition?',           type:'yn',       askedOf:'both'},
-  {id:'value_products', cat:'sales', gu:'કઈ પેદાશમાંથી શું બનાવો છો?',                  en:'What products do you make?',         type:'textarea', askedOf:'both', onlyIf:{id:'does_value_add',equals:'yes'}},
-
-  /* ============ 9. SALE CHALLENGES & DIGITAL READINESS ============ */
-  {id:'sale_problems',  cat:'digital', gu:'વેચાણમાં મુખ્ય સમસ્યાઓ કઈ છે? (બધા)', en:'Main sale problems (multi)', type:'multi',
-    options:['Price uncertainty (ભાવ અનિશ્ચિતતા)','Storage (સંગ્રહ)','Transport (પરિવહન)','Buyer (ખરીદનાર)','Packaging (પેકિંગ)','Labour (મજૂરી)','Pests (જીવાત)','Others (અન્ય)'], askedOf:'both'},
-  {id:'transport_loss', cat:'digital', gu:'ટ્રાન્સપોર્ટ દરમિયાન ઉપજનો બગાડ થાય છે?',                   en:'Transport loss happens?',         type:'yn', askedOf:'both'},
-  {id:'app_readiness',  cat:'digital', gu:'ગ્રાહકોને સીધું વેચવા મોબાઈલ એપ વાપરવા તૈયાર છો?',           en:'Ready to use mobile app for direct sale?', type:'yn', askedOf:'both'},
-  {id:'packaging_ready',cat:'digital', gu:'જાતે પેકેજિંગ અને લેબલિંગ કરવા તૈયાર છો?',                  en:'Ready to self-package and label?', type:'yn', askedOf:'both'},
-  {id:'qr_readiness',   cat:'digital', gu:'QR કોડ ટ્રેસેબિલિટી સિસ્ટમમાં રસ છે?',                       en:'Interested in QR traceability?',   type:'yn', askedOf:'both'},
-
-  /* ============ 10. OPINIONS, OBSERVATION & INSPIRATION (mixed FC-only + farmer-only) ============ */
-  {id:'neighbour_opinion', cat:'opinion', gu:'પાડોશી ખેડૂતનો અભિપ્રાય',          en:"Neighbouring farmer's opinion", type:'textarea', askedOf:'fc-only'},
-  {id:'labour_opinion',    cat:'opinion', gu:'ખેતમજૂરનો અભિપ્રાય',                en:"Farm labour's opinion",         type:'textarea', askedOf:'fc-only'},
-  {id:'fc_notes',          cat:'opinion', gu:'નોંધનીય વિગતો (FC)',                en:"Notable observations (FC)",     type:'textarea', askedOf:'fc-only'},
-  {id:'committed_organic', cat:'opinion', gu:'છેલ્લા 3 વર્ષથી પ્રતિબદ્ધ ઓર્ગેનિક ખેતી?', en:'3+ years committed organic farming?', type:'yn', askedOf:'fc-only'},
-  {id:'recommendation',    cat:'opinion', gu:'FC ની ભલામણ (કારણ સાથે)',           en:'FC recommendation (with reason)', type:'textarea', askedOf:'fc-only'},
-  {id:'years_organic',     cat:'opinion', gu:'કેટલા વર્ષથી પ્રાકૃતિક ખેતી કરો છો?', en:'Years of organic farming',     type:'number',   askedOf:'both'},
-  {id:'inspiration',       cat:'opinion', gu:'પ્રાકૃતિક ખેતી કરવાની પ્રેરણા ક્યાંથી મળી?', en:'How did you get inspired to start organic?', type:'textarea', askedOf:'farmer-only'},
-  {id:'ngo_guidance',      cat:'opinion', gu:'કોઈ સ્વૈચ્છિક સંસ્થા / ગુરુનું માર્ગદર્શન છે?', en:'Mentor / NGO guidance', type:'text', askedOf:'farmer-only'},
-  {id:'storage_facility',  cat:'opinion', gu:'ખેત પેદાશ માટે સંગ્રહ સગવડ',         en:'Storage facilities for produce',  type:'text', askedOf:'farmer-only'},
-  {id:'fc_visit_photos', cat:'opinion', gu:'ખેતર મુલાકાતના ફોટા (FC દ્વારા)', en:'Farm visit photos (uploaded by FC)', type:'photo', askedOf:'fc-only'},
 ];
 
 /* Gujarat district -> taluka master mapping for cascading address.
@@ -8058,7 +8031,7 @@ function renderV5EnrollmentSummary(f){
   /* ============ "Key answers" highlighted card ============
      Shows the 5 questions admin/manager looks at first, with farmer claim
      on the left and FC verification + observed counts/note on the right. */
-  const KEY_IDS = ['livestock_types','manure_methods','protection_methods','chem_weedicide','recommendation'];
+  const KEY_IDS = ['livestock_types','manure_methods','protection_methods','chem_weedicide'];
   function keyAnswerHtml(c){
     if(!c) return '<span style="color:var(--ink-faint);font-style:italic">Not answered</span>';
     const a = c.answer;
@@ -8153,7 +8126,7 @@ function renderV5EnrollmentSummary(f){
       + '</colgroup>'
       + '<thead><tr style="background:#fff">'
       + '<th style="text-align:left;padding:6px 6px;font-size:10px;color:var(--ink-faint);font-weight:700">Crop</th>'
-      + '<th style="text-align:right;padding:6px 6px;font-size:10px;color:var(--ink-faint);font-weight:700">Vigha</th>'
+      + '<th style="text-align:right;padding:6px 6px;font-size:10px;color:var(--ink-faint);font-weight:700">Acre</th>'
       + '<th style="text-align:right;padding:6px 6px;font-size:10px;color:var(--ink-faint);font-weight:700">Yield (kg)</th>'
       + (hasSeason ? '<th style="text-align:left;padding:6px 6px 6px 8px;font-size:10px;color:var(--ink-faint);font-weight:700">Season</th>' : '')
       + '</tr></thead><tbody>';
@@ -8186,7 +8159,7 @@ function renderV5EnrollmentSummary(f){
     /* Compare two crops by area/yield/season — returns array of changed-field strings. */
     function fieldDiffs(oldC, newC){
       const out = [];
-      if((oldC.area||'') !== (newC.area||'')) out.push('vigha ' + (oldC.area||'—') + ' → ' + (newC.area||'—'));
+      if((oldC.area||'') !== (newC.area||'')) out.push('acre ' + (oldC.area||'—') + ' → ' + (newC.area||'—'));
       const okg = fmtKg(oldC.yield), nkg = fmtKg(newC.yield);
       if(okg !== nkg) out.push((okg||'—') + ' kg → ' + (nkg||'—') + ' kg');
       if((oldC.season||'') !== (newC.season||'')) out.push((oldC.season||'no season') + ' → ' + (newC.season||'no season'));
@@ -8209,7 +8182,7 @@ function renderV5EnrollmentSummary(f){
           const kg = fmtKg(c.yield);
           // Allow pill content to wrap so long Gujarati crop names never extend past the card edge.
           return '<span class="tag green" style="font-size:11px;padding:3px 9px;white-space:normal;overflow-wrap:anywhere;line-height:1.35;max-width:100%"><span class="d" style="flex-shrink:0"></span>'
-            + esc(cropDisplayName(c.name||'')) + (c.area ? ' · ' + esc(c.area) + ' vigha' : '') + (kg ? ' · ' + kg + ' kg' : '') + '</span>';
+            + esc(cropDisplayName(c.name||'')) + (c.area ? ' · ' + esc(c.area) + ' acre' : '') + (kg ? ' · ' + kg + ' kg' : '') + '</span>';
         }).join('')
       + '</div></div>';
     /* Per-snapshot DIFF rows, newest first. */
@@ -8238,18 +8211,18 @@ function renderV5EnrollmentSummary(f){
           + '<div style="display:flex;flex-wrap:wrap;gap:4px">'
           + (snap.crops||[]).map(c => {
               const kg = fmtKg(c.yield);
-              return '<span class="pill" style="font-size:11px">' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' vigha':'') + (kg?' · '+kg+' kg':'') + '</span>';
+              return '<span class="pill" style="font-size:11px">' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' acre':'') + (kg?' · '+kg+' kg':'') + '</span>';
             }).join('')
           + '</div>';
       } else {
         const lines = [];
         added.forEach(c => {
           const kg = fmtKg(c.yield);
-          lines.push('<div style="font-size:12px;color:#166534"><b>+ Added</b> · ' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' vigha':'') + (kg?' · '+kg+' kg':'') + (c.season?' · '+esc(c.season):'') + '</div>');
+          lines.push('<div style="font-size:12px;color:#166534"><b>+ Added</b> · ' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' acre':'') + (kg?' · '+kg+' kg':'') + (c.season?' · '+esc(c.season):'') + '</div>');
         });
         removed.forEach(c => {
           const kg = fmtKg(c.yield);
-          lines.push('<div style="font-size:12px;color:#991b1b"><b>− Removed</b> · ' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' vigha':'') + (kg?' · '+kg+' kg':'') + '</div>');
+          lines.push('<div style="font-size:12px;color:#991b1b"><b>− Removed</b> · ' + esc(cropDisplayName(c.name||'')) + (c.area?' · '+esc(c.area)+' acre':'') + (kg?' · '+kg+' kg':'') + '</div>');
         });
         updated.forEach(u => {
           lines.push('<div style="font-size:12px;color:#92400e"><b>~ Updated</b> · ' + esc(cropDisplayName(u.c.name||'')) + ' — ' + esc(u.diffs.join(', ')) + '</div>');
@@ -8341,7 +8314,7 @@ function openCropsEditor(farmerId){
       + '<thead><tr style="background:var(--panel-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:700">'
       + '<th style="padding:8px 7px;width:30px">#</th>'
       + '<th style="padding:8px 7px;text-align:left">Crop</th>'
-      + '<th style="padding:8px 7px;width:80px">Area (vigha)</th>'
+      + '<th style="padding:8px 7px;width:80px">Area (acre)</th>'
       + '<th style="padding:8px 7px;width:130px">Expected yield (kg)</th>'
       + '<th style="padding:8px 7px;width:130px">Season</th>'
       + '<th style="padding:8px 7px;width:32px"></th>'
@@ -8446,7 +8419,7 @@ function openCropsHistoryModal(farmerId){
     if(snap.reason) h += '<div style="font-size:11.5px;color:var(--ink-soft);font-style:italic;margin-top:3px">"' + esc(snap.reason) + '"</div>';
     h += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">';
     (snap.crops||[]).forEach(c => {
-      h += '<span class="pill">' + esc(c.name) + (c.area?' - ' + esc(c.area) + ' vigha':'') + (c.season?' - ' + esc(c.season):'') + '</span>';
+      h += '<span class="pill">' + esc(c.name) + (c.area?' - ' + esc(c.area) + ' acre':'') + (c.season?' - ' + esc(c.season):'') + '</span>';
     });
     h += '</div></div>';
   });

@@ -1971,7 +1971,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7451,10 +7451,15 @@ function openConvEnrollmentForm(){
           + '<button type="button" class="chip'+(state.willingChemFree==="maybe"?' on':'')+'" data-v="maybe">'+L('Maybe','કદાચ')+'</button>'
           + '<button type="button" class="chip'+(state.willingChemFree==="no"?' on red-on':'')+'" data-v="no">'+L('Not yet','નહીં')+'</button>'
           + '</div>', true)
-      + '</div><div class="krsf-row single">'
-      + fldHtml(L('Land for organic conversion (bigha)','પ્રાકૃતિક ખેતી માટેનો વિસ્તાર (વીઘા)'),
-          '<input id="krConvBigha" type="number" step="0.1" value="'+esc(state.convertBigha)+'" placeholder="'+L('Bigha count','વીઘા')+'">', true)
-      + '</div>';
+      + '</div>'
+      // Asking "how many acres to convert" doesn't make sense once the farmer
+      // has said "Not yet" — hide it along with the rest of the gated form.
+      + (state.willingChemFree !== 'no'
+          ? '<div class="krsf-row single">'
+            + fldHtml(L('Land for organic conversion (acre)','પ્રાકૃતિક ખેતી માટેનો વિસ્તાર (એકર)'),
+                '<input id="krConvBigha" type="number" step="0.1" value="'+esc(state.convertBigha)+'" placeholder="'+L('Acre count','એકર')+'">', true)
+            + '</div>'
+          : '');
   }
   function multiChecks(opts, list, attr){
     return '<div class="krsf-checks">'
@@ -7503,16 +7508,25 @@ function openConvEnrollmentForm(){
     const S2 = L('Location','સ્થાન');
     const S3 = L('Land & Income','જમીન અને આવક');
     const S4 = L('Crops','પાક');
+    // Organic Commitment moved up to section 3 (was last): the "willing to
+    // convert?" answer now gates the rest of the form. If the farmer picks
+    // "Not yet" (નહીં), the remaining operational sections (land/income,
+    // crops, water & chemicals, livestock, support & concerns) are skipped —
+    // they aren't ready to commit, so there's no point collecting that detail
+    // yet; they can just send the application as-is.
+    const wantsFullForm = state.willingChemFree !== 'no';
+    let n = 0;
+    const nextNum = () => String(++n);
     const body = langBar
-      + sectionCard('1', S1,                    sectionPersonal())
-      + sectionCard('2', S2,                    sectionLocation())
-      + sectionCard('3', S3,                    sectionLandIncome())
-      + sectionCard('4', S4,                    sectionCrops())
-      + sectionCard('5', 'Water & Chemicals',   sectionInputs())
-      + sectionCard('6', 'Livestock',           sectionLivestock())
-      + sectionCard('7', 'Organic Commitment',  sectionCommitment())
-      + sectionCard('8', 'Support & Concerns',  sectionSupport())
-      + sectionCard('9', 'Administrative',      sectionAdmin());
+      + sectionCard(nextNum(), S1,                   sectionPersonal())
+      + sectionCard(nextNum(), S2,                   sectionLocation())
+      + sectionCard(nextNum(), 'Organic Commitment', sectionCommitment())
+      + (wantsFullForm ? sectionCard(nextNum(), S3,                  sectionLandIncome()) : '')
+      + (wantsFullForm ? sectionCard(nextNum(), S4,                  sectionCrops())      : '')
+      + (wantsFullForm ? sectionCard(nextNum(), 'Water & Chemicals', sectionInputs())     : '')
+      + (wantsFullForm ? sectionCard(nextNum(), 'Livestock',         sectionLivestock())  : '')
+      + (wantsFullForm ? sectionCard(nextNum(), 'Support & Concerns',sectionSupport())    : '')
+      + sectionCard(nextNum(), 'Administrative',     sectionAdmin());
     const modalTitle = PUBLIC_MODE
       ? 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ'
       : 'Add new conversion farmer';
@@ -7578,9 +7592,13 @@ function openConvEnrollmentForm(){
       paintYn(fymYn, state.usesFYM, {yes:'green-on'});
     });
     const willYn = document.getElementById('krWillYn');
+    // Full re-render (not just a chip repaint) — the answer gates whether the
+    // rest of the form's sections are shown at all, so the section list itself
+    // must rebuild. state.* already holds every field typed so far, so nothing
+    // entered in other fields is lost across the re-render.
     if(willYn) willYn.querySelectorAll('.chip').forEach(b => b.onclick = () => {
       state.willingChemFree = b.dataset.v;
-      paintYn(willYn, state.willingChemFree, {yes:'green-on', no:'red-on'});
+      renderForm();
     });
     bind('krConvBigha','convertBigha');
     document.querySelectorAll('[data-ksp]').forEach(cb => cb.onchange = () => {
@@ -7611,7 +7629,13 @@ function openConvEnrollmentForm(){
     // v8.2 — in public mode, the farmer cannot pick their own FC, so skip
     // the fcName requirement. Everything else stays validated.
     const isPublic = !!PUBLIC_MODE;
-    const baseMissing = !state.name || !state.mobile || !state.village || !state.district || !state.taluka || !state.landBigha || !state.willingChemFree || !state.convertBigha;
+    // Land/convert-area are only asked (and only required) when the farmer is
+    // willing/maybe-willing to convert — see wantsFullForm in renderForm().
+    // A "Not yet" (નહીં) applicant can send the application with just identity
+    // + location, matching what's actually shown on screen.
+    const wantsFullForm = state.willingChemFree !== 'no';
+    const baseMissing = !state.name || !state.mobile || !state.village || !state.district || !state.taluka || !state.willingChemFree
+      || (wantsFullForm && (!state.landBigha || !state.convertBigha));
     if(baseMissing || (!isPublic && !state.fcName)){
       // v9 process-fix #60 — list the SPECIFIC missing fields, not a generic
       // "fill required" toast. Farmers don't know which one was missed otherwise.
@@ -7623,29 +7647,34 @@ function openConvEnrollmentForm(){
       if(!state.district)        missing.push(isPublic?'જિલ્લો':'District');
       if(!state.taluka)          missing.push(isPublic?'તાલુકો':'Taluka');
       if(!state.village)         missing.push(isPublic?'ગામ':'Village');
-      if(!state.landBigha)       missing.push(isPublic?'કુલ જમીન':'Total land');
       if(!state.willingChemFree) missing.push(isPublic?'કમિટમેન્ટ':'Chem-free commitment');
-      if(!state.convertBigha)    missing.push(isPublic?'કન્વર્ટ વિસ્તાર':'Convert area');
+      if(wantsFullForm && !state.landBigha)    missing.push(isPublic?'કુલ જમીન':'Total land');
+      if(wantsFullForm && !state.convertBigha) missing.push(isPublic?'કન્વર્ટ વિસ્તાર':'Convert area');
       if(!isPublic && !state.fcName) missing.push('FC');
       toast((isPublic?'કૃપા કરી ભરો / Please fill: ':'Please fill: ') + missing.join(', '));
       return;
     }
-    // v9 process-fix #56 — convertBigha must be > 0 and ≤ landBigha.
-    // Otherwise the conversion score's C-section computes against bogus values.
+    // v9 process-fix #56 — convertBigha must be > 0 and ≤ landBigha. Skipped
+    // entirely when the "Not yet" path hid these fields (they're blank/0 by design).
+    // Note: convertBigha's on-screen unit is now ACRE while landBigha stays
+    // bigha, so convert to a common unit (bigha) before comparing — comparing
+    // the raw numbers directly would silently compare mismatched units.
     const _landBigha = parseFloat(state.landBigha) || 0;
-    const _convertBigha = parseFloat(state.convertBigha) || 0;
-    if(_landBigha <= 0){
+    const _convertBigha = parseFloat(state.convertBigha) || 0;   // acre, despite the variable name
+    const _convertBighaEquiv = _convertBigha / 0.625;             // acre -> bigha for comparison
+    if(wantsFullForm && _landBigha <= 0){
       toast(isPublic ? 'કુલ જમીન 0 થી વધુ હોવી જોઈએ.' : 'Total land must be greater than 0 bigha.');
       return;
     }
-    if(_convertBigha <= 0){
-      toast(isPublic ? 'કન્વર્ટ વિસ્તાર 0 થી વધુ હોવો જોઈએ.' : 'Convert area must be greater than 0 bigha.');
+    if(wantsFullForm && _convertBigha <= 0){
+      toast(isPublic ? 'કન્વર્ટ વિસ્તાર 0 થી વધુ હોવો જોઈએ.' : 'Convert area must be greater than 0 acre.');
       return;
     }
-    if(_convertBigha > _landBigha){
+    if(wantsFullForm && _convertBighaEquiv > _landBigha){
+      const landAcreEquiv = (_landBigha*0.625).toFixed(2);
       toast(isPublic
-        ? `કન્વર્ટ વિસ્તાર (${_convertBigha}) કુલ જમીન (${_landBigha}) થી વધારે ના હોય.`
-        : `Convert area (${_convertBigha} bigha) cannot exceed total land (${_landBigha} bigha).`);
+        ? `કન્વર્ટ વિસ્તાર (${_convertBigha} એકર) કુલ જમીન (${_landBigha} વીઘા ≈ ${landAcreEquiv} એકર) થી વધારે ના હોય.`
+        : `Convert area (${_convertBigha} acre) cannot exceed total land (${_landBigha} bigha ≈ ${landAcreEquiv} acre).`);
       return;
     }
     const fc = !isPublic ? findFcLoose(state.fcName) : null;
@@ -13638,7 +13667,7 @@ function viewPendingEnrolments(){
       const submittedDisp = _fmtTime(submittedISO);
       const ago = _timeAgoShort(submittedISO);
       const isHaat = r._kind === 'haat';
-      const landTxt = isHaat ? (r.landAcres||0)+' acres' : ((r.landBigha||0)+' bigha · '+(r.organicBigha||0)+' convert');
+      const landTxt = isHaat ? (r.landAcres||0)+' acres' : ((r.landBigha||0)+' bigha · '+(r.organicBigha||0)+' acre convert');
       const phone = r.phone || r.mobile || '—';
       const appId = r.publicAppId || r.id;
       const fcAssigned = r.fcId ? (fcById(r.fcId)||{}).name || r.fcId : '<span style="color:var(--ink-faint)">— unassigned —</span>';
@@ -13743,7 +13772,7 @@ function openPendingDetailModal(id){
       <tr><td style="padding:4px 0;color:var(--ink-soft)">ગામ / Village</td><td>${esc(r.village)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">તાલુકો / Taluka</td><td>${esc(r.taluka||'—')}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">જિલ્લો / District</td><td>${esc(r.district)}</td></tr>
-      <tr><td style="padding:4px 0;color:var(--ink-soft)">જમીન / Land</td><td>${isHaat?(r.landAcres||0)+' acres':(r.landBigha||0)+' bigha · '+(r.organicBigha||0)+' to convert'}</td></tr>
+      <tr><td style="padding:4px 0;color:var(--ink-soft)">જમીન / Land</td><td>${isHaat?(r.landAcres||0)+' acres':(r.landBigha||0)+' bigha · '+(r.organicBigha||0)+' acre to convert'}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">પાક / Crops</td><td>${esc(cropsTxt)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">સબમિટ / Submitted</td><td>${esc(String(r.submittedAt||'').slice(0,16).replace('T',' '))}</td></tr>
     </table>

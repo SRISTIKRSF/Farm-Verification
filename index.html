@@ -955,6 +955,14 @@ function renderField(q){
   if(q.type==='crops_table'){
     return \`<div class="field" data-q="\${id}">\${lbl}<div id="cropCards"></div><button type="button" id="addCropBtn" style="margin-top:8px;padding:7px 16px;background:none;border:1.5px dashed var(--line-strong);border-radius:8px;font-size:13px;color:var(--ink-soft);cursor:pointer;width:100%;font-family:inherit">+ પાક ઉમેરો (Add crop)</button></div>\`;
   }
+  if(q.type==='stat_cards'){
+    /* Card-per-item table: q.items = fixed list (e.g. animal species), or
+       q.addable+q.maxRows = farmer-typed rows up to a cap (e.g. products).
+       Cards + inputs are built by buildStatCards() after the section mounts;
+       this just outputs the (initially empty) wrapper + optional add button. */
+    const addBtnHtml = q.items ? '' : \`<button type="button" id="scAdd_\${id}" style="margin-top:8px;padding:7px 16px;background:none;border:1.5px dashed var(--line-strong);border-radius:8px;font-size:13px;color:var(--ink-soft);cursor:pointer;width:100%;font-family:inherit">+ \${esc((q.itemLabel&&q.itemLabel.gu)||'હરોળ')} ઉમેરો</button>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="sc-wrap" data-scwrap="\${id}"></div>\${addBtnHtml}</div>\`;
+  }
   if(q.type==='composite_address' || q.type==='address_cascade'){
     const DT = (window.parent && window.parent.DISTRICT_TALUKAS) || (typeof DISTRICT_TALUKAS !== 'undefined' ? DISTRICT_TALUKAS : null);
     const districts = DT ? Object.keys(DT) : [];
@@ -983,6 +991,7 @@ function buildSections(){
   wireFields();
   buildDots();
   buildCropRows();
+  buildStatCards();
   applyConditionalVisibility();
 }
 
@@ -1011,6 +1020,66 @@ function buildCropRows(){
   });
   const addBtn = $('#addCropBtn');
   if(addBtn) addBtn.onclick = () => { CROP_ROWS.push({}); buildCropRows(); scheduleDraftSave(); };
+}
+
+/* stat_cards: card-per-item table used by animal_stats (fixed species list)
+   and product_pricing (farmer-typed rows, capped at q.maxRows). Answer shape
+   in ANSWERS[q.id]: array of {item, <field.key>: value, ...} — only rows with
+   real data are kept (fixed rows with nothing filled in are dropped on submit,
+   matching how crops_table drops blank rows). */
+function buildStatCards(){
+  QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => {
+    const wrap = document.querySelector('[data-scwrap="'+q.id+'"]');
+    if(!wrap) return;
+    const isFixed = Array.isArray(q.items);
+    const saved = ANSWERS[q.id] || [];
+    const rows = isFixed ? q.items.map(it => ({item: it})) : (saved.length ? saved : [{}]);
+    wrap.innerHTML = rows.map((r, i) => {
+      const savedRow = isFixed ? saved.find(s => s.item === r.item) : saved[i];
+      const heading = isFixed
+        ? '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>'
+        : '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+          + '<input type="text" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;flex:1;font-family:inherit">'
+          + (rows.length>1 ? '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>' : '')
+          + '</div>';
+      const fieldsHtml = q.fields.map(f => {
+        const val = savedRow ? (savedRow[f.key]||'') : '';
+        return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block">'+esc(f.gu)+'</label>'
+          + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
+      }).join('');
+      return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
+        + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + fieldsHtml + '</div></div>';
+    }).join('');
+    const rebuild = () => {
+      const cards = [...wrap.querySelectorAll('.sc-card')];
+      ANSWERS[q.id] = cards.map(card => {
+        // Fixed rows (e.g. animal species) have no editable "item" input — the
+        // species name lives on the card itself and must be seeded here, else
+        // a saved row has no way to say which species the numbers belong to.
+        const rec = card.dataset.scitem ? {item: card.dataset.scitem} : {};
+        card.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { rec[inp.dataset.sck] = inp.value; });
+        return rec;
+      }).filter(r => isFixed ? Object.keys(r).some(k => k!=='item' && r[k]) : (r.item && r.item.trim()));
+      scheduleDraftSave();
+    };
+    wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { inp.oninput = rebuild; });
+    wrap.querySelectorAll('.sc-del').forEach(btn => btn.onclick = () => {
+      const idx = +btn.dataset.scdel;
+      const cur = (ANSWERS[q.id]||[]).slice();
+      cur.splice(idx, 1);
+      ANSWERS[q.id] = cur;
+      buildStatCards();
+      scheduleDraftSave();
+    });
+    const addBtn = document.getElementById('scAdd_'+q.id);
+    if(addBtn) addBtn.onclick = () => {
+      const cur = ANSWERS[q.id] || [];
+      if(cur.length >= (q.maxRows||3)) return;
+      ANSWERS[q.id] = [...cur, {}];
+      buildStatCards();
+      scheduleDraftSave();
+    };
+  });
 }
 
 function wireFields(){
@@ -1524,6 +1593,12 @@ function fmtFarmerClaim(q, c){
   if(q.type==='crops_table') return Array.isArray(a) && a.length
     ? '<div style="display:flex;flex-direction:column;gap:4px">' + a.map(r => '<span class="pill" style="display:inline-block">' + esc(r.name||'') + ' · ' + esc(String(r.area||'0')) + ' એકર · ' + esc(String(r.yield||'?')) + ' · ₹' + esc(String(r.income||'0')) + '/yr</span>').join('') + '</div>'
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
+  if(q.type==='stat_cards') return Array.isArray(a) && a.length
+    ? '<div style="display:flex;flex-direction:column;gap:4px">' + a.map(r => {
+        const parts = (q.fields||[]).map(f => (r[f.key]!=null && r[f.key]!=='') ? (f.gu+': '+esc(String(r[f.key]))) : null).filter(Boolean).join(' · ');
+        return '<span class="pill" style="display:inline-block">' + esc(r.item||'') + (parts?' — '+parts:'') + '</span>';
+      }).join('') + '</div>'
+    : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
   if(a==null || a==='') return '<span style="color:var(--ink-faint);font-style:italic">Not answered</span>';
   return '<b>'+esc(String(a))+'</b>';
 }
@@ -1971,7 +2046,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3920,6 +3995,55 @@ window.QUESTIONS_V5 = [
     options:['Cow (ગાય)','Buffalo (ભેંસ)','Goat (બકરી)','Sheep (ઘેટું)','Bullock (બળદ)','Poultry (કુક્કુટ)','None (કોઈ નહીં)'], askedOf:'both'},
   {id:'has_tractor', cat:'livestock', gu:'હાલમાં ખેડાણ કેવી રીતે કરો છો?',  en:'How do you currently plow?', type:'select',
     options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'], askedOf:'both'},
+
+  /* ---- Pashupalan (animal husbandry) — from the 2026-27 નોંધણી પત્રક ---- */
+  {id:'animal_stats', cat:'livestock', gu:'પશુઓની સ્થિતિ (ફોર્મ ભર્યું એ દિવસની સ્થિતિ)', en:"Animal status (as of today)", type:'stat_cards',
+    items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
+    fields:[
+      {key:'milking',   gu:'દૂધાળી',                          en:'Milking',                  type:'number'},
+      {key:'pregnant',  gu:'ગાભણ',                            en:'Pregnant',                 type:'number'},
+      {key:'dry',       gu:'વસુકાયેલ / બિન ઉત્પાદક',            en:'Dry / non-productive',     type:'number'},
+      {key:'young',     gu:'નાના વાછરું / બચ્ચાં',              en:'Young calves',             type:'number'},
+      {key:'dailyMilk', gu:'સવાર-સાંજનું દૂધ ઉત્પાદન (લિટર)',   en:'Daily milk, morning+evening (liters)', type:'number'},
+    ], askedOf:'both'},
+  {id:'milk_daily_total',    cat:'livestock', gu:'હાલ કેટલા લિટર દૂધનું કુલ ઉત્પાદન થાય છે? (દૈનિક)', en:'Total daily milk production (liters)', type:'number', askedOf:'both'},
+  {id:'milk_monthly_total',  cat:'livestock', gu:'કુલ દૂધ ઉત્પાદન (માસિક)',                          en:'Total monthly milk production (liters)', type:'number', askedOf:'both'},
+  {id:'milk_local_sale',     cat:'livestock', gu:'સ્થાનિક વેચાણ કેટલું થાય છે? (દૈનિક લિટરમાં)',      en:'Local milk sale (liters/day)', type:'number', askedOf:'both'},
+  {id:'milk_used_for_ghee',  cat:'livestock', gu:'કેટલા લિટર દૂધ ઘી બનાવવા ઉપયોગ કરો છો?',           en:'Milk used to make ghee (liters)', type:'number', askedOf:'both'},
+  {id:'ghee_monthly_production', cat:'livestock', gu:'દર મહિને કેટલા કિલો ઘી નું ઉત્પાદન થાય છે?',   en:'Ghee produced per month (kg)', type:'number', askedOf:'both'},
+  {id:'ghee_local_sale',     cat:'livestock', gu:'ઘી નું સ્થાનિક વેચાણ (કિલોમાં)',                    en:'Ghee sold locally (kg)', type:'number', askedOf:'both'},
+  {id:'ghee_unsold',         cat:'livestock', gu:'વેચાણ વગર કેટલા કિલો ઘી રહે છે?',                   en:'Ghee left unsold (kg)', type:'number', askedOf:'both'},
+  {id:'milk_for_other_products', cat:'livestock', gu:'અન્ય પ્રોડક્ટ (પનીર, ચીઝ) બનાવતા હોવ તો કેટલા લિટર દૂધ વપરાય છે?', en:'Milk used for other products like paneer/cheese (liters)', type:'number', askedOf:'both'},
+  {id:'ghee_making_process', cat:'livestock', gu:'ઘી બનાવવાની પ્રક્રિયા વિશે લખો — દૂધમાંથી મલાઈ કાઢીને ઘી બનાવો છો? કે દહીંનું માખણ બનાવી?', en:'Describe the ghee-making process (cream from milk, or butter from curd?)', type:'textarea', askedOf:'both'},
+  {id:'fodder_land_organic', cat:'livestock', gu:'પશુઓને જે ઘાસચારો ખવડાવો છો એ ખેતર પ્રાકૃતિક ખેતીના સિદ્ધાંતો મુજબ ખેતી થાય છે ખરી?', en:'Is the fodder grown following organic farming principles?', type:'yn', askedOf:'both'},
+  {id:'fodder_acreage_monsoon', cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ચોમાસું (એકરમાં)', en:'Fodder acreage — monsoon (acre)', type:'number', askedOf:'both'},
+  {id:'fodder_acreage_winter',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — શિયાળુ (એકરમાં)',  en:'Fodder acreage — winter (acre)', type:'number', askedOf:'both'},
+  {id:'fodder_acreage_summer',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ઉનાળુ (એકરમાં)',   en:'Fodder acreage — summer (acre)', type:'number', askedOf:'both'},
+  {id:'fodder_purchased',    cat:'livestock', gu:'બહારથી ખરીદીને ક્યું ઘાસ લાવો છો?',                 en:'Fodder purchased from outside (which kind)', type:'text', askedOf:'both'},
+  {id:'fodder_other',        cat:'livestock', gu:'ઘાસચારો — અન્ય',                                   en:'Fodder — other', type:'text', askedOf:'both'},
+  {id:'feed_market',         cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — બજારનું',              en:'Feed given — market-bought (details)', type:'text', askedOf:'both'},
+  {id:'feed_homemade',       cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — ઘરે બનાવેલું',          en:'Feed given — home-made (details)', type:'text', askedOf:'both'},
+  {id:'feed_other',          cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — અન્ય',                 en:'Feed given — other (details)', type:'text', askedOf:'both'},
+  {id:'feed_is_organic',     cat:'livestock', gu:'જે દાણ ખવડાવો છો એ પ્રાકૃતિક અનાજ/કઠોળ/ઔષધિયો છે ખરી?', en:'Is the feed organic grain/pulses/herbal?', type:'yn', askedOf:'both'},
+  {id:'uses_allopathy',      cat:'livestock', gu:'પશુઓ બીમાર પડે ત્યારે એલોપેથી દવાઓનો ઉપયોગ કરો છો?', en:'Use allopathy medicines when animals fall sick?', type:'yn', askedOf:'both'},
+  {id:'allopathy_diseases',  cat:'livestock', gu:'મુખ્ય કઈ-કઈ બીમારી માટે એલોપેથી દવાઓ ઉપયોગ થાય છે?', en:'Which illnesses mainly use allopathy medicines?', type:'text', askedOf:'both', onlyIf:{id:'uses_allopathy',equals:'yes'}},
+  {id:'vaccines_given',      cat:'livestock', gu:'કઈ-કઈ રસીઓ અપાવો છો?',                              en:'Which vaccines are given?', type:'text', askedOf:'both'},
+  {id:'blood_test_yearly',   cat:'livestock', gu:'દર વર્ષે પશુઓના કોઈ બ્લડ ટેસ્ટ કરાવો છો ખરા?',       en:'Any yearly blood tests done for animals?', type:'yn', askedOf:'both'},
+  {id:'traditional_vet',     cat:'livestock', gu:'કોઈ સ્થાનિક પરંપરાગત પશુ વૈદની સેવા લો છો?',         en:'Use services of a local traditional animal healer?', type:'yn', askedOf:'both'},
+  {id:'shelter_pest_control', cat:'livestock', gu:'પશુ રહેઠાણની જગ્યાએ જૂઆ-ઈતરડી, ચાંચડનો ઉપદ્રવ છે? તેના નિવારણ માટે શું કરો છો?', en:'Lice/ticks/fleas at the animal shelter? What do you do about it?', type:'textarea', askedOf:'both'},
+  {id:'dung_use_methods',    cat:'livestock', gu:'પશુના ગોબર-ગૌમૂત્રનો ઉપયોગ કેવી રીતે કરો છો? (બધા પસંદ કરો)', en:'How is dung/urine used? (multi)', type:'multi',
+    options:['ઉકરડામાં છાણિયું ખાતર (Manure pit)','કમ્પોસ્ટ ખાતર (Compost)','વર્મી કમ્પોસ્ટ (Vermicompost)'], askedOf:'both'},
+  {id:'biogas_plant',        cat:'livestock', gu:'ગોબર ગેસ પ્લાન્ટ છે?',                              en:'Have a biogas plant?', type:'yn', askedOf:'both'},
+  {id:'gomutra_collected',   cat:'livestock', gu:'ગૌમૂત્ર એકત્ર કરો છો?',                             en:'Do you collect cow urine (gomutra)?', type:'yn', askedOf:'both'},
+  {id:'dung_product_sale',   cat:'livestock', gu:'ગોબર-ગૌમૂત્રમાંથી કોઈ વિશેષ સેન્દ્રિય ખાતર બનાવી વેચાણ કરો છો?', en:'Sell any special organic manure made from dung/urine?', type:'yn', askedOf:'both'},
+  {id:'dung_other_product',  cat:'livestock', gu:'ગોબરમાંથી અન્ય કોઈ ઉત્પાદન બનાવો છો? વિગત લખો', en:'Any other product made from dung? Describe', type:'textarea', askedOf:'both'},
+  {id:'product_pricing', cat:'livestock', gu:'ગોપાલન આધારિત ઉત્પાદનોની કિંમત અને પેકિંગ સાઈઝ', en:'Dairy-product pricing & pack size', type:'stat_cards',
+    addable:true, maxRows:3, itemLabel:{gu:'પેદાશનું નામ', en:'Product name'},
+    fields:[
+      {key:'packSize', gu:'પેકિંગ સાઈઝ', en:'Pack size', type:'text'},
+      {key:'price',    gu:'કિંમત (₹)',   en:'Price (₹)', type:'number'},
+    ], askedOf:'both'},
+  {id:'haat_products_to_sell', cat:'livestock', gu:'સૃષ્ટિ ખેડૂતહાટમાં ક્યું ઉત્પાદન વેચવું છે?',      en:'Which product(s) do you want to sell at the Sristi Khedut Haat?', type:'textarea', askedOf:'both'},
 
   /* ============ 5. WEEDING, MULCHING & IRRIGATION ============ */
   {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          type:'yn',    askedOf:'both'},
@@ -8056,6 +8180,10 @@ function renderV5EnrollmentSummary(f){
     ['text','number','select','textarea'].includes(c.type) &&
     c.answer != null && c.answer !== ''
   );
+  // stat_cards (e.g. animal_stats, product_pricing) is neither a simple text
+  // value nor a yn/multi practice — it needs its own card+field rendering, so
+  // it gets a dedicated bucket rather than silently falling out of both filters.
+  const statCardClaims = claims.filter(c => c.type === 'stat_cards' && Array.isArray(c.answer) && c.answer.length);
 
   /* ============ "Key answers" highlighted card ============
      Shows the 5 questions admin/manager looks at first, with farmer claim
@@ -8286,6 +8414,19 @@ function renderV5EnrollmentSummary(f){
     if(textClaims.length>18) h += '<div style="color:var(--ink-faint);font-style:italic">+ ' + (textClaims.length-18) + ' more fields...</div>';
     h += '</div></div>';
   }
+  // stat_cards claims (animal_stats, product_pricing) — card-per-item data,
+  // rendered separately since it isn't a flat value textClaims can stringify.
+  statCardClaims.forEach(c => {
+    const q = (window.QUESTIONS_V5||[]).find(qq => qq.id === c.id);
+    h += '<div class="card" style="padding:11px 13px;margin-bottom:10px;background:var(--panel-2);border-left:3px solid var(--clay)">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">&#128203; ' + esc((c.gu||c.en||c.id||'').slice(0,60)) + ' (' + c.answer.length + ')</div>'
+      + '<div style="display:flex;flex-direction:column;gap:4px">'
+      + c.answer.map(r => {
+          const parts = (q&&q.fields||[]).map(f => (r[f.key]!=null && r[f.key]!=='') ? (f.gu+': '+esc(String(r[f.key]))) : null).filter(Boolean).join(' · ');
+          return '<span class="pill" style="display:inline-block">' + esc(r.item||'') + (parts?' — '+parts:'') + '</span>';
+        }).join('')
+      + '</div></div>';
+  });
   // Enrolment photos — uploaded by the farmer during the patrak. Stored as
   // f.enrollmentFormFull.photos = { qid: [{name,type,data}] }. Each thumbnail
   // wraps in <a href="data:image..."> so the global lightbox handler (Batch 2)
@@ -10015,6 +10156,12 @@ function openCompareFormsModal(id){
     if(q.type === 'yn') return a==='yes' ? '<b style="color:var(--green)">Yes</b>' : a==='no' ? '<b style="color:var(--red)">No</b>' : '—';
     if(q.type === 'crops_table') return Array.isArray(a) && a.length
       ? pillRow(a.map(r=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.name||'')+(r.area?' · '+esc(r.area)+' એકર':'')+'</span>').join(''))
+      : '—';
+    if(q.type === 'stat_cards') return Array.isArray(a) && a.length
+      ? pillRow(a.map(r => {
+          const parts = (q.fields||[]).map(f => (r[f.key]!=null && r[f.key]!=='') ? (f.gu+': '+esc(String(r[f.key]))) : null).filter(Boolean).join(' · ');
+          return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.item||'')+(parts?' — '+parts:'')+'</span>';
+        }).join(''))
       : '—';
     if(a == null || a === '') return '<span style="color:var(--ink-faint)">—</span>';
     return esc(String(a));

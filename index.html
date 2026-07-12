@@ -2050,7 +2050,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -2139,6 +2139,7 @@ async function loadDB(){
       cacheLocal();
       await preCleanBlobsFromRTDB();
       attachLiveListener();
+      attachQuestionSchemaLiveListener();   // Question Manager cross-device sync
       subscribeUsers();
       _lastSnap=snapAll();
       window.addEventListener('online', ()=>{FB.online=true;setSyncPill('synced');});
@@ -7474,6 +7475,54 @@ function resetQuestionSchemaConv(){
 }
 loadQuestionSchemaOverrideConv();
 
+/* =============================================================
+   Question schema — Firebase sync (follow-up to the Question
+   Manager's original localStorage-only persistence).
+   localStorage stays the offline-first cache (instant boot, works
+   with no connection); Firebase is the cross-device source of
+   truth once online. A live listener (attached once in loadDB(),
+   same moment the rest of the app's data starts syncing) means a
+   customisation made on one device reaches every other device
+   without needing a manual refresh — matching how the rest of the
+   app's data already behaves, just for this smaller, rarely-
+   changed piece of data, so it isn't folded into the main
+   saveDB()/cloudToDB() cycle that runs on every farmer edit.
+   ============================================================= */
+const QSCHEMA_FB_PATH = { v5:'questionSchema/v5', conv:'questionSchema/conv' };
+function qmPushToFirebase(form){
+  if(!FB || !FB.ready) return;
+  const isV5 = form === 'v5';
+  const payload = {
+    categories: isV5 ? window.CATEGORIES_V5 : window.CATEGORIES_CONV,
+    questions:  isV5 ? window.QUESTIONS_V5  : window.QUESTIONS_CONV,
+    updatedAt: Date.now(),
+    updatedBy: (typeof actor === 'function' ? (actor().name || '') : ''),
+  };
+  fbRef(QSCHEMA_FB_PATH[form]).set(sanitizeForFB(payload))
+    .catch(e => console.warn('[QuestionSchema] Firebase push failed:', e));
+}
+function attachQuestionSchemaLiveListener(){
+  if(!FB || !FB.ready) return;
+  fbRef(QSCHEMA_FB_PATH.v5).on('value', snap => {
+    if(!snap.exists()) return;   // nobody has ever pushed a schema — keep local defaults
+    const d = snap.val();
+    if(!d || !Array.isArray(d.categories) || !Array.isArray(d.questions)) return;
+    window.CATEGORIES_V5 = d.categories;
+    window.QUESTIONS_V5 = d.questions;
+    saveQuestionSchemaOverrideV5();   // keep the offline cache current too
+    if(_qmState.form === 'v5' && document.getElementById('qmResetBtn')) qmRefresh();
+  });
+  fbRef(QSCHEMA_FB_PATH.conv).on('value', snap => {
+    if(!snap.exists()) return;
+    const d = snap.val();
+    if(!d || !Array.isArray(d.categories) || !Array.isArray(d.questions)) return;
+    window.CATEGORIES_CONV = d.categories;
+    window.QUESTIONS_CONV = d.questions;
+    saveQuestionSchemaOverrideConv();
+    if(_qmState.form === 'conv' && document.getElementById('qmResetBtn')) qmRefresh();
+  });
+}
+
 function openConvEnrollmentForm(){
   const today = todayISO();
   const isPublic = !!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE);
@@ -12083,6 +12132,7 @@ function qmWire(){
     const ok = await confirmModal({title:'Reset questions?', message:`This resets ${label} questions to the default set. Your customisations will be lost.`, confirmLabel:'Reset', danger:true});
     if(!ok) return;
     if(_qmState.form === 'v5') resetQuestionSchemaV5(); else resetQuestionSchemaConv();
+    qmPersist();   // push the reset (default) schema to Firebase too, so other devices reset as well
     qmRefresh();
     toast('Reset to default questions');
   };
@@ -12146,6 +12196,7 @@ function qmWireRows(){
 
 function qmPersist(){
   if(_qmState.form === 'v5') saveQuestionSchemaOverrideV5(); else saveQuestionSchemaOverrideConv();
+  qmPushToFirebase(_qmState.form);   // cross-device sync — see attachQuestionSchemaLiveListener()
 }
 
 function qmOpenQuestionEditor(qid, newInCat){

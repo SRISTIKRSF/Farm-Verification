@@ -698,6 +698,10 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
         <span id="userPillName">Admin</span>
         <span style="font-size:11px;color:var(--ink-faint);margin-left:2px">· Sign out</span>
       </button>
+      <button class="btn btn-ghost" id="manageQuestionsBtn" onclick="openQuestionManager('v5')" title="Add, edit, delete or reorder the questions used in the enrolment and conversion forms">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Manage Questions</span>
+      </button>
       <button class="btn btn-primary" id="quickAdd">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         <span>New Farmer</span>
@@ -2046,7 +2050,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4095,6 +4099,47 @@ window.QUESTIONS_V5 = [
   {id:'pests_observed',     cat:'irrigation', gu:'ખેતરમાં રોગ, જીવાત કે કીટકો જોવા મળે છે?', en:'Pests / disease observed', type:'text',   askedOf:'both'},
   {id:'pests_photo',        cat:'irrigation', gu:'કીટકોના ફોટા',                       en:'Pest photos',                type:'photo',    askedOf:'both'},
 ];
+
+/* =============================================================
+   v13 — QUESTION MANAGER persistence layer.
+   CATEGORIES_V5 / QUESTIONS_V5 above are the factory defaults. If an admin
+   has customised questions via the Question Manager (openQuestionManager),
+   we overlay their saved version here — every consumer (enrolment form,
+   verification form, admin drawer, this file's own QUESTIONS filters)
+   automatically reflects the change since they all read window.QUESTIONS_V5
+   / window.CATEGORIES_V5 live, not a private copy.
+   A short list of ids are protected ("core") because other code reads them
+   by id directly (crops_table lookup, aadhaar/farm_gps special renderers,
+   dedup, etc.) — the Question Manager lets you edit their text/options/
+   required flag/section but not delete them or change their id.
+   ============================================================= */
+window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','crops_table'];
+window.DEFAULT_CATEGORIES_V5 = JSON.parse(JSON.stringify(window.CATEGORIES_V5));
+window.DEFAULT_QUESTIONS_V5  = JSON.parse(JSON.stringify(window.QUESTIONS_V5));
+const QSCHEMA_KEY_V5 = 'krsf_question_schema_v5';
+function loadQuestionSchemaOverrideV5(){
+  try{
+    const raw = localStorage.getItem(QSCHEMA_KEY_V5);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d && Array.isArray(d.categories) && Array.isArray(d.questions)){
+      window.CATEGORIES_V5 = d.categories;
+      window.QUESTIONS_V5 = d.questions;
+    }
+  }catch(e){ console.warn('question schema (enrolment) override load failed', e); }
+}
+function saveQuestionSchemaOverrideV5(){
+  try{
+    localStorage.setItem(QSCHEMA_KEY_V5, JSON.stringify({categories: window.CATEGORIES_V5, questions: window.QUESTIONS_V5}));
+    return true;
+  }catch(e){ console.warn('question schema (enrolment) save failed', e); return false; }
+}
+function resetQuestionSchemaV5(){
+  window.CATEGORIES_V5 = JSON.parse(JSON.stringify(window.DEFAULT_CATEGORIES_V5));
+  window.QUESTIONS_V5  = JSON.parse(JSON.stringify(window.DEFAULT_QUESTIONS_V5));
+  try{ localStorage.removeItem(QSCHEMA_KEY_V5); }catch(e){}
+}
+loadQuestionSchemaOverrideV5();
 
 /* Gujarat district -> taluka master mapping for cascading address.
    Covers all 33 Gujarat districts with their major talukas. */
@@ -7380,6 +7425,55 @@ const KRSF_CONCERNS = [
   'Water scarcity (પાણીની અછત)','Input expenses (ઇનપુટ ખર્ચ)','Market access (બજાર પહોંચ)',
 ];
 
+/* =============================================================
+   Organic Conversion form — section + custom-question schema.
+   Unlike the enrolment form (fully schema-driven), each core section here
+   still renders through its own hand-written function (sectionPersonal,
+   sectionLocation, ...) because those fields feed business logic (land-unit
+   conversion, chem-free flag, phone dedup, eligibility gating). What IS
+   fully editable: section titles, section order, and any NEW custom
+   question added to a section — those render generically and save into
+   intake.customAnswers on the farmer record.
+   ============================================================= */
+window.DEFAULT_CATEGORIES_CONV = [
+  {key:'personal',   en:'Personal details',    gu:'વ્યક્તિગત માહિતી',   core:true, renderer:'sectionPersonal'},
+  {key:'location',   en:'Location',            gu:'સ્થાન',              core:true, renderer:'sectionLocation'},
+  {key:'commitment', en:'Organic Commitment',  gu:'',                    core:true, renderer:'sectionCommitment'},
+  {key:'landIncome', en:'Land & Income',       gu:'જમીન અને આવક',       core:true, renderer:'sectionLandIncome', gated:true},
+  {key:'crops',      en:'Crops',               gu:'પાક',                 core:true, renderer:'sectionCrops',      gated:true},
+  {key:'inputs',     en:'Water & Chemicals',   gu:'',                    core:true, renderer:'sectionInputs',     gated:true},
+  {key:'livestock',  en:'Livestock',           gu:'',                    core:true, renderer:'sectionLivestock',  gated:true},
+  {key:'support',    en:'Support & Concerns',  gu:'',                    core:true, renderer:'sectionSupport',    gated:true},
+  {key:'admin',      en:'Administrative',      gu:'',                    core:true, renderer:'sectionAdmin'},
+];
+window.DEFAULT_QUESTIONS_CONV = []; // custom (admin-added) questions only
+window.CATEGORIES_CONV = JSON.parse(JSON.stringify(window.DEFAULT_CATEGORIES_CONV));
+window.QUESTIONS_CONV  = JSON.parse(JSON.stringify(window.DEFAULT_QUESTIONS_CONV));
+const QSCHEMA_KEY_CONV = 'krsf_question_schema_conv';
+function loadQuestionSchemaOverrideConv(){
+  try{
+    const raw = localStorage.getItem(QSCHEMA_KEY_CONV);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d && Array.isArray(d.categories) && Array.isArray(d.questions)){
+      window.CATEGORIES_CONV = d.categories;
+      window.QUESTIONS_CONV = d.questions;
+    }
+  }catch(e){ console.warn('question schema (conversion) override load failed', e); }
+}
+function saveQuestionSchemaOverrideConv(){
+  try{
+    localStorage.setItem(QSCHEMA_KEY_CONV, JSON.stringify({categories: window.CATEGORIES_CONV, questions: window.QUESTIONS_CONV}));
+    return true;
+  }catch(e){ console.warn('question schema (conversion) save failed', e); return false; }
+}
+function resetQuestionSchemaConv(){
+  window.CATEGORIES_CONV = JSON.parse(JSON.stringify(window.DEFAULT_CATEGORIES_CONV));
+  window.QUESTIONS_CONV  = JSON.parse(JSON.stringify(window.DEFAULT_QUESTIONS_CONV));
+  try{ localStorage.removeItem(QSCHEMA_KEY_CONV); }catch(e){}
+}
+loadQuestionSchemaOverrideConv();
+
 function openConvEnrollmentForm(){
   const today = todayISO();
   const isPublic = !!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE);
@@ -7399,6 +7493,7 @@ function openConvEnrollmentForm(){
     fcName: isPublic ? '' : ((DB.fcs[0] && DB.fcs[0].name) || ''),
     surveyDate: today,
     lang: isPublic ? 'gu' : 'en',
+    custom: {},
   };
   // Language helpers
   function L(en, gu){ return state.lang === 'gu' ? gu : en; }
@@ -7621,6 +7716,34 @@ function openConvEnrollmentForm(){
       + '<div class="krsf-sec-h">'+num+'. '+esc(en)+'</div>'
       + body + '</div>';
   }
+  function renderConvCustomField(q){
+    const label = (state.lang === 'gu' && q.gu) ? q.gu : q.en;
+    const val = state.custom[q.id];
+    const id = 'krCustom_' + q.id;
+    if(q.type === 'textarea')
+      return fldHtml(label, '<textarea data-custom="'+esc(q.id)+'" id="'+id+'" style="min-height:80px">'+esc(val||'')+'</textarea>', q.req);
+    if(q.type === 'number')
+      return fldHtml(label, '<input type="number" data-custom="'+esc(q.id)+'" id="'+id+'" value="'+esc(val||'')+'">', q.req);
+    if(q.type === 'tel10')
+      return fldHtml(label, '<input type="tel" maxlength="10" data-custom="'+esc(q.id)+'" id="'+id+'" value="'+esc(val||'')+'">', q.req);
+    if(q.type === 'date')
+      return fldHtml(label, '<input type="date" data-custom="'+esc(q.id)+'" id="'+id+'" value="'+esc(val||'')+'">', q.req);
+    if(q.type === 'select')
+      return fldHtml(label, '<select data-custom="'+esc(q.id)+'" id="'+id+'"><option value="">— —</option>'+selOpts(q.options||[], val)+'</select>', q.req);
+    if(q.type === 'yn')
+      return fldHtml(label, '<div class="krsf-yn" data-customyn="'+esc(q.id)+'">'
+        + '<button type="button" class="chip'+(val==='yes'?' on green-on':'')+'" data-v="yes">Yes</button>'
+        + '<button type="button" class="chip'+(val==='no'?' on red-on':'')+'" data-v="no">No</button></div>', q.req);
+    if(q.type === 'multi'){
+      const arr = Array.isArray(val) ? val : [];
+      const opts = (q.options||[]).map(o => '<label class="krsf-check'+(arr.includes(o)?' checked':'')+'"><input type="checkbox" data-custommulti="'+esc(q.id)+'" data-v="'+esc(o)+'" '+(arr.includes(o)?'checked':'')+'>'+esc(o)+'</label>').join('');
+      return fldHtml(label, '<div class="krsf-checks">'+opts+'</div>', q.req);
+    }
+    if(q.type === 'photo')
+      return fldHtml(label, '<div class="hint">Photo upload for custom questions is not supported yet — use text for now.</div>', false);
+    // default: text
+    return fldHtml(label, '<input type="text" data-custom="'+esc(q.id)+'" id="'+id+'" value="'+esc(val||'')+'">', q.req);
+  }
   function renderForm(){
     const langBar = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">'
       + ['en','gu'].map(v=>{
@@ -7628,29 +7751,26 @@ function openConvEnrollmentForm(){
           return '<label style="cursor:pointer;font-size:14px;font-weight:700;padding:7px 18px;border-radius:20px;border:1.5px solid '+(on?'var(--accent)':'var(--line-strong)')+';background:'+(on?'var(--accent)':'#fff')+';color:'+(on?'#fff':'var(--ink)')+'"><input type="radio" name="krLang" value="'+v+'" style="position:absolute;opacity:0;width:0"'+(on?' checked':'')+'>'+( v==='en'?'EN':'gu')+'</label>';
         }).join('')
       + '</div>';
-    const S1 = L('Personal details','વ્યક્તિગત માહિતી');
-    const S2 = L('Location','સ્થાન');
-    const S3 = L('Land & Income','જમીન અને આવક');
-    const S4 = L('Crops','પાક');
-    // Organic Commitment moved up to section 3 (was last): the "willing to
-    // convert?" answer now gates the rest of the form. If the farmer picks
-    // "Not yet" (નહીં), the remaining operational sections (land/income,
-    // crops, water & chemicals, livestock, support & concerns) are skipped —
-    // they aren't ready to commit, so there's no point collecting that detail
-    // yet; they can just send the application as-is.
+    // Organic Commitment sits early: the "willing to convert?" answer gates
+    // the rest of the form. If the farmer picks "Not yet" (નહીં), the
+    // remaining operational sections are skipped since they aren't ready to
+    // commit yet; they can just send the application as-is.
     const wantsFullForm = state.willingChemFree !== 'no';
+    const SECTION_RENDERERS = {
+      sectionPersonal, sectionLocation, sectionCommitment, sectionLandIncome,
+      sectionCrops, sectionInputs, sectionLivestock, sectionSupport, sectionAdmin,
+    };
     let n = 0;
     const nextNum = () => String(++n);
-    const body = langBar
-      + sectionCard(nextNum(), S1,                   sectionPersonal())
-      + sectionCard(nextNum(), S2,                   sectionLocation())
-      + sectionCard(nextNum(), 'Organic Commitment', sectionCommitment())
-      + (wantsFullForm ? sectionCard(nextNum(), S3,                  sectionLandIncome()) : '')
-      + (wantsFullForm ? sectionCard(nextNum(), S4,                  sectionCrops())      : '')
-      + (wantsFullForm ? sectionCard(nextNum(), 'Water & Chemicals', sectionInputs())     : '')
-      + (wantsFullForm ? sectionCard(nextNum(), 'Livestock',         sectionLivestock())  : '')
-      + (wantsFullForm ? sectionCard(nextNum(), 'Support & Concerns',sectionSupport())    : '')
-      + sectionCard(nextNum(), 'Administrative',     sectionAdmin());
+    const body = langBar + (window.CATEGORIES_CONV||[]).map(cat => {
+      if(cat.gated && !wantsFullForm) return '';
+      const coreHtml = (cat.core && SECTION_RENDERERS[cat.renderer]) ? SECTION_RENDERERS[cat.renderer]() : '';
+      const customQs = (window.QUESTIONS_CONV||[]).filter(q => q.cat === cat.key);
+      const customHtml = customQs.map(q => renderConvCustomField(q)).join('');
+      if(!coreHtml && !customHtml) return '';
+      const title = state.lang === 'gu' && cat.gu ? cat.gu : cat.en;
+      return sectionCard(nextNum(), title, coreHtml + customHtml);
+    }).join('');
     const modalTitle = PUBLIC_MODE
       ? 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ'
       : 'Add new conversion farmer';
@@ -7748,6 +7868,24 @@ function openConvEnrollmentForm(){
     if(fcSel)   fcSel.onchange   = resolveFc;
     if(fcOther) fcOther.oninput  = resolveFc;
     bind('krDate','surveyDate');
+    // Custom (admin-added) questions — generic binding by data-custom id.
+    document.querySelectorAll('[data-custom]').forEach(el => {
+      el.oninput = el.onchange = () => { state.custom[el.dataset.custom] = el.value; };
+    });
+    document.querySelectorAll('[data-customyn]').forEach(wrap => {
+      wrap.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+        state.custom[wrap.dataset.customyn] = b.dataset.v;
+        paintYn(wrap, b.dataset.v, {yes:'green-on', no:'red-on'});
+      });
+    });
+    document.querySelectorAll('[data-custommulti]').forEach(cb => cb.onchange = () => {
+      const qid = cb.dataset.custommulti; const v = cb.dataset.v;
+      if(!Array.isArray(state.custom[qid])) state.custom[qid] = [];
+      const arr = state.custom[qid];
+      const i = arr.indexOf(v);
+      if(cb.checked && i<0) arr.push(v); else if(!cb.checked && i>=0) arr.splice(i,1);
+      cb.closest('.krsf-check').classList.toggle('checked', cb.checked);
+    });
   }
   function saveFarmer(){
     // v8.2 — in public mode, the farmer cannot pick their own FC, so skip
@@ -7849,6 +7987,7 @@ function openConvEnrollmentForm(){
         supportNeeded: state.supportNeeded.slice(),
         concerns: state.concerns.slice(),
         fcName: state.fcName, surveyDate: state.surveyDate,
+        customAnswers: {...state.custom},
       },
     };
     if(isPublic){
@@ -11828,6 +11967,274 @@ function closeEnrollmentForm(){
   document.body.style.overflow='';
   const fr=$('#enrollFrame');
   if(fr) fr.src='about:blank';
+}
+
+/* =============================================================
+   QUESTION MANAGER — add / edit / delete / reorder questions used by the
+   New Farmer Enrollment form (and, since they share one schema, the
+   Verification form too), plus the Organic Conversion form.
+   ============================================================= */
+const QM_TYPE_LABELS = {
+  text:'Short text', textarea:'Long text', number:'Number', tel10:'Mobile (10-digit)',
+  date:'Date', yn:'Yes / No', select:'Dropdown (single choice)', multi:'Checkboxes (multi-select)',
+  multi_count:'Multi-select with counts', photo:'Photo upload', crops_table:'Crops table (fixed)',
+  stat_cards:'Custom table (editable columns)', address_cascade:'District / Taluka / Village / Pincode',
+};
+const QM_TYPES_ADDABLE = ['text','textarea','number','tel10','date','yn','select','multi','multi_count','photo','stat_cards'];
+
+let _qmState = { form:'v5', openCat:null };
+
+function openQuestionManager(form){
+  _qmState.form = form || _qmState.form || 'v5';
+  const body = qmRenderBody();
+  modalShell('Manage Questions', body,
+    '<button class="btn btn-ghost" id="qmResetBtn">Reset this form to default</button>'
+    + '<button class="btn btn-primary" onclick="closeModal()">Done</button>');
+  const modalEl = document.getElementById('modal'); if(modalEl) modalEl.classList.add('wide');
+  qmWire();
+}
+
+function qmSchema(){
+  return _qmState.form === 'v5'
+    ? { categories: window.CATEGORIES_V5, questions: window.QUESTIONS_V5, coreIds: window.CORE_QUESTION_IDS_V5 || [] }
+    : { categories: window.CATEGORIES_CONV, questions: window.QUESTIONS_CONV, coreIds: (window.QUESTIONS_CONV||[]).filter(q=>q.core).map(q=>q.id) };
+}
+
+function qmRenderBody(){
+  const { categories, questions } = qmSchema();
+  const tabs = '<div style="display:flex;gap:8px;margin-bottom:14px">'
+    + ['v5','conv'].map(f => {
+        const on = _qmState.form === f;
+        const label = f === 'v5' ? 'New Farmer Enrollment' : 'Organic Conversion';
+        return `<button type="button" class="btn ${on?'btn-primary':'btn-ghost'}" data-qmtab="${f}" style="flex:1">${label}</button>`;
+      }).join('')
+    + '</div>';
+  const hint = '<div class="hint" style="margin-bottom:14px">Add, edit, delete and reorder the questions farmers and FCs see. '
+    + (_qmState.form==='v5'
+        ? 'A few fields (name, mobile, Aadhaar, GPS, crops, address) are locked to keep saving and verification working, but their text and options are still editable.'
+        : 'Core fields (name, mobile, location, land size, willingness) are locked to keep eligibility checks working, but their text is editable. Add new custom questions to any section freely.')
+    + '</div>';
+  const catsHtml = categories.map((cat, ci) => qmRenderCategory(cat, ci)).join('')
+    || '<div class="hint">No sections yet.</div>';
+  const addCatBtn = _qmState.form === 'v5'
+    ? '<button type="button" class="btn btn-ghost" id="qmAddCat" style="width:100%;margin-top:10px">+ Add section</button>'
+    : '<button type="button" class="btn btn-ghost" id="qmAddCat" style="width:100%;margin-top:10px">+ Add custom section</button>';
+  return tabs + hint + '<div id="qmCatsWrap">' + catsHtml + '</div>' + addCatBtn;
+}
+
+function qmRenderCategory(cat, ci){
+  const { questions, categories } = qmSchema();
+  const qs = questions.filter(q => q.cat === cat.key);
+  const isOpen = _qmState.openCat === cat.key || _qmState.openCat == null;
+  const rows = qs.map((q, qi) => qmRenderQuestionRow(q, qi, qs.length)).join('')
+    || '<div class="hint" style="padding:6px 0">No questions in this section yet.</div>';
+  const canDeleteCat = !(cat.core) && qs.length === 0;
+  return `<div class="krsf-sec" style="margin-bottom:12px" data-qmcat="${esc(cat.key)}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="flex:1">
+        <input data-qmcatname="${esc(cat.key)}" data-f="en" value="${esc(cat.en)}" placeholder="Section name (English)" style="font-weight:700;font-size:13.5px;border:none;background:transparent;width:100%;padding:2px 0">
+        <input data-qmcatname="${esc(cat.key)}" data-f="gu" value="${esc(cat.gu||'')}" placeholder="Section name (Gujarati)" style="font-size:12px;color:var(--ink-soft);border:none;background:transparent;width:100%;padding:2px 0">
+      </div>
+      <button type="button" class="btn btn-ghost" data-qmcatmove="${esc(cat.key)}" data-dir="-1" ${ci===0?'disabled':''} title="Move section up">↑</button>
+      <button type="button" class="btn btn-ghost" data-qmcatmove="${esc(cat.key)}" data-dir="1" ${ci===categories.length-1?'disabled':''} title="Move section down">↓</button>
+      ${canDeleteCat ? `<button type="button" class="btn btn-ghost" data-qmcatdel="${esc(cat.key)}" title="Delete empty section">✕</button>` : ''}
+    </div>
+    <div>${rows}</div>
+    <button type="button" class="btn btn-ghost" data-qmaddq="${esc(cat.key)}" style="width:100%;margin-top:8px;font-size:12.5px">+ Add question to this section</button>
+  </div>`;
+}
+
+function qmRenderQuestionRow(q, qi, total){
+  const { coreIds } = qmSchema();
+  const isCore = coreIds.includes(q.id) || q.core;
+  const typeLabel = QM_TYPE_LABELS[q.type] || q.type;
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(q.en)}${q.req?' <span class="req">*</span>':''}</div>
+      <div style="font-size:11.5px;color:var(--ink-faint)">${esc(typeLabel)}${isCore?' · core field':''}</div>
+    </div>
+    <button type="button" class="btn btn-ghost" data-qmqmove="${esc(q.id)}" data-dir="-1" ${qi===0?'disabled':''} title="Move up">↑</button>
+    <button type="button" class="btn btn-ghost" data-qmqmove="${esc(q.id)}" data-dir="1" ${qi===total-1?'disabled':''} title="Move down">↓</button>
+    <button type="button" class="btn btn-ghost" data-qmedit="${esc(q.id)}">Edit</button>
+    ${isCore ? '' : `<button type="button" class="btn btn-ghost" data-qmdel="${esc(q.id)}" title="Delete question">✕</button>`}
+  </div>`;
+}
+
+function qmRefresh(){
+  const wrap = document.getElementById('qmCatsWrap');
+  if(!wrap) return;
+  const { categories } = qmSchema();
+  wrap.innerHTML = categories.map((cat, ci) => qmRenderCategory(cat, ci)).join('') || '<div class="hint">No sections yet.</div>';
+  qmWireRows();
+}
+
+function qmWire(){
+  document.querySelectorAll('[data-qmtab]').forEach(b => b.onclick = () => {
+    _qmState.form = b.dataset.qmtab;
+    _qmState.openCat = null;
+    modalShell('Manage Questions', qmRenderBody(),
+      '<button class="btn btn-ghost" id="qmResetBtn">Reset this form to default</button>'
+      + '<button class="btn btn-primary" onclick="closeModal()">Done</button>');
+    qmWire();
+  });
+  const resetBtn = document.getElementById('qmResetBtn');
+  if(resetBtn) resetBtn.onclick = async () => {
+    const label = _qmState.form === 'v5' ? 'New Farmer Enrollment (and Verification)' : 'Organic Conversion';
+    const ok = await confirmModal({title:'Reset questions?', message:`This resets ${label} questions to the default set. Your customisations will be lost.`, confirmLabel:'Reset', danger:true});
+    if(!ok) return;
+    if(_qmState.form === 'v5') resetQuestionSchemaV5(); else resetQuestionSchemaConv();
+    qmRefresh();
+    toast('Reset to default questions');
+  };
+  const addCatBtn = document.getElementById('qmAddCat');
+  if(addCatBtn) addCatBtn.onclick = () => {
+    const { categories } = qmSchema();
+    const key = 'custom_' + Date.now().toString(36);
+    categories.push({key, en:'New section', gu:'', core:false});
+    qmPersist();
+    qmRefresh();
+  };
+  qmWireRows();
+}
+
+function qmWireRows(){
+  document.querySelectorAll('[data-qmcatname]').forEach(el => el.oninput = () => {
+    const { categories } = qmSchema();
+    const cat = categories.find(c => c.key === el.dataset.qmcatname);
+    if(cat) cat[el.dataset.f] = el.value;
+    qmPersist();
+  });
+  document.querySelectorAll('[data-qmcatmove]').forEach(b => b.onclick = () => {
+    const { categories } = qmSchema();
+    const i = categories.findIndex(c => c.key === b.dataset.qmcatmove);
+    const j = i + (+b.dataset.dir);
+    if(i<0||j<0||j>=categories.length) return;
+    [categories[i], categories[j]] = [categories[j], categories[i]];
+    qmPersist(); qmRefresh();
+  });
+  document.querySelectorAll('[data-qmcatdel]').forEach(b => b.onclick = () => {
+    const { categories } = qmSchema();
+    const i = categories.findIndex(c => c.key === b.dataset.qmcatdel);
+    if(i>=0) categories.splice(i,1);
+    qmPersist(); qmRefresh();
+  });
+  document.querySelectorAll('[data-qmaddq]').forEach(b => b.onclick = () => qmOpenQuestionEditor(null, b.dataset.qmaddq));
+  document.querySelectorAll('[data-qmedit]').forEach(b => b.onclick = () => qmOpenQuestionEditor(b.dataset.qmedit, null));
+  document.querySelectorAll('[data-qmdel]').forEach(b => b.onclick = async () => {
+    const ok = await confirmModal({title:'Delete question?', message:'This removes the question from the form. Already-submitted answers are kept on existing farmer records.', confirmLabel:'Delete', danger:true});
+    if(!ok) return;
+    const { questions } = qmSchema();
+    const i = questions.findIndex(q => q.id === b.dataset.qmdel);
+    if(i>=0) questions.splice(i,1);
+    qmPersist();
+    openQuestionManager(_qmState.form);
+  });
+  document.querySelectorAll('[data-qmqmove]').forEach(b => b.onclick = () => {
+    const { questions } = qmSchema();
+    const q = questions.find(x => x.id === b.dataset.qmqmove);
+    if(!q) return;
+    const sameCat = questions.filter(x => x.cat === q.cat);
+    const i = sameCat.indexOf(q);
+    const j = i + (+b.dataset.dir);
+    if(j<0||j>=sameCat.length) return;
+    const other = sameCat[j];
+    const iAll = questions.indexOf(q), jAll = questions.indexOf(other);
+    [questions[iAll], questions[jAll]] = [questions[jAll], questions[iAll]];
+    qmPersist(); qmRefresh();
+  });
+}
+
+function qmPersist(){
+  if(_qmState.form === 'v5') saveQuestionSchemaOverrideV5(); else saveQuestionSchemaOverrideConv();
+}
+
+function qmOpenQuestionEditor(qid, newInCat){
+  const { questions, categories, coreIds } = qmSchema();
+  const editing = qid ? questions.find(q => q.id === qid) : null;
+  const isCore = editing && (coreIds.includes(editing.id) || editing.core);
+  const q = editing || { id:'', cat:newInCat || (categories[0] && categories[0].key) || '', en:'', gu:'', type:'text', req:false, askedOf:'both', options:[] };
+  const catOpts = categories.map(c => `<option value="${esc(c.key)}" ${c.key===q.cat?'selected':''}>${esc(c.en)}</option>`).join('');
+  const typeOpts = (editing ? Object.keys(QM_TYPE_LABELS) : QM_TYPES_ADDABLE)
+    .map(t => `<option value="${esc(t)}" ${t===q.type?'selected':''}>${esc(QM_TYPE_LABELS[t]||t)}</option>`).join('');
+  const showOptions = ['select','multi','multi_count'].includes(q.type);
+  const showStatFields = q.type === 'stat_cards';
+  const body = `
+    <div class="krsf-row">
+      <div class="krsf-fld"><label>Question text (English)${isCore?' <span class="req">*</span>':''}</label><input id="qmQEn" value="${esc(q.en)}"></div>
+      <div class="krsf-fld"><label>Question text (Gujarati)</label><input id="qmQGu" value="${esc(q.gu||'')}"></div>
+    </div>
+    <div class="krsf-row">
+      <div class="krsf-fld"><label>Section</label><select id="qmQCat" ${isCore?'disabled':''}>${catOpts}</select></div>
+      <div class="krsf-fld"><label>Answer type</label><select id="qmQType" ${isCore?'disabled':''}>${typeOpts}</select></div>
+    </div>
+    <div class="krsf-row single">
+      <label class="krsf-check${q.req?' checked':''}" style="width:fit-content"><input type="checkbox" id="qmQReq" ${q.req?'checked':''}> Required</label>
+    </div>
+    <div id="qmOptionsWrap" style="${showOptions?'':'display:none'}">
+      <div class="krsf-fld"><label>Choices (one per line)</label><textarea id="qmQOptions" style="min-height:90px">${esc((q.options||[]).join('\n'))}</textarea></div>
+    </div>
+    <div id="qmStatFieldsWrap" style="${showStatFields?'':'display:none'}">
+      <div class="krsf-fld"><label>Table columns — one per line, as "key English (ગુજરાતી)" (e.g. "yield Yield (ઉત્પાદન)"). The Gujarati part in parentheses is optional.</label>
+        <textarea id="qmQStatFields" style="min-height:90px">${esc((q.fields||[]).map(f=>f.key+' '+(f.en||f.key)+(f.gu?' ('+f.gu+')':'')).join('\n'))}</textarea>
+      </div>
+    </div>
+    ${isCore ? '<div class="hint" style="margin-top:8px">This is a core field the app depends on — its ID, section and type are locked, but you can still edit the text, requirement and choices.</div>' : ''}
+  `;
+  const foot = '<button class="btn btn-ghost" onclick="openQuestionManager(_qmState.form)">Cancel</button>'
+    + '<button class="btn btn-primary" id="qmQSave">Save question</button>';
+  modalShell(editing ? 'Edit question' : 'Add question', body, foot);
+  const typeSel = document.getElementById('qmQType');
+  const optWrap = document.getElementById('qmOptionsWrap');
+  const statWrap = document.getElementById('qmStatFieldsWrap');
+  if(typeSel) typeSel.onchange = () => {
+    const t = typeSel.value;
+    optWrap.style.display = ['select','multi','multi_count'].includes(t) ? '' : 'none';
+    statWrap.style.display = t === 'stat_cards' ? '' : 'none';
+  };
+  document.getElementById('qmQSave').onclick = () => {
+    const en = document.getElementById('qmQEn').value.trim();
+    if(!en){ toast('Question text is required', 'error'); return; }
+    const gu = document.getElementById('qmQGu').value.trim();
+    const cat = isCore ? q.cat : document.getElementById('qmQCat').value;
+    const type = isCore ? q.type : document.getElementById('qmQType').value;
+    const req = document.getElementById('qmQReq').checked;
+    const optionsRaw = document.getElementById('qmQOptions');
+    const options = optionsRaw ? optionsRaw.value.split('\n').map(s=>s.trim()).filter(Boolean) : undefined;
+    const statRaw = document.getElementById('qmQStatFields');
+    const fields = statRaw ? statRaw.value.split('\n').map(s=>s.trim()).filter(Boolean).map(line => {
+      const sp = line.indexOf(' ');
+      const key = sp>0 ? line.slice(0,sp) : line;
+      let rest = sp>0 ? line.slice(sp+1).trim() : key;
+      // "English (ગુજરાતી)" — trailing parenthetical is the Gujarati label, same
+      // convention used everywhere else in this app (see guLabel()). Without a
+      // parenthetical, the same text is used for both languages, same as before.
+      // Allows one level of nesting inside the trailing group (e.g. an English
+      // label that itself has "(liters)" plus a Gujarati label with its own
+      // "(...)" aside) — a plain [^)]+ regex breaks on real Pashupalan labels
+      // like "...evening (liters) (સવાર-સાંજનું દૂધ ઉત્પાદન (લિટર))".
+      const m = rest.match(/\(((?:[^()]|\([^()]*\))*)\)\s*$/);
+      const guLbl = m ? m[1].trim() : rest;
+      const enLbl = m ? rest.slice(0, m.index).trim() : rest;
+      return {key, en: enLbl || key, gu: guLbl || enLbl || key};
+    }) : undefined;
+    if(editing){
+      editing.en = en; editing.gu = gu; editing.req = req;
+      if(!isCore){ editing.cat = cat; editing.type = type; }
+      if(options !== undefined) editing.options = options; else delete editing.options;
+      if(fields !== undefined) editing.fields = fields; else delete editing.fields;
+    } else {
+      const baseId = en.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'q';
+      let newId = baseId, n = 1;
+      while(questions.some(x => x.id === newId)) newId = baseId + '_' + (++n);
+      const nq = { id:newId, cat, en, gu, type, req, askedOf: _qmState.form==='v5' ? 'both' : 'farmer-only', core:false };
+      if(options !== undefined) nq.options = options;
+      if(fields !== undefined) nq.fields = fields;
+      questions.push(nq);
+    }
+    qmPersist();
+    openQuestionManager(_qmState.form);
+    toast('Question saved');
+  };
 }
 
 /* receive the farmer's submitted enrollment from the embedded form */

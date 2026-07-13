@@ -698,10 +698,6 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
         <span id="userPillName">Admin</span>
         <span style="font-size:11px;color:var(--ink-faint);margin-left:2px">· Sign out</span>
       </button>
-      <button class="btn btn-ghost" id="manageQuestionsBtn" onclick="openQuestionManager('v5')" title="Add, edit, delete or reorder the questions used in the enrolment and conversion forms">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span>Manage Questions</span>
-      </button>
       <button class="btn btn-primary" id="quickAdd">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         <span>New Farmer</span>
@@ -2050,7 +2046,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v29';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10481,6 +10477,7 @@ function viewSettings(){
     const cur = FILTERS.settings.tab;
     return `<div class="tabs" style="margin-bottom:14px">
       <div class="tab ${cur==='scoring'?'on':''}" data-st="scoring">🌱 Organic practices &amp; scoring</div>
+      <div class="tab ${cur==='questions'?'on':''}" data-st="questions">📋 Question Manager</div>
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
       <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Facilitators</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
@@ -10630,6 +10627,35 @@ function viewSettings(){
       render();
     };
     refreshTotal();
+    return;
+  }
+  if(STab==='questions'){
+    let h = tabBar();
+    const v5Sections = (window.CATEGORIES_V5||[]).length;
+    const v5Questions = (window.QUESTIONS_V5||[]).length;
+    const convSections = (window.CATEGORIES_CONV||[]).length;
+    const convQuestions = (window.QUESTIONS_CONV||[]).length;
+    const qmCard = (form, icon, title, desc, sections, statLine) => `
+      <div style="flex:1;min-width:260px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:34px;height:34px;border-radius:8px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;color:var(--leaf)">${svg(icon,2.2)}</div>
+          <div style="font-size:13.5px;font-weight:700">${title}</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-faint);flex:1">${desc}</div>
+        <div style="font-size:11px;color:var(--ink-soft);font-weight:600">${sections} section${sections===1?'':'s'} · ${statLine}</div>
+        <button class="btn btn-primary btn-sm" data-qmopen="${form}" style="align-self:flex-start">${svg(I.edit,2.2)}Manage questions</button>
+      </div>`;
+    h += `<div class="card" style="padding:18px 20px;max-width:980px">
+      <div class="ct" style="font-size:14px;font-weight:700">📋 Question Manager</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">Add, edit, delete or reorder the questions farmers and FCs see on each form. Changes sync to every device automatically.</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        ${qmCard('v5', I.check, 'New Farmer Enrollment <span style="font-weight:500;color:var(--ink-faint)">(+ Verification)</span>', 'Fields farmers fill when joining a haat, and what FCs verify on their farm visit.', v5Sections, v5Questions + ' question' + (v5Questions===1?'':'s'))}
+        ${qmCard('conv', I.convert, 'Organic Conversion', 'Fields for farmers converting to chemical-free / organic practices. Core fields are built in — this manages sections plus any custom questions you add.', convSections, convQuestions + ' custom question' + (convQuestions===1?'':'s') + ' added')}
+      </div>
+    </div>`;
+    v.innerHTML = h;
+    v.querySelectorAll('.tab').forEach(t => t.onclick = () => { FILTERS.settings.tab = t.dataset.st; render(); });
+    v.querySelectorAll('[data-qmopen]').forEach(b => b.onclick = () => openQuestionManager(b.dataset.qmopen));
     return;
   }
   if(STab==='haats'){

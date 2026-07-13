@@ -1028,12 +1028,30 @@ function buildCropRows(){
    real data are kept (fixed rows with nothing filled in are dropped on submit,
    matching how crops_table drops blank rows). */
 function buildStatCards(){
-  QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => {
+  QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => renderOneStatCards(q));
+}
+function cascadeGatedStatCards(sourceId){
+  // Re-render any stat_cards question whose visible rows depend on sourceId's
+  // answer (e.g. animal_stats only shows species with count > 0 in
+  // livestock_counts) so they update live as the gating question is typed in.
+  QUESTIONS.filter(dq => dq.type==='stat_cards' && dq.gateBy===sourceId).forEach(renderOneStatCards);
+}
+function renderOneStatCards(q){
     const wrap = document.querySelector('[data-scwrap="'+q.id+'"]');
     if(!wrap) return;
     const isFixed = Array.isArray(q.items);
     const saved = ANSWERS[q.id] || [];
-    const rows = isFixed ? q.items.map(it => ({item: it})) : (saved.length ? saved : [{}]);
+    let items = q.items;
+    if(isFixed && q.gateBy){
+      const gateAns = ANSWERS[q.gateBy] || [];
+      const activeItems = new Set(gateAns.filter(r => +(r[q.gateField||'count'])>0).map(r => r.item));
+      items = q.items.filter(it => activeItems.has(it));
+    }
+    if(isFixed && q.gateBy && !items.length){
+      wrap.innerHTML = '<div style="padding:6px 0;font-size:12.5px;color:var(--ink-soft);font-style:italic">'+esc(q.gateHint||'ઉપર સંખ્યા લખો એટલે વિગતો અહીં દેખાશે.')+'</div>';
+      return;
+    }
+    const rows = isFixed ? items.map(it => ({item: it})) : (saved.length ? saved : [{}]);
     wrap.innerHTML = rows.map((r, i) => {
       const savedRow = isFixed ? saved.find(s => s.item === r.item) : saved[i];
       const heading = isFixed
@@ -1048,11 +1066,11 @@ function buildStatCards(){
           + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
       }).join('');
       return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
-        + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + fieldsHtml + '</div></div>';
+        + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
     }).join('');
     const rebuild = () => {
       const cards = [...wrap.querySelectorAll('.sc-card')];
-      ANSWERS[q.id] = cards.map(card => {
+      const rendered = cards.map(card => {
         // Fixed rows (e.g. animal species) have no editable "item" input — the
         // species name lives on the card itself and must be seeded here, else
         // a saved row has no way to say which species the numbers belong to.
@@ -1060,7 +1078,18 @@ function buildStatCards(){
         card.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { rec[inp.dataset.sck] = inp.value; });
         return rec;
       }).filter(r => isFixed ? Object.keys(r).some(k => k!=='item' && r[k]) : (r.item && r.item.trim()));
+      if(isFixed && q.gateBy){
+        // Rows hidden by the gate (count dropped to 0) aren't in "rendered" —
+        // keep their previously-saved data so toggling the count back doesn't
+        // wipe details the farmer already filled in.
+        const renderedItems = new Set(rendered.map(r => r.item));
+        const preserved = (ANSWERS[q.id]||[]).filter(r => !renderedItems.has(r.item));
+        ANSWERS[q.id] = [...preserved, ...rendered];
+      } else {
+        ANSWERS[q.id] = rendered;
+      }
       scheduleDraftSave();
+      cascadeGatedStatCards(q.id);
     };
     wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { inp.oninput = rebuild; });
     wrap.querySelectorAll('.sc-del').forEach(btn => btn.onclick = () => {
@@ -1068,7 +1097,7 @@ function buildStatCards(){
       const cur = (ANSWERS[q.id]||[]).slice();
       cur.splice(idx, 1);
       ANSWERS[q.id] = cur;
-      buildStatCards();
+      renderOneStatCards(q);
       scheduleDraftSave();
     });
     const addBtn = document.getElementById('scAdd_'+q.id);
@@ -1076,10 +1105,9 @@ function buildStatCards(){
       const cur = ANSWERS[q.id] || [];
       if(cur.length >= (q.maxRows||3)) return;
       ANSWERS[q.id] = [...cur, {}];
-      buildStatCards();
+      renderOneStatCards(q);
       scheduleDraftSave();
     };
-  });
 }
 
 function wireFields(){
@@ -2046,7 +2074,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v29';
+const APP_VERSION = 'v30';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3998,8 +4026,12 @@ window.QUESTIONS_V5 = [
     options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'], askedOf:'both'},
 
   /* ---- Pashupalan (animal husbandry) — from the 2026-27 નોંધણી પત્રક ---- */
+  {id:'livestock_counts', cat:'livestock', gu:'પશુઓની ઉપલબ્ધતા (સંખ્યા લખો)', en:'Animal availability (enter count)', type:'stat_cards',
+    items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
+    fields:[{key:'count', gu:'સંખ્યા', en:'Count', type:'number'}], askedOf:'both'},
   {id:'animal_stats', cat:'livestock', gu:'પશુઓની સ્થિતિ (ફોર્મ ભર્યું એ દિવસની સ્થિતિ)', en:"Animal status (as of today)", type:'stat_cards',
     items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
+    gateBy:'livestock_counts', gateField:'count', gateHint:'ઉપર દરેક પશુની સંખ્યા લખો — સંખ્યા 0 કરતાં વધુ હોય એ પશુની વિગતો અહીં આપોઆપ ખૂલશે. (Enter a count above — animals with count > 0 open here automatically.)',
     fields:[
       {key:'milking',   gu:'દૂધાળી',                          en:'Milking',                  type:'number'},
       {key:'pregnant',  gu:'ગાભણ',                            en:'Pregnant',                 type:'number'},

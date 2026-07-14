@@ -211,22 +211,67 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 /* filter-mode "selected" state (Haat Farmers list — click a step to filter) */
 .jstep.active{outline:2px solid var(--jc,var(--accent));outline-offset:-2px;background:var(--panel-2)}
 .oc-chip.active{outline:2px solid currentColor;outline-offset:-2px;font-weight:700}
-/* hover tooltip — plain-language Gujarati explanation of each pipeline step */
-.jstep[data-tip]:hover::after{
+/* hover tooltip — plain-language Gujarati explanation. Generalized to any
+   [data-tip] element (pipeline steps AND conversion score cards below), not
+   just .jstep. */
+[data-tip]{position:relative}
+[data-tip]:hover::after{
   content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
   width:250px;max-width:70vw;background:var(--navy-deep);color:#fff;padding:10px 13px;border-radius:8px;
   font-size:12.5px;font-weight:500;line-height:1.55;text-align:left;white-space:normal;
   box-shadow:var(--sh-2);z-index:60;pointer-events:none}
-.jstep[data-tip]:hover::before{
+[data-tip]:hover::before{
   content:"";position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);
   border:6px solid transparent;border-bottom-color:var(--navy-deep);z-index:61;pointer-events:none}
 @media(max-width:680px){
   .journey{flex-direction:column;gap:2px;padding:10px}
   .jstep{padding:12px 12px}
   .jstep+.jstep::before{left:22px;top:-7px;transform:rotate(135deg)}
-  .jstep[data-tip]:hover::after{left:12px;transform:none;width:calc(100vw - 64px)}
-  .jstep[data-tip]:hover::before{left:24px;transform:none}
+  [data-tip]:hover::after{left:12px;transform:none;width:calc(100vw - 64px)}
+  [data-tip]:hover::before{left:24px;transform:none}
 }
+
+/* ============ CONVERSION FUNNEL (2 steps -> branch into 3 score bands) ============
+   Deliberately NOT the same shape as the Haat journey bar above: Conversion
+   has no admin-approval gate, the score band is computed automatically the
+   moment an FC assesses the farm. Showing a visible branch (not 4 equal
+   linear steps) is honest about that and keeps the two programs from
+   reading as duplicates of each other. */
+.conv-wrap{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--green);
+  border-radius:var(--r-lg);padding:18px 16px;box-shadow:var(--sh-1);margin-bottom:20px}
+.conv-flow{display:flex;align-items:center;gap:0;flex-wrap:wrap}
+.conv-step{flex:0 0 190px;padding:6px 16px;position:relative;cursor:pointer;border-radius:var(--r-sm);
+  transition:background .15s;background:none;border:none;text-align:left;font-family:inherit}
+.conv-step:hover{background:var(--panel-2)}
+.conv-arrow{color:var(--ink-faint);font-size:20px;padding:0 6px;flex-shrink:0}
+.conv-branch-arrow{display:flex;align-items:center;justify-content:center;color:var(--ink-faint);
+  font-size:12px;flex:0 0 76px;text-align:center;line-height:1.3}
+.conv-fan{display:flex;gap:10px;flex:1 1 420px;flex-wrap:wrap}
+.score-card{flex:1 1 130px;min-width:130px;border:1.5px solid var(--scl,var(--line));background:var(--scb,var(--panel-2));
+  border-radius:var(--r-sm);padding:12px 14px;position:relative;cursor:pointer;font-family:inherit;text-align:left}
+.score-card.active{outline:2px solid var(--sc,var(--accent));outline-offset:-2px;font-weight:700}
+.score-gauge{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;margin-bottom:7px;background:var(--sc,var(--accent));color:#fff}
+.score-num{font-size:24px;font-weight:800;color:var(--sc,var(--ink));line-height:1;font-variant-numeric:tabular-nums}
+.score-label{font-size:11.5px;font-weight:700;margin-top:5px;color:var(--ink)}
+.score-sub{font-size:10px;color:var(--ink-faint);margin-top:3px}
+.conv-note{font-size:11px;color:var(--ink-faint);margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);
+  display:flex;align-items:center;gap:6px}
+@media(max-width:760px){
+  .conv-flow{flex-direction:column;align-items:stretch}
+  .conv-arrow{transform:rotate(90deg);align-self:center}
+  .conv-branch-arrow{transform:rotate(90deg);flex:none;padding:8px 0}
+  .conv-fan{flex-direction:column}
+}
+/* condensed dashboard pointer card (full funnel lives on Conversion Farmers page) */
+.conv-pointer{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  text-align:left;cursor:pointer;font-family:inherit;background:var(--panel);border:1px solid var(--line);
+  border-left:4px solid var(--green);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--sh-1);
+  margin-bottom:20px;transition:box-shadow .15s}
+.conv-pointer:hover{box-shadow:var(--sh-2)}
+.conv-pointer .cp-main{font-size:14px;font-weight:700;color:var(--ink)}
+.conv-pointer .cp-sub{font-size:12px;color:var(--ink-soft);margin-top:3px}
+.conv-pointer .cp-cta{font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap;flex-shrink:0}
 
 /* ============ PANELS / CARDS ============ */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1)}
@@ -2117,7 +2162,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6096,19 +6141,12 @@ function viewDashboard(){
   h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
   h+=journeyBoxesHtml(hs,'nav');
 
-  h+=`<div class="section-head"><h3>Organic Farming Conversion Program</h3><div class="line"></div></div>`;
-  h+=`<div class="statbox-grid cols-5">
-    ${dashBox('Potential farmers',cs.total,'var(--navy)',cs.total,
-        'Total in conversion database','conv:')}
-    ${dashBox('Primary verification pending',cs.pending,'var(--grey)',cs.total,
-        'No FC visit yet','conv:pending')}
-    ${dashBox('Not yet adopting',cs.red,'var(--red)',cs.total,
-        'Score below 50%','conv:red')}
-    ${dashBox('In progress',cs.yellow,'var(--yellow)',cs.total,
-        'Score 50–70%','conv:yellow')}
-    ${dashBox('Adopted',cs.green,'var(--green)',cs.total,
-        'Score above 70%','conv:green')}
-  </div>`;
+  // v33 — the full Conversion funnel used to sit here as its own 5-box grid,
+  // right under the Haat funnel, and read as a confusing second/duplicate
+  // pipeline. It now lives entirely on the Conversion Farmers page; the
+  // Dashboard just gets a one-line peek + link (see convPointerHtml).
+  h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program</h3><div class="line"></div></div>`;
+  h+=convPointerHtml(cs);
 
   // ===== two cumulative charts side by side =====
   const cum=cumulativeData();
@@ -6248,7 +6286,7 @@ function viewDashboard(){
 
   v.innerHTML=h;
   v.querySelectorAll('[data-go]').forEach(r=>r.onclick=()=>{ROUTE=r.dataset.go;render();});
-  v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav]').forEach(b=>{
+  v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav],.conv-pointer[data-nav]').forEach(b=>{
     b.onclick=()=>{
       const nav=b.dataset.nav;
       if(nav.includes(':')){
@@ -6288,14 +6326,6 @@ function viewDashboard(){
   v.querySelectorAll('tr[data-fc]').forEach(tr=>{
     tr.onclick=()=>{ROUTE='haat';FILTERS.haat={fc:tr.dataset.fc};render();};
   });
-}
-function dashBox(label,num,color,total,sub,nav){
-  return `<button class="statbox" data-nav="${nav}" style="--sb-color:${color}">
-    <div class="sb-label">${label}</div>
-    <div class="sb-num">${num}</div>
-    <div class="sb-track"><div class="sb-fill" style="width:${num/Math.max(total,1)*100}%"></div></div>
-    <div class="sb-sub">${sub}</div>
-  </button>`;
 }
 /* Simplified 4-step pipeline strip — replaces the old 6-equal-box grid on
    both the Dashboard and the Haat Farmers list. A farmer is only ever in one
@@ -6343,6 +6373,61 @@ function journeyBoxesHtml(hs, mode, activeStatus){
     <button class="oc-chip${ocActive('yellow')}" ${ocAttr('yellow')}><span class="oc-dot" style="background:var(--yellow)"></span>${hs.yellow} on hold</button>
   </div>`;
   return h;
+}
+/* Conversion program funnel — 2 real steps, then a branch into 3 AUTOMATIC
+   score bands (there's no admin-approval gate here, unlike Haat's journey
+   bar above). Used only on the Conversion Farmers list page (filter-toggle
+   clicks via data-box, matching that page's existing F.status logic). */
+function convFunnelHtml(cs, activeStatus){
+  const on = k => (activeStatus||'')===k;
+  let h = '<div class="conv-wrap"><div class="conv-flow">';
+  h += `<button class="conv-step jstep${on('')?' active':''}" data-box="" data-tip="કન્વર્ઝન પ્રોગ્રામમાં જોડાવા માટે કુલ આટલી અરજી આવી છે.">
+    <span class="jwho who-done">All</span>
+    <div class="jnum">${cs.total}</div>
+    <div class="jlabel">Farmers applied</div>
+    <div class="jsub">Total applications received</div>
+  </button>`;
+  h += '<div class="conv-arrow">→</div>';
+  h += `<button class="conv-step jstep${on('pending')?' active':''}" data-box="pending" style="--jc:var(--orange)" data-tip="આ એવા ખેડૂતો છે જેમનું ફાર્મ વેરીફીકેશન કરવાનું બાકી છે.">
+    <span class="jwho who-fc">FC's move</span>
+    <div class="jnum">${cs.pending}</div>
+    <div class="jlabel">Waiting for assessment</div>
+    <div class="jsub">No farm visit yet</div>
+  </button>`;
+  h += '<div class="conv-branch-arrow">splits into<br>score bands →</div>';
+  const cards = [
+    {key:'red', gauge:'✕', num:cs.red, label:'Not adopting', sub:'Score below 50%', sc:'var(--red)', scb:'var(--red-bg)', scl:'var(--red-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 50% કરતાં ઓછો છે — હજુ પ્રાકૃતિક ખેતી અપનાવી નથી.'},
+    {key:'yellow', gauge:'◐', num:cs.yellow, label:'In progress', sub:'Score 50–70%', sc:'var(--yellow)', scb:'var(--yellow-bg)', scl:'var(--yellow-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 50-70% ની વચ્ચે છે — પ્રાકૃતિક ખેતી તરફ આગળ વધી રહ્યા છે.'},
+    {key:'green', gauge:'✓', num:cs.green, label:'Adopted', sub:'Score above 70%', sc:'var(--green)', scb:'var(--green-bg)', scl:'var(--green-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
+  ];
+  h += '<div class="conv-fan">';
+  cards.forEach(c=>{
+    h += `<button class="score-card${on(c.key)?' active':''}" data-box="${c.key}" style="--sc:${c.sc};--scb:${c.scb};--scl:${c.scl}" data-tip="${esc(c.tip)}">
+      <div class="score-gauge">${c.gauge}</div>
+      <div class="score-num">${c.num}</div>
+      <div class="score-label">${c.label}</div>
+      <div class="score-sub">${c.sub}</div>
+    </button>`;
+  });
+  h += '</div></div>';
+  h += '<div class="conv-note">ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.</div>';
+  h += '</div>';
+  return h;
+}
+/* Small dashboard "peek" card — the full conversion funnel lives on the
+   Conversion Farmers page (too much detail for the shared Dashboard,
+   which is why it used to read as a confusing second funnel). */
+function convPointerHtml(cs){
+  return `<button class="conv-pointer" data-nav="conversion">
+    <div>
+      <div class="cp-main">🌱 ${cs.total} applications · ${cs.green} adopted, ${cs.yellow} in progress, ${cs.red} not adopting</div>
+      <div class="cp-sub">${cs.pending} waiting for FC farm assessment</div>
+    </div>
+    <span class="cp-cta">View full Conversion Program →</span>
+  </button>`;
 }
 /* ============ VIEW: HAAT FARMERS ============ */
 /* ============ ARCHIVE (soft-delete) — admin multi-select ============
@@ -7231,25 +7316,7 @@ function viewConversion(){
   const v=$('#view');
   const cs=convStats();
   const F=FILTERS.conv;
-  const boxes=[
-    {key:'',        label:'Potential farmers',           num:cs.total,   color:'var(--navy)',  sub:'Total in conversion database'},
-    {key:'pending', label:'Primary verification pending',num:cs.pending, color:'var(--grey)',  sub:pct(cs.pending,cs.total)+' · no facilitator visit yet'},
-    {key:'red',     label:'Not yet adopting',            num:cs.red,     color:'var(--red)',   sub:pct(cs.red,cs.total)+' · score below 50%'},
-    {key:'yellow',  label:'In progress',                 num:cs.yellow,  color:'var(--yellow)',sub:pct(cs.yellow,cs.total)+' · score 50–70%'},
-    {key:'green',   label:'Adopted',                     num:cs.green,   color:'var(--green)', sub:pct(cs.green,cs.total)+' · score above 70%'},
-  ];
-  let h=`<div class="statbox-grid cols-5">`;
-  boxes.forEach(b=>{
-    const on=(F.status||'')===b.key;
-    h+=`<button class="statbox ${on?'active':''}" data-box="${b.key}" style="--sb-color:${b.color}">
-      <div class="sb-check">${svg(I.check,3)}</div>
-      <div class="sb-label">${b.label}</div>
-      <div class="sb-num">${b.num}</div>
-      <div class="sb-track"><div class="sb-fill" style="width:${b.num/Math.max(cs.total,1)*100}%"></div></div>
-      <div class="sb-sub">${b.sub}</div>
-    </button>`;
-  });
-  h+=`</div>`;
+  let h=convFunnelHtml(cs,F.status);
   const convDistricts=[...new Set(DB.convFarmers.map(x=>x.district).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="cState"><option value="">All states</option>
@@ -7347,7 +7414,7 @@ function viewConversion(){
   if(convPrev) convPrev.onclick = () => { F.page--; render(); };
   if(convNext) convNext.onclick = () => { F.page++; render(); };
 
-  v.querySelectorAll('.statbox').forEach(b=>{
+  v.querySelectorAll('.conv-step[data-box],.score-card[data-box]').forEach(b=>{
     b.onclick=()=>{const k=b.dataset.box;F.status=(F.status||'')===k?'':k;F.page=0;render();};
   });
   v.querySelectorAll('thead th[data-sort]').forEach(t=>t.onclick=()=>{

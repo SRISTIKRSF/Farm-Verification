@@ -52,8 +52,13 @@ html,body{height:100%}
 body{
   background:var(--bg);color:var(--ink);
   /* Inter for Latin; Hind Vadodara fills in Gujarati glyphs (browser falls
-     back automatically since Inter has no Gujarati coverage). */
-  font-family:'Inter','Hind Vadodara',system-ui,-apple-system,sans-serif;
+     back automatically since Inter has no Gujarati coverage). 'Nirmala UI'
+     (Windows' built-in Indic-script font, correctly shapes Gujarati
+     conjuncts) sits before the generic fallbacks — without it, if Hind
+     Vadodara hasn't loaded yet (slow/offline connection), the browser
+     drops straight to system-ui/sans-serif, which mis-renders conjuncts
+     like ર્મ (shows the virama as a stray mark instead of fusing it). */
+  font-family:'Inter','Hind Vadodara','Nirmala UI',system-ui,-apple-system,sans-serif;
   font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased;
   letter-spacing:-.006em;
 }
@@ -218,7 +223,13 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 [data-tip]:hover::after{
   content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
   width:250px;max-width:70vw;background:var(--navy-deep);color:#fff;padding:10px 13px;border-radius:8px;
-  font-size:12.5px;font-weight:500;line-height:1.55;text-align:left;white-space:normal;
+  /* font-weight:400 (not 500) — 500 isn't preloaded, so a quick hover could
+     trigger an on-demand Hind Vadodara fetch and briefly render Gujarati in
+     a fallback font mid-swap. 400 is already loaded by normal body text.
+     Explicit font-family (not inherit) guarantees a real Gujarati-capable
+     font even if Hind Vadodara itself hasn't loaded (slow/offline network). */
+  font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',system-ui,-apple-system,sans-serif;
+  font-size:12.5px;font-weight:400;line-height:1.55;text-align:left;white-space:normal;
   box-shadow:var(--sh-2);z-index:60;pointer-events:none}
 [data-tip]:hover::before{
   content:"";position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);
@@ -2162,7 +2173,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

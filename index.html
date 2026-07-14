@@ -185,6 +185,35 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .statbox.active .sb-check{display:grid}
 .statbox .sb-check svg{width:10px;height:10px;color:#fff;stroke-width:3}
 
+/* ============ JOURNEY BAR (dashboard pipeline strip) ============ */
+.journey{display:flex;align-items:stretch;gap:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:16px 12px;box-shadow:var(--sh-1);flex-wrap:wrap;margin-bottom:10px}
+.jstep{flex:1 1 150px;min-width:150px;position:relative;padding:6px 18px;cursor:pointer;border-radius:var(--r-sm);
+  transition:background .15s;text-align:left;background:none;border:none;font-family:inherit}
+.jstep:hover{background:var(--panel-2)}
+.jstep+.jstep::before{content:"";position:absolute;left:-9px;top:50%;transform:translateY(-50%) rotate(45deg);
+  width:12px;height:12px;border-top:2px solid var(--line-strong);border-right:2px solid var(--line-strong)}
+.jwho{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;display:inline-block;
+  padding:2px 9px;border-radius:20px;margin-bottom:8px}
+.jwho.who-done{background:var(--green-bg);color:var(--green)}
+.jwho.who-fc{background:var(--orange-bg);color:var(--orange)}
+.jwho.who-admin{background:var(--blue-bg);color:var(--blue)}
+.jnum{font-size:30px;font-weight:800;line-height:1.05;color:var(--jc,var(--ink));letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums}
+.jlabel{font-size:12.5px;font-weight:600;margin-top:2px;color:var(--ink)}
+.jsub{font-size:10.5px;color:var(--ink-faint);margin-top:4px;line-height:1.35}
+.journey-outcomes{display:flex;gap:9px;align-items:center;margin:0 0 20px;font-size:12px;color:var(--ink-soft);flex-wrap:wrap}
+.oc-lbl{font-weight:600;color:var(--ink-faint)}
+.oc-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+  border-radius:20px;padding:4px 13px;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink-soft)}
+.oc-chip:hover{border-color:var(--line-strong)}
+.oc-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+@media(max-width:680px){
+  .journey{flex-direction:column;gap:2px;padding:10px}
+  .jstep{padding:12px 12px}
+  .jstep+.jstep::before{left:22px;top:-7px;transform:rotate(135deg)}
+}
+
 /* ============ PANELS / CARDS ============ */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1)}
 .section-head{display:flex;align-items:center;gap:12px;margin:24px 0 13px}
@@ -2074,7 +2103,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v30';
+const APP_VERSION = 'v31';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4000,6 +4029,16 @@ window.QUESTIONS_V5 = [
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
   {id:'crops_table',  cat:'farm', gu:'અત્યારના ઉગેલા પાક', en:'Main crops grown (up to 3)', type:'crops_table', askedOf:'both'},
+  {id:'plot_crops_table', cat:'farm', gu:'1 મે 2026 થી સંભવિત પાકોની વિગત — પ્રાકૃતિક ખેતરમાં વાવેલ પાકો (ખેતર/પ્લોટ દીઠ)', en:'Expected crops from 1 May 2026 — crops sown in the organic farm (per plot)', type:'stat_cards',
+    addable:true, maxRows:5, itemLabel:{gu:'પ્રાકૃતિક ખેતરનું સ્થાનિક નામ', en:'Local name of the organic farm/plot'},
+    fields:[
+      {key:'surveyNo',    gu:'સર્વે નંબર',                          en:'Survey number',                       type:'text'},
+      {key:'location',    gu:'લોકેશન (longitude / latitude)',       en:'Location (longitude / latitude)',     type:'text'},
+      {key:'acres',       gu:'એકર',                                  en:'Acres',                                type:'number'},
+      {key:'monsoonCrop', gu:'ચોમાસુ મુખ્ય તથા ગૌણ પાક',            en:'Monsoon — main & secondary crop',     type:'text'},
+      {key:'winterCrop',  gu:'શિયાળુ મુખ્ય તથા ગૌણ પાક',            en:'Winter — main & secondary crop',      type:'text'},
+      {key:'summerCrop',  gu:'ઉનાળુ મુખ્ય તથા ગૌણ પાક',             en:'Summer — main & secondary crop',      type:'text'},
+    ], askedOf:'both'},
   {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', type:'number', askedOf:'both'},
   {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
   {id:'farming_who',      cat:'farm', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], askedOf:'both'},
@@ -4529,6 +4568,7 @@ function haatStats(){
     red:f.filter(x=>x.status==='red').length,
     active:f.filter(x=>x.status==='green'&&x.active).length,
     inactive:f.filter(x=>x.status==='green'&&!x.active).length,
+    seasonal:f.filter(isSeasonalVerificationDue).length,
   };
 }
 /* Score-based bucket. Drives both the dashboard tiles and the table filter.
@@ -6013,20 +6053,7 @@ function viewDashboard(){
 
   let h = _datePillsHtml();
   h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
-  h+=`<div class="statbox-grid cols-6">
-    ${dashBox('Farmers Reached',hs.total,'var(--navy)',hs.total,
-        'Total farmers enrolled','haat:')}
-    ${dashBox('Field visit pending',hs.pending,'var(--orange)',hs.total,
-        'Facilitator has not visited the farm yet','haat:pending')}
-    ${dashBox('Visited & verified',hs.verified,'var(--teal)',hs.total,
-        'Facilitator visit done · awaiting decision','haat:verified')}
-    ${dashBox('Farmers onboarded',hs.green,'var(--green)',hs.total,
-        hs.active+' active at a haat','haat:green')}
-    ${dashBox('Farmers on hold',hs.yellow,'var(--yellow)',hs.total,
-        'Admin placed on hold','haat:yellow')}
-    ${dashBox('Farmers rejected',hs.red,'var(--red)',hs.total,
-        'Not approved this cycle','haat:red')}
-  </div>`;
+  h+=dashJourney(hs);
 
   h+=`<div class="section-head"><h3>Organic Farming Conversion Program</h3><div class="line"></div></div>`;
   h+=`<div class="statbox-grid cols-5">
@@ -6180,7 +6207,7 @@ function viewDashboard(){
 
   v.innerHTML=h;
   v.querySelectorAll('[data-go]').forEach(r=>r.onclick=()=>{ROUTE=r.dataset.go;render();});
-  v.querySelectorAll('.statbox[data-nav]').forEach(b=>{
+  v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav]').forEach(b=>{
     b.onclick=()=>{
       const nav=b.dataset.nav;
       if(nav.includes(':')){
@@ -6228,6 +6255,47 @@ function dashBox(label,num,color,total,sub,nav){
     <div class="sb-track"><div class="sb-fill" style="width:${num/Math.max(total,1)*100}%"></div></div>
     <div class="sb-sub">${sub}</div>
   </button>`;
+}
+/* Simplified 4-step pipeline strip — replaces the old 6-equal-box grid.
+   A farmer is only ever in one of 4 places (applied / with FC / with admin /
+   onboarded); on-hold + rejected are OUTCOMES, not steps, so they sit in a
+   quieter line below instead of competing as equal boxes. */
+function dashJourney(hs){
+  const seasonalNote = hs.seasonal
+    ? `+ ${hs.seasonal} seasonal re-check${hs.seasonal===1?'':'s'} due`
+    : 'Facilitator has not visited yet';
+  let h = `<div class="journey">
+    <button class="jstep" data-nav="haat:">
+      <span class="jwho who-done">All</span>
+      <div class="jnum">${hs.total}</div>
+      <div class="jlabel">Farmers applied</div>
+      <div class="jsub">Total farmers enrolled</div>
+    </button>
+    <button class="jstep" data-nav="haat:pending" style="--jc:var(--orange)">
+      <span class="jwho who-fc">FC's move</span>
+      <div class="jnum">${hs.pending}</div>
+      <div class="jlabel">Waiting for field visit</div>
+      <div class="jsub">${esc(seasonalNote)}</div>
+    </button>
+    <button class="jstep" data-nav="haat:verified" style="--jc:var(--blue)">
+      <span class="jwho who-admin">Admin's move</span>
+      <div class="jnum">${hs.verified}</div>
+      <div class="jlabel">Waiting for approval</div>
+      <div class="jsub">Visit done · decide now</div>
+    </button>
+    <button class="jstep" data-nav="haat:green" style="--jc:var(--green)">
+      <span class="jwho who-done">Done</span>
+      <div class="jnum">${hs.green}</div>
+      <div class="jlabel">Onboarded</div>
+      <div class="jsub">${hs.active} active at a haat</div>
+    </button>
+  </div>`;
+  h += `<div class="journey-outcomes">
+    <span class="oc-lbl">Not onboarded:</span>
+    <button class="oc-chip" data-nav="haat:red"><span class="oc-dot" style="background:var(--red)"></span>${hs.red} rejected</button>
+    <button class="oc-chip" data-nav="haat:yellow"><span class="oc-dot" style="background:var(--yellow)"></span>${hs.yellow} on hold</button>
+  </div>`;
+  return h;
 }
 /* ============ VIEW: HAAT FARMERS ============ */
 /* ============ ARCHIVE (soft-delete) — admin multi-select ============

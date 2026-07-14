@@ -208,10 +208,24 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   border-radius:20px;padding:4px 13px;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink-soft)}
 .oc-chip:hover{border-color:var(--line-strong)}
 .oc-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+/* filter-mode "selected" state (Haat Farmers list — click a step to filter) */
+.jstep.active{outline:2px solid var(--jc,var(--accent));outline-offset:-2px;background:var(--panel-2)}
+.oc-chip.active{outline:2px solid currentColor;outline-offset:-2px;font-weight:700}
+/* hover tooltip — plain-language Gujarati explanation of each pipeline step */
+.jstep[data-tip]:hover::after{
+  content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
+  width:250px;max-width:70vw;background:var(--navy-deep);color:#fff;padding:10px 13px;border-radius:8px;
+  font-size:12.5px;font-weight:500;line-height:1.55;text-align:left;white-space:normal;
+  box-shadow:var(--sh-2);z-index:60;pointer-events:none}
+.jstep[data-tip]:hover::before{
+  content:"";position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);
+  border:6px solid transparent;border-bottom-color:var(--navy-deep);z-index:61;pointer-events:none}
 @media(max-width:680px){
   .journey{flex-direction:column;gap:2px;padding:10px}
   .jstep{padding:12px 12px}
   .jstep+.jstep::before{left:22px;top:-7px;transform:rotate(135deg)}
+  .jstep[data-tip]:hover::after{left:12px;transform:none;width:calc(100vw - 64px)}
+  .jstep[data-tip]:hover::before{left:24px;transform:none}
 }
 
 /* ============ PANELS / CARDS ============ */
@@ -2103,7 +2117,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6080,7 +6094,7 @@ function viewDashboard(){
 
   let h = _datePillsHtml();
   h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
-  h+=dashJourney(hs);
+  h+=journeyBoxesHtml(hs,'nav');
 
   h+=`<div class="section-head"><h3>Organic Farming Conversion Program</h3><div class="line"></div></div>`;
   h+=`<div class="statbox-grid cols-5">
@@ -6283,44 +6297,50 @@ function dashBox(label,num,color,total,sub,nav){
     <div class="sb-sub">${sub}</div>
   </button>`;
 }
-/* Simplified 4-step pipeline strip — replaces the old 6-equal-box grid.
-   A farmer is only ever in one of 4 places (applied / with FC / with admin /
-   onboarded); on-hold + rejected are OUTCOMES, not steps, so they sit in a
-   quieter line below instead of competing as equal boxes. */
-function dashJourney(hs){
+/* Simplified 4-step pipeline strip — replaces the old 6-equal-box grid on
+   both the Dashboard and the Haat Farmers list. A farmer is only ever in one
+   of 4 places (applied / with FC / with admin / onboarded); on-hold +
+   rejected are OUTCOMES, not steps, so they sit in a quieter line below
+   instead of competing as equal boxes.
+   mode:'nav'    (Dashboard) — clicking a step navigates to Haat Farmers filtered.
+   mode:'filter' (Haat Farmers list) — clicking toggles the filter in place;
+                 activeStatus is the current F.status to highlight. */
+function journeyBoxesHtml(hs, mode, activeStatus){
   const seasonalNote = hs.seasonal
     ? `+ ${hs.seasonal} seasonal re-check${hs.seasonal===1?'':'s'} due`
     : 'Facilitator has not visited yet';
-  let h = `<div class="journey">
-    <button class="jstep" data-nav="haat:">
-      <span class="jwho who-done">All</span>
-      <div class="jnum">${hs.total}</div>
-      <div class="jlabel">Farmers applied</div>
-      <div class="jsub">Total farmers enrolled</div>
-    </button>
-    <button class="jstep" data-nav="haat:pending" style="--jc:var(--orange)">
-      <span class="jwho who-fc">FC's move</span>
-      <div class="jnum">${hs.pending}</div>
-      <div class="jlabel">Waiting for field visit</div>
-      <div class="jsub">${esc(seasonalNote)}</div>
-    </button>
-    <button class="jstep" data-nav="haat:verified" style="--jc:var(--blue)">
-      <span class="jwho who-admin">Admin's move</span>
-      <div class="jnum">${hs.verified}</div>
-      <div class="jlabel">Waiting for approval</div>
-      <div class="jsub">Visit done · decide now</div>
-    </button>
-    <button class="jstep" data-nav="haat:green" style="--jc:var(--green)">
-      <span class="jwho who-done">Done</span>
-      <div class="jnum">${hs.green}</div>
-      <div class="jlabel">Onboarded</div>
-      <div class="jsub">${hs.active} active at a haat</div>
-    </button>
-  </div>`;
+  const steps = [
+    {key:'', who:'done', whoLbl:'All', label:'Farmers applied', num:hs.total,
+     sub:'Total applications received',
+     tip:'હાટમાં જોડાવા માટે કુલ આટલી એપ્લિકેશન આવી છે.'},
+    {key:'pending', who:'fc', whoLbl:"FC's move", label:'Waiting for field visit', num:hs.pending,
+     sub:esc(seasonalNote), jc:'var(--orange)',
+     tip:'આ એવા ખેડૂતો છે જેમનું ફાર્મ વેરીફીકેશન કરવાનું બાકી છે.'},
+    {key:'verified', who:'admin', whoLbl:"Admin's move", label:'Waiting for approval', num:hs.verified,
+     sub:'Visit done · decide now', jc:'var(--blue)',
+     tip:'આ એવા ખેડૂતો છે જેમનું ફાર્મ વેરીફીકેશન થઇ ગયું છે પણ એડમિન તરફથી અપ્રુવલ બાકી છે.'},
+    {key:'green', who:'done', whoLbl:'Done', label:'Onboarded', num:hs.green,
+     sub:hs.active+' active at a haat', jc:'var(--green)',
+     tip:'આ એવા ખેડૂત છે જે લોકો ઝેર-મુક્ત ખેતી કરે છે અને ઓનબોર્ડીંગ થઇ ગયું છે.'},
+  ];
+  let h = '<div class="journey">';
+  steps.forEach(s=>{
+    const isActive = mode==='filter' && (activeStatus||'')===s.key;
+    const attr = mode==='filter' ? `data-box="${s.key}"` : `data-nav="haat:${s.key}"`;
+    h += `<button class="jstep${isActive?' active':''}" ${attr} ${s.jc?`style="--jc:${s.jc}"`:''} data-tip="${esc(s.tip)}">
+      <span class="jwho who-${s.who}">${s.whoLbl}</span>
+      <div class="jnum">${s.num}</div>
+      <div class="jlabel">${s.label}</div>
+      <div class="jsub">${s.sub}</div>
+    </button>`;
+  });
+  h += '</div>';
+  const ocAttr = k => mode==='filter' ? `data-box="${k}"` : `data-nav="haat:${k}"`;
+  const ocActive = k => mode==='filter' && (activeStatus||'')===k ? ' active' : '';
   h += `<div class="journey-outcomes">
     <span class="oc-lbl">Not onboarded:</span>
-    <button class="oc-chip" data-nav="haat:red"><span class="oc-dot" style="background:var(--red)"></span>${hs.red} rejected</button>
-    <button class="oc-chip" data-nav="haat:yellow"><span class="oc-dot" style="background:var(--yellow)"></span>${hs.yellow} on hold</button>
+    <button class="oc-chip${ocActive('red')}" ${ocAttr('red')}><span class="oc-dot" style="background:var(--red)"></span>${hs.red} rejected</button>
+    <button class="oc-chip${ocActive('yellow')}" ${ocAttr('yellow')}><span class="oc-dot" style="background:var(--yellow)"></span>${hs.yellow} on hold</button>
   </div>`;
   return h;
 }
@@ -6438,33 +6458,8 @@ function viewHaat(){
   const F=FILTERS.haat;
   const hs=haatStats();
 
-  /* ---- clickable stat boxes — full 6-stage registration pipeline ---- */
-  const boxes=[
-    {key:'',label:'Farmers Reached',num:hs.total,color:'var(--navy)',
-     sub:'Total farmers enrolled'},
-    {key:'pending',label:'Field visit pending',num:hs.pending,color:'var(--orange)',
-     sub:pct(hs.pending,hs.total)+' · facilitator not visited yet'},
-    {key:'verified',label:'Visited & verified',num:hs.verified,color:'var(--teal)',
-     sub:pct(hs.verified,hs.total)+' · awaiting decision'},
-    {key:'green',label:'Farmers onboarded',num:hs.green,color:'var(--green)',
-     sub:pct(hs.green,hs.total)+' · '+hs.active+' active'},
-    {key:'yellow',label:'Farmers on hold',num:hs.yellow,color:'var(--yellow)',
-     sub:pct(hs.yellow,hs.total)+' · not cleared'},
-    {key:'red',label:'Farmers rejected',num:hs.red,color:'var(--red)',
-     sub:pct(hs.red,hs.total)+' · not approved'},
-  ];
-  let h=`<div class="statbox-grid cols-6">`;
-  boxes.forEach(b=>{
-    const on=(F.status||'')===b.key;
-    h+=`<button class="statbox ${on?'active':''}" data-box="${b.key}" style="--sb-color:${b.color}">
-      <div class="sb-check">${svg(I.check,3)}</div>
-      <div class="sb-label">${b.label}</div>
-      <div class="sb-num">${b.num}</div>
-      <div class="sb-track"><div class="sb-fill" style="width:${b.num/Math.max(hs.total,1)*100}%"></div></div>
-      <div class="sb-sub">${b.sub}</div>
-    </button>`;
-  });
-  h+=`</div>`;
+  /* ---- clickable pipeline strip — same simplified 4-step flow as the Dashboard ---- */
+  let h=journeyBoxesHtml(hs,'filter',F.status);
 
   /* ---- secondary filters (district added; facilitator dropped) ---- */
   const haatDistricts=[...new Set(DB.haatFarmers.map(x=>x.district).filter(Boolean))].sort();
@@ -6578,8 +6573,8 @@ function viewHaat(){
   if(haatPrev) haatPrev.onclick = () => { F.page--; render(); };
   if(haatNext) haatNext.onclick = () => { F.page++; render(); };
 
-  /* ---- stat-box clicks (toggle status filter) ---- */
-  v.querySelectorAll('.statbox').forEach(b=>{
+  /* ---- pipeline-strip clicks (toggle status filter) ---- */
+  v.querySelectorAll('.jstep[data-box],.oc-chip[data-box]').forEach(b=>{
     b.onclick=()=>{
       const k=b.dataset.box;
       F.status=(F.status||'')===k?'':k;  // click again to clear

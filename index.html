@@ -688,6 +688,15 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .fc-stats{display:flex;gap:8px;padding:10px 14px;background:var(--panel-2)}
 .fc-stat{flex:1;background:var(--panel);border:1px solid var(--line);
   border-radius:10px;padding:8px 4px;text-align:center}
+.fc-plan-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;
+  padding:10px 14px 12px;background:var(--panel-2);border-top:1px solid var(--line)}
+.fc-plan-filter{min-width:0}
+.fc-plan-filter label{display:block;margin:0 0 4px 2px;font-size:9px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+.fc-plan-filter select{width:100%;min-height:38px;padding:7px 28px 7px 10px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);color:var(--ink);font-size:12px;box-shadow:var(--sh-1)}
+.fc-plan-filter select:focus{outline:none;border-color:var(--leaf);box-shadow:0 0 0 3px rgba(16,185,129,.13)}
+@media(max-width:520px){.fc-plan-filters{grid-template-columns:1fr 1fr}.fc-plan-filter:last-child{grid-column:1/-1}}
 .fc-stat .sv{font-size:17px;font-weight:700;display:block;line-height:1;margin-bottom:2px}
 .fc-stat .sl{font-size:10px;color:var(--ink-soft)}
 .fc-cards{display:flex;flex-direction:column;gap:8px;padding:8px 12px 4px}
@@ -2200,7 +2209,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v37';
+const APP_VERSION = 'v38';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5560,23 +5569,7 @@ function openConvScoreModal(id){
     // v9 process-fix #43 — if there's an active plan for this farmer + FC
     // within ±7 days of this visit, auto-mark it completed so the planning
     // queue doesn't accumulate stale entries after the work was actually done.
-    try {
-      const planDateMs = new Date(vdate).getTime();
-      const sevenDays = 7*24*60*60*1000;
-      const match = (DB.verificationPlans||[]).find(p =>
-        p.farmerId === f.id &&
-        p.farmerProgram === 'conv' &&
-        (p.fcId === vfc || !p.fcId) &&
-        (!p.status || p.status === 'planned') &&
-        Math.abs(new Date(p.plannedDate||0).getTime() - planDateMs) <= sevenDays
-      );
-      if(match){
-        match.status = 'completed';
-        match.statusChangedAt = new Date().toISOString();
-        match.statusChangedBy = 'auto: visit logged';
-        match.completedByVisitDate = vdate;
-      }
-    } catch(e) { /* non-fatal */ }
+    _fcAutoCompletePlan(f.id, 'conv', vdate, vfc);
     f.lastVisitAt = vdate;
     f.nextVisitDue = vnext;
     if(!f.fcId && vfc){ f.fcId = vfc; f.assignedAt = vdate; }
@@ -5916,7 +5909,7 @@ function renderNav(){
   // Tracking, no Haats config — FC's job is verifying farmers, not analytics.
   const items = adminMode ? [
     {sec:'Overview'},
-    {id:'dashboard',label:'Dashboard',ico:I.dash},
+    {id:'dashboard',label:'Manager Dashboard',ico:I.dash},
     {sec:'Organic Haat Program'},
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
@@ -5969,7 +5962,7 @@ function renderFcBottomNav(){
   const hasPending=q.new.length>0 || q.overdue.length>0;
   const dot=hasPending?'<div class="nd"></div>':'';
   const tabs=[
-    {r:'verification',p:I.check,   label:'Queue',dot},
+    {r:'verification',p:I.check,   label:'My Work',dot},
     {r:'planning',     p:I.calendar,label:'Planning'},
     {r:'fc_visits',    p:I.clock,   label:'My Visits'},
     {r:'haat',         p:I.haat,    label:'Haat Farmers'},
@@ -6308,8 +6301,14 @@ function viewFcQueue(){
   v.innerHTML=`
     <div class="fc-tb">
       <div class="fc-av" style="background:var(--accent)">${svg(I.check,2)}</div>
-      <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">Verification queue</div>
+      <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">My Work · field actions</div>
       <div style="font-size:15px;font-weight:700" id="fcQHead"></div></div>
+    </div>
+    <div class="fc-stats" style="padding-top:10px">
+      <div class="fc-stat"><span class="sv">${lists.new.length}</span><span class="sl">New</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${lists.seasonal.length}</span><span class="sl">Due now</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--red)">${lists.overdue.length}</span><span class="sl">Overdue</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--green)">${lists.completed.length}</span><span class="sl">Done recently</span></div>
     </div>
     <div class="fc-ttabs">
       <div class="fc-ttab" data-t="new">New <span class="fc-tc">${lists.new.length}</span></div>
@@ -6351,6 +6350,34 @@ function fcMonthlyPlanStats(fcId, monthStr){
   const total=plans.length;
   return {planned:total, completed, pending, completionPct: total?Math.round(completed*100/total):0};
 }
+/* Mirrors the conv-side "v9 process-fix #43" auto-complete — a Haat farm
+   verification submission should retire its matching plan the same way a
+   Conversion visit does, or the plan sits stuck as "planned"/"pending"
+   forever in Planning + My Visits even after the FC actually did the work. */
+function _fcAutoCompletePlan(farmerId, program, visitDate, fcId){
+  try{
+    // A field visit is the source of truth.  Do not leave a future-dated
+    // plan pending simply because the FC completed the work early. If more
+    // than one active plan exists, close the date closest to this visit.
+    const visitMs=new Date(visitDate).getTime();
+    const matches=(DB.verificationPlans||[]).filter(p=>
+      p.farmerId===farmerId &&
+      p.farmerProgram===program &&
+      (p.fcId===fcId || !p.fcId) &&
+      (!p.status || p.status==='planned')
+    );
+    const match=matches.sort((a,b)=>
+      Math.abs(new Date(a.plannedDate||0).getTime()-visitMs)-
+      Math.abs(new Date(b.plannedDate||0).getTime()-visitMs)
+    )[0];
+    if(match){
+      match.status='completed';
+      match.statusChangedAt=new Date().toISOString();
+      match.statusChangedBy='auto: visit logged';
+      match.completedByVisitDate=visitDate;
+    }
+  }catch(e){ /* non-fatal */ }
+}
 function viewFcPlanning(){
   const v=$('#view');
   if(!FILTERS.fcPlan) FILTERS.fcPlan={month:todayISO().slice(0,7), district:'', taluka:'', village:''};
@@ -6359,7 +6386,9 @@ function viewFcPlanning(){
   const [y,m]=F.month.split('-').map(Number);
   const monthLabel=new Date(y,m-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
 
-  const plansWithFarmer=(DB.verificationPlans||[]).filter(p=>(p.plannedDate||'').startsWith(F.month))
+  // Planning is the FC's own work plan. Team-wide allocation is manager
+  // information and belongs on the Manager Dashboard, not in this field UI.
+  const plansWithFarmer=(DB.verificationPlans||[]).filter(p=>p.fcId===myFcId && (p.plannedDate||'').startsWith(F.month))
     .map(p=>({plan:p, farmer: p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId)}))
     .filter(x=>x.farmer);
   let rows=plansWithFarmer;
@@ -6386,10 +6415,10 @@ function viewFcPlanning(){
       <div class="fc-stat"><span class="sv" style="color:var(--orange)">${stats.pending}</span><span class="sl">Pending</span></div>
       <div class="fc-stat"><span class="sv" style="color:var(--blue)">${stats.completionPct}%</span><span class="sl">Completion</span></div>
     </div>
-    <div style="display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;background:var(--panel-2)">
-      <select id="fcPlanDist" style="flex:1;min-width:100px"><option value="">All districts</option>${districts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
-      <select id="fcPlanTaluka" style="flex:1;min-width:100px"><option value="">All talukas</option>${talukas.map(t=>`<option ${F.taluka===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
-      <select id="fcPlanVillage" style="flex:1;min-width:100px"><option value="">All villages</option>${villages.map(vv=>`<option ${F.village===vv?'selected':''}>${esc(vv)}</option>`).join('')}</select>
+    <div class="fc-plan-filters">
+      <div class="fc-plan-filter"><label for="fcPlanDist">District</label><select id="fcPlanDist"><option value="">All districts</option>${districts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}</select></div>
+      <div class="fc-plan-filter"><label for="fcPlanTaluka">Taluka</label><select id="fcPlanTaluka"><option value="">All talukas</option>${talukas.map(t=>`<option ${F.taluka===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="fc-plan-filter"><label for="fcPlanVillage">Village</label><select id="fcPlanVillage"><option value="">All villages</option>${villages.map(vv=>`<option ${F.village===vv?'selected':''}>${esc(vv)}</option>`).join('')}</select></div>
     </div>
     <div class="fc-slbl">${rows.length} planned visit${rows.length===1?'':'s'}</div>
     <div class="fc-cards" id="fcPlanCards"></div>`;
@@ -6402,15 +6431,13 @@ function viewFcPlanning(){
 
   const el=$('#fcPlanCards');
   el.innerHTML=rows.length?rows.map(({plan,farmer})=>{
-    const isMine=plan.fcId===myFcId;
-    const fc=(DB.fcs||[]).find(x=>x.id===plan.fcId);
     const statusBadge=plan.status==='completed'?'<span class="fc-b fadopted">DONE</span>':plan.status==='cancelled'?'<span class="fc-b">CANCELLED</span>':'<span class="fc-b fnew">PLANNED</span>';
     return `<div class="fc-card" data-act="open" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">
       <div class="fc-ct"><div><p class="fc-nm">${esc(farmer.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(farmer.village||'—')} · ${esc(farmer.district||'—')}</p></div>${statusBadge}</div>
-      <div style="font-size:11px;color:var(--ink-soft);margin:4px 0">📅 ${esc(fmtDate(plan.plannedDate||''))} · Planned by ${esc(fc?fc.name:'—')}${!isMine?' <span style="color:var(--blue)">(other FC — read-only)</span>':''}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin:4px 0">📅 ${esc(fmtDate(plan.plannedDate||''))} · Your planned visit</div>
       ${plan.note?`<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px">${esc(plan.note)}</div>`:''}
       <div class="fc-cm"><span class="fc-idchip">${esc(farmer.id)}</span>
-        ${isMine&&(!plan.status||plan.status==='planned')?`<button class="fc-btn-v" data-act="start" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">${svg(I.check,2.5)} Start Verification</button>`:''}
+        ${(!plan.status||plan.status==='planned')?`<button class="fc-btn-v" data-act="start" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">${svg(I.check,2.5)} Start Verification</button>`:''}
       </div>
     </div>`;
   }).join(''):'<div class="fc-empty">No visits planned for this month</div>';
@@ -6515,7 +6542,7 @@ function viewFcProfile(){
 }
 
 const TITLES={
-  dashboard:['Overview','Dashboard'],
+  dashboard:['Programme oversight','Manager Dashboard'],
   farmMap:['Farm Locations','Farm Locations'],
   haat:['Organic Haat Program','Haat Farmers'],
   verification:['Organic Haat Program','Verification Queue'],
@@ -10601,28 +10628,6 @@ function openFarmerModal(program,id){
     </div>`;
     body+=fld('Crops grown',`<div class="checkgrid" id="ffCrops">${cropChecks}</div>`);
   }
-  // Haat-only: farmer's self-reported description + per-practice claims (shown to FC during verification)
-  if(program==='haat'){
-    const claims=f.selfReportedClaims||{};
-    body+=fld("Farmer's description of the farm (Gujarati OK)",
-      `<textarea id="ffDesc" rows="3" placeholder="ખેતી વિશે: કેવી પદ્ધતિ, કયા ઇનપુટ, કોઇ ખાસ વાત…">${esc(f.selfReportedDescription||'')}</textarea>`);
-    body+=`<div class="field"><label>Practices the farmer claims to follow</label>
-      <div style="font-size:11px;color:var(--ink-faint);margin-bottom:8px">Tick what the farmer says they do. Add an optional note (since when, what input, etc.). FC will verify on visit.</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px" id="ffClaims">
-        ${PRACTICES.map(p=>{
-          const c=claims[p.key]||{claimed:false,note:''};
-          return `<div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px">
-            <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
-              <input type="checkbox" data-claim="${p.key}" ${c.claimed?'checked':''}>
-              <span style="font-size:15px">${p.emoji}</span>
-              <b style="font-size:12.5px">${esc(p.label)}</b>
-            </label>
-            <input type="text" data-claim-note="${p.key}" placeholder="Note (optional)" value="${esc(c.note||'')}"
-              style="width:100%;margin-top:6px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:#fff">
-          </div>`;
-        }).join('')}
-      </div></div>`;
-  }
 
   if(program==='conv'){
     body+=`<div class="field-row">
@@ -10663,20 +10668,6 @@ function openFarmerModal(program,id){
       state:$('#ffState').value, district:$('#ffDistrict').value,
       landAcres:_land, fcId:$('#ffFc')?.value||(f.fcId||''), crops,
     };
-    // Haat extras — farm description + per-practice claims
-    let haatExtras=null;
-    if(program==='haat'){
-      const claims={};
-      ($('#ffClaims')?.querySelectorAll('input[type=checkbox][data-claim]')||[]).forEach(cb=>{
-        const k=cb.dataset.claim;
-        const noteEl=$('#ffClaims').querySelector(`input[data-claim-note="${k}"]`);
-        claims[k]={claimed:cb.checked, note:(noteEl?.value||'').trim()};
-      });
-      haatExtras={
-        selfReportedDescription:($('#ffDesc')?.value||'').trim(),
-        selfReportedClaims:claims,
-      };
-    }
     if(editing){
       // v9 process-fix #45 — FC reassignment is a sensitive operation
       // (orphans plans, breaks visit-to-FC ownership, alters scoring trail).
@@ -10709,7 +10700,6 @@ function openFarmerModal(program,id){
       if(program==='haat'){
         f.yearsOrganic=+$('#ffYears').value||0;
         f.certification=$('#ffCert').value;
-        Object.assign(f,haatExtras);
       }else{f.nextVisitDue=$('#ffNext')?.value||'';}
       // v9 audit-fix #5 — record who edited and when.
       const aE = actor();
@@ -10727,7 +10717,6 @@ function openFarmerModal(program,id){
           certification:($('#ffCert')?.value)||'Registration pending',
           haat:'',enrolledMonth:m,stage:'verification_pending',status:'pending',
           active:false,visits:[],lat:null,lng:null,
-          ...haatExtras,
         });
         logActivity('enroll',`New Haat farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }else{
@@ -13205,6 +13194,8 @@ window.addEventListener('message',async ev=>{
       const POST_DECISION = ['onboarded','decided','verified-cleared'];
       if(enoughEvidence && !POST_DECISION.includes(f.stage)) f.stage='verified';
       delete f.verificationLock;
+      // v(fc-redesign) — retire the matching plan (see farm-verification-done handler below).
+      _fcAutoCompletePlan(f.id, 'haat', (d.data.summary&&d.data.summary.date)||todayISO(), currentFcId()||f.fcId||'');
       // v9 — guard against the Firebase live-listener race wiping our writes.
       // Tracks this farmer in a session-local Map (NOT persisted to Firebase,
       // so cross-device updates from other users are NOT blocked).
@@ -13869,6 +13860,9 @@ window.addEventListener('message',async ev=>{
         if(enoughEvidence && !POST_DECISION_2.includes(f.stage)) f.stage='verified';
         // v9 H2 — release the verification lock on successful submit.
         delete f.verificationLock;
+        // v(fc-redesign) — retire the matching plan so it drops out of
+        // Planning/My Visits "pending" instead of sitting stuck forever.
+        _fcAutoCompletePlan(f.id, 'haat', d.summary?.date||todayISO(), currentFcId()||f.fcId||'');
         // v9 — guard against the live-listener race wiping our writes.
         // Tracks in a session-local Map; NOT persisted to Firebase.
         markLocalTouch('haatFarmers', f.id);
@@ -13899,6 +13893,8 @@ window.addEventListener('message',async ev=>{
       // v9 — permissive transition (was only verification_pending)
       const POST_DECISION_3 = ['onboarded','decided','verified-cleared'];
       if(!POST_DECISION_3.includes(f.stage)) f.stage='verified';
+      // v(fc-redesign) — retire the matching plan (see other branch above).
+      _fcAutoCompletePlan(f.id, 'haat', s.date||todayISO(), currentFcId()||f.fcId||'');
       markLocalTouch('haatFarmers', f.id);
       logActivity('visit',`Farm verification (Gujarati patrak) completed for <b>${esc(f.name)}</b> (${f.id})${s.verifierName?' by '+esc(s.verifierName):''}`);
       // v22 bug#5b — durable backstop: if the cloud write didn't land, queue the

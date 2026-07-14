@@ -2200,7 +2200,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v36';
+const APP_VERSION = 'v37';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5843,6 +5843,7 @@ const I={
   gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   rupee:'<path d="M6 4h12M6 8h12M14 4c4 1.5 4 7.5 0 8H8l8 8"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
 };
 const svg=(p,w)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w||2}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 
@@ -5956,18 +5957,23 @@ function _fcMyName(){
 function _fcTopbar(av,sub,title,extra=''){
   return `<div class="fc-tb"><div class="fc-av">${av}</div><div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">${sub}</div><div style="font-size:15px;font-weight:700">${title}</div></div>${extra}</div>`;
 }
+/* v(fc-redesign) Phase 1 — final 5-tab nav (Queue/Planning/My Visits/Haat
+   Farmers/Profile). Conversion no longer has its own tab — Conversion
+   verification work now flows through the same unified Queue/Planning/My
+   Visits as Haat (per the redesign spec); approved Conversion farmers are
+   reachable via a toggle inside Haat Farmers instead (Phase 5). */
 function renderFcBottomNav(){
   let el=document.getElementById('fc-bnav');
   if(!el){el=document.createElement('div');el.id='fc-bnav';document.body.appendChild(el);}
-  const hasPending=(DB.haatFarmers||[]).some(f=>f.stage==='verification_pending')||
-                   (DB.haatFarmers||[]).some(isSeasonalVerificationDue);
+  const q=getFcQueueLists();
+  const hasPending=q.new.length>0 || q.overdue.length>0;
   const dot=hasPending?'<div class="nd"></div>':'';
   const tabs=[
-    {r:'haat',      p:I.haat,  label:'Haat'},
-    {r:'conversion',p:I.leaf,  label:'Conversion'},
-    {r:'verification',p:I.check,label:'Queue',dot},
-    {r:'fc_visits', p:I.clock, label:'Visits'},
-    {r:'fc_profile',p:I.user,  label:'Profile'},
+    {r:'verification',p:I.check,   label:'Queue',dot},
+    {r:'planning',     p:I.calendar,label:'Planning'},
+    {r:'fc_visits',    p:I.clock,   label:'My Visits'},
+    {r:'haat',         p:I.haat,    label:'Haat Farmers'},
+    {r:'fc_profile',   p:I.user,    label:'Profile'},
   ];
   el.innerHTML=tabs.map(t=>`
     <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}">
@@ -5978,50 +5984,94 @@ function renderFcBottomNav(){
     b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
   });
 }
-function _fcHaatCards(farmers,F){
+/* ===== v(fc-redesign) Phase 5 — Haat Farmers, reference-only =====
+   No verify button, no editable modal — approved farmers only, tap a card
+   for a read-only profile (allocation, verification history, next seasonal
+   due). Toggle browses approved Conversion farmers too, since Conversion no
+   longer has its own bottom-nav tab (folded into Queue/Planning/Visits). */
+function openFcRefModal(program, id){
+  const f = program==='conv' ? (DB.convFarmers||[]).find(x=>x.id===id) : (DB.haatFarmers||[]).find(x=>x.id===id);
+  if(!f) return;
+  const visits=(f.visits||[]).slice().reverse();
+  let h = `<div class="detail-grid">
+    <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village||'—')}</div></div>
+    <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(f.taluka||'—')}</div></div>
+    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district||'—')}</div></div>
+    <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone||'—')}</div></div>
+    <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||'—'} acres</div></div>
+    <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic||'—'} yrs</div></div>
+    <div class="detail-cell full"><div class="k">Crops</div><div class="v">${(f.crops||[]).map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')||'—'}</div></div>
+  </div>`;
+  if(program==='conv'){
+    const cat=convCategory(f);
+    const catLabel={pending:'Not yet assessed',red:'Not adopting',yellow:'In progress',green:'Adopted'}[cat]||cat;
+    h += `<div class="subhead">Adoption status</div><div class="hint" style="margin-bottom:14px"><b>${esc(catLabel)}</b>${f.nextVisitDue?' · Next visit due '+esc(fmtDate(f.nextVisitDue)):''}</div>`;
+  } else {
+    h += `<div class="subhead">Haat allocation</div><div class="hint" style="margin-bottom:14px">
+      ${f.haat?'<b>'+esc(f.haat)+'</b> · '+(f.active?'Active':'Inactive'):'Not yet assigned to a haat'}
+      ${isSeasonalVerificationDue(f)?'<br>⚠ Seasonal re-verification due'+(isSeasonalVerificationOverdue(f)?' (overdue)':''):''}
+    </div>`;
+  }
+  h += `<div class="subhead">Verification history (${visits.length})</div>`;
+  if(!visits.length){
+    h += `<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No visits recorded yet.</div>`;
+  } else {
+    h += '<div class="timeline">' + visits.map(vis=>{
+      const vfc=(DB.fcs||[]).find(x=>x.id===vis.fc);
+      return `<div class="tl-item"><div class="tl-card">
+        <div class="tl-date">${esc(fmtDate(vis.date||''))}</div>
+        <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${vis.score!=null?' · Score '+vis.score:''}</div>
+      </div></div>`;
+    }).join('') + '</div>';
+  }
+  modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h, `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
+}
+function _fcRefCards(farmers,F,program){
   let rows=[...farmers];
   if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
   const visible=rows.slice(0,F.lim),more=rows.length-F.lim;
   const ce=document.getElementById('fcHCount');if(ce)ce.textContent=rows.length+' farmers';
   const el=document.getElementById('fcHCards');if(!el)return;
   el.innerHTML=`${visible.length?visible.map(f=>{
-    const isPending=f.stage==='verification_pending';
-    const isSeasonal=isSeasonalVerificationDue(f);
-    const badge=isSeasonal?'<span class="fc-b seasonal">SEASONAL</span>':isPending?'<span class="fc-b fnew">NEW</span>':'';
-    const btn=(isPending||isSeasonal)?`<button class="fc-btn-v" data-act="vfy" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button>`:'';
+    const dueNote = program==='haat' && isSeasonalVerificationDue(f) ? '<span class="fc-b seasonal">RE-CHECK DUE</span>' : '';
     return`<div class="fc-card" data-act="open" data-id="${esc(f.id)}">
-      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>${badge}</div>
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}${btn}</div>
+      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>${dueNote}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${program==='haat'&&f.haat?`<span class="fc-lv">${svg(I.haat,2)} ${esc(f.haat)}</span>`:''}</div>
     </div>`;
-  }).join(''):'<div class="fc-empty">No farmers found</div>'}
+  }).join(''):'<div class="fc-empty">No approved farmers found</div>'}
   ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcHMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
-  const mb=document.getElementById('fcHMore');if(mb)mb.onclick=()=>{F.lim+=50;_fcHaatCards(farmers,F);};
-  el.querySelectorAll('[data-act="vfy"]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
-  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('[data-act="vfy"]'))return;openFarmerModal('haat',c.dataset.id);};});
+  const mb=document.getElementById('fcHMore');if(mb)mb.onclick=()=>{F.lim+=50;_fcRefCards(farmers,F,program);};
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=()=>{openFcRefModal(program,c.dataset.id);};});
 }
 function viewFcHaat(){
   const v=$('#view');
   const name=_fcMyName();
-  const farmers=(DB.haatFarmers||[]).filter(f=>!f._archived);   // archived hidden from FCs
-  const hs=haatStats();
-  const planned=farmers.reduce((n,f)=>n+((f.plannedVisits||[]).filter(p=>p.date>=todayISO()).length),0);
-  if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50};
+  if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50,prog:'haat'};
   const F=FILTERS.fcH;
+  const approvedHaat=(DB.haatFarmers||[]).filter(f=>!f._archived && f.status==='green');
+  const approvedConv=(DB.convFarmers||[]).filter(f=>!f._archived && convCategory(f)==='green');
+  const farmers = F.prog==='conv' ? approvedConv : approvedHaat;
   v.innerHTML=`
-    ${_fcTopbar(esc(name[0]||'F').toUpperCase(),'Haat farmers',esc(name))}
+    ${_fcTopbar(esc(name[0]||'F').toUpperCase(),'Reference only — no verification actions here',esc(name))}
+    <div style="background:var(--panel-2)">
+      <div class="fc-pills">
+        <div class="fc-pill${F.prog==='haat'?' active':''}" data-prog="haat">🛒 Haat (${approvedHaat.length})</div>
+        <div class="fc-pill${F.prog==='conv'?' active':''}" data-prog="conv">🌱 Conversion (${approvedConv.length})</div>
+      </div>
+    </div>
     <div class="fc-stats">
-      <div class="fc-stat"><span class="sv">${farmers.length}</span><span class="sl">Total</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--red)">${hs.pending}</span><span class="sl">Pending</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${farmers.filter(isSeasonalVerificationDue).length}</span><span class="sl">Seasonal</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--blue)">${planned}</span><span class="sl">Planned</span></div>
+      <div class="fc-stat"><span class="sv">${farmers.length}</span><span class="sl">Approved</span></div>
+      ${F.prog==='haat'?`<div class="fc-stat"><span class="sv" style="color:var(--green)">${farmers.filter(f=>f.active).length}</span><span class="sl">Active</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${farmers.filter(isSeasonalVerificationDue).length}</span><span class="sl">Re-check due</span></div>`:''}
     </div>
     <div style="background:var(--panel-2)">
       <div class="fc-srch">${svg(I.filter,2)}<input id="fcHSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
       <div class="fc-slbl" id="fcHCount"></div>
     </div>
     <div class="fc-cards" id="fcHCards"></div>`;
-  const si=$('#fcHSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcHaatCards(farmers,F);};
-  _fcHaatCards(farmers,F);
+  v.querySelectorAll('.fc-pill').forEach(p=>{p.onclick=()=>{F.prog=p.dataset.prog;F.q='';F.lim=50;render();};});
+  const si=$('#fcHSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcRefCards(farmers,F,F.prog);};
+  _fcRefCards(farmers,F,F.prog);
 }
 function _fcConvCards(farmers,F){
   const catLabel={'pending':'Pending','red':'Struggling','yellow':'In Progress','green':'Adopted'};
@@ -6090,37 +6140,171 @@ function viewFcConversion(){
   const si=$('#fcCSrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcConvCards(farmers,F);};
   _fcConvCards(farmers,F);
 }
-function _fcQueueCards(lists,planned,F){
-  const cur=lists[F.tab]||[];
+/* ===== v(fc-redesign) Phase 1 — unified Verification Queue =====
+   Single work queue combining Haat + Conversion farmers into 4 buckets
+   (New Applications / Seasonal Due / Overdue / Completed) instead of two
+   separate program-specific lists — per the FC app redesign spec. */
+
+// Bucket for one HAAT farmer, or null if there's no queue work for them right
+// now (e.g. already onboarded and not yet due, or rejected/on hold — closed
+// out, nothing left in the FC's queue).
+function _fcHaatBucket(f){
+  if(f.stage==='verification_pending') return 'new';
+  if(isSeasonalVerificationOverdue(f)) return 'overdue';
+  if(isSeasonalVerificationDue(f)) return 'seasonal';
+  if(f.stage==='verified') return 'completed';   // submitted, awaiting Senior Review
+  return null;
+}
+// Bucket for one CONVERSION farmer. Conversion has no admin-decision gate
+// (auto-scored — see the Conversion funnel redesign), so "completed" is
+// capped to a recent window; otherwise every adopted farmer would sit in
+// the queue forever, defeating the point of a work queue.
+function _fcConvBucket(f){
+  const cat = convCategory(f);
+  if(cat==='pending') return 'new';
+  if(f.nextVisitDue){
+    const daysPast = daysBetween(f.nextVisitDue, todayISO());
+    if(daysPast > DAYS_OVERDUE_VISIT) return 'overdue';
+    if(daysPast >= 0) return 'seasonal';
+  }
+  const lv = f.lastVisitAt || lastVisitDate(f);
+  if(lv && daysBetween(lv, todayISO()) <= 14) return 'completed';
+  return null;   // fully settled, nothing due — not queue work
+}
+function _fcPlanFor(farmerId, program){
+  return (DB.verificationPlans||[]).find(p =>
+    p.farmerId===farmerId && p.farmerProgram===program && (!p.status || p.status==='planned'));
+}
+function _fcCropLabel(f){
+  const c=(f.crops||[])[0];
+  if(!c) return '—';
+  const extra=(f.crops||[]).length>1 ? ' +'+((f.crops||[]).length-1) : '';
+  return cropDisplayName(c)+extra;
+}
+function _fcVerifTypeLabel(program, bucket){
+  if(program==='conv') return 'Conversion';
+  return {new:'New', seasonal:'Seasonal', overdue:'Overdue', completed:'Verification'}[bucket] || 'Verification';
+}
+function _fcStatusLabel(program, bucket){
+  if(bucket==='new') return 'Pending field visit';
+  if(bucket==='seasonal') return 'Seasonal re-check due';
+  if(bucket==='overdue') return 'Overdue';
+  if(bucket==='completed') return program==='conv' ? 'Assessed' : 'Awaiting Senior Review';
+  return '';
+}
+function buildFcQueueItem(f, program, bucket){
+  const plan = _fcPlanFor(f.id, program);
+  const plannedByFc = plan ? (DB.fcs||[]).find(x=>x.id===plan.fcId) : null;
+  return {
+    id:f.id, program, bucket, farmer:f,
+    name:f.name||'—', village:f.village||'—', district:f.district||'—',
+    crop:_fcCropLabel(f),
+    applicationDate:f.enrolledAt||f.submittedAt||'',
+    verificationType:_fcVerifTypeLabel(program,bucket),
+    plannedBy:plannedByFc?plannedByFc.name:null,
+    plannedDate:plan?plan.plannedDate:null,
+    status:_fcStatusLabel(program,bucket),
+  };
+}
+function getFcQueueLists(){
+  const lists={new:[],seasonal:[],overdue:[],completed:[]};
+  (DB.haatFarmers||[]).filter(f=>!f._archived).forEach(f=>{
+    const b=_fcHaatBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'haat',b));
+  });
+  (DB.convFarmers||[]).filter(f=>!f._archived).forEach(f=>{
+    const b=_fcConvBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'conv',b));
+  });
+  Object.keys(lists).forEach(k=>lists[k].sort((a,b)=>(a.applicationDate||'').localeCompare(b.applicationDate||'')));
+  return lists;
+}
+// Lightweight single-farmer "Plan Visit" modal — the Queue's entry point
+// into planning (per spec: "FC selects farmers directly from the
+// Verification Queue. FC assigns a visit date."). Writes DB.verificationPlans
+// (+ f.plannedVisits for haat, matching openPlanVisitModal/openCreatePlanModal).
+function openFcPlanVisitModal(program, farmerId){
+  const f = program==='conv' ? (DB.convFarmers||[]).find(x=>x.id===farmerId) : (DB.haatFarmers||[]).find(x=>x.id===farmerId);
+  if(!f) return;
+  const existing = _fcPlanFor(farmerId, program);
+  if(existing){
+    const fcName=((DB.fcs||[]).find(x=>x.id===existing.fcId)||{}).name||'someone';
+    toast(f.name+' is already planned by '+fcName+' on '+fmtDate(existing.plannedDate||''));
+    return;
+  }
+  const today=todayISO(), defaultDate=addDaysISO(today,7);
+  const myFc=currentFcId()||'';
+  const body=`<div class="hint" style="margin-bottom:12px">Planning a visit for <b>${esc(f.name)}</b> (${esc(f.village||'—')}, ${esc(f.district||'—')}).</div>
+    ${fld('Visit date',`<input type="date" id="fcpvDate" value="${defaultDate}" min="${today}">`,true)}
+    ${fld('Note (optional)',`<input id="fcpvNote" placeholder="e.g. cluster visit">`)}`;
+  modalShell('Plan visit',body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="fcpvSave">${svg(I.check)}Save plan</button>`);
+  $('#fcpvSave').onclick=async()=>{
+    const date=$('#fcpvDate').value||defaultDate;
+    const note=$('#fcpvNote').value.trim();
+    DB.verificationPlans=DB.verificationPlans||[];
+    DB.verificationPlans.push(stamp({
+      id:uid('PLAN'), farmerId, farmerProgram:program, fcId:myFc,
+      plannedDate:date, type:program==='conv'?'conv':(f.status==='green'?'seasonal':'new'),
+      status:'planned', note, createdAt:new Date().toISOString(),
+    }));
+    if(program==='haat'){
+      f.plannedVisits=f.plannedVisits||[];
+      f.plannedVisits.push({date, fcId:myFc, note, createdAt:todayISO()});
+    }
+    logActivity('visit',`📅 Visit planned — <b>${esc(f.name)}</b> · ${esc(fmtDate(date))}`);
+    await saveDB(); closeModal(); render();
+    toast('Visit planned for '+fmtDate(date));
+  };
+}
+function _fcQueueCardHtml(item){
+  const bucketCls={new:'fnew',seasonal:'seasonal',overdue:'fstruggling',completed:'fadopted'}[item.bucket]||'fnew';
+  return `<div class="fc-card" data-act="open" data-id="${esc(item.id)}" data-program="${item.program}">
+    <div class="fc-ct"><div><p class="fc-nm">${esc(item.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(item.village)} · ${esc(item.district)}</p></div>
+    <span class="fc-b ${bucketCls}">${esc(item.verificationType.toUpperCase())}</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">
+      <span>🌾 ${esc(item.crop)}</span>
+      ${item.applicationDate?`<span>· 📅 ${esc(fmtDate(item.applicationDate))}</span>`:''}
+      <span>· ${esc(item.status)}</span>
+    </div>
+    ${item.plannedBy?`<div style="font-size:11px;color:var(--blue);margin-bottom:6px">📌 Planned by ${esc(item.plannedBy)}${item.plannedDate?' on '+esc(fmtDate(item.plannedDate)):''}</div>`:''}
+    <div class="fc-cm"><span class="fc-idchip">${esc(item.id)}</span>
+      <div style="display:flex;gap:6px;margin-left:auto">
+        ${!item.plannedBy&&item.bucket!=='completed'?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.clock,2)} Plan Visit</button>`:''}
+        <button class="fc-btn-v" data-act="verify" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.check,2.5)} Open Application</button>
+      </div>
+    </div>
+  </div>`;
+}
+function _fcQueueRender(lists,F){
+  const cur=(lists[F.tab]||[]).filter(item=>{
+    if(!F.q) return true;
+    const q=F.q.toLowerCase();
+    return item.name.toLowerCase().includes(q)||item.id.toLowerCase().includes(q)||item.village.toLowerCase().includes(q);
+  });
   document.querySelectorAll('.fc-ttab').forEach(t=>t.classList.toggle('active',t.dataset.t===F.tab));
-  const he=document.getElementById('fcQHead');if(he)he.textContent=cur.length+' pending';
+  const he=document.getElementById('fcQHead');if(he)he.textContent=cur.length+' in this queue';
   const ce=document.getElementById('fcQCount');if(ce)ce.textContent=cur.length+' farmers';
   const el=document.getElementById('fcQCards');if(!el)return;
-  el.innerHTML=`${cur.length?cur.map(f=>{
-    const isSea=F.tab==='seasonal';
-    const planDate=F.tab==='planning'?(planned.find(x=>x.f.id===f.id)||{p:{}}).p.date:'';
-    return`<div class="fc-card">
-      <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
-      <span class="fc-b ${isSea?'seasonal':'fnew'}">${isSea?'SEASONAL':planDate?fmtDate(planDate):'NEW'}</span></div>
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
-      ${f.enrolledAt?`<span class="fc-lv">${(f.enrolledAt||'').slice(0,7)}</span>`:''}
-      <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
-    </div>`;
-  }).join(''):'<div class="fc-empty">All clear — no pending verifications</div>'}`;
-  el.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=()=>openVerificationForm(b.dataset.id);});
+  el.innerHTML=cur.length?cur.map(_fcQueueCardHtml).join(''):'<div class="fc-empty">All clear — nothing in this bucket</div>';
+  el.querySelectorAll('[data-act="verify"]').forEach(b=>{b.onclick=e=>{
+    e.stopPropagation();
+    if(b.dataset.program==='conv') openConvScoreModal(b.dataset.id);
+    else openVerificationForm(b.dataset.id);
+  };});
+  el.querySelectorAll('[data-act="plan"]').forEach(b=>{b.onclick=e=>{
+    e.stopPropagation();
+    openFcPlanVisitModal(b.dataset.program, b.dataset.id);
+  };});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{
+    if(e.target.closest('[data-act="verify"],[data-act="plan"]')) return;
+    openFarmerModal(c.dataset.program==='conv'?'conv':'haat', c.dataset.id);
+  };});
 }
 function viewFcQueue(){
   const v=$('#view');
-  if(!FILTERS.fcQ) FILTERS.fcQ={tab:'new'};
+  if(!FILTERS.fcQ) FILTERS.fcQ={tab:'new',q:''};
   const F=FILTERS.fcQ;
-  const farmers=DB.haatFarmers||[];
-  const newF=farmers.filter(f=>f.stage==='verification_pending');
-  const seasonal=farmers.filter(isSeasonalVerificationDue);
-  const today=todayISO();
-  const planned=[];
-  farmers.forEach(f=>(f.plannedVisits||[]).forEach(p=>{if(p.date>=today)planned.push({f,p});}));
-  planned.sort((a,b)=>a.p.date>b.p.date?1:-1);
-  const lists={new:newF,seasonal,planning:planned.map(x=>x.f)};
+  const lists=getFcQueueLists();
   v.innerHTML=`
     <div class="fc-tb">
       <div class="fc-av" style="background:var(--accent)">${svg(I.check,2)}</div>
@@ -6128,53 +6312,191 @@ function viewFcQueue(){
       <div style="font-size:15px;font-weight:700" id="fcQHead"></div></div>
     </div>
     <div class="fc-ttabs">
-      <div class="fc-ttab" data-t="new">New <span class="fc-tc">${newF.length}</span></div>
-      <div class="fc-ttab" data-t="seasonal">Seasonal <span class="fc-tc">${seasonal.length}</span></div>
-      <div class="fc-ttab" data-t="planning">Planning <span class="fc-tc">${planned.length}</span></div>
+      <div class="fc-ttab" data-t="new">New <span class="fc-tc">${lists.new.length}</span></div>
+      <div class="fc-ttab" data-t="seasonal">Seasonal <span class="fc-tc">${lists.seasonal.length}</span></div>
+      <div class="fc-ttab" data-t="overdue">Overdue <span class="fc-tc">${lists.overdue.length}</span></div>
+      <div class="fc-ttab" data-t="completed">Completed <span class="fc-tc">${lists.completed.length}</span></div>
     </div>
+    <div class="fc-srch">${svg(I.filter,2)}<input id="fcQSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
     <div class="fc-slbl" id="fcQCount"></div>
     <div class="fc-cards" id="fcQCards"></div>`;
-  document.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;_fcQueueCards(lists,planned,F);};});
-  _fcQueueCards(lists,planned,F);
+  document.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;_fcQueueRender(lists,F);};});
+  const si=$('#fcQSrch');if(si)si.oninput=e=>{F.q=e.target.value;_fcQueueRender(lists,F);};
+  _fcQueueRender(lists,F);
 }
+
+/* ===== v(fc-redesign) Phase 2 — Monthly Planning module =====
+   fcMonthlyPlanStats is shared with the rebuilt Profile screen (Phase 6) so
+   both surfaces compute the same numbers the same way. */
+// Add/subtract whole months from a 'YYYY-MM' string via pure integer
+// arithmetic — NOT new Date(...).toISOString(), which converts to UTC and
+// silently returns the WRONG month for any user west of UTC... in a
+// UTC+5:30 timezone like India, local midnight Aug 1 becomes July 31
+// 18:30 UTC, so .toISOString().slice(0,7) reads back "2026-07", not
+// "2026-08". Caught this exact bug live-testing "Next month" — it never
+// advanced. (todayISO() elsewhere in this file has the same latent pattern,
+// but only misfires in a ~6-hour late-night/early-morning IST window;
+// out of scope to fix everywhere here, flagging separately.)
+function _monthAddISO(monthStr, delta){
+  const [y,m]=monthStr.split('-').map(Number);
+  let ny=y, nm=m+delta;
+  while(nm>12){nm-=12;ny++;}
+  while(nm<1){nm+=12;ny--;}
+  return ny+'-'+String(nm).padStart(2,'0');
+}
+function fcMonthlyPlanStats(fcId, monthStr){
+  const plans=(DB.verificationPlans||[]).filter(p=>p.fcId===fcId && (p.plannedDate||'').startsWith(monthStr));
+  const completed=plans.filter(p=>p.status==='completed').length;
+  const pending=plans.filter(p=>!p.status||p.status==='planned').length;
+  const total=plans.length;
+  return {planned:total, completed, pending, completionPct: total?Math.round(completed*100/total):0};
+}
+function viewFcPlanning(){
+  const v=$('#view');
+  if(!FILTERS.fcPlan) FILTERS.fcPlan={month:todayISO().slice(0,7), district:'', taluka:'', village:''};
+  const F=FILTERS.fcPlan;
+  const myFcId=currentFcId();
+  const [y,m]=F.month.split('-').map(Number);
+  const monthLabel=new Date(y,m-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+
+  const plansWithFarmer=(DB.verificationPlans||[]).filter(p=>(p.plannedDate||'').startsWith(F.month))
+    .map(p=>({plan:p, farmer: p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId)}))
+    .filter(x=>x.farmer);
+  let rows=plansWithFarmer;
+  if(F.district) rows=rows.filter(x=>x.farmer.district===F.district);
+  if(F.taluka)   rows=rows.filter(x=>x.farmer.taluka===F.taluka);
+  if(F.village)  rows=rows.filter(x=>x.farmer.village===F.village);
+  rows=rows.slice().sort((a,b)=>(a.plan.plannedDate||'').localeCompare(b.plan.plannedDate||''));
+
+  const stats=fcMonthlyPlanStats(myFcId, F.month);
+  const districts=[...new Set(plansWithFarmer.map(x=>x.farmer.district).filter(Boolean))].sort();
+  const talukas=[...new Set(plansWithFarmer.map(x=>x.farmer.taluka).filter(Boolean))].sort();
+  const villages=[...new Set(plansWithFarmer.map(x=>x.farmer.village).filter(Boolean))].sort();
+
+  v.innerHTML=`
+    ${_fcTopbar(svg(I.clock,2),'Planning',monthLabel)}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--panel-2)">
+      <button class="btn btn-ghost btn-sm" id="fcPlanPrev">← Prev</button>
+      <b style="font-size:13.5px">${esc(monthLabel)}</b>
+      <button class="btn btn-ghost btn-sm" id="fcPlanNext">Next →</button>
+    </div>
+    <div class="fc-stats">
+      <div class="fc-stat"><span class="sv">${stats.planned}</span><span class="sl">Planned</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--green)">${stats.completed}</span><span class="sl">Completed</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${stats.pending}</span><span class="sl">Pending</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--blue)">${stats.completionPct}%</span><span class="sl">Completion</span></div>
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;background:var(--panel-2)">
+      <select id="fcPlanDist" style="flex:1;min-width:100px"><option value="">All districts</option>${districts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
+      <select id="fcPlanTaluka" style="flex:1;min-width:100px"><option value="">All talukas</option>${talukas.map(t=>`<option ${F.taluka===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
+      <select id="fcPlanVillage" style="flex:1;min-width:100px"><option value="">All villages</option>${villages.map(vv=>`<option ${F.village===vv?'selected':''}>${esc(vv)}</option>`).join('')}</select>
+    </div>
+    <div class="fc-slbl">${rows.length} planned visit${rows.length===1?'':'s'}</div>
+    <div class="fc-cards" id="fcPlanCards"></div>`;
+
+  $('#fcPlanPrev').onclick=()=>{F.month=_monthAddISO(F.month,-1);render();};
+  $('#fcPlanNext').onclick=()=>{F.month=_monthAddISO(F.month,1);render();};
+  $('#fcPlanDist').onchange=e=>{F.district=e.target.value;render();};
+  $('#fcPlanTaluka').onchange=e=>{F.taluka=e.target.value;render();};
+  $('#fcPlanVillage').onchange=e=>{F.village=e.target.value;render();};
+
+  const el=$('#fcPlanCards');
+  el.innerHTML=rows.length?rows.map(({plan,farmer})=>{
+    const isMine=plan.fcId===myFcId;
+    const fc=(DB.fcs||[]).find(x=>x.id===plan.fcId);
+    const statusBadge=plan.status==='completed'?'<span class="fc-b fadopted">DONE</span>':plan.status==='cancelled'?'<span class="fc-b">CANCELLED</span>':'<span class="fc-b fnew">PLANNED</span>';
+    return `<div class="fc-card" data-act="open" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">
+      <div class="fc-ct"><div><p class="fc-nm">${esc(farmer.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(farmer.village||'—')} · ${esc(farmer.district||'—')}</p></div>${statusBadge}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin:4px 0">📅 ${esc(fmtDate(plan.plannedDate||''))} · Planned by ${esc(fc?fc.name:'—')}${!isMine?' <span style="color:var(--blue)">(other FC — read-only)</span>':''}</div>
+      ${plan.note?`<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px">${esc(plan.note)}</div>`:''}
+      <div class="fc-cm"><span class="fc-idchip">${esc(farmer.id)}</span>
+        ${isMine&&(!plan.status||plan.status==='planned')?`<button class="fc-btn-v" data-act="start" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">${svg(I.check,2.5)} Start Verification</button>`:''}
+      </div>
+    </div>`;
+  }).join(''):'<div class="fc-empty">No visits planned for this month</div>';
+
+  el.querySelectorAll('[data-act="start"]').forEach(b=>{b.onclick=e=>{
+    e.stopPropagation();
+    if(b.dataset.program==='conv') openConvScoreModal(b.dataset.id);
+    else openVerificationForm(b.dataset.id);
+  };});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{
+    if(e.target.closest('[data-act="start"]')) return;
+    openFarmerModal(c.dataset.program==='conv'?'conv':'haat', c.dataset.id);
+  };});
+}
+
+/* ===== v(fc-redesign) Phase 3 — My Visits =====
+   Rebuilt to show ONLY the logged-in FC's own plans (the old version read
+   f.plannedVisits across every farmer regardless of which FC planned it —
+   every FC saw everyone's visits mixed together). Reads DB.verificationPlans
+   directly now that Phase 0 unified planning onto that single source. */
 function viewFcVisits(){
   const v=$('#view');
+  if(!FILTERS.fcMyVisits) FILTERS.fcMyVisits={tab:'today'};
+  const F=FILTERS.fcMyVisits;
+  const myFcId=currentFcId();
   const today=todayISO();
-  const planned=[];
-  (DB.haatFarmers||[]).forEach(f=>(f.plannedVisits||[]).forEach(p=>{if(p.date>=today)planned.push({f,p});}));
-  planned.sort((a,b)=>a.p.date>b.p.date?1:-1);
+  const mine=(DB.verificationPlans||[])
+    .filter(p=>p.fcId===myFcId)
+    .map(p=>({plan:p, farmer: p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId)}))
+    .filter(x=>x.farmer && x.plan.status!=='cancelled');
+  const buckets={
+    today: mine.filter(x=>x.plan.status!=='completed' && x.plan.plannedDate===today),
+    upcoming: mine.filter(x=>x.plan.status!=='completed' && x.plan.plannedDate>today),
+    completed: mine.filter(x=>x.plan.status==='completed'),
+  };
+  Object.values(buckets).forEach(arr=>arr.sort((a,b)=>(a.plan.plannedDate||'').localeCompare(b.plan.plannedDate||'')));
+  const cur=buckets[F.tab]||[];
   v.innerHTML=`
-    ${_fcTopbar(svg(I.clock,2),'Upcoming visits',`${planned.length} planned`)}
-    <div class="fc-slbl">${planned.length} upcoming visits</div>
-    <div class="fc-cards">
-      ${planned.length?planned.map(({f,p})=>`
-        <div class="fc-card" data-act="open" data-id="${esc(f.id)}">
-          <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div>
-          <span class="fc-b fnew">${fmtDate(p.date)}</span></div>
-          <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>
-          ${p.note?`<span class="fc-lv">${esc(p.note.slice(0,28))}</span>`:''}
-          <button class="fc-btn-v" data-id="${esc(f.id)}">${svg(I.check,2.5)} Verify</button></div>
-        </div>`).join(''):'<div class="fc-empty">No visits planned yet</div>'}
+    ${_fcTopbar(svg(I.clock,2),'My visits',`${mine.length} total`)}
+    <div class="fc-ttabs">
+      <div class="fc-ttab${F.tab==='today'?' active':''}" data-t="today">Today <span class="fc-tc">${buckets.today.length}</span></div>
+      <div class="fc-ttab${F.tab==='upcoming'?' active':''}" data-t="upcoming">Upcoming <span class="fc-tc">${buckets.upcoming.length}</span></div>
+      <div class="fc-ttab${F.tab==='completed'?' active':''}" data-t="completed">Completed <span class="fc-tc">${buckets.completed.length}</span></div>
+    </div>
+    <div class="fc-slbl">${cur.length} visit${cur.length===1?'':'s'}</div>
+    <div class="fc-cards" id="fcVisitCards"></div>`;
+  v.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;render();};});
+  const el=$('#fcVisitCards');
+  el.innerHTML=cur.length?cur.map(({plan,farmer})=>{
+    const isDone=plan.status==='completed';
+    return `<div class="fc-card" data-act="open" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">
+      <div class="fc-ct"><div><p class="fc-nm">${esc(farmer.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(farmer.village||'—')} · ${esc(farmer.district||'—')}</p></div>
+      <span class="fc-b ${isDone?'fadopted':'fnew'}">${isDone?'DONE':esc(fmtDate(plan.plannedDate||''))}</span></div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(farmer.id)}</span>
+      ${plan.note?`<span class="fc-lv">${esc(plan.note.slice(0,28))}</span>`:''}
+      ${!isDone?`<button class="fc-btn-v" data-act="start" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">${svg(I.check,2.5)} Start Verification</button>`:''}
+      </div>
     </div>`;
-  v.querySelectorAll('.fc-btn-v').forEach(b=>{b.onclick=e=>{e.stopPropagation();openVerificationForm(b.dataset.id);};});
-  v.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{if(e.target.closest('.fc-btn-v'))return;openFarmerModal('haat',c.dataset.id);};});
+  }).join(''):'<div class="fc-empty">Nothing here</div>';
+  el.querySelectorAll('[data-act="start"]').forEach(b=>{b.onclick=e=>{
+    e.stopPropagation();
+    if(b.dataset.program==='conv') openConvScoreModal(b.dataset.id);
+    else openVerificationForm(b.dataset.id);
+  };});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=e=>{
+    if(e.target.closest('[data-act="start"]')) return;
+    openFarmerModal(c.dataset.program==='conv'?'conv':'haat', c.dataset.id);
+  };});
 }
+/* v(fc-redesign) Phase 6 — Monthly Planned/Completed/Pending, computed via
+   the same fcMonthlyPlanStats() the Planning module uses, so the two
+   screens always agree with each other. */
 function viewFcProfile(){
   const v=$('#view');
   const fcId=SESSION&&SESSION.userId;
   const fcObj=(DB.fcs||[]).find(f=>f.id===fcId)||{};
   const name=fcObj.name||(SESSION&&SESSION.userName)||'FC';
-  const now=Date.now();const cutoff=new Date();cutoff.setDate(cutoff.getDate()-90);
-  let visits90=0;
-  (DB.haatFarmers||[]).forEach(f=>(f.visits||[]).forEach(visit=>{
-    if(visit.fc===fcId&&visit.date&&new Date(visit.date)>=cutoff)visits90++;
-  }));
+  const stats=fcMonthlyPlanStats(fcId, todayISO().slice(0,7));
   v.innerHTML=`
     ${_fcTopbar(esc((name[0]||'F').toUpperCase()),'My profile',esc(name))}
+    <div class="fc-slbl">This month's visits</div>
     <div class="fc-stats">
-      <div class="fc-stat"><span class="sv">${(DB.haatFarmers||[]).length}</span><span class="sl">Haat</span></div>
-      <div class="fc-stat"><span class="sv">${(DB.convFarmers||[]).filter(f=>f.fcId===fcId).length}</span><span class="sl">My Conversion</span></div>
-      <div class="fc-stat"><span class="sv">${visits90}</span><span class="sl">Visits (90d)</span></div>
+      <div class="fc-stat"><span class="sv">${stats.planned}</span><span class="sl">Planned</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--green)">${stats.completed}</span><span class="sl">Completed</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${stats.pending}</span><span class="sl">Pending</span></div>
+      <div class="fc-stat"><span class="sv" style="color:var(--blue)">${stats.completionPct}%</span><span class="sl">Completion</span></div>
     </div>
     <div class="fc-cards">
       <div class="fc-card" style="cursor:default">
@@ -12271,6 +12593,7 @@ function render(){
   if(!isAdminUser()){
     renderFcBottomNav();
     ({haat:viewFcHaat,conversion:viewFcConversion,verification:viewFcQueue,
+      planning:viewFcPlanning,
       fc_visits:viewFcVisits,fc_profile:viewFcProfile,
       public_landing:renderPublicLanding,
       public_haat_form:viewPublicHaatForm,

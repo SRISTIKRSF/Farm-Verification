@@ -2103,7 +2103,7 @@ setTimeout(()=>{
 </body>
 </html>`;
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4028,7 +4028,6 @@ window.QUESTIONS_V5 = [
   {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         type:'textarea',askedOf:'both'},
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
-  {id:'crops_table',  cat:'farm', gu:'અત્યારના ઉગેલા પાક', en:'Main crops grown (up to 3)', type:'crops_table', askedOf:'both'},
   {id:'plot_crops_table', cat:'farm', gu:'1 મે 2026 થી સંભવિત પાકોની વિગત — પ્રાકૃતિક ખેતરમાં વાવેલ પાકો (ખેતર/પ્લોટ દીઠ)', en:'Expected crops from 1 May 2026 — crops sown in the organic farm (per plot)', type:'stat_cards',
     addable:true, maxRows:5, itemLabel:{gu:'પ્રાકૃતિક ખેતરનું સ્થાનિક નામ', en:'Local name of the organic farm/plot'},
     fields:[
@@ -4181,7 +4180,7 @@ window.QUESTIONS_V5 = [
    dedup, etc.) — the Question Manager lets you edit their text/options/
    required flag/section but not delete them or change their id.
    ============================================================= */
-window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','crops_table'];
+window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table'];
 window.DEFAULT_CATEGORIES_V5 = JSON.parse(JSON.stringify(window.CATEGORIES_V5));
 window.DEFAULT_QUESTIONS_V5  = JSON.parse(JSON.stringify(window.QUESTIONS_V5));
 const QSCHEMA_KEY_V5 = 'krsf_question_schema_v5';
@@ -4317,11 +4316,37 @@ function cropDisplayName(raw){
   _cropNormCache.set(s, s); return s;
 }
 
+/* v9 — crops_table (fixed 3-row current-crops list) was replaced by
+   plot_crops_table (per-plot, season-wise free-text crops: monsoon/winter/
+   summer main+secondary). That table has no `.name` field per row, so
+   anything reading crop NAMES (Crops column, crop filter, CSV export) needs
+   a derived flat name list. Split each season's free text on common
+   delimiters and normalise each token through cropDisplayName(). Best-effort
+   — free text won't always match the canonical catalog, but this beats
+   showing no crops at all for every farmer enrolled after the switch. */
+function plotCropsToNameRows(rows){
+  const seen = new Set(), out = [];
+  (rows||[]).forEach(r => {
+    ['monsoonCrop','winterCrop','summerCrop'].forEach(k => {
+      const raw = r && r[k];
+      if(!raw) return;
+      String(raw).split(/[,+&/]|તથા|અને|\band\b/gi).map(s=>s.trim()).filter(Boolean).forEach(tok => {
+        const name = cropDisplayName(tok);
+        const key = name.toLowerCase();
+        if(!seen.has(key)){ seen.add(key); out.push({name}); }
+      });
+    });
+  });
+  return out;
+}
+window.plotCropsToNameRows = plotCropsToNameRows;
+
 /* Single source of truth for "what crops does this farmer currently grow?".
    Resolution order:
      1. cropHistory[last]  - most recent admin/FC update (v6)
-     2. enrollmentFormFull.claims[crops_table].answer - v5 enrolment
-     3. f.crops legacy short string array (v3 fallback)                 */
+     2. enrollmentFormFull.claims[crops_table].answer - legacy v5 enrolment (pre-v9)
+     3. enrollmentFormFull.claims[plot_crops_table].answer - derived names (v9+)
+     4. f.crops legacy short string array (v3 fallback)                 */
 window.getFarmerCrops = function(f){
   if(!f) return [];
   if(Array.isArray(f.cropHistory) && f.cropHistory.length){
@@ -4332,6 +4357,8 @@ window.getFarmerCrops = function(f){
     const claims = e.claims || (e._full && e._full.claims) || [];
     const cropsClaim = claims.find(c => c.id === 'crops_table');
     if(cropsClaim && Array.isArray(cropsClaim.answer)) return cropsClaim.answer;
+    const plotClaim = claims.find(c => c.id === 'plot_crops_table');
+    if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length) return plotCropsToNameRows(plotClaim.answer);
     if(Array.isArray(e.crops_table)) return e.crops_table;
   }
   if(Array.isArray(f.crops)) return f.crops.map(c => typeof c==='string' ? {name:c} : c);
@@ -12497,8 +12524,12 @@ window.addEventListener('message',async ev=>{
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
           const cropsClaim = claims.find(c => c.id === 'crops_table');
+          const plotClaim  = claims.find(c => c.id === 'plot_crops_table');
           if(cropsClaim && Array.isArray(cropsClaim.answer) && cropsClaim.answer.length){
             rec.crops = cropsClaim.answer.map(r => (r && r.name ? r.name.trim() : '')).filter(Boolean);
+          } else if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length){
+            // v9 — crops_table replaced by plot_crops_table; derive names from season fields.
+            rec.crops = plotCropsToNameRows(plotClaim.answer).map(r => r.name);
           }
           if(FB && FB.ready){
             try { await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))); } catch(e) { console.warn('haatFarmer full update:',e); }
@@ -12521,9 +12552,13 @@ window.addEventListener('message',async ev=>{
         last.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
         /* v6 - populate legacy f.crops from v5 crops_table claim so the Haat
            Farmers table CROPS column renders names. Also seed cropHistory[0]
-           as the first snapshot taken from the enrolment. */
+           as the first snapshot taken from the enrolment.
+           v9 - crops_table (fixed 3-row list) replaced by plot_crops_table
+           (per-plot, season-wise free-text crops); fall back to deriving
+           names from it when there's no legacy crops_table claim. */
         const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
         const cropsClaim = claims.find(c => c.id === 'crops_table');
+        const plotClaim  = claims.find(c => c.id === 'plot_crops_table');
         if(cropsClaim && Array.isArray(cropsClaim.answer) && cropsClaim.answer.length){
           last.crops = cropsClaim.answer.map(r => (r && r.name ? r.name.trim() : '')).filter(Boolean);
           last.cropHistory = last.cropHistory || [];
@@ -12532,6 +12567,16 @@ window.addEventListener('message',async ev=>{
             by: 'enrolment',
             reason: 'Initial enrolment snapshot',
             crops: cropsClaim.answer.map(r => Object.assign({}, r))
+          });
+        } else if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length){
+          const nameRows = plotCropsToNameRows(plotClaim.answer);
+          last.crops = nameRows.map(r => r.name);
+          last.cropHistory = last.cropHistory || [];
+          last.cropHistory.push({
+            at: d.data._submittedAt || new Date().toISOString(),
+            by: 'enrolment',
+            reason: 'Initial enrolment snapshot (per-plot crops)',
+            crops: nameRows
           });
         }
         await saveDB(true);

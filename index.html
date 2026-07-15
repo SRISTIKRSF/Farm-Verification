@@ -1160,6 +1160,16 @@ function buildCropRows(){
    real data are kept (fixed rows with nothing filled in are dropped on submit,
    matching how crops_table drops blank rows). */
 function buildStatCards(){
+  // Live cross-frame read of the parent app's master crop catalog — same
+  // pattern already used for the district/taluka cascade below, so this
+  // stays correct automatically as the catalog grows, no postMessage payload
+  // to keep in sync.
+  try{
+    const catalog = (window.parent && window.parent.CROPS_CATALOG) || [];
+    let dl = document.getElementById('cropSuggestList');
+    if(!dl){ dl = document.createElement('datalist'); dl.id = 'cropSuggestList'; document.body.appendChild(dl); }
+    dl.innerHTML = catalog.filter(c => c !== 'Other (અન્ય)').map(c => '<option value="'+esc(c)+'">').join('');
+  }catch(e){ /* non-fatal — falls back to plain free text */ }
   QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => renderOneStatCards(q));
 }
 function cascadeGatedStatCards(sourceId){
@@ -1194,8 +1204,14 @@ function renderOneStatCards(q){
           + '</div>';
       const fieldsHtml = q.fields.map(f => {
         const val = savedRow ? (savedRow[f.key]||'') : '';
+        // Crop-name fields (monsoonCrop/winterCrop/summerCrop) get a searchable
+        // suggestion list from the parent app's master crop catalog — was plain
+        // free text with zero catalog backing, so farmers/FCs saw stale/no
+        // suggestions at all here. Free text stays allowed (a plot's "main +
+        // secondary crop" doesn't always match one catalog entry).
+        const isCropField = /crop/i.test(f.key);
         return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block">'+esc(f.gu)+'</label>'
-          + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
+          + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+(isCropField?' list="cropSuggestList"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
       }).join('');
       return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
         + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
@@ -2248,7 +2264,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v47';
+const APP_VERSION = 'v48';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

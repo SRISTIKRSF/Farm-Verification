@@ -2248,7 +2248,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v45';
+const APP_VERSION = 'v46';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6408,8 +6408,15 @@ function _fcQueueSectionKey(item){
   return item.bucket==='new' ? 'newApplications' : 'seasonalVerifications';
 }
 function _fcQueueCardHtml(item){
-  const sec=FC_QUEUE_SECTIONS[_fcQueueSectionKey(item)];
-  const isUrgent=item.bucket==='overdue';
+  const secKey=_fcQueueSectionKey(item);
+  const sec=FC_QUEUE_SECTIONS[secKey];
+  // Seasonal Verifications: "Overdue" in My Work is a flat 180-days-since-last-
+  // visit rule (no grace period) — distinct from isSeasonalVerificationOverdue()
+  // elsewhere in the app, which adds a 15-day grace before flagging overdue.
+  // Scoped to this queue only, per explicit request.
+  const isUrgent = secKey==='seasonalVerifications'
+    ? (()=>{ const lv=item.farmer.lastVisitAt||lastVisitDate(item.farmer); return lv ? daysBetween(lv, todayISO())>180 : true; })()
+    : item.bucket==='overdue';
   return `<div class="fc-card fc-card-v2" data-act="open" data-id="${esc(item.id)}" data-program="${item.program}" style="--sec-color:${sec.color};--sec-bg:${sec.bg}">
     <div class="fc-ct"><div><p class="fc-nm">${esc(item.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(item.village)} · ${esc(item.district)}</p></div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -6537,9 +6544,21 @@ function _fcAutoCompletePlan(farmerId, program, visitDate, fcId){
     }
   }catch(e){ /* non-fatal */ }
 }
+// Shared with the farmer-card badge below — plan.type ('new'|'seasonal'|'conv')
+// mapped onto the same 3 categories/colors as the "My Work" queue, so a
+// planned farmer reads identically wherever it's shown.
+const PLAN_TYPES=[
+  {type:'new',      sectionKey:'newApplications'},
+  {type:'conv',     sectionKey:'conversionFarmers'},
+  {type:'seasonal', sectionKey:'seasonalVerifications'},
+];
+function _planTypeTag(type){
+  const pt=PLAN_TYPES.find(x=>x.type===type)||PLAN_TYPES[0];
+  return FC_QUEUE_SECTIONS[pt.sectionKey];
+}
 function viewFcPlanning(){
   const v=$('#view');
-  if(!FILTERS.fcPlan) FILTERS.fcPlan={month:todayISO().slice(0,7), district:'', taluka:'', village:'', status:''};
+  if(!FILTERS.fcPlan) FILTERS.fcPlan={month:todayISO().slice(0,7), district:'', taluka:'', village:'', status:'', type:''};
   const F=FILTERS.fcPlan;
   const myFcId=currentFcId();
   const [y,m]=F.month.split('-').map(Number);
@@ -6556,6 +6575,11 @@ function viewFcPlanning(){
   if(F.village)  rows=rows.filter(x=>x.farmer.village===F.village);
   if(F.status==='completed') rows=rows.filter(x=>x.plan.status==='completed');
   if(F.status==='pending')   rows=rows.filter(x=>!x.plan.status||x.plan.status==='planned');
+  // Type counts computed before the type filter itself, so the chips still
+  // show every category's count while one is selected (not just the current 0).
+  const typeCounts={new:0,conv:0,seasonal:0};
+  rows.forEach(x=>{ const t=x.plan.type||'new'; if(typeCounts[t]!==undefined) typeCounts[t]++; });
+  if(F.type) rows=rows.filter(x=>(x.plan.type||'new')===F.type);
   rows=rows.slice().sort((a,b)=>(a.plan.plannedDate||'').localeCompare(b.plan.plannedDate||''));
 
   const stats=fcMonthlyPlanStats(myFcId, F.month);
@@ -6593,6 +6617,13 @@ function viewFcPlanning(){
       <b style="font-size:13.5px">${esc(monthLabel)}</b>
       <button class="btn btn-ghost btn-sm" id="fcPlanNext">Next →</button>
     </div>
+    <div style="display:flex;gap:8px;padding:10px 16px 0;flex-wrap:wrap">
+      ${PLAN_TYPES.map(pt=>{
+        const sec=FC_QUEUE_SECTIONS[pt.sectionKey];
+        const active=F.type===pt.type;
+        return `<span class="fc-tag" data-typef="${pt.type}" style="cursor:pointer;--sec-color:${sec.color};--sec-bg:${sec.bg};${active?'box-shadow:0 0 0 1.5px '+sec.color:''}">${svg(sec.icon,2)}${esc(sec.tab)} (${typeCounts[pt.type]||0})</span>`;
+      }).join('')}
+    </div>
     <div class="fc-stats">
       <div class="fc-stat"><span class="sv">${stats.planned}</span><span class="sl">Total</span></div>
       <div class="fc-stat fc-stat-click${F.status==='completed'?' active':''}" data-statf="completed" style="cursor:pointer"><span class="sv" style="color:var(--green)">${stats.completed}</span><span class="sl">Completed</span></div>
@@ -6604,7 +6635,7 @@ function viewFcPlanning(){
       <div class="fc-plan-filter"><label for="fcPlanTaluka">Taluka</label><select id="fcPlanTaluka"><option value="">All talukas</option>${talukas.map(t=>`<option ${F.taluka===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
       <div class="fc-plan-filter"><label for="fcPlanVillage">Village</label><select id="fcPlanVillage"><option value="">All villages</option>${villages.map(vv=>`<option ${F.village===vv?'selected':''}>${esc(vv)}</option>`).join('')}</select></div>
     </div>
-    <div class="fc-slbl">${rows.length} ${F.status==='completed'?'completed':F.status==='pending'?'pending':'planned'} visit${rows.length===1?'':'s'}${F.status?` <span style="color:var(--accent);cursor:pointer" id="fcPlanClearStatus">(clear)</span>`:''}</div>
+    <div class="fc-slbl">${rows.length} ${F.status==='completed'?'completed':F.status==='pending'?'pending':'planned'}${F.type?' · '+esc(FC_QUEUE_SECTIONS[PLAN_TYPES.find(pt=>pt.type===F.type).sectionKey].tab):''} visit${rows.length===1?'':'s'}${F.status?` <span style="color:var(--accent);cursor:pointer" id="fcPlanClearStatus">(clear)</span>`:''}</div>
     <div class="fc-cards" id="fcPlanCards"></div>`;
 
   $('#fcPlanPrev').onclick=()=>{F.month=_monthAddISO(F.month,-1);render();};
@@ -6618,10 +6649,16 @@ function viewFcPlanning(){
     render();
   };});
   if($('#fcPlanClearStatus')) $('#fcPlanClearStatus').onclick=()=>{F.status='';render();};
+  v.querySelectorAll('[data-typef]').forEach(t=>{t.onclick=()=>{
+    const k=t.dataset.typef;
+    F.type=(F.type===k)?'':k;   // click again to clear the filter
+    render();
+  };});
 
   const el=$('#fcPlanCards');
   el.innerHTML=rows.length?rows.map(({plan,farmer})=>{
-    const statusBadge=plan.status==='completed'?'<span class="fc-b fadopted">DONE</span>':plan.status==='cancelled'?'<span class="fc-b">CANCELLED</span>':'<span class="fc-b fnew">PLANNED</span>';
+    const typeSec=_planTypeTag(plan.type);
+    const statusBadge=plan.status==='completed'?'<span class="fc-b fadopted">DONE</span>':plan.status==='cancelled'?'<span class="fc-b">CANCELLED</span>':`<span class="fc-tag" style="--sec-color:${typeSec.color};--sec-bg:${typeSec.bg}">${svg(typeSec.icon,2)}${esc(typeSec.tag)}</span>`;
     return `<div class="fc-card" data-act="open" data-id="${esc(farmer.id)}" data-program="${plan.farmerProgram}">
       <div class="fc-ct"><div><p class="fc-nm">${esc(farmer.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(farmer.village||'—')} · ${esc(farmer.district||'—')}</p></div>${statusBadge}</div>
       <div style="font-size:11px;color:var(--ink-soft);margin:4px 0">📅 ${esc(fmtDate(plan.plannedDate||''))} · Your planned visit</div>

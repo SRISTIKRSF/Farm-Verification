@@ -1199,7 +1199,7 @@ function renderOneStatCards(q){
       const heading = isFixed
         ? '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>'
         : '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-          + '<input type="text" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;flex:1;font-family:inherit">'
+          + '<input type="text" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item"'+(q.itemIsCrop?' list="cropSuggestList"':'')+' value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;flex:1;font-family:inherit">'
           + (rows.length>1 ? '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>' : '')
           + '</div>';
       const fieldsHtml = q.fields.map(f => {
@@ -2264,7 +2264,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4344,15 +4344,17 @@ window.QUESTIONS_V5 = [
   {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         type:'textarea',askedOf:'both'},
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
-  {id:'plot_crops_table', cat:'farm', gu:'1 મે 2026 થી સંભવિત પાકોની વિગત — પ્રાકૃતિક ખેતરમાં વાવેલ પાકો (ખેતર/પ્લોટ દીઠ)', en:'Expected crops from 1 May 2026 — crops sown in the organic farm (per plot)', type:'stat_cards',
-    addable:true, maxRows:5, itemLabel:{gu:'પ્રાકૃતિક ખેતરનું સ્થાનિક નામ', en:'Local name of the organic farm/plot'},
+  {id:'plot_crops_table', cat:'farm', gu:'ખેતર/પ્લોટની વિગત (સર્વે નંબર પ્રમાણે)', en:'Farm/plot details (by survey number)', type:'stat_cards',
+    addable:true, maxRows:5, itemLabel:{gu:'સર્વે નંબર', en:'Survey number'},
     fields:[
-      {key:'surveyNo',    gu:'સર્વે નંબર',                          en:'Survey number',                       type:'text'},
-      {key:'location',    gu:'લોકેશન (longitude / latitude)',       en:'Location (longitude / latitude)',     type:'text'},
-      {key:'acres',       gu:'એકર',                                  en:'Acres',                                type:'number'},
-      {key:'monsoonCrop', gu:'ચોમાસુ મુખ્ય તથા ગૌણ પાક',            en:'Monsoon — main & secondary crop',     type:'text'},
-      {key:'winterCrop',  gu:'શિયાળુ મુખ્ય તથા ગૌણ પાક',            en:'Winter — main & secondary crop',      type:'text'},
-      {key:'summerCrop',  gu:'ઉનાળુ મુખ્ય તથા ગૌણ પાક',             en:'Summer — main & secondary crop',      type:'text'},
+      {key:'acres', gu:'એકર', en:'Area (acre)', type:'number'},
+    ], askedOf:'both'},
+  {id:'major_crops_table', cat:'farm', gu:'મુખ્ય પાકોની વિગત', en:'Major crops grown', type:'stat_cards',
+    addable:true, maxRows:5, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop'}, itemIsCrop:true,
+    fields:[
+      {key:'area',       gu:'એકર',                     en:'Area (acre)',        type:'number'},
+      {key:'production', gu:'અંદાજિત ઉત્પાદન',         en:'Approx. production', type:'text'},
+      {key:'income',     gu:'અંદાજિત આવક ₹',           en:'Approx. income (₹)', type:'number'},
     ], askedOf:'both'},
   {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', type:'number', askedOf:'both'},
   {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
@@ -4496,7 +4498,7 @@ window.QUESTIONS_V5 = [
    dedup, etc.) — the Question Manager lets you edit their text/options/
    required flag/section but not delete them or change their id.
    ============================================================= */
-window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table'];
+window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table','major_crops_table'];
 window.DEFAULT_CATEGORIES_V5 = JSON.parse(JSON.stringify(window.CATEGORIES_V5));
 window.DEFAULT_QUESTIONS_V5  = JSON.parse(JSON.stringify(window.QUESTIONS_V5));
 const QSCHEMA_KEY_V5 = 'krsf_question_schema_v5';
@@ -4524,11 +4526,16 @@ function resetQuestionSchemaV5(){
 }
 /* A saved schema override in localStorage is a point-in-time SNAPSHOT — it
    never automatically picks up later changes to the core schema (like the
-   crops_table -> plot_crops_table redesign). A device that customized this
-   form before that redesign silently freezes on the OLD crops question
-   forever, across every future deploy, since nothing ever re-checks it.
-   Self-heal on every load: known rename handled explicitly, plus a generic
-   safety net for any other core question missing from a stale override. */
+   crops_table -> plot_crops_table redesign, or plot_crops_table itself later
+   splitting into plot_crops_table + major_crops_table). A device that
+   customized this form before any such redesign silently freezes on the OLD
+   shape forever, across every future deploy, since nothing ever re-checks it.
+   Self-heal on every load: the specific crops_table->plot_crops_table rename
+   is handled explicitly, plus a generic safety net that restores any core
+   question's structural definition (fields/type/addable/etc, developer-owned
+   — Question Manager only lets admins edit text/options, never id or field
+   shape) when it's missing OR has drifted from the live default. Any
+   admin-edited label text on a drifted question is preserved. */
 function reconcileCoreQuestionsV5(){
   let changed = false;
   const oldIdx = window.QUESTIONS_V5.findIndex(q=>q.id==='crops_table');
@@ -4543,9 +4550,19 @@ function reconcileCoreQuestionsV5(){
     changed = true;
   }
   (window.CORE_QUESTION_IDS_V5||[]).forEach(cid=>{
-    if(!window.QUESTIONS_V5.some(q=>q.id===cid)){
-      const def = window.DEFAULT_QUESTIONS_V5.find(q=>q.id===cid);
-      if(def){ window.QUESTIONS_V5.push(JSON.parse(JSON.stringify(def))); changed = true; }
+    const def = window.DEFAULT_QUESTIONS_V5.find(q=>q.id===cid);
+    if(!def) return;
+    const idx = window.QUESTIONS_V5.findIndex(q=>q.id===cid);
+    if(idx<0){
+      window.QUESTIONS_V5.push(JSON.parse(JSON.stringify(def)));
+      changed = true;
+    } else if(JSON.stringify(window.QUESTIONS_V5[idx].fields||null) !== JSON.stringify(def.fields||null)
+           || window.QUESTIONS_V5[idx].type !== def.type){
+      const cur = window.QUESTIONS_V5[idx];
+      window.QUESTIONS_V5[idx] = Object.assign({}, JSON.parse(JSON.stringify(def)), {
+        gu: cur.gu || def.gu, en: cur.en || def.en, req: cur.req,
+      });
+      changed = true;
     }
   });
   return changed;
@@ -4800,12 +4817,24 @@ function plotCropsToNameRows(rows){
 }
 window.plotCropsToNameRows = plotCropsToNameRows;
 
+/* major_crops_table (v10+) is the real fix for the plot-derivation problem
+   above — real catalog-backed crop names (item field, searchable) instead of
+   guessing from free text. Rows are kept as {name, area, yield, income} to
+   match the shape crops_table's legacy answer already used. */
+function majorCropsToNameRows(rows){
+  return (rows||[]).filter(r => r && r.item).map(r => ({
+    name: cropDisplayName(r.item), area: r.area, yield: r.production, income: r.income,
+  }));
+}
+window.majorCropsToNameRows = majorCropsToNameRows;
+
 /* Single source of truth for "what crops does this farmer currently grow?".
    Resolution order:
      1. cropHistory[last]  - most recent admin/FC update (v6)
      2. enrollmentFormFull.claims[crops_table].answer - legacy v5 enrolment (pre-v9)
-     3. enrollmentFormFull.claims[plot_crops_table].answer - derived names (v9+)
-     4. f.crops legacy short string array (v3 fallback)                 */
+     3. enrollmentFormFull.claims[major_crops_table].answer - real catalog names (v10+)
+     4. enrollmentFormFull.claims[plot_crops_table].answer - derived names (v9 only, before major_crops_table existed)
+     5. f.crops legacy short string array (v3 fallback)                 */
 window.getFarmerCrops = function(f){
   if(!f) return [];
   if(Array.isArray(f.cropHistory) && f.cropHistory.length){
@@ -4816,6 +4845,8 @@ window.getFarmerCrops = function(f){
     const claims = e.claims || (e._full && e._full.claims) || [];
     const cropsClaim = claims.find(c => c.id === 'crops_table');
     if(cropsClaim && Array.isArray(cropsClaim.answer)) return cropsClaim.answer;
+    const majorClaim = claims.find(c => c.id === 'major_crops_table');
+    if(majorClaim && Array.isArray(majorClaim.answer) && majorClaim.answer.length) return majorCropsToNameRows(majorClaim.answer);
     const plotClaim = claims.find(c => c.id === 'plot_crops_table');
     if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length) return plotCropsToNameRows(plotClaim.answer);
     if(Array.isArray(e.crops_table)) return e.crops_table;
@@ -13398,9 +13429,13 @@ window.addEventListener('message',async ev=>{
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
           const cropsClaim = claims.find(c => c.id === 'crops_table');
+          const majorClaim = claims.find(c => c.id === 'major_crops_table');
           const plotClaim  = claims.find(c => c.id === 'plot_crops_table');
           if(cropsClaim && Array.isArray(cropsClaim.answer) && cropsClaim.answer.length){
             rec.crops = cropsClaim.answer.map(r => (r && r.name ? r.name.trim() : '')).filter(Boolean);
+          } else if(majorClaim && Array.isArray(majorClaim.answer) && majorClaim.answer.length){
+            // v10 — real catalog-backed crop names from the redesigned crops question.
+            rec.crops = majorCropsToNameRows(majorClaim.answer).map(r => r.name);
           } else if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length){
             // v9 — crops_table replaced by plot_crops_table; derive names from season fields.
             rec.crops = plotCropsToNameRows(plotClaim.answer).map(r => r.name);
@@ -13432,6 +13467,7 @@ window.addEventListener('message',async ev=>{
            names from it when there's no legacy crops_table claim. */
         const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
         const cropsClaim = claims.find(c => c.id === 'crops_table');
+        const majorClaim = claims.find(c => c.id === 'major_crops_table');
         const plotClaim  = claims.find(c => c.id === 'plot_crops_table');
         if(cropsClaim && Array.isArray(cropsClaim.answer) && cropsClaim.answer.length){
           last.crops = cropsClaim.answer.map(r => (r && r.name ? r.name.trim() : '')).filter(Boolean);
@@ -13441,6 +13477,17 @@ window.addEventListener('message',async ev=>{
             by: 'enrolment',
             reason: 'Initial enrolment snapshot',
             crops: cropsClaim.answer.map(r => Object.assign({}, r))
+          });
+        } else if(majorClaim && Array.isArray(majorClaim.answer) && majorClaim.answer.length){
+          // v10 — real catalog-backed crop names from the redesigned crops question.
+          const nameRows = majorCropsToNameRows(majorClaim.answer);
+          last.crops = nameRows.map(r => r.name);
+          last.cropHistory = last.cropHistory || [];
+          last.cropHistory.push({
+            at: d.data._submittedAt || new Date().toISOString(),
+            by: 'enrolment',
+            reason: 'Initial enrolment snapshot',
+            crops: nameRows
           });
         } else if(plotClaim && Array.isArray(plotClaim.answer) && plotClaim.answer.length){
           const nameRows = plotCropsToNameRows(plotClaim.answer);

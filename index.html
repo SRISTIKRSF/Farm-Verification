@@ -2228,7 +2228,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v40';
+const APP_VERSION = 'v41';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4519,14 +4519,72 @@ const CONV_STATUS={
    v6 — CROPS LIFECYCLE
    Crop catalogue + season tags + history-aware reader.
    ============================================================ */
+/* v(crop-catalog) — merged with Sristi's own 159-item khedut-haat product list
+   (user-supplied master, 2026-07-15). The original 33 stayed (they cover cash/
+   commodity crops — cotton, soybean, mustard, sesame, castor, cumin, groundnut —
+   that aren't sold at a haat and so don't appear in a haat product list); 144 new
+   items were added, skipping the ones already present verbatim. */
 window.CROPS_CATALOG = [
-  'Potato (બટાકા)','Wheat (ઘઉં)','Cotton (કપાસ)','Paddy / Rice (ડાંગર)','Maize (મકાઈ)',
-  'Tomato (ટામેટા)','Onion (ડુંગળી)','Okra / Bhindi (ભીંડા)','Soybean (સોયાબીન)','Castor (દિવેલ)',
-  'Cumin (જીરુ)','Groundnut (મગફળી)','Tur / Arhar (તુવેર)','Moong (મગ)','Chana (ચણા)',
-  'Mustard (રાઇ)','Sesame (તલ)','Bajri (બાજરી)','Jowar (જુવાર)','Sugarcane (શેરડી)',
-  'Turmeric (હળદર)','Ginger (આદુ)','Garlic (લસણ)','Brinjal (રીંગણ)','Cabbage (કોબી)',
-  'Cauliflower (ફુલગોબી)','Coriander (કોથમીર)','Methi (મેથી)','Spinach (પાલક)',
-  'Mango (કેરી)','Banana (કેળા)','Papaya (પપઈયા)','Guava (જામફળ)','Other (અન્ય)'
+  "Potato (બટાકા)","Wheat (ઘઉં)","Cotton (કપાસ)",
+  "Paddy / Rice (ડાંગર)","Maize (મકાઈ)","Tomato (ટામેટા)",
+  "Onion (ડુંગળી)","Okra / Bhindi (ભીંડા)","Soybean (સોયાબીન)",
+  "Castor (દિવેલ)","Cumin (જીરુ)","Groundnut (મગફળી)",
+  "Tur / Arhar (તુવેર)","Moong (મગ)","Chana (ચણા)",
+  "Mustard (રાઇ)","Sesame (તલ)","Bajri (બાજરી)",
+  "Jowar (જુવાર)","Sugarcane (શેરડી)","Turmeric (હળદર)",
+  "Ginger (આદુ)","Garlic (લસણ)","Brinjal (રીંગણ)",
+  "Cabbage (કોબી)","Cauliflower (ફુલગોબી)","Coriander (કોથમીર)",
+  "Methi (મેથી)","Spinach (પાલક)","Mango (કેરી)",
+  "Banana (કેળા)","Papaya (પપઈયા)","Guava (જામફળ)",
+  "Mango ginger (આંબા હળદર)","Spine gourd / Kantola (કંકોળા (કંટોલા))","Karingda (wild round melon) (કારીંગડા)",
+  "Bitter gourd (કારેલા)","Capsicum (કેપ્સિકમ)","Wood apple (કોંઠા)",
+  "Cabbage (કોબીજ)","Pumpkin (કોળું)","Cucumber (ખીરા કાકડી)",
+  "Sponge gourd (ગલકા)","Carrot (ગાજર)","Lasoda / Gunda (ગુંદા)",
+  "Cluster bean (ગુવાર)","Long melon (ચીભડા)","Cowpea (fresh pods) (ચોળી)",
+  "Ivy gourd / Tindora (ટીંડોળા)","Tinda / Apple gourd (ટીમસા)","Ridge gourd (તુરિયા)",
+  "Bottle gourd (દૂધી)","Native gooseberry (Amla) (દેશી આમળાં)","Native cucumber (દેશી કાકડી)",
+  "Pointed gourd / Parwal (પરવળ)","French beans (ફણસી)","Cauliflower (ફ્લાવર)",
+  "Beetroot (બીટ)","Broccoli (બ્રોકોલી)","Chili / Green chili (મરચા)",
+  "Radish (મૂળા)","Mogri radish (મોગરી)","Purple yam (રતાળુ)",
+  "Ravaiya (small round brinjal, stuffing variety) (રવૈયા)","Red-yellow Capsicum (લાલ-પીળા કેપ્સિકમ)","Lemon (લીંબુ)",
+  "Green pigeon pea (fresh Tur) (લીલી તુવેર)","Green / fresh Turmeric (લીલી હળદર)","Green garlic (લીલું લસણ)",
+  "Lettuce (લેટ્યુસ)","Green peas (વટાણા)","Flat beans (Vaal papdi) (વાલોળ પાપડી)",
+  "Sweet potato (શક્કરીયું)","Drumstick (Moringa) (સરગવો)","Elephant foot yam (સુરણ)",
+  "Surti papdi (flat beans) (સુરતી પાપડી)","Sweet corn (સ્વીટકોર્ન)","Ajwain leaves (અજમાના પાન)",
+  "Allspice leaves (ઓલસ્પાઈસ પાન)","Coriander leaves (કોથમીર (લીલા ધાણા))","Sour Okra (Roselle) (ખાટી ભીંડી)",
+  "Giloy / Guduchi (ગળો)","Dodi greens (Jivanti) (ડોડીની ભાજી (જીવંતી))","Amaranth greens (Tandalja) (તાંદળજો)",
+  "Tulsi / Basil leaves (તુલસીના પાન)","Betel leaves (Paan) (નાગરવેલના પાન (કલકત્તિ પાન ))","Colocasia leaves (Patra) (પાત્રા)",
+  "Spinach (પાલખ)","Punarnava (પુનર્નવા)","Mint (ફુદીનો)",
+  "Brahmi (બ્રાહ્મી)","Bhumi Amla (Phyllanthus) (ભોંય આંબલી)","Curry leaves (sweet neem) (મીઠો લીમડો)",
+  "Green tea leaves (લીલી ચા)","Luni greens (Purslane) (લુણી ભાજી)","Monsoon-season edible flower (વર્ષાડોડીના ફૂલ)",
+  "Vaseti greens (વાસેટીની ભાજી)","Fig (અંજીર)","Karonda (કરમદાં)",
+  "Raw / Green Banana (કાચા કેળા)","Raw Papaya (કાચા પપૈયા)","Raw Mango (કાચી કેરી)",
+  "Black Jamun (કાળા જાંબુ)","Kiwi (કીવી)","Dates (ખજૂર)",
+  "Fresh Red Dates (Kharek) (ખારેક લાલ)","Gundi (Cordia fruit) (ગુંદી)","Manila tamarind (Gorus Amli) (ગોરસઆંબલી)",
+  "Chikoo / Sapota (ચીકુ)","Tapioca (ટેપિઓકા)","Dragon fruit (ડ્રેગન-ફ્રૂટ)",
+  "Watermelon (તળબૂચ)","Pomegranate (દાડમ)","Papaya (પપૈયા)",
+  "Pineapple (પાઈનેપલ)","Ripe Banana (પાકા કેળા)","Ripe Mango (પાકી કેરી)",
+  "Pomelo (પામેલો)","Fresh Yellow Dates (પીળી ખારેક)","Falsa (ફાલસા)",
+  "Prickly pear (ફીંડલા)","Bael fruit (બીલીપત્રના ફળ)","Sweet lime / Mosambi (મોસંબી)",
+  "Rayan (Khirni) (રાયણ)","Green / Tender coconut (લીલું નારિયેળ)","Muskmelon (શક્કરટેટી)",
+  "Water chestnut (શિંગોડા)","Orange (સંતરા (નારંગી))","Apple (સફરજન)",
+  "Custard apple (સીતાફળ)","Mulberry (સેતુર)","Strawberry (સ્ટ્રોબેરી)",
+  "A2 Ghee Biscuit (A2 ઘી બીસ્કિટ)","A2 Cheese (A2 ચીઝ)","A2 Milk (A2 દૂધ)",
+  "Kankrej Cow Ghee (કાકરેજ ગાય ઘી)","Gir Cow Ghee (ગીર ગાય ઘી)","Chocolate Spread (ચોકલેટ સ્પ્રેડ)",
+  "Buttermilk (છાશ)","Natural Ice Cream (નેચરલ આઇસક્રીમ)","Paneer (પનીર)",
+  "Mango Shrikhand (મેંગો શ્રીખંડ)","Churned Butter (વલોણાનું માખણ)","Healthy Nutribar (હેલ્થી ન્યુટ્રીબાર)",
+  "Urad (whole) (અડદ)","Urad dal (અડદની દાળ)","Urad Mogar dal (અડદની મોગર દાળ)",
+  "Horse gram (કળથી)","Kabuli Chana (કાબુલી ચણા (છોલે ચણા))","Chana dal (ચણા દાળ)",
+  "Cowpea, dried (Red, White) (ચોળી (લાલ, સફેદ))","Tur dal (તુવેર દાળ)","Desi Chana (દેશી ચણા)",
+  "Desi Val (Field bean) (દેશી વાલ)","Moong dal (મગ દાળ)","Moong Mogar dal (મગની મોગર દાળ)",
+  "Moth bean (મઠ)","Masoor dal (મસૂર દાળ)","Rajma / Kidney beans (રાજમા)",
+  "Whole Barley (આખા જવ)","Foxtail millet (Kang) (કાંગ)","Quinoa (કિનોવા)",
+  "Kodo millet (કોદરી)","Wheat (Bansi) (ઘઉં (બંસી))","Wheat (Sona Moti) (ઘઉં (સોના મોતી ))",
+  "Rice (ચોખા)","Barley (dehusked) (જવ (ફોતરા વગર))","Poha (flattened rice) (પૌઆ)",
+  "Cracked grain mix (Dalia) (ફાડા (ઘઉં, જુવાર, બાજરી, જવ, મકાઈ))","Banti (grain variety) (બંટી)","Puffed rice (Mamra) (મમરા)",
+  "Barnyard millet (Moraiyo) (મોરૈયો)","Ragi / Finger millet (રાગી)","Rajgira / Amaranth grain (રાજગરો)",
+  "Little millet (Samo) (સામો)","Semolina (Suji) (સોજી)","Foxtail millet (Hari Kang) (હરિ કાંગ)",
+  "Other (અન્ય)",
 ];
 window.CROP_SEASONS = ['Kharif (ખરીફ)','Rabi (રવિ)','Year-round','Perennial'];
 

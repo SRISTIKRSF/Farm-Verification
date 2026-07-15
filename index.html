@@ -2228,7 +2228,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v43';
+const APP_VERSION = 'v44';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4191,8 +4191,16 @@ function currentFcId(){ return SESSION && SESSION.role === 'fc' ? SESSION.userId
    farmer with no district set is visible to every FC (so it can't silently
    vanish from every queue just because its district field is blank). */
 function fcAssignedDistricts(){
-  const fc=(DB.fcs||[]).find(x=>x.id===currentFcId());
-  return (fc && Array.isArray(fc.districts)) ? fc.districts : [];
+  // v(district-scoping) — districts live on the USER account (config/users,
+  // edited in Settings -> Users), not on the DB.fcs roster record. Users is
+  // the real source of truth here (see reconcileFcsFromUsers's own comment:
+  // "config/users is the single source of truth — the Team roster follows
+  // it") — matching on fcCode since that's what SESSION.userId holds for an
+  // FC login (see the SESSION={..userId:authUser.fcCode..} assignment).
+  const myFcCode=currentFcId();
+  if(!myFcCode) return [];
+  const u=(typeof getUsersList==='function'?getUsersList():[]).find(x=>x.role==='fc' && x.fcCode===myFcCode);
+  return (u && Array.isArray(u.districts)) ? u.districts : [];
 }
 function _fcCanSeeFarmer(f){
   const ds=fcAssignedDistricts();
@@ -10887,11 +10895,7 @@ function openFcModal(id){
     ${fld('State',sel('fcState',stateOpts,cur.state),true)}
     ${fld('District',sel('fcDist',distOpts,cur.district),true)}
   </div>
-  ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}
-  ${fld('Assigned districts (field visibility)',
-    `<div class="hint" style="margin-bottom:8px">Tick the districts this facilitator covers. They'll only see farmers in these districts. Leave blank to see everyone (default, unrestricted).</div>
-     <div class="checkgrid" id="fcDistricts">${GUJARAT_DISTRICTS.map(d=>
-       `<label><input type="checkbox" value="${esc(d)}" ${(cur.districts||[]).includes(d)?'checked':''}>${esc(d)}</label>`).join('')}</div>`)}`;
+  ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}`;
   modalShell(editing?'Edit facilitator — '+esc(f.name):'Add facilitator',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="saveFc">${svg(I.check)}${editing?'Save changes':'Add facilitator'}</button>`);
@@ -10899,11 +10903,10 @@ function openFcModal(id){
   $('#saveFc').onclick=async()=>{
     const name=$('#fcName').value.trim();
     if(!name){toast('Name is required');return;}
-    const districts=[...$('#fcDistricts').querySelectorAll('input:checked')].map(c=>c.value);
     const data={
       name, phone:$('#fcPhone').value.trim(),
       state:$('#fcState').value, district:$('#fcDist').value,
-      partner:$('#fcPartner').value, districts,
+      partner:$('#fcPartner').value,
     };
     if(editing){
       Object.assign(f,data);
@@ -14531,6 +14534,10 @@ function openUserModal(userId) {
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">FC Code <span style="font-weight:400;color:var(--ink-faint)">(e.g. FC004)</span></label>
         <input id="umFcCode" value="${editing ? esc(editing.fcCode||'') : ''}" placeholder="FC001"
           style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+        <label style="display:block;font-size:12px;font-weight:600;margin:14px 0 5px">Assigned districts <span style="font-weight:400;color:var(--ink-faint)">(field visibility)</span></label>
+        <div style="font-size:11px;color:var(--ink-faint);margin-bottom:8px">Tick the districts this FC covers — they'll only see farmers in these districts. Leave blank to see everyone (default, unrestricted).</div>
+        <div class="checkgrid" id="umDistricts">${GUJARAT_DISTRICTS.map(d=>
+          `<label><input type="checkbox" value="${esc(d)}" ${((editing && editing.districts)||[]).includes(d)?'checked':''}>${esc(d)}</label>`).join('')}</div>
       </div>
       <div id="umErr"></div>
     </div>`;
@@ -14547,6 +14554,7 @@ function openUserModal(userId) {
     const pw      = ($('#umPw').value||'');
     const role    = $('#umRole').value;
     const fcCode  = ($('#umFcCode').value||'').trim().toUpperCase();
+    const districts = [...$('#umDistricts').querySelectorAll('input:checked')].map(c=>c.value);
     const errEl   = $('#umErr');
     const showErr = msg => { errEl.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:4px">${msg}</div>`; };
     if (!name) return showErr('Display name is required.');
@@ -14564,6 +14572,7 @@ function openUserModal(userId) {
       const existing  = existSnap.exists() ? existSnap.val() : null;
       const record = {
         id: uid, name, role, fcCode: role === 'fc' ? fcCode : '',
+        districts: role === 'fc' ? districts : [],
         active: true,
         createdAt: (existing && existing.createdAt) || Date.now(),
         updatedAt: Date.now(),

@@ -751,6 +751,26 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .fc-tc{background:var(--leaf-bg);color:var(--leaf);font-size:10px;
   padding:1px 6px;border-radius:10px;font-weight:600}
 .fc-ttab.active .fc-tc{background:var(--leaf);color:#fff}
+/* v(fc-queue-redesign) — bold, section-colored tabs (New/Conversion/Seasonal
+   each get their own accent instead of one flat green for everything) and
+   bigger, punchier card tags so an FC can tell what a card is at a glance
+   instead of reading a small grey badge. */
+.fc-ttabs-v2{display:flex;gap:8px;padding:10px 12px;background:var(--panel-2);overflow-x:auto}
+.fc-ttabs-v2::-webkit-scrollbar{display:none}
+.fc-ttab-v2{flex:1;min-width:104px;padding:12px 10px;border-radius:12px;cursor:pointer;
+  background:var(--panel);border:1.5px solid var(--line);text-align:center;transition:.13s}
+.fc-ttab-v2 .n{font-size:20px;font-weight:800;line-height:1;display:block;color:var(--sec-color)}
+.fc-ttab-v2 .l{font-size:10.5px;font-weight:700;color:var(--ink-soft);margin-top:4px;
+  display:block;line-height:1.25}
+.fc-ttab-v2.active{background:var(--sec-bg);border-color:var(--sec-color);box-shadow:0 0 0 1px var(--sec-color)}
+.fc-ttab-v2.active .l{color:var(--sec-color)}
+.fc-card-v2{border-left:4px solid var(--sec-color,var(--line))}
+.fc-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  padding:4px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;letter-spacing:.01em;
+  background:var(--sec-bg);color:var(--sec-color);border:1px solid var(--sec-color)}
+.fc-tag-urgent{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:800;
+  padding:3px 8px;border-radius:20px;background:var(--red);color:#fff;
+  text-transform:uppercase;letter-spacing:.03em;flex-shrink:0}
 .fc-slbl{font-size:10px;color:var(--ink-faint);text-transform:uppercase;
   letter-spacing:.05em;padding:4px 14px 4px;background:var(--panel-2)}
 .fc-empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13px}
@@ -2228,7 +2248,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v44';
+const APP_VERSION = 'v45';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6070,7 +6090,7 @@ function renderFcBottomNav(){
   let el=document.getElementById('fc-bnav');
   if(!el){el=document.createElement('div');el.id='fc-bnav';document.body.appendChild(el);}
   const q=getFcQueueLists();
-  const hasPending=q.new.length>0 || q.overdue.length>0;
+  const hasPending=q.newApplications.length>0 || q.seasonalVerifications.some(i=>i.bucket==='overdue');
   const dot=hasPending?'<div class="nd"></div>':'';
   const tabs=[
     {r:'verification',p:I.check,   label:'My Work',dot},
@@ -6309,16 +6329,40 @@ function buildFcQueueItem(f, program, bucket){
     status:_fcStatusLabel(program,bucket),
   };
 }
+/* v(fc-queue-redesign) — exactly 3 sections on the FC's queue, per request:
+   New Applications (first-time Haat applications), Conversion Farmers (all
+   conversion-program work, new + due, one section — conversion doesn't need
+   the new/seasonal split the way Haat does), Seasonal Verifications (Haat
+   re-verification due, merging the old separate Seasonal + Overdue tabs —
+   overdue ones still sort first and carry an urgent marker on the card).
+   "Completed" (awaiting Senior Review / recently assessed) is intentionally
+   dropped — nothing left for the FC to DO once it's there. */
+const FC_QUEUE_SECTIONS={
+  newApplications:      {tab:'New',       tag:'New Applications',        icon:I.check, color:'var(--blue)',   bg:'var(--blue-bg)'},
+  conversionFarmers:    {tab:'Conversion',tag:'Conversion Farmers',      icon:I.leaf,  color:'var(--leaf)',   bg:'var(--leaf-bg)'},
+  seasonalVerifications:{tab:'Seasonal',  tag:'Seasonal Verification',   icon:I.clock, color:'var(--orange)', bg:'var(--orange-bg)'},
+};
 function getFcQueueLists(){
-  const lists={new:[],seasonal:[],overdue:[],completed:[]};
+  const groups={newApplications:[],conversionFarmers:[],seasonalVerifications:[]};
   (DB.haatFarmers||[]).filter(f=>!f._archived && _fcCanSeeFarmer(f)).forEach(f=>{
-    const b=_fcHaatBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'haat',b));
+    const b=_fcHaatBucket(f); if(!b) return;
+    if(b==='new') groups.newApplications.push(buildFcQueueItem(f,'haat',b));
+    else if(b==='seasonal'||b==='overdue') groups.seasonalVerifications.push(buildFcQueueItem(f,'haat',b));
+    // 'completed' (awaiting Senior Review) — not queue work, dropped.
   });
   (DB.convFarmers||[]).filter(f=>!f._archived && _fcCanSeeFarmer(f)).forEach(f=>{
-    const b=_fcConvBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'conv',b));
+    const b=_fcConvBucket(f); if(!b || b==='completed') return;
+    groups.conversionFarmers.push(buildFcQueueItem(f,'conv',b));
   });
-  Object.keys(lists).forEach(k=>lists[k].sort((a,b)=>(a.applicationDate||'').localeCompare(b.applicationDate||'')));
-  return lists;
+  // Most-urgent-first: overdue items surface above merely-due ones.
+  const byUrgency=(a,b)=>{
+    if(a.bucket!==b.bucket) return a.bucket==='overdue'?-1:(b.bucket==='overdue'?1:0);
+    return (a.applicationDate||'').localeCompare(b.applicationDate||'');
+  };
+  groups.newApplications.sort((a,b)=>(a.applicationDate||'').localeCompare(b.applicationDate||''));
+  groups.conversionFarmers.sort(byUrgency);
+  groups.seasonalVerifications.sort(byUrgency);
+  return groups;
 }
 // Lightweight single-farmer "Plan Visit" modal — the Queue's entry point
 // into planning (per spec: "FC selects farmers directly from the
@@ -6359,11 +6403,19 @@ function openFcPlanVisitModal(program, farmerId){
     toast('Visit planned for '+fmtDate(date));
   };
 }
+function _fcQueueSectionKey(item){
+  if(item.program==='conv') return 'conversionFarmers';
+  return item.bucket==='new' ? 'newApplications' : 'seasonalVerifications';
+}
 function _fcQueueCardHtml(item){
-  const bucketCls={new:'fnew',seasonal:'seasonal',overdue:'fstruggling',completed:'fadopted'}[item.bucket]||'fnew';
-  return `<div class="fc-card" data-act="open" data-id="${esc(item.id)}" data-program="${item.program}">
+  const sec=FC_QUEUE_SECTIONS[_fcQueueSectionKey(item)];
+  const isUrgent=item.bucket==='overdue';
+  return `<div class="fc-card fc-card-v2" data-act="open" data-id="${esc(item.id)}" data-program="${item.program}" style="--sec-color:${sec.color};--sec-bg:${sec.bg}">
     <div class="fc-ct"><div><p class="fc-nm">${esc(item.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(item.village)} · ${esc(item.district)}</p></div>
-    <span class="fc-b ${bucketCls}">${esc(item.verificationType.toUpperCase())}</span></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+      <span class="fc-tag">${svg(sec.icon,2)}${esc(sec.tag)}</span>
+      ${isUrgent?`<span class="fc-tag-urgent">⚠ Overdue</span>`:''}
+    </div></div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">
       <span>🌾 ${esc(item.crop)}</span>
       ${item.applicationDate?`<span>· 📅 ${esc(fmtDate(item.applicationDate))}</span>`:''}
@@ -6373,22 +6425,23 @@ function _fcQueueCardHtml(item){
     <div class="fc-cm"><span class="fc-idchip">${esc(item.id)}</span>
       <div style="display:flex;gap:6px;margin-left:auto">
         <button class="fc-btn-v" data-act="verify" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.check,2.5)} Verify Now</button>
-        ${!item.plannedBy&&item.bucket!=='completed'?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.clock,2)} Plan for later</button>`:''}
+        ${!item.plannedBy?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.clock,2)} Plan for later</button>`:''}
       </div>
     </div>
   </div>`;
 }
-function _fcQueueRender(lists,F){
-  const cur=(lists[F.tab]||[]).filter(item=>{
+function _fcQueueRender(groups,F){
+  const cur=(groups[F.tab]||[]).filter(item=>{
     if(!F.q) return true;
     const q=F.q.toLowerCase();
     return item.name.toLowerCase().includes(q)||item.id.toLowerCase().includes(q)||item.village.toLowerCase().includes(q);
   });
-  document.querySelectorAll('.fc-ttab').forEach(t=>t.classList.toggle('active',t.dataset.t===F.tab));
-  const he=document.getElementById('fcQHead');if(he)he.textContent=cur.length+' in this queue';
-  const ce=document.getElementById('fcQCount');if(ce)ce.textContent=cur.length+' farmers';
+  document.querySelectorAll('.fc-ttab-v2').forEach(t=>t.classList.toggle('active',t.dataset.t===F.tab));
+  const sec=FC_QUEUE_SECTIONS[F.tab];
+  const he=document.getElementById('fcQHead');if(he)he.textContent=sec.tag;
+  const ce=document.getElementById('fcQCount');if(ce)ce.textContent=cur.length+' farmer'+(cur.length===1?'':'s');
   const el=document.getElementById('fcQCards');if(!el)return;
-  el.innerHTML=cur.length?cur.map(_fcQueueCardHtml).join(''):'<div class="fc-empty">All clear — nothing in this bucket</div>';
+  el.innerHTML=cur.length?cur.map(_fcQueueCardHtml).join(''):'<div class="fc-empty">All clear — nothing here</div>';
   el.querySelectorAll('[data-act="verify"]').forEach(b=>{b.onclick=e=>{
     e.stopPropagation();
     if(b.dataset.program==='conv') openConvScoreModal(b.dataset.id);
@@ -6405,27 +6458,29 @@ function _fcQueueRender(lists,F){
 }
 function viewFcQueue(){
   const v=$('#view');
-  if(!FILTERS.fcQ) FILTERS.fcQ={tab:'new',q:''};
+  if(!FILTERS.fcQ || !FC_QUEUE_SECTIONS[FILTERS.fcQ.tab]) FILTERS.fcQ={tab:'newApplications',q:''};
   const F=FILTERS.fcQ;
-  const lists=getFcQueueLists();
+  const groups=getFcQueueLists();
   v.innerHTML=`
     <div class="fc-tb">
       <div class="fc-av" style="background:var(--accent)">${svg(I.check,2)}</div>
       <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft)">My Work · field actions</div>
       <div style="font-size:15px;font-weight:700" id="fcQHead"></div></div>
     </div>
-    <div class="fc-ttabs">
-      <div class="fc-ttab" data-t="new">New <span class="fc-tc">${lists.new.length}</span></div>
-      <div class="fc-ttab" data-t="seasonal">Seasonal <span class="fc-tc">${lists.seasonal.length}</span></div>
-      <div class="fc-ttab" data-t="overdue">Overdue <span class="fc-tc">${lists.overdue.length}</span></div>
-      <div class="fc-ttab" data-t="completed">Completed <span class="fc-tc">${lists.completed.length}</span></div>
+    <div class="fc-ttabs-v2">
+      ${Object.keys(FC_QUEUE_SECTIONS).map(k=>{
+        const sec=FC_QUEUE_SECTIONS[k];
+        return `<div class="fc-ttab-v2${F.tab===k?' active':''}" data-t="${k}" style="--sec-color:${sec.color};--sec-bg:${sec.bg}">
+          <span class="n">${groups[k].length}</span><span class="l">${esc(sec.tab)}</span>
+        </div>`;
+      }).join('')}
     </div>
     <div class="fc-srch">${svg(I.filter,2)}<input id="fcQSrch" placeholder="Search name, ID, village…" value="${esc(F.q)}"></div>
     <div class="fc-slbl" id="fcQCount"></div>
     <div class="fc-cards" id="fcQCards"></div>`;
-  document.querySelectorAll('.fc-ttab').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;_fcQueueRender(lists,F);};});
-  const si=$('#fcQSrch');if(si)si.oninput=e=>{F.q=e.target.value;_fcQueueRender(lists,F);};
-  _fcQueueRender(lists,F);
+  document.querySelectorAll('.fc-ttab-v2').forEach(t=>{t.onclick=()=>{F.tab=t.dataset.t;_fcQueueRender(groups,F);};});
+  const si=$('#fcQSrch');if(si)si.oninput=e=>{F.q=e.target.value;_fcQueueRender(groups,F);};
+  _fcQueueRender(groups,F);
 }
 
 /* ===== v(fc-redesign) Phase 2 — Monthly Planning module =====

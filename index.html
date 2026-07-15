@@ -2248,7 +2248,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v46';
+const APP_VERSION = 'v47';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4512,40 +4512,40 @@ loadQuestionSchemaOverrideV5();
    Covers all 34 Gujarat districts (incl. Vav-Tharad, split from Banaskantha
    2025-10-02) with their major talukas. Keys must exactly match GUJARAT_DISTRICTS. */
 window.DISTRICT_TALUKAS = {
-  'Ahmedabad (અમદાવાદ)':['Ahmedabad City','Bavla','Daskroi','Detroj-Rampura','Dhandhuka','Dholka','Dholera','Mandal','Sanand','Viramgam'],
-  'Amreli (અમરેલી)':['Amreli','Babra','Bagasara','Dhari','Jafrabad','Khambha','Kunkavav-Vadia','Lathi','Lilia','Rajula','Savarkundla'],
-  'Anand (આણંદ)':['Anand','Anklav','Borsad','Khambhat','Petlad','Sojitra','Tarapur','Umreth'],
-  'Aravalli (અરવલ્લી)':['Bayad','Bhiloda','Dhansura','Malpur','Meghraj','Modasa','Vijaynagar'],
-  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Danta','Dantiwada','Deesa','Dhanera','Kankrej','Palanpur','Vadgam'],
-  'Vav-Tharad (વાવ-થરાદ)':['Bhabhar','Dhima','Diyodar','Lakhani','Rah','Suigam','Tharad','Vav'],
-  'Bharuch (ભરૂચ)':['Amod','Anklesvar','Bharuch','Hansot','Jambusar','Jhagadia','Vagra','Valia','Netrang'],
-  'Bhavnagar (ભાવનગર)':['Bhavnagar','Botad (now sep)','Gariadhar','Ghogha','Jesar','Mahuva','Palitana','Sihor','Talaja','Umrala','Vallabhipur'],
-  'Botad (બોટાદ)':['Barwala','Botad','Gadhada','Ranpur'],
-  'Chhota Udaipur (છોટાઉદેપુર)':['Bodeli','Chhota Udaipur','Jetpur Pavi','Kavant','Naswadi','Sankheda','Tilakwada'],
-  'Dahod (દાહોદ)':['Dahod','Devgadhbaria','Dhanpur','Fatepura','Garbada','Jhalod','Limkheda','Sanjeli','Singvad'],
-  'Dang (ડાંગ)':['Ahwa','Subir','Waghai'],
-  'Devbhoomi Dwarka (દેવભૂમિ દ્વારકા)':['Bhanvad','Dwarka','Kalyanpur','Khambhalia'],
-  'Gandhinagar (ગાંધીનગર)':['Dehgam','Gandhinagar','Kalol','Mansa'],
-  'Gir Somnath (ગીર સોમનાથ)':['Gir Gadhada','Kodinar','Sutrapada','Talala','Una','Veraval'],
-  'Jamnagar (જામનગર)':['Dhrol','Jamjodhpur','Jamnagar','Jodiya','Kalavad','Lalpur'],
-  'Junagadh (જૂનાગઢ)':['Bhesan','Junagadh City','Keshod','Malia-Hatina','Manavadar','Mangrol','Mendarda','Vanthali','Visavadar'],
-  'Kheda (ખેડા)':['Galteshwar','Kapadvanj','Kathlal','Kheda','Mahudha','Matar','Mehmedabad','Nadiad','Thasra','Vaso'],
-  'Kutch (કચ્છ)':['Abdasa','Anjar','Bhachau','Bhuj','Gandhidham','Lakhpat','Mandvi','Mundra','Nakhatrana','Rapar'],
-  'Mahisagar (મહીસાગર)':['Balasinor','Kadana','Khanpur','Lunavada','Santrampur','Virpur'],
-  'Mehsana (મહેસાણા)':['Bechraji','Jotana','Kadi','Kheralu','Mehsana','Satlasana','Unjha','Vadnagar','Vijapur','Visnagar'],
-  'Morbi (મોરબી)':['Halvad','Maliya','Morbi','Tankara','Wankaner'],
-  'Narmada (નર્મદા)':['Dediapada','Garudeshwar','Nandod','Sagbara','Tilakwada'],
-  'Navsari (નવસારી)':['Chikhli','Gandevi','Jalalpore','Khergam','Navsari','Vansda'],
-  'Panchmahal (પંચમહાલ)':['Ghoghamba','Godhra','Halol','Jambughoda','Kalol','Morwa Hadaf','Shehera'],
-  'Patan (પાટણ)':['Chanasma','Harij','Patan','Radhanpur','Sami','Santalpur','Sarasvati','Shankheshwar','Sidhpur'],
-  'Porbandar (પોરબંદર)':['Kutiyana','Porbandar','Ranavav'],
-  'Rajkot (રાજકોટ)':['Dhoraji','Gondal','Jamkandorna','Jasdan','Jetpur','Kotda Sangani','Lodhika','Paddhari','Rajkot','Upleta','Vinchhiya'],
-  'Sabarkantha (સાબરકાંઠા)':['Himmatnagar','Idar','Khedbrahma','Poshina','Prantij','Talod','Vadali','Vijaynagar'],
-  'Surat (સુરત)':['Bardoli','Choryasi','Kamrej','Mahuva','Mandvi','Mangrol','Olpad','Palsana','Surat City','Umarpada'],
-  'Surendranagar (સુરેન્દ્રનગર)':['Chotila','Chuda','Dasada','Dhrangadhra','Lakhtar','Limbdi','Muli','Sayla','Thangadh','Wadhwan'],
-  'Tapi (તાપી)':['Dolvan','Kukarmunda','Nizar','Songadh','Uchchhal','Valod','Vyara'],
-  'Vadodara (વડોદરા)':['Dabhoi','Desar','Karjan','Padra','Savli','Sinor','Vadodara City','Waghodia'],
-  'Valsad (વલસાડ)':['Dharampur','Kaprada','Pardi','Umbergaon','Valsad','Vapi'],
+  'Ahmedabad (અમદાવાદ)':['Ahmedabad City (અમદાવાદ સીટી)','Bavla (બાવળા)','Daskroi (દસ્ક્રોઇ)','Detroj-Rampura (દેત્રોજ-રામપુરા)','Dhandhuka (ધંધુકા)','Dholka (ધોળકા)','Dholera (ધોલેરા)','Mandal (માંડલ)','Sanand (સાણંદ)','Viramgam (વિરમગામ)'],
+  'Amreli (અમરેલી)':['Amreli (અમરેલી)','Babra (બાબરા)','Bagasara (બગસરા)','Dhari (ધારી)','Jafrabad (જાફરાબાદ)','Khambha (ખાંભા)','Kunkavav-Vadia (કુંકાવાવ)','Lathi (લાઠી)','Lilia (લીલીયા)','Rajula (રાજુલા)','Savarkundla (સાવરકુંડલા)'],
+  'Anand (આણંદ)':['Anand (આણંદ)','Anklav (આંકલાવ)','Borsad (બોરસદ)','Khambhat (ખંભાત)','Petlad (પેટલાદ)','Sojitra (સોજિત્રા)','Tarapur (તારાપુર)','Umreth (ઉમરેઠ)'],
+  'Aravalli (અરવલ્લી)':['Bayad (બાયડ)','Bhiloda (ભિલોડા)','Dhansura (ધનસુરા)','Malpur (માલપુર)','Meghraj (મેઘરજ)','Modasa (મોડાસા)','Vijaynagar (વિજયનગર)'],
+  'Banaskantha (બનાસકાંઠા)':['Amirgadh (અમીરગઢ)','Danta (દાંતા)','Dantiwada (દાંતીવાડા)','Deesa (ડીસા)','Dhanera (ધાનેરા)','Kankrej (કાંકરેજ)','Palanpur (પાલનપુર)','Vadgam (વડગામ)'],
+  'Vav-Tharad (વાવ-થરાદ)':['Bhabhar (ભાભર)','Dhima (ધરણીધર)','Diyodar (દિયોદર)','Lakhani (લાખણી)','Rah (રાહ)','Suigam (સુઈગામ)','Tharad (થરાદ)','Vav (વાવ)'],
+  'Bharuch (ભરૂચ)':['Amod (આમોદ)','Anklesvar (અંકલેશ્વર)','Bharuch (ભરૂચ)','Hansot (હાંસોટ)','Jambusar (જંબુસર)','Jhagadia (ઝઘડિયા)','Vagra (વાગરા)','Valia (વાલિયા)','Netrang (નેત્રંગ)'],
+  'Bhavnagar (ભાવનગર)':['Bhavnagar (ભાવનગર)','Gariadhar (ગારીયાધાર)','Ghogha (ઘોઘા)','Jesar (જેસર)','Mahuva (મહુવા)','Palitana (પાલીતાણા)','Sihor (સિહોર)','Talaja (તળાજા)','Umrala (ઉમરાળા)','Vallabhipur (વલ્લભીપુર)'],
+  'Botad (બોટાદ)':['Barwala (બરવાળા)','Botad (બોટાદ)','Gadhada (ગઢડા)','Ranpur (રાણપુર)'],
+  'Chhota Udaipur (છોટાઉદેપુર)':['Bodeli (બોડેલી)','Chhota Udaipur (છોટાઉદેપુર)','Jetpur Pavi (પાવી જેતપુર)','Kavant (ક્વાંટ)','Naswadi (નસવાડી)','Sankheda (સંખેડા)','Tilakwada (તિલકવાડા)'],
+  'Dahod (દાહોદ)':['Dahod (દાહોદ)','Devgadhbaria (દેવગઢબારિયા)','Dhanpur (ધાનપુર)','Fatepura (ફતેપુરા)','Garbada (ગરબાડા)','Jhalod (ઝાલોદ)','Limkheda (લીમખેડા)','Sanjeli (સંજેલી)','Singvad (સીંગવડ)'],
+  'Dang (ડાંગ)':['Ahwa (આહવા)','Subir (સુબિર)','Waghai (વઘઇ)'],
+  'Devbhoomi Dwarka (દેવભૂમિ દ્વારકા)':['Bhanvad (ભાણવડ)','Dwarka (દ્વારકા)','Kalyanpur (કલ્યાણપુર)','Khambhalia (ખંભાળિયા)'],
+  'Gandhinagar (ગાંધીનગર)':['Dehgam (દહેગામ)','Gandhinagar (ગાંધીનગર)','Kalol (કલોલ)','Mansa (માણસા)'],
+  'Gir Somnath (ગીર સોમનાથ)':['Gir Gadhada (ગીર ગઢડા)','Kodinar (કોડીનાર)','Sutrapada (સુત્રાપાડા)','Talala (તાલાલા)','Una (ઉના)','Veraval (પાટણ-વેરાવળ)'],
+  'Jamnagar (જામનગર)':['Dhrol (ધ્રોળ)','Jamjodhpur (જામજોધપુર)','Jamnagar (જામનગર)','Jodiya (જોડિયા)','Kalavad (કાલાવડ)','Lalpur (લાલપુર)'],
+  'Junagadh (જૂનાગઢ)':['Bhesan (ભેંસાણ)','Junagadh City (જુનાગઢ શહેર)','Keshod (કેશોદ)','Malia-Hatina (માળિયા હાટીના)','Manavadar (માણાવદર)','Mangrol (માંગરોળ)','Mendarda (મેંદરડા)','Vanthali (વંથલી)','Visavadar (વિસાવદર)'],
+  'Kheda (ખેડા)':['Galteshwar (ગળતેશ્વર)','Kapadvanj (કપડવંજ)','Kathlal (કઠલાલ)','Kheda (ખેડા)','Mahudha (મહુધા)','Matar (માતર)','Mehmedabad (મહેમદાવાદ)','Nadiad (નડીઆદ)','Thasra (ઠાસરા)','Vaso (વસો)'],
+  'Kutch (કચ્છ)':['Abdasa (અબડાસા)','Anjar (અંજાર)','Bhachau (ભચાઉ)','Bhuj (ભુજ)','Gandhidham (ગાંધીધામ)','Lakhpat (લખપત)','Mandvi (માંડવી)','Mundra (મુન્દ્રા)','Nakhatrana (નખત્રાણા)','Rapar (રાપર)'],
+  'Mahisagar (મહીસાગર)':['Balasinor (બાલાસિનોર)','Kadana (કડાણા)','Khanpur (ખાનપુર)','Lunavada (લુણાવાડા)','Santrampur (સંતરામપુર)','Virpur (વિરપુર)'],
+  'Mehsana (મહેસાણા)':['Bechraji (બેચરાજી)','Jotana (જોટાણા)','Kadi (કડી)','Kheralu (ખેરાલુ)','Mehsana (મહેસાણા)','Satlasana (સતલાસણા)','Unjha (ઊંઝા)','Vadnagar (વડનગર)','Vijapur (વિજાપુર)','Visnagar (વિસનગર)'],
+  'Morbi (મોરબી)':['Halvad (હળવદ)','Maliya (માળિયા મિયાણા)','Morbi (મોરબી)','Tankara (ટંકારા)','Wankaner (વાંકાનેર)'],
+  'Narmada (નર્મદા)':['Dediapada (ડેડિયાપાડા)','Garudeshwar (ગરૂડેશ્વર)','Nandod (નાંદોદ)','Sagbara (સાગબારા)','Tilakwada (તિલકવાડા)'],
+  'Navsari (નવસારી)':['Chikhli (ચિખલી)','Gandevi (ગણદેવી)','Jalalpore (જલાલપોર)','Khergam (ખેરગામ)','Navsari (નવસારી)','Vansda (વાંસદા)'],
+  'Panchmahal (પંચમહાલ)':['Ghoghamba (ઘોઘંબા)','Godhra (ગોધરા)','Halol (હાલોલ)','Jambughoda (જાંબુઘોડા)','Kalol (કલોલ)','Morwa Hadaf (મોરવા હડફ)','Shehera (શહેરા)'],
+  'Patan (પાટણ)':['Chanasma (ચાણસ્મા)','Harij (હારીજ)','Patan (પાટણ)','Radhanpur (રાધનપુર)','Sami (સમી)','Santalpur (સાંતલપુર)','Sarasvati (સરસ્વતી)','Shankheshwar (શંખેશ્વર)','Sidhpur (સિદ્ધપુર)'],
+  'Porbandar (પોરબંદર)':['Kutiyana (કુતિયાણા)','Porbandar (પોરબંદર)','Ranavav (રાણાવાવ)'],
+  'Rajkot (રાજકોટ)':['Dhoraji (ધોરાજી)','Gondal (ગોંડલ)','Jamkandorna (જામકંડોરણા)','Jasdan (જસદણ)','Jetpur (જેતપુર)','Kotda Sangani (કોટડા-સાંગાણી)','Lodhika (લોધિકા)','Paddhari (પડધરી)','Rajkot (રાજકોટ)','Upleta (ઉપલેટા)','Vinchhiya (વીંછીયા)'],
+  'Sabarkantha (સાબરકાંઠા)':['Himmatnagar (હિંમતનગર)','Idar (ઇડર)','Khedbrahma (ખેડબ્રહ્મા)','Poshina (પોશિના)','Prantij (પ્રાંતિજ)','Talod (તલોદ)','Vadali (વડાલી)','Vijaynagar (વિજયનગર)'],
+  'Surat (સુરત)':['Bardoli (બારડોલી)','Choryasi (ચોર્યાસી)','Kamrej (કામરેજ)','Mahuva (મહુવા)','Mandvi (માંડવી)','Mangrol (માંગરોળ)','Olpad (ઓલપાડ)','Palsana (પલસાણા)','Surat City (સુરત શહેર)','Umarpada (ઉમરપાડા)'],
+  'Surendranagar (સુરેન્દ્રનગર)':['Chotila (ચોટીલા)','Chuda (ચુડા)','Dasada (દસાડા)','Dhrangadhra (ધ્રાંગધ્રા)','Lakhtar (લખતર)','Limbdi (લીંબડી)','Muli (મુળી)','Sayla (સાયલા)','Thangadh (થાનગઢ)','Wadhwan (વઢવાણ)'],
+  'Tapi (તાપી)':['Dolvan (ડોલવણ)','Kukarmunda (કુકરમુંડા)','Nizar (નિઝર)','Songadh (સોનગઢ)','Uchchhal (ઉચ્છલ)','Valod (વાલોડ)','Vyara (વ્યારા)'],
+  'Vadodara (વડોદરા)':['Dabhoi (ડભોઇ)','Desar (ડેસર)','Karjan (કરજણ)','Padra (પાદરા)','Savli (સાવલી)','Sinor (શિનોર)','Vadodara City (વડોદરા શહેર)','Waghodia (વાઘોડિયા)'],
+  'Valsad (વલસાડ)':['Dharampur (ધરમપુર)','Kaprada (કપરાડા)','Pardi (પારડી)','Umbergaon (ઉમરગામ)','Valsad (વલસાડ)','Vapi (વાપી)'],
   'Other (અન્ય)':['Other (અન્ય)'],
 };
 
@@ -4678,6 +4678,56 @@ function cropDisplayName(raw){
   }
   // No match — return original.
   _cropNormCache.set(s, s); return s;
+}
+
+/* Taluka normaliser — mirrors cropDisplayName() above. Stored f.taluka values
+   arrived over time as bare English ("Tharad"), bare Gujarati ("થરાદ"), or
+   (after this migration) the canonical "English (ગુજરાતી)" form. Looks up the
+   raw string against window.DISTRICT_TALUKAS[district] (falling back to
+   searching every district's list if the district is missing/unmatched) and
+   returns the canonical bilingual entry when found, else the original string
+   unchanged. */
+const _talukaNormCache = new Map();
+function talukaDisplayName(raw, district){
+  if(!raw) return '';
+  const s = String(raw).trim();
+  if(!s) return '';
+  const cacheKey = (district||'')+'|'+s;
+  if(_talukaNormCache.has(cacheKey)) return _talukaNormCache.get(cacheKey);
+  function roots(str){
+    const m = String(str).match(/^([^()]+?)\s*(?:\(([^)]+)\))?\s*$/);
+    let en = (m && m[1] ? m[1] : str).trim();
+    let gu = (m && m[2] ? m[2] : '').trim();
+    // A bare Gujarati-script value (no parens, e.g. "થરાદ") lands in `en` by
+    // the regex above — reclassify it as the Gujarati root instead, else it
+    // can never match a catalog entry's Gujarati side.
+    if(!gu && /[઀-૿]/.test(en)){ gu = en; en = ''; }
+    en = en.toLowerCase().replace(/\s*\/\s*/g,' ').replace(/\s+/g,' ');
+    return {en, gu};
+  }
+  const target = roots(s);
+  const DT = window.DISTRICT_TALUKAS || {};
+  const scoped = (district && DT[district]) || [];
+  const pool = scoped.length ? scoped : Object.values(DT).flat();
+  for(const entry of pool){
+    const r = roots(entry);
+    if(target.en && r.en && (r.en === target.en || r.en.startsWith(target.en) || target.en.startsWith(r.en))){
+      _talukaNormCache.set(cacheKey, entry); return entry;
+    }
+    if(target.gu && r.gu && r.gu === target.gu){
+      _talukaNormCache.set(cacheKey, entry); return entry;
+    }
+  }
+  // Unscoped pool already tried above when the district didn't match; if we
+  // had a scoped hit-miss, retry once against the full pool before giving up.
+  if(scoped.length){
+    for(const entry of Object.values(DT).flat()){
+      const r = roots(entry);
+      if(target.en && r.en && r.en === target.en){ _talukaNormCache.set(cacheKey, entry); return entry; }
+      if(target.gu && r.gu && r.gu === target.gu){ _talukaNormCache.set(cacheKey, entry); return entry; }
+    }
+  }
+  _talukaNormCache.set(cacheKey, s); return s;
 }
 
 /* v9 — crops_table (fixed 3-row current-crops list) was replaced by
@@ -5073,34 +5123,6 @@ const CONV_SCORE_FRAMEWORK = {
 const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2'];
 // All B-section keys (used by the scorer to iterate without hard-coding).
 const CONV_SCORE_B_KEYS = ['B1','B2','B3','B4'];
-const GJ_VISIT_CROP_CATS = [
-  { cat:'ધાન્ય · Cereals & millets', crops:[
-    'ઘઉં (Wheat)','ડાંગર (Rice)','બાજરો (Pearl millet)','જુવાર (Sorghum)','મકાઈ (Maize)','રાગી (Finger millet)',
-  ]},
-  { cat:'કઠોળ · Pulses', crops:[
-    'તુવેર (Pigeon pea)','ચણા (Chickpea)','મગ (Green gram)','અડદ (Black gram)','ચોળા (Cowpea)','વાલ (Field bean)','મઠ (Moth bean)',
-  ]},
-  { cat:'રોકડ પાક · Cash crops', crops:[
-    'કપાસ (Cotton)','મગફળી (Groundnut)','શેરડી (Sugarcane)','એરંડા (Castor)','તમાકુ (Tobacco)',
-  ]},
-  { cat:'તેલીબિયાં · Oilseeds', crops:[
-    'તલ (Sesame)','સરસો (Mustard)','સૂર્યમુખી (Sunflower)','સોયાબીન (Soybean)','અળસી (Linseed)',
-  ]},
-  { cat:'શાકભાજી · Vegetables', crops:[
-    'ભીંડા (Lady\'s finger)','ટામેટા (Tomato)','ડુંગળી (Onion)','બટેટા (Potato)','રીંગણ (Brinjal)','મરચા (Chilli)',
-    'કારેલા (Bitter gourd)','દૂધી (Bottle gourd)','તુરિયા (Ridge gourd)','ગલકા (Sponge gourd)','કાકડી (Cucumber)',
-    'કોળું (Pumpkin)','કોબી (Cabbage)','ફૂલકોબી (Cauliflower)','ગ્વાર (Cluster beans)','વટાણા (Peas)',
-    'પાલક (Spinach)','મેથી (Fenugreek)','ગાજર (Carrot)','મૂળા (Radish)','સૂરણ (Yam)','બીટ (Beetroot)','સરગવો (Drumstick)',
-  ]},
-  { cat:'મસાલા · Spices', crops:[
-    'જીરું (Cumin)','ધાણા (Coriander)','વરિયાળી (Fennel)','અજમો (Ajwain)','હળદર (Turmeric)','આદુ (Ginger)','લસણ (Garlic)',
-  ]},
-  { cat:'ફળ · Fruits', crops:[
-    'કેરી (Mango)','કેળ (Banana)','પપૈયા (Papaya)','દાડમ (Pomegranate)','ચીકુ (Sapota)','લીંબુ (Lemon)',
-    'જામફળ (Guava)','આમળા (Amla)','ટેટી (Muskmelon)','તડબૂચ (Watermelon)','ખારેક (Date palm)','બોર (Indian jujube)','નારિયેળ (Coconut)',
-  ]},
-  { cat:'અન્ય · Other', crops:['ચારો (Fodder)'] },
-];
 
 const CONV_SCORE_STATUS = {
   adopted:    { label:'Adopted',      gu:'અપનાવ્યું',         cls:'green', range:'80–100' },
@@ -5414,13 +5436,9 @@ function openConvScoreModal(id){
     + '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Observation (optional)</label>'
     + '<textarea id="vsNotes" placeholder="ખેડૂતે શું શરૂ કર્યું, શું જોવા મળ્યું…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;min-height:48px;resize:vertical"></textarea>'
     + '<div style="margin-top:10px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Crops grown on selected plot</label>'
-    + '<div id="vsCropWrap">'
-    + GJ_VISIT_CROP_CATS.map(({cat,crops})=>
-        '<div style="font-size:10px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line)">'+ cat +'</div>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:5px">'
-        + crops.map(c=>`<button type="button" class="vs-crop-chip" data-crop="${c}">${c}</button>`).join('')
-        +'</div>'
-      ).join('')
+    + '<input type="text" id="vsCropSearch" placeholder="🔍 Search crop…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:7px;box-sizing:border-box">'
+    + '<div id="vsCropWrap" style="display:flex;flex-wrap:wrap;gap:5px;max-height:220px;overflow-y:auto">'
+    + (window.CROPS_CATALOG||[]).filter(c=>c!=='Other (અન્ય)').map(c=>`<button type="button" class="vs-crop-chip" data-crop="${esc(c)}">${esc(c)}</button>`).join('')
     + '</div></div>'
     // Farm-visit photos — multiple, stored as base64 in the visit record
     + '<div style="margin-top:10px">'
@@ -5509,6 +5527,13 @@ function openConvScoreModal(id){
   document.querySelectorAll('.vs-crop-chip').forEach(btn=>{
     btn.onclick=()=>btn.classList.toggle('on');
   });
+  const vsCropSearchEl = document.getElementById('vsCropSearch');
+  if(vsCropSearchEl) vsCropSearchEl.oninput = e=>{
+    const q=e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.vs-crop-chip').forEach(btn=>{
+      btn.style.display = (!q || btn.dataset.crop.toLowerCase().includes(q)) ? '' : 'none';
+    });
+  };
   const modalEl = document.getElementById('modal');
   if(modalEl) modalEl.classList.add('wide');
 
@@ -6118,7 +6143,7 @@ function openFcRefModal(program, id){
   const visits=(f.visits||[]).slice().reverse();
   let h = `<div class="detail-grid">
     <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village||'—')}</div></div>
-    <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(f.taluka||'—')}</div></div>
+    <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(talukaDisplayName(f.taluka,f.district)||'—')}</div></div>
     <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district||'—')}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone||'—')}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||'—'} acres</div></div>
@@ -6571,7 +6596,7 @@ function viewFcPlanning(){
     .filter(x=>x.farmer);
   let rows=plansWithFarmer;
   if(F.district) rows=rows.filter(x=>x.farmer.district===F.district);
-  if(F.taluka)   rows=rows.filter(x=>x.farmer.taluka===F.taluka);
+  if(F.taluka)   rows=rows.filter(x=>talukaDisplayName(x.farmer.taluka,x.farmer.district)===F.taluka);
   if(F.village)  rows=rows.filter(x=>x.farmer.village===F.village);
   if(F.status==='completed') rows=rows.filter(x=>x.plan.status==='completed');
   if(F.status==='pending')   rows=rows.filter(x=>!x.plan.status||x.plan.status==='planned');
@@ -6584,7 +6609,7 @@ function viewFcPlanning(){
 
   const stats=fcMonthlyPlanStats(myFcId, F.month);
   const districts=[...new Set(plansWithFarmer.map(x=>x.farmer.district).filter(Boolean))].sort();
-  const talukas=[...new Set(plansWithFarmer.map(x=>x.farmer.taluka).filter(Boolean))].sort();
+  const talukas=[...new Set(plansWithFarmer.map(x=>talukaDisplayName(x.farmer.taluka,x.farmer.district)).filter(Boolean))].sort();
   const villages=[...new Set(plansWithFarmer.map(x=>x.farmer.village).filter(Boolean))].sort();
 
   // "Today" strip — an always-visible shortcut so an FC opening Planning can
@@ -6865,7 +6890,7 @@ function viewDashboard(){
       body += `<tr style="border-bottom:1px solid var(--line-soft);cursor:pointer" data-go-farmer="${esc(f.id)}" data-program="${program}">
         <td style="padding:8px 8px;color:var(--ink-soft);font-size:11.5px">${esc(fmtDate(f.submittedAt||f.createdAt||''))}</td>
         <td style="padding:8px 8px"><b>${esc(f.name||'-')}</b></td>
-        <td style="padding:8px 8px;color:var(--ink-soft)">${esc([f.village,f.taluka,f.district].filter(Boolean).join(' / ')||'—')}</td>
+        <td style="padding:8px 8px;color:var(--ink-soft)">${esc([f.village,talukaDisplayName(f.taluka,f.district),f.district].filter(Boolean).join(' / ')||'—')}</td>
         <td style="padding:8px 8px">${fcLabel}</td>
         <td style="padding:8px 8px">${stageBadge}</td>
       </tr>`;
@@ -7300,7 +7325,7 @@ function viewHaat(){
       ${haatDistricts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}
     </select>
     <select id="fCrop"><option value="">All crops</option>
-      ${DB.crops.map(x=>`<option ${F.crop===x?'selected':''}>${x}</option>`).join('')}
+      ${(window.CROPS_CATALOG||[]).filter(x=>x!=='Other (અન્ય)').map(x=>`<option ${F.crop===x?'selected':''}>${esc(x)}</option>`).join('')}
     </select>
     <select id="fActive"><option value="">Active & inactive</option>
       <option value="1" ${F.active==='1'?'selected':''}>Active only</option>
@@ -7322,7 +7347,7 @@ function viewHaat(){
   if(F.haat) rows=rows.filter(r=>r.haat===F.haat);
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>r.district===F.district);
-  if(F.crop) rows=rows.filter(r=>r.crops.includes(F.crop));
+  if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
   
   if(F.active==='1') rows=rows.filter(r=>r.status==='green'&&r.active);
   if(F.active==='0') rows=rows.filter(r=>r.status==='green'&&!r.active);
@@ -7753,7 +7778,7 @@ function viewVerification(){
         ? (DB.convFarmers||[]).find(x => x.id === p.farmerId)
         : (DB.haatFarmers||[]).find(x => x.id === p.farmerId);
       const farmerName = farmer ? farmer.name : '<span style="color:var(--ink-faint)">(deleted)</span>';
-      const locParts   = farmer ? [farmer.village, farmer.taluka, farmer.district].filter(Boolean) : [];
+      const locParts   = farmer ? [farmer.village, talukaDisplayName(farmer.taluka,farmer.district), farmer.district].filter(Boolean) : [];
       const location   = locParts.length ? `<div style="font-size:12.5px">${esc(locParts[0]||'')}</div><div style="font-size:11px;color:var(--ink-soft)">${esc(locParts.slice(1).join(' / '))}</div>` : '—';
       const fc         = (DB.fcs||[]).find(x => x.id === p.fcId);
       const fcName     = fc ? esc(fc.name) : (p.fcId ? esc(p.fcId) : '— unassigned —');
@@ -8297,7 +8322,7 @@ function mapFormRow(row){
   }
   return {
     id: uid('CF'), program:'conversion',
-    name, phone, village, taluka, district, state,
+    name, phone, village, taluka: talukaDisplayName(taluka,district), district, state,
     landAcres, landBigha:bigha, organicBigha:parseFloat(orgBigha)||0,
     crops: cropsRaw,
     fcId: fc ? fc.id : '',
@@ -8337,25 +8362,6 @@ const KRSF_CROPS = [
   'Pomegranate (દાડમ)','Indian jujube (બોર)','Chikoo / Sapota (ચીકુ)','Coconut (નારિયેળ)','Dragon fruit (ડ્રેગન-ફ્રૂટ)',
   'Vegetable - other (અન્ય શાકભાજી)','Fruit - other (અન્ય ફળ)','Other (અન્ય)'
 ];
-const KRSF_DISTRICTS = {
-  'Aravalli (અરવલ્લી)':['Bayad','Bhiloda','Dhansura','Malpur','Meghraj','Modasa','Vijaynagar'],
-  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Dantiwada','Deesa','Dhanera','Palanpur','Vadgam','Danta','Kankrej'],
-  'Vav-Tharad (વાવ-થરાદ)':['Bhabhar','Dhima','Diyodar','Lakhani','Rah','Suigam','Tharad','Vav'],
-  'Botad (બોટાદ)':['Botad','Barwala','Gadhada','Ranpur'],
-  'Bhavnagar (ભાવનગર)':['Bhavnagar','Mahuva','Palitana','Sihor','Talaja','Umrala','Vallabhipur','Ghogha','Gariadhar','Jesar'],
-  'Anand (આણંદ)':['Anand','Anklav','Borsad','Khambhat','Petlad','Sojitra','Tarapur','Umreth'],
-  'Dahod (દાહોદ)':['Dahod','Devgadhbaria','Dhanpur','Fatepura','Garbada','Jhalod','Limkheda','Sanjeli','Singvad'],
-  'Dang (ડાંગ)':['Ahwa','Subir','Waghai'],
-  'Narmada (નર્મદા)':['Dediapada','Garudeshwar','Nandod','Sagbara','Tilakwada'],
-  'Sabarkantha (સાબરકાંઠા)':['Himmatnagar','Idar','Khedbrahma','Poshina','Prantij','Talod','Vadali','Vijaynagar'],
-  'Surat (સુરત)':['Bardoli','Choryasi','Kamrej','Mahuva','Mandvi','Mangrol','Olpad','Palsana','Umarpada'],
-  'Vadodara (વડોદરા)':['Dabhoi','Karjan','Padra','Savli','Sinor','Vadodara','Waghodia'],
-  'Ahmedabad (અમદાવાદ)':['Ahmedabad','Bavla','Daskroi','Detroj','Dhandhuka','Dholka','Mandal','Sanand','Viramgam'],
-  'Mehsana (મહેસાણા)':['Bechraji','Jotana','Kadi','Kheralu','Mehsana','Satlasana','Unjha','Vadnagar','Vijapur','Visnagar'],
-  'Gandhinagar (ગાંધીનગર)':['Dehgam','Gandhinagar','Kalol','Mansa'],
-  'Rajkot (રાજકોટ)':['Rajkot','Gondal','Jasdan','Jamkandorna','Kotda Sangani','Lodhika','Paddhari','Upleta','Vinchhiya'],
-  'Other (અન્ય)':['Other (અન્ય)'],
-};
 const KRSF_INCOME_RANGES = ['Less than ₹1 lakh','₹1 – 2 lakh','₹2 – 5 lakh','More than ₹5 lakh'];
 const KRSF_INCOME_SOURCES = ['Farming','Labour','Business','Livestock','Salaried job'];
 const KRSF_IRRIGATION = ['Borewell','Well','Canal','River','Pond','Rain-fed','Drip','Sprinkler'];
@@ -8585,12 +8591,12 @@ function openConvEnrollmentForm(){
       + '</div>';
   }
   function sectionLocation(){
-    const districts = Object.keys(window.DISTRICT_TALUKAS||KRSF_DISTRICTS).sort();
+    const districts = Object.keys(window.DISTRICT_TALUKAS||{}).sort();
     const dPh = L('— Pick district —', '— જિલ્લો —');
     const tPh = L('— Pick taluka —', '— તાલુકો —');
     const districtOpts = '<option value="">' + dPh + '</option>'
       + districts.map(d=>'<option value="'+esc(d)+'"'+(d===state.district?' selected':'')+'>'+esc(guLabel(d))+'</option>').join('');
-    const talukas = state.district ? ((window.DISTRICT_TALUKAS||KRSF_DISTRICTS)[state.district]||[]).slice().sort() : [];
+    const talukas = state.district ? ((window.DISTRICT_TALUKAS||{})[state.district]||[]).slice().sort() : [];
     const talukaOpts = '<option value="">' + tPh + '</option>'
       + talukas.map(t=>'<option'+(t===state.taluka?' selected':'')+'>'+esc(t)+'</option>').join('');
     return '<div class="krsf-row">'
@@ -8800,7 +8806,7 @@ function openConvEnrollmentForm(){
     if(dEl) dEl.onchange = () => {
       state.district = dEl.value; state.taluka = '';
       if(tEl){
-        const talukas = state.district ? (KRSF_DISTRICTS[state.district]||[]).slice().sort() : [];
+        const talukas = state.district ? ((window.DISTRICT_TALUKAS||{})[state.district]||[]).slice().sort() : [];
         tEl.innerHTML = '<option value="">— Pick taluka —</option>' + talukas.map(t=>'<option>'+esc(t)+'</option>').join('');
         tEl.disabled = !state.district;
       }
@@ -9207,7 +9213,7 @@ function viewFcInbox(){
     const fc=fcById(r.fcId);
     h+=`<tr data-id="${r.id}">
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(r.id)}</div></td>
-      <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.taluka||'')}${r.taluka?', ':''}${esc(r.district)}</div></td>
+      <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(talukaDisplayName(r.taluka,r.district)||'')}${r.taluka?', ':''}${esc(r.district)}</div></td>
       <td>${fc?esc(fc.name):'—'}</td>
       <td style="font-size:11.5px">${esc(r.lastVisitAt||'—')}</td>
       <td style="font-size:11.5px">${esc(r.nextVisitDue||'—')}</td>
@@ -9801,7 +9807,7 @@ function renderHaatEnrollmentData(f){
     const a=fd.q2_address;
     h+=sec("Q2. Address (સરનામું)", kv([
       ['Address',a.fullAddress],['Locality',a.locality],['Village',a.village],
-      ['Taluka',a.taluka],['District',a.district],['Pincode',a.pincode],
+      ['Taluka',talukaDisplayName(a.taluka,a.district)],['District',a.district],['Pincode',a.pincode],
       ['Mobile',a.mobile],['Phone',a.phone],
     ]));
   }
@@ -10087,7 +10093,7 @@ function openHaatDrawer(id){
 
   h+=`<div class="detail-grid">
     <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village)}</div></div>
-    <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(f.taluka)}</div></div>
+    <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(talukaDisplayName(f.taluka,f.district))}</div></div>
     <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district)}</div></div>
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
@@ -10694,7 +10700,7 @@ function openAssignHaatModal(id){
 /* ============ MODAL: ASSIGN FC ============ */
 function openAssignFcModal(id){
   const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
-  const body=`<div class="hint" style="margin-bottom:12px"><b>${esc(f.name)}</b> · ${esc(f.village)}, ${esc(f.taluka||'')}${f.taluka?', ':''}${esc(f.district)}</div>`
+  const body=`<div class="hint" style="margin-bottom:12px"><b>${esc(f.name)}</b> · ${esc(f.village)}, ${esc(talukaDisplayName(f.taluka,f.district)||'')}${f.taluka?', ':''}${esc(f.district)}</div>`
     +fld('Assign facilitator',sel('afFc',[['','— select facilitator —'],...DB.fcs.map(x=>[x.id,x.name+' ('+x.district+')'])],f.fcId||currentFcId()||''),true);
   modalShell('Assign facilitator — '+esc(f.name),body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -10728,7 +10734,7 @@ function openBulkAssignModal(){
   }
   const byTaluka={};
   unassigned.forEach(f=>{
-    const k=(f.taluka||f.district||'—').trim();
+    const k=(talukaDisplayName(f.taluka,f.district)||f.district||'—').trim();
     byTaluka[k]=(byTaluka[k]||0)+1;
   });
   const opts=Object.keys(byTaluka).sort();
@@ -10760,7 +10766,7 @@ function openBulkAssignModal(){
     const nowIso = new Date().toISOString();
     DB.convFarmers.forEach(f=>{
       if(f.fcId) return;
-      const k=(f.taluka||f.district||'—').trim();
+      const k=(talukaDisplayName(f.taluka,f.district)||f.district||'—').trim();
       if(k!==t) return;
       f.fcId=fcId; f.assignedAt=todayISO();
       if(!f.stage || f.stage==='enrolled') f.stage='assigned';
@@ -10848,7 +10854,7 @@ function openFarmerModal(program,id){
   </div>
   <div class="field-row">
     ${fld('Village',`<input id="ffVillage" value="${esc(f.village||'')}">`,true)}
-    ${fld('Taluka',`<input id="ffTaluka" value="${esc(f.taluka||'')}">`)}
+    ${fld('Taluka',`<input id="ffTaluka" list="ffTalukaList" value="${esc(talukaDisplayName(f.taluka,f.district)||f.taluka||'')}"><datalist id="ffTalukaList">${((window.DISTRICT_TALUKAS||{})[f.district]||[]).map(t=>`<option value="${esc(t)}">`).join('')}</datalist>`)}
   </div>
   <div class="field-row">
     ${fld('State',sel('ffState',stateOpts,f.state),true)}
@@ -10863,7 +10869,7 @@ function openFarmerModal(program,id){
       ${fld('Years doing organic',`<input type="number" id="ffYears" value="${f.yearsOrganic||''}">`)}
       ${fld('Certification',sel('ffCert',['GOPCA','PGS','None (Tribal exemption)','Registration pending'],f.certification))}
     </div>`;
-    body+=fld('Crops grown',`<div class="checkgrid" id="ffCrops">${cropChecks}</div>`);
+    body+=fld('Crops grown',`<input type="text" id="ffCropSearch" placeholder="🔍 Search crop…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:7px;box-sizing:border-box"><div class="checkgrid" id="ffCrops" style="max-height:260px;overflow-y:auto">${cropChecks}</div>`);
   }
 
   if(program==='conv'){
@@ -10881,6 +10887,18 @@ function openFarmerModal(program,id){
   $('#ffState').onchange=()=>{
     const ds=DB.states[$('#ffState').value];
     $('#ffDistrict').innerHTML=ds.map(d=>`<option>${esc(d)}</option>`).join('');
+    if($('#ffTalukaList')) $('#ffTalukaList').innerHTML=((window.DISTRICT_TALUKAS||{})[$('#ffDistrict').value]||[]).map(t=>`<option value="${esc(t)}">`).join('');
+  };
+  // district change -> refresh the taluka suggestion list for that district
+  if($('#ffDistrict')) $('#ffDistrict').onchange=()=>{
+    if($('#ffTalukaList')) $('#ffTalukaList').innerHTML=((window.DISTRICT_TALUKAS||{})[$('#ffDistrict').value]||[]).map(t=>`<option value="${esc(t)}">`).join('');
+  };
+
+  if($('#ffCropSearch')) $('#ffCropSearch').oninput=e=>{
+    const q=e.target.value.trim().toLowerCase();
+    $('#ffCrops').querySelectorAll('label').forEach(lbl=>{
+      lbl.style.display = (!q || lbl.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    });
   };
 
   // phone inline validation on blur
@@ -10901,7 +10919,7 @@ function openFarmerModal(program,id){
     const crops=program==='haat'?[...$('#ffCrops').querySelectorAll('input:checked')].map(c=>c.value):(f.crops||[]);
     const base={
       name, phone:_phone,
-      village:$('#ffVillage').value.trim(), taluka:$('#ffTaluka').value.trim(),
+      village:$('#ffVillage').value.trim(), taluka:talukaDisplayName($('#ffTaluka').value.trim(),$('#ffDistrict').value),
       state:$('#ffState').value, district:$('#ffDistrict').value,
       landAcres:_land, fcId:$('#ffFc')?.value||(f.fcId||''), crops,
     };
@@ -13280,7 +13298,7 @@ window.addEventListener('message',async ev=>{
       });
       const farmer = {
         id: f.id, name: f.name,
-        village: f.village || '', taluka: f.taluka || '', district: f.district || '',
+        village: f.village || '', taluka: talukaDisplayName(f.taluka,f.district) || '', district: f.district || '',
         phone: e.mobile || f.phone || '', aadhaar: e.aadhaar || f.aadhaar || '',
         age: e.age || f.age || '',
         address: e.address || ((f.village||'') + ', ' + (f.district||'')),
@@ -13479,7 +13497,7 @@ window.addEventListener('message',async ev=>{
     const m = (DB.months && DB.months.length) ? DB.months[DB.months.length-1] : todayISO().slice(0,7);
     const baseRec={
       program:'haat', name,
-      village:f.village||'', taluka:f.taluka||'',
+      village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
       district:f.district||'', state:guessState(f.district),
       phone:f.phone||'', landAcres:f.land||0,
       vertical:'Livelihood', yearsOrganic:0, certification:'Registration pending',
@@ -13651,7 +13669,7 @@ function buildVerifPrefill(f){
     farmer_father:    p.fatherName || '',
     farmer_locality:  a.locality || '',
     farmer_village:   a.village  || f.village  || '',
-    farmer_taluka:    a.taluka   || f.taluka   || '',
+    farmer_taluka:    talukaDisplayName(a.taluka||f.taluka, a.district||f.district) || '',
     farmer_district:  a.district || f.district || '',
     farmer_pincode:   a.pincode  || '',
     farmer_mobile:    a.mobile   || f.phone    || '',
@@ -15275,7 +15293,7 @@ function viewPendingEnrolments(){
         <td style="font-size:11.5px;color:var(--ink-soft);white-space:nowrap">${esc(ago)}</td>
         <td><span class="tag ${isHaat?'green':'yellow'}" style="font-size:10.5px"><span class="d"></span>${isHaat?'Haat':'Conversion'}</span></td>
         <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(phone)}</div></td>
-        <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.taluka||'')}, ${esc(r.district)}</div></td>
+        <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(talukaDisplayName(r.taluka,r.district)||'')}, ${esc(r.district)}</div></td>
         <td style="font-size:12.5px;white-space:nowrap">${esc(landTxt)}</td>
         <td style="max-width:160px">${cropsCell||'<span style="color:var(--ink-faint)">—</span>'}</td>
         <td style="font-size:12px">${fcAssigned}</td>
@@ -15362,7 +15380,7 @@ function openPendingDetailModal(id){
       <tr><td style="padding:4px 0;width:160px;color:var(--ink-soft)">નામ / Name</td><td><b>${esc(r.name)}</b></td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">મોબાઈલ / Mobile</td><td>${esc(phone)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">ગામ / Village</td><td>${esc(r.village)}</td></tr>
-      <tr><td style="padding:4px 0;color:var(--ink-soft)">તાલુકો / Taluka</td><td>${esc(r.taluka||'—')}</td></tr>
+      <tr><td style="padding:4px 0;color:var(--ink-soft)">તાલુકો / Taluka</td><td>${esc(talukaDisplayName(r.taluka,r.district)||'—')}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">જિલ્લો / District</td><td>${esc(r.district)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">જમીન / Land</td><td>${isHaat?(r.landAcres||0)+' acres':(r.landBigha||0)+' bigha · '+(r.organicBigha||0)+' acre to convert'}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">પાક / Crops</td><td>${esc(cropsTxt)}</td></tr>

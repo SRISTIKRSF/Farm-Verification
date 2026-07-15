@@ -2264,7 +2264,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4522,7 +4522,36 @@ function resetQuestionSchemaV5(){
   window.QUESTIONS_V5  = JSON.parse(JSON.stringify(window.DEFAULT_QUESTIONS_V5));
   try{ localStorage.removeItem(QSCHEMA_KEY_V5); }catch(e){}
 }
+/* A saved schema override in localStorage is a point-in-time SNAPSHOT — it
+   never automatically picks up later changes to the core schema (like the
+   crops_table -> plot_crops_table redesign). A device that customized this
+   form before that redesign silently freezes on the OLD crops question
+   forever, across every future deploy, since nothing ever re-checks it.
+   Self-heal on every load: known rename handled explicitly, plus a generic
+   safety net for any other core question missing from a stale override. */
+function reconcileCoreQuestionsV5(){
+  let changed = false;
+  const oldIdx = window.QUESTIONS_V5.findIndex(q=>q.id==='crops_table');
+  const hasNew = window.QUESTIONS_V5.some(q=>q.id==='plot_crops_table');
+  if(oldIdx>=0 && !hasNew){
+    const def = window.DEFAULT_QUESTIONS_V5.find(q=>q.id==='plot_crops_table');
+    if(def) window.QUESTIONS_V5[oldIdx] = JSON.parse(JSON.stringify(def));
+    else window.QUESTIONS_V5.splice(oldIdx,1);
+    changed = true;
+  } else if(oldIdx>=0 && hasNew){
+    window.QUESTIONS_V5.splice(oldIdx,1); // dead duplicate of the id above
+    changed = true;
+  }
+  (window.CORE_QUESTION_IDS_V5||[]).forEach(cid=>{
+    if(!window.QUESTIONS_V5.some(q=>q.id===cid)){
+      const def = window.DEFAULT_QUESTIONS_V5.find(q=>q.id===cid);
+      if(def){ window.QUESTIONS_V5.push(JSON.parse(JSON.stringify(def))); changed = true; }
+    }
+  });
+  return changed;
+}
 loadQuestionSchemaOverrideV5();
+if(reconcileCoreQuestionsV5()) saveQuestionSchemaOverrideV5();
 
 /* Gujarat district -> taluka master mapping for cascading address.
    Covers all 34 Gujarat districts (incl. Vav-Tharad, split from Banaskantha

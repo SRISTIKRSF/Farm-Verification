@@ -2228,7 +2228,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v41';
+const APP_VERSION = 'v42';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4584,6 +4584,10 @@ window.CROPS_CATALOG = [
   "Cracked grain mix (Dalia) (ફાડા (ઘઉં, જુવાર, બાજરી, જવ, મકાઈ))","Banti (grain variety) (બંટી)","Puffed rice (Mamra) (મમરા)",
   "Barnyard millet (Moraiyo) (મોરૈયો)","Ragi / Finger millet (રાગી)","Rajgira / Amaranth grain (રાજગરો)",
   "Little millet (Samo) (સામો)","Semolina (Suji) (સોજી)","Foxtail millet (Hari Kang) (હરિ કાંગ)",
+  "Long Brinjal (લાંબા રીંગણ)","Green onion / Spring onion (લીલી ડુંગળી)","Green corn / Fresh Maize (લીલી મકાઈ)",
+  "Ripe Papaya (પાકા પપૈયા)","Coconut (નારિયેળ)","Fennel (વરિયાળી)",
+  "Tobacco (તમાકુ)","Mustard greens (સરસવ ભાજી)","Indian jujube (બોર)",
+  "Ajwain (અજમો)","Linseed / Flaxseed (અળસી)","Grapes (દ્રાક્ષ)",
   "Other (અન્ય)",
 ];
 window.CROP_SEASONS = ['Kharif (ખરીફ)','Rabi (રવિ)','Year-round','Perennial'];
@@ -8199,14 +8203,20 @@ function mapFormRow(row){
    (https://shahnitant891-spec.github.io/krsf-organic/). Multi-section
    modal; on Save, pushes a fully-populated record into DB.convFarmers
    with all the KRSF metadata stored in `intake` for later analysis. */
+// v(crop-catalog) — aligned to use the exact same strings as window.CROPS_CATALOG
+// wherever they represent the same crop (was previously independently spelled:
+// e.g. 'Paddy/Rice (ચોખા)' vs the catalog's 'Paddy / Rice (ડાંગર)'), so the
+// two lists never again silently drift into two different labels for one crop.
+// Kept as its own curated ~44-item list (not the full 190) — this form is
+// scoped to field crops a converting farmer grows, not haat retail products.
 const KRSF_CROPS = [
-  'Wheat (ઘઉં)','Cotton (કપાસ)','Paddy/Rice (ચોખા)','Maize (મકાઈ)','Bajra (બાજરી)','Jowar (જુવાર)',
-  'Tur/Arhar (તુવેર)','Moong (મગ)','Chana (ચણા)','Urad (અડદ)','Mustard (રાઈ)','Sesame (તલ)',
-  'Groundnut (મગફળી)','Castor (દિવેલ)','Soybean (સોયાબીન)','Cumin (જીરું)','Coriander (ધાણા)','Fenugreek (મેથી)',
-  'Tomato (ટામેટા)','Onion (ડુંગળી)','Potato (બટાકા)','Brinjal (રીંગણ)','Okra/Bhindi (ભીંડા)','Cabbage (કોબી)',
-  'Cauliflower (ફુલગોબી)','Spinach (પાલક)','Garlic (લસણ)','Ginger (આદુ)','Turmeric (હળદર)','Chilli (મરચા)',
+  'Wheat (ઘઉં)','Cotton (કપાસ)','Paddy / Rice (ડાંગર)','Maize (મકાઈ)','Bajri (બાજરી)','Jowar (જુવાર)',
+  'Tur / Arhar (તુવેર)','Moong (મગ)','Chana (ચણા)','Urad (whole) (અડદ)','Mustard (રાઇ)','Sesame (તલ)',
+  'Groundnut (મગફળી)','Castor (દિવેલ)','Soybean (સોયાબીન)','Cumin (જીરુ)','Coriander (કોથમીર)','Methi (મેથી)',
+  'Tomato (ટામેટા)','Onion (ડુંગળી)','Potato (બટાકા)','Brinjal (રીંગણ)','Okra / Bhindi (ભીંડા)','Cabbage (કોબી)',
+  'Cauliflower (ફુલગોબી)','Spinach (પાલક)','Garlic (લસણ)','Ginger (આદુ)','Turmeric (હળદર)','Chili / Green chili (મરચા)',
   'Sugarcane (શેરડી)','Banana (કેળા)','Mango (કેરી)','Papaya (પપૈયા)','Guava (જામફળ)','Lemon (લીંબુ)',
-  'Pomegranate (દાડમ)','Bor (બોર)','Sapota/Chiku (ચીકુ)','Coconut (નારિયેળ)','Dragon fruit (ડ્રેગન ફ્રુટ)',
+  'Pomegranate (દાડમ)','Indian jujube (બોર)','Chikoo / Sapota (ચીકુ)','Coconut (નારિયેળ)','Dragon fruit (ડ્રેગન-ફ્રૂટ)',
   'Vegetable - other (અન્ય શાકભાજી)','Fruit - other (અન્ય ફળ)','Other (અન્ય)'
 ];
 const KRSF_DISTRICTS = {
@@ -10708,7 +10718,10 @@ function openFarmerModal(program,id){
     :{crops:[],state:Object.keys(DB.states)[0]};
   const stateOpts=Object.keys(DB.states);
   const distOpts=DB.states[f.state||stateOpts[0]];
-  const cropChecks=DB.crops.map(c=>
+  // v(crop-catalog) — sourced from the canonical CROPS_CATALOG instead of the
+  // old messy DB.crops (case dupes, no Gujarati, mixed-in non-crop products).
+  // Safe now that existing farmer records have been migrated to match it.
+  const cropChecks=(window.CROPS_CATALOG||DB.crops).filter(c=>c!=='Other (અન્ય)').map(c=>
     `<label><input type="checkbox" value="${esc(c)}" ${(f.crops||[]).includes(c)?'checked':''}>${esc(c)}</label>`).join('');
 
   let body=`<div class="field-row">

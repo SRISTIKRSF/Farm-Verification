@@ -68,6 +68,16 @@ self.addEventListener('fetch', e => {
     return; // let browser handle normally
   }
 
+  // Shareable direct-to-form shortlinks (/haat/, /conv/) — always network,
+  // never cached. Without this, the "isShell" navigate-request match below
+  // would catch these too (mode:'navigate' matches ANY full-page nav, not
+  // just the app root) and silently serve the cached MAIN APP shell instead
+  // of the tiny redirect stub, breaking the shortlink for anyone whose
+  // browser already has this service worker installed from a prior visit.
+  if (/\/(haat|conv)\/?(index\.html)?$/i.test(url.pathname)) {
+    return; // let browser handle normally
+  }
+
   const isShell = e.request.mode === 'navigate' ||
                   url.pathname.endsWith('/') ||
                   url.pathname.endsWith('/index.html');

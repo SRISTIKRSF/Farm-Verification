@@ -2228,7 +2228,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v42';
+const APP_VERSION = 'v43';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4182,6 +4182,24 @@ function saveSession(s){
 let SESSION = loadSession();
 function isAdminUser(){ return !SESSION || SESSION.role === 'admin'; }
 function currentFcId(){ return SESSION && SESSION.role === 'fc' ? SESSION.userId : null; }
+/* v(district-scoping) — per-FC district assignment, applied ONLY to the FC's
+   own mobile discovery screens (My Work queue, Haat Farmers reference list),
+   NOT to admin table views (those intentionally stay team-wide — see
+   filterByCurrentFc's comment below, a separate earlier product decision).
+   Fallbacks are deliberate: an FC with no districts assigned sees everyone
+   (opt-in scoping, nothing breaks before an admin assigns districts), and a
+   farmer with no district set is visible to every FC (so it can't silently
+   vanish from every queue just because its district field is blank). */
+function fcAssignedDistricts(){
+  const fc=(DB.fcs||[]).find(x=>x.id===currentFcId());
+  return (fc && Array.isArray(fc.districts)) ? fc.districts : [];
+}
+function _fcCanSeeFarmer(f){
+  const ds=fcAssignedDistricts();
+  if(!ds.length) return true;
+  if(!f || !f.district) return true;
+  return ds.includes(f.district);
+}
 function filterByCurrentFc(farmers){
   // v9 — hard filtering removed. In a 3-FC team the FCs need to see ALL
   // farmers (forms received, other FCs' assignments, pending applications)
@@ -6125,8 +6143,8 @@ function viewFcHaat(){
   const name=_fcMyName();
   if(!FILTERS.fcH) FILTERS.fcH={q:'',lim:50,prog:'haat'};
   const F=FILTERS.fcH;
-  const approvedHaat=(DB.haatFarmers||[]).filter(f=>!f._archived && f.status==='green');
-  const approvedConv=(DB.convFarmers||[]).filter(f=>!f._archived && convCategory(f)==='green');
+  const approvedHaat=(DB.haatFarmers||[]).filter(f=>!f._archived && f.status==='green' && _fcCanSeeFarmer(f));
+  const approvedConv=(DB.convFarmers||[]).filter(f=>!f._archived && convCategory(f)==='green' && _fcCanSeeFarmer(f));
   const farmers = F.prog==='conv' ? approvedConv : approvedHaat;
   v.innerHTML=`
     ${_fcTopbar(esc(name[0]||'F').toUpperCase(),'Reference only — no verification actions here',esc(name))}
@@ -6192,7 +6210,7 @@ function _fcConvCards(farmers,F){
 function viewFcConversion(){
   const v=$('#view');
   const name=_fcMyName();
-  const farmers=(DB.convFarmers||[]).filter(f=>!f._archived);   // archived hidden from FCs
+  const farmers=(DB.convFarmers||[]).filter(f=>!f._archived && _fcCanSeeFarmer(f));   // archived + out-of-district hidden from FCs
   const cs=convStats();
   if(!FILTERS.fcC) FILTERS.fcC={q:'',cat:'',lim:50};
   const F=FILTERS.fcC;
@@ -6285,10 +6303,10 @@ function buildFcQueueItem(f, program, bucket){
 }
 function getFcQueueLists(){
   const lists={new:[],seasonal:[],overdue:[],completed:[]};
-  (DB.haatFarmers||[]).filter(f=>!f._archived).forEach(f=>{
+  (DB.haatFarmers||[]).filter(f=>!f._archived && _fcCanSeeFarmer(f)).forEach(f=>{
     const b=_fcHaatBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'haat',b));
   });
-  (DB.convFarmers||[]).filter(f=>!f._archived).forEach(f=>{
+  (DB.convFarmers||[]).filter(f=>!f._archived && _fcCanSeeFarmer(f)).forEach(f=>{
     const b=_fcConvBucket(f); if(b) lists[b].push(buildFcQueueItem(f,'conv',b));
   });
   Object.keys(lists).forEach(k=>lists[k].sort((a,b)=>(a.applicationDate||'').localeCompare(b.applicationDate||'')));
@@ -10869,7 +10887,11 @@ function openFcModal(id){
     ${fld('State',sel('fcState',stateOpts,cur.state),true)}
     ${fld('District',sel('fcDist',distOpts,cur.district),true)}
   </div>
-  ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}`;
+  ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}
+  ${fld('Assigned districts (field visibility)',
+    `<div class="hint" style="margin-bottom:8px">Tick the districts this facilitator covers. They'll only see farmers in these districts. Leave blank to see everyone (default, unrestricted).</div>
+     <div class="checkgrid" id="fcDistricts">${GUJARAT_DISTRICTS.map(d=>
+       `<label><input type="checkbox" value="${esc(d)}" ${(cur.districts||[]).includes(d)?'checked':''}>${esc(d)}</label>`).join('')}</div>`)}`;
   modalShell(editing?'Edit facilitator — '+esc(f.name):'Add facilitator',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="saveFc">${svg(I.check)}${editing?'Save changes':'Add facilitator'}</button>`);
@@ -10877,10 +10899,11 @@ function openFcModal(id){
   $('#saveFc').onclick=async()=>{
     const name=$('#fcName').value.trim();
     if(!name){toast('Name is required');return;}
+    const districts=[...$('#fcDistricts').querySelectorAll('input:checked')].map(c=>c.value);
     const data={
       name, phone:$('#fcPhone').value.trim(),
       state:$('#fcState').value, district:$('#fcDist').value,
-      partner:$('#fcPartner').value,
+      partner:$('#fcPartner').value, districts,
     };
     if(editing){
       Object.assign(f,data);

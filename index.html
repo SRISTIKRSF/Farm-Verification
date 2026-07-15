@@ -2212,8 +2212,23 @@ setTimeout(()=>{
 <\/script>
 </body>
 </html>`;
+/* Single source of truth for Gujarat's 34 districts — "English (ગુજરાતી)" bilingual
+   format. Vav-Tharad split from Banaskantha on 2025-10-02 (Gujarat's 34th district).
+   Every district dropdown / taluka-map / farmer-record migration in the app should
+   read from this array so they can never drift apart or duplicate again. */
+const GUJARAT_DISTRICTS = [
+  'Ahmedabad (અમદાવાદ)','Amreli (અમરેલી)','Anand (આણંદ)','Aravalli (અરવલ્લી)',
+  'Banaskantha (બનાસકાંઠા)','Bharuch (ભરૂચ)','Bhavnagar (ભાવનગર)','Botad (બોટાદ)',
+  'Chhota Udaipur (છોટાઉદેપુર)','Dahod (દાહોદ)','Dang (ડાંગ)','Devbhoomi Dwarka (દેવભૂમિ દ્વારકા)',
+  'Gandhinagar (ગાંધીનગર)','Gir Somnath (ગીર સોમનાથ)','Jamnagar (જામનગર)','Junagadh (જૂનાગઢ)',
+  'Kheda (ખેડા)','Kutch (કચ્છ)','Mahisagar (મહીસાગર)','Mehsana (મહેસાણા)',
+  'Morbi (મોરબી)','Narmada (નર્મદા)','Navsari (નવસારી)','Panchmahal (પંચમહાલ)',
+  'Patan (પાટણ)','Porbandar (પોરબંદર)','Rajkot (રાજકોટ)','Sabarkantha (સાબરકાંઠા)',
+  'Surat (સુરત)','Surendranagar (સુરેન્દ્રનગર)','Tapi (તાપી)','Vadodara (વડોદરા)',
+  'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
+];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v39';
+const APP_VERSION = 'v40';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -2352,11 +2367,9 @@ function seedDB(){
    are upgraded to the latest version; visits and FC-edited fields preserved. */
 const DEMO_FORM_VERSION = 3;
 function seedDemoHaatFarmers(d){
-  if(d.states && d.states.Gujarat){
-    ['Mehsana','Porbandar','Anand'].forEach(dist=>{
-      if(!d.states.Gujarat.includes(dist)) d.states.Gujarat.push(dist);
-    });
-  }
+  // v(district-cleanup) — no longer needed: normaliseDB() now force-sets
+  // d.states.Gujarat to the full canonical 34-district list on every boot,
+  // so Mehsana/Porbandar/Anand are always already present.
   const month = (d.months && d.months.length) ? d.months[d.months.length-1] : '2025-09';
 
   // ---- MODI: 3 years in, mid-conversion, Mehsana ----
@@ -2762,10 +2775,7 @@ function seedDemoHaatFarmers(d){
 const VANSHITA_DEMO_VERSION = 4;
 function seedVanshitaDemo(d){
   const id = 'HF_VANSHITA_001';
-  // make sure Anand is a known district under Gujarat
-  if(d.states && d.states.Gujarat && !d.states.Gujarat.includes('Anand')){
-    d.states.Gujarat.push('Anand');
-  }
+  // v(district-cleanup) — normaliseDB() now always guarantees Anand is present.
   const submittedAt   = '2026-05-20T10:35:00.000Z';
   const verifiedAt    = '2026-05-29T14:10:00.000Z';
   const submittedDate = '2026-05-20';
@@ -3053,7 +3063,14 @@ function seedVanshitaDemo(d){
 function normaliseDB(d){
   d.fcs=d.fcs||[]; d.haatFarmers=d.haatFarmers||[]; d.convFarmers=d.convFarmers||[];
   d.haats=d.haats||SEED.haats; d.crops=d.crops||SEED.crops;
-  d.months=d.months||SEED.months; d.states=d.states||SEED.states;
+  d.months=d.months||SEED.months;
+  // v(district-cleanup) — force-correct on EVERY boot, not just first-seed.
+  // Older/imported data (and even the old SEED literal) carries a messy,
+  // duplicate-ridden district list (case dupes, spelling variants, missing
+  // the new Vav-Tharad district) — always override with the single
+  // canonical GUJARAT_DISTRICTS source rather than trusting whatever was
+  // persisted, so every dropdown across the app is guaranteed clean.
+  d.states={Gujarat:GUJARAT_DISTRICTS.slice()};
   d.activity=d.activity||[];
   d.settings=d.settings||{};
   if(!Array.isArray(d.settings.practices)||!d.settings.practices.length){
@@ -4446,13 +4463,15 @@ function resetQuestionSchemaV5(){
 loadQuestionSchemaOverrideV5();
 
 /* Gujarat district -> taluka master mapping for cascading address.
-   Covers all 33 Gujarat districts with their major talukas. */
+   Covers all 34 Gujarat districts (incl. Vav-Tharad, split from Banaskantha
+   2025-10-02) with their major talukas. Keys must exactly match GUJARAT_DISTRICTS. */
 window.DISTRICT_TALUKAS = {
   'Ahmedabad (અમદાવાદ)':['Ahmedabad City','Bavla','Daskroi','Detroj-Rampura','Dhandhuka','Dholka','Dholera','Mandal','Sanand','Viramgam'],
   'Amreli (અમરેલી)':['Amreli','Babra','Bagasara','Dhari','Jafrabad','Khambha','Kunkavav-Vadia','Lathi','Lilia','Rajula','Savarkundla'],
   'Anand (આણંદ)':['Anand','Anklav','Borsad','Khambhat','Petlad','Sojitra','Tarapur','Umreth'],
   'Aravalli (અરવલ્લી)':['Bayad','Bhiloda','Dhansura','Malpur','Meghraj','Modasa','Vijaynagar'],
-  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Bhabhar','Danta','Dantiwada','Deesa','Dhanera','Diyodar','Kankrej','Lakhani','Palanpur','Suigam','Tharad','Vadgam','Vav'],
+  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Danta','Dantiwada','Deesa','Dhanera','Kankrej','Palanpur','Vadgam'],
+  'Vav-Tharad (વાવ-થરાદ)':['Bhabhar','Dhima','Diyodar','Lakhani','Rah','Suigam','Tharad','Vav'],
   'Bharuch (ભરૂચ)':['Amod','Anklesvar','Bharuch','Hansot','Jambusar','Jhagadia','Vagra','Valia','Netrang'],
   'Bhavnagar (ભાવનગર)':['Bhavnagar','Botad (now sep)','Gariadhar','Ghogha','Jesar','Mahuva','Palitana','Sihor','Talaja','Umrala','Vallabhipur'],
   'Botad (બોટાદ)':['Barwala','Botad','Gadhada','Ranpur'],
@@ -8134,7 +8153,8 @@ const KRSF_CROPS = [
 ];
 const KRSF_DISTRICTS = {
   'Aravalli (અરવલ્લી)':['Bayad','Bhiloda','Dhansura','Malpur','Meghraj','Modasa','Vijaynagar'],
-  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Dantiwada','Deesa','Dhanera','Lakhani','Palanpur','Tharad','Vadgam','Vav','Suigam','Danta','Bhabhar','Diyodar','Kankrej'],
+  'Banaskantha (બનાસકાંઠા)':['Amirgadh','Dantiwada','Deesa','Dhanera','Palanpur','Vadgam','Danta','Kankrej'],
+  'Vav-Tharad (વાવ-થરાદ)':['Bhabhar','Dhima','Diyodar','Lakhani','Rah','Suigam','Tharad','Vav'],
   'Botad (બોટાદ)':['Botad','Barwala','Gadhada','Ranpur'],
   'Bhavnagar (ભાવનગર)':['Bhavnagar','Mahuva','Palitana','Sihor','Talaja','Umrala','Vallabhipur','Ghogha','Gariadhar','Jesar'],
   'Anand (આણંદ)':['Anand','Anklav','Borsad','Khambhat','Petlad','Sojitra','Tarapur','Umreth'],
@@ -14183,20 +14203,9 @@ function enterPublicMode(targetRoute){
   document.head.appendChild(css);
 })();
 
-// === Districts for the public form (Gujarat focus) ===
-const PUBLIC_DISTRICTS = [
-  'Aravalli (અરવલ્લી)','Sabarkantha (સાબરકાંઠા)','Mehsana (મહેસાણા)',
-  'Banaskantha (બનાસકાંઠા)','Gandhinagar (ગાંધીનગર)','Ahmedabad (અમદાવાદ)',
-  'Anand (આણંદ)','Kheda (ખેડા)','Vadodara (વડોદરા)','Bharuch (ભરૂચ)',
-  'Surat (સુરત)','Tapi (તાપી)','Navsari (નવસારી)','Valsad (વલસાડ)',
-  'Dang (ડાંગ)','Narmada (નર્મદા)','Panchmahal (પંચમહાલ)','Dahod (દાહોદ)',
-  'Mahisagar (મહીસાગર)','Chhota Udaipur (છોટા ઉદેપુર)','Patan (પાટણ)',
-  'Surendranagar (સુરેન્દ્રનગર)','Botad (બોટાદ)','Bhavnagar (ભાવનગર)',
-  'Amreli (અમરેલી)','Gir Somnath (ગીર સોમનાથ)','Junagadh (જૂનાગઢ)',
-  'Rajkot (રાજકોટ)','Morbi (મોરબી)','Jamnagar (જામનગર)',
-  'Devbhoomi Dwarka (દેવભૂમિ દ્વારકા)','Porbandar (પોરબંદર)','Kutch (કચ્છ)',
-  'Other / અન્ય'
-];
+// === Districts for the public form (Gujarat focus) — derived from the single
+// GUJARAT_DISTRICTS source so this list can never drift out of sync again. ===
+const PUBLIC_DISTRICTS = [...GUJARAT_DISTRICTS, 'Other / અન્ય'];
 
 const PUBLIC_CROPS_HAAT = [
   ['કપાસ','Cotton'],['ઘઉં','Wheat'],['ડાંગર','Paddy/Rice'],['મકાઈ','Maize'],

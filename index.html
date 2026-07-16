@@ -908,7 +908,7 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 .section-title .num{width:34px;height:34px;border-radius:9px;background:var(--leaf);color:#fff;display:grid;place-items:center;font-weight:700;flex-shrink:0;font-size:15px}
 .section-title .h{font-size:15.5px;font-weight:700}
 .section-title .s{font-size:11.5px;color:var(--ink-soft);margin-top:2px}
-.field{margin-bottom:14px}
+.field{margin-bottom:14px;scroll-margin-top:92px}
 .field>label.q,.field>.q-label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;line-height:1.45}
 .field>label.q .req,.field>.q-label .req{color:var(--red);margin-left:2px}
 .field .desc{font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45}
@@ -1100,6 +1100,24 @@ let LANG = 'gu';
     bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
   });
 })();
+
+/* Auto-scroll so whichever question the farmer is currently on sits at the
+   top of the screen — a one-question-at-a-time feel inside each section's
+   scroll. Delegated on document (not #sections) so it survives buildSections()
+   rebuilding the sections' innerHTML. focusin catches real text/select focus;
+   click catches button-style controls (yn/chips/multi-count) that don't
+   reliably receive DOM focus on tap in every mobile browser. */
+function scrollQuestionToTop(e){
+  const el = e.target.closest && e.target.closest('[data-q]');
+  if(!el) return;
+  /* Deferred: focusing a native input/select triggers the browser's OWN
+     scroll-into-view, which runs right after this handler and would
+     otherwise override an immediate call here, leaving the question
+     wherever the browser's own (not 'start'-aligned) reveal logic put it. */
+  setTimeout(() => el.scrollIntoView({block:'start', behavior:'instant'}), 60);
+}
+document.addEventListener('focusin', scrollQuestionToTop);
+document.addEventListener('click', scrollQuestionToTop);
 
 function showIf(q){
   if(!q.onlyIf) return true;
@@ -1851,7 +1869,7 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 .section-title .num{width:34px;height:34px;border-radius:9px;background:var(--leaf);color:#fff;display:grid;place-items:center;font-weight:700;flex-shrink:0;font-size:15px}
 .section-title .h{font-size:15.5px;font-weight:700}
 .section-title .s{font-size:11.5px;color:var(--ink-soft);margin-top:2px}
-.q-block{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
+.q-block{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line-soft);scroll-margin-top:92px}
 .q-block:last-child{border-bottom:none;padding-bottom:0}
 .q-label{font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:4px;line-height:1.45}
 .q-label .req{color:var(--red)}
@@ -2002,6 +2020,21 @@ let LANG = 'gu';
     bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
   });
 })();
+
+/* Auto-scroll so whichever question the FC is currently on sits at the top
+   of the screen — see the matching comment in the enrollment form for why
+   both focusin and click are needed. */
+function scrollQuestionToTop(e){
+  const el = e.target.closest && e.target.closest('[data-q]');
+  if(!el) return;
+  /* Deferred: focusing a native input/select triggers the browser's OWN
+     scroll-into-view, which runs right after this handler and would
+     otherwise override an immediate call here, leaving the question
+     wherever the browser's own (not 'start'-aligned) reveal logic put it. */
+  setTimeout(() => el.scrollIntoView({block:'start', behavior:'instant'}), 60);
+}
+document.addEventListener('focusin', scrollQuestionToTop);
+document.addEventListener('click', scrollQuestionToTop);
 
 function toast(m,type){const t=$('#toast');t.textContent=m;t.classList.toggle('err',type==='error');t.classList.add('show');setTimeout(()=>{t.classList.remove('show','err');},2000);}
 
@@ -2630,7 +2663,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

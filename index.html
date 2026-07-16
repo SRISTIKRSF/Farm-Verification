@@ -1009,6 +1009,9 @@ body.lang-en .ten{display:inline}
     <h2>પત્રક સફળતાપૂર્વક જમા થયું!</h2>
     <p>તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</p>
     <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
+    <div style="margin-top:16px">
+      <button type="button" id="downloadPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px">📄 PDF ડાઉનલોડ કરો</button>
+    </div>
   </div>
 </div>
 
@@ -1102,6 +1105,111 @@ function showIf(q){
   if(!q.onlyIf) return true;
   const v = ANSWERS[q.onlyIf.id];
   return q.onlyIf.equals ? v === q.onlyIf.equals : (q.onlyIf.notEquals ? v !== q.onlyIf.notEquals : true);
+}
+
+/* ============ PDF export — pure client-side, no Firebase involved ============
+   html2pdf.js is loaded lazily (only when the farmer/FC actually taps
+   Download) so it never slows down the initial form render. Once fetched
+   once, the service worker caches it for offline re-use. */
+let _html2pdfLoading = null;
+function loadHtml2Pdf(){
+  if(window.html2pdf) return Promise.resolve();
+  if(_html2pdfLoading) return _html2pdfLoading;
+  _html2pdfLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('html2pdf.js failed to load'));
+    document.head.appendChild(s);
+  });
+  return _html2pdfLoading;
+}
+function pdfFileName(base, suffix){
+  const clean = String(base||'Farmer').trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,60) || 'Farmer';
+  const d = new Date();
+  const stamp = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return clean + (suffix?'_'+suffix:'') + '_' + stamp + '.pdf';
+}
+function pdfAnswerHtml(q, val){
+  if(val==null || val==='' || (Array.isArray(val) && !val.length))
+    return '<span style="color:#94a3b8;font-style:italic">— જવાબ નથી —</span>';
+  if(q.type==='photo'){
+    const photos = PHOTOS[q.id] || [];
+    if(!photos.length) return '<span style="color:#94a3b8;font-style:italic">— ફોટો નથી —</span>';
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap">' + photos.map(p =>
+      '<img src="'+(p.data||p)+'" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">'
+    ).join('') + '</div>';
+  }
+  if(q.type==='yn') return val==='yes' ? 'હા (Yes)' : val==='no' ? 'ના (No)' : esc(String(val));
+  if(q.type==='multi') return Array.isArray(val) ? val.map(esc).join(', ') : esc(String(val));
+  if(q.type==='multi_count') return Array.isArray(val)
+    ? val.map(x => (x && typeof x==='object') ? esc(x.type||'')+' × '+esc(String(x.count||'?')) : esc(String(x))).join(', ')
+    : esc(String(val));
+  if(q.type==='crops_table') return Array.isArray(val) && val.length
+    ? val.map(r => esc(r.name||'')+' — '+esc(String(r.area||'0'))+' એકર, ઉત્પાદન '+esc(String(r.yield||'?'))+', ₹'+esc(String(r.income||'0'))+'/વર્ષ').join('<br>')
+    : '<span style="color:#94a3b8;font-style:italic">— જવાબ નથી —</span>';
+  if(q.type==='stat_cards') return Array.isArray(val) && val.length
+    ? val.map(r => {
+        const parts = (q.fields||[]).map(f => (r[f.key]!=null && r[f.key]!=='') ? (f.gu+': '+esc(String(r[f.key]))) : null).filter(Boolean).join(', ');
+        return esc(r.item||'') + (parts ? ' — '+parts : '');
+      }).join('<br>')
+    : '<span style="color:#94a3b8;font-style:italic">— જવાબ નથી —</span>';
+  if(q.type==='composite_address' || q.type==='address_cascade'){
+    const parts = [ANSWERS.village, ANSWERS.taluka, ANSWERS.district, ANSWERS.pincode].filter(Boolean);
+    return parts.length ? esc(parts.join(', ')) : '<span style="color:#94a3b8;font-style:italic">— જવાબ નથી —</span>';
+  }
+  return esc(String(val));
+}
+function buildEnrollmentPdfHtml(){
+  const rows = [];
+  CATEGORIES.forEach(cat => {
+    const qs = QUESTIONS.filter(q => q.cat===cat.key && q.askedOf!=='fc-only');
+    if(!qs.length) return;
+    rows.push('<div style="font-size:13.5px;font-weight:700;color:#17613f;margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid #e5f5e9">'+esc(cat.gu)+' <span style="font-weight:500;color:#597062;font-size:11.5px">('+esc(cat.en)+')</span></div>');
+    qs.forEach(q => {
+      if(q.type==='composite_address' && q.id!=='village_taluka_district') return; // avoid dup address rows
+      const qn = DISPLAY_NUMBERS[q.id] || '';
+      const val = q.type==='crops_table' ? CROP_ROWS.filter(r=>r.name) : ANSWERS[q.id];
+      rows.push(
+        '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">'
+        + '<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:#183328">'+(qn?qn+'. ':'')+esc(q.gu)+'</div><div style="font-size:10px;color:#94a3b8">'+esc(q.en)+'</div></div>'
+        + '<div style="flex:1;min-width:0;font-size:12px;color:#183328">'+pdfAnswerHtml(q, val)+'</div>'
+        + '</div>'
+      );
+    });
+  });
+  const d = new Date();
+  const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return '<div style="font-family:system-ui,sans-serif;width:760px;padding:24px;color:#183328">'
+    + '<div style="text-align:center;margin-bottom:18px"><div style="font-size:18px;font-weight:700">કિસાન નોંધણી પત્રક</div><div style="font-size:12px;color:#597062">સૃષ્ટિ પ્રાકૃતિક ખેડૂતહાટ — Farmer Enrolment</div></div>'
+    + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px"><b>'+esc(ANSWERS.farmer_name||'—')+'</b> · '+esc(ANSWERS.mobile||'—')+'<br><span style="color:#597062">જમા તારીખ: '+dateStr+'</span></div>'
+    + rows.join('')
+    + '</div>';
+}
+function downloadEnrollmentPdf(){
+  const btn = $('#downloadPdfBtn');
+  const origLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ તૈયાર થાય છે…';
+  loadHtml2Pdf().then(() => {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0';
+    el.innerHTML = buildEnrollmentPdfHtml();
+    document.body.appendChild(el);
+    return window.html2pdf().set({
+      filename: pdfFileName(ANSWERS.farmer_name),
+      margin: 8,
+      image: {type:'jpeg', quality:0.92},
+      html2canvas: {scale:2, useCORS:true},
+      jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
+      pagebreak: {mode:['avoid-all','css','legacy']},
+    }).from(el).save().then(() => el.remove());
+  }).catch(err => {
+    toast('PDF બનાવવામાં ભૂલ — ફરી પ્રયત્ન કરો');
+  }).finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = origLabel;
+  });
 }
 
 function renderField(q){
@@ -1636,6 +1744,8 @@ function submit(){
   $('#successScreen').classList.add('show');
   const _ref = $('#successRef');
   if(_ref){ const _d=new Date(); _ref.innerHTML='નામ: <b>'+(ANSWERS.farmer_name||'—')+'</b><br>સંદર્ભ: <b>'+_d.getFullYear()+String(_d.getMonth()+1).padStart(2,'0')+String(_d.getDate()).padStart(2,'0')+'-'+String(_d.getHours()).padStart(2,'0')+String(_d.getMinutes()).padStart(2,'0')+'</b>'; }
+  const _pdfBtn = $('#downloadPdfBtn');
+  if(_pdfBtn) _pdfBtn.onclick = downloadEnrollmentPdf;
   $('#actionsBar').style.display = 'none';
   $('#dotsWrap').style.display = 'none';
   $('#progressFill').style.width = '100%';
@@ -1796,6 +1906,10 @@ body{background:linear-gradient(180deg,#eef8f0 0,var(--bg) 210px);padding-bottom
 .ten{display:none}
 body.lang-en .tgu{display:none}
 body.lang-en .ten{display:inline}
+.success{display:none;text-align:center;padding:40px 24px}.success.show{display:block}
+.success .ico{width:80px;height:80px;border-radius:50%;background:var(--leaf-light);color:var(--leaf);font-size:42px;display:grid;place-items:center;margin:0 auto 20px}
+.success h2{font-size:21px;font-weight:700;margin-bottom:10px}
+.success p{font-size:14px;color:var(--ink-soft);max-width:420px;margin:0 auto 14px}
 </style>
 </head>
 <body>
@@ -1835,6 +1949,16 @@ body.lang-en .ten{display:inline}
   </div>
 
   <div id="sections"></div>
+
+  <div class="success" id="verifySuccessScreen">
+    <div class="ico">✓</div>
+    <h2>Verification submitted!</h2>
+    <p id="verifySuccessSummary"></p>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button type="button" id="downloadVerifPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📄 Download PDF</button>
+      <button type="button" id="closeVerifyBtn" style="padding:12px 24px;background:#fff;color:var(--leaf);border:1.5px solid var(--leaf);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✕ Close</button>
+    </div>
+  </div>
 
 </div>
 
@@ -1880,6 +2004,99 @@ let LANG = 'gu';
 })();
 
 function toast(m,type){const t=$('#toast');t.textContent=m;t.classList.toggle('err',type==='error');t.classList.add('show');setTimeout(()=>{t.classList.remove('show','err');},2000);}
+
+/* ============ PDF export — pure client-side, no Firebase involved ============
+   Same lazy-load pattern as the enrollment form (separate document scope,
+   so it's duplicated here rather than shared). */
+let _html2pdfLoading = null;
+function loadHtml2Pdf(){
+  if(window.html2pdf) return Promise.resolve();
+  if(_html2pdfLoading) return _html2pdfLoading;
+  _html2pdfLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('html2pdf.js failed to load'));
+    document.head.appendChild(s);
+  });
+  return _html2pdfLoading;
+}
+function pdfFileName(base, suffix){
+  const clean = String(base||'Farmer').trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,60) || 'Farmer';
+  const d = new Date();
+  const stamp = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return clean + (suffix?'_'+suffix:'') + '_' + stamp + '.pdf';
+}
+function verifStatusLabel(v){
+  if(v==='verified') return '<b style="color:var(--green)">✓ Verified</b>';
+  if(v==='not_verified') return '<b style="color:var(--red)">✗ Not Verified</b>';
+  if(v==='na') return '<span style="color:#94a3b8">N/A</span>';
+  return '<span style="color:#94a3b8">—</span>';
+}
+function buildVerificationPdfHtml(lastClaims, summary){
+  const rows = [];
+  const byId = {};
+  lastClaims.forEach(c => byId[c.id] = c);
+  CATEGORIES.forEach(cat => {
+    const qs = QUESTIONS.filter(q => q.cat===cat.key);
+    if(!qs.length) return;
+    rows.push('<div style="font-size:13.5px;font-weight:700;color:#17613f;margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid #e5f5e9">'+esc(cat.gu)+' <span style="font-weight:500;color:#597062;font-size:11.5px">('+esc(cat.en)+')</span></div>');
+    qs.forEach(q => {
+      const qn = DISPLAY_NUMBERS[q.id] || '';
+      const c = byId[q.id];
+      const claim = c ? {answer: c.farmerAnswer} : CLAIMS_BY_ID[q.id];
+      const farmerHtml = q.askedOf==='fc-only' ? '<span style="color:#94a3b8">—</span>' : fmtFarmerClaim(q, claim);
+      const fcHtml = q.askedOf==='fc-only'
+        ? (c && c.fcAnswer!=null && c.fcAnswer!=='' ? esc(String(c.fcAnswer)) : '<span style="color:#94a3b8;font-style:italic">— No answer —</span>')
+        : (q.displayOnly ? '<span style="color:#94a3b8">—</span>' : verifStatusLabel(c ? c.fcVerification : null));
+      const noteHtml = (c && c.fcNote) ? '<div style="font-size:10.5px;color:#597062;font-style:italic;margin-top:2px">"'+esc(c.fcNote)+'"</div>' : '';
+      rows.push(
+        '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">'
+        + '<div style="flex:1.2;min-width:0"><div style="font-size:12px;font-weight:600;color:#183328">'+(qn?qn+'. ':'')+esc(q.gu)+'</div><div style="font-size:10px;color:#94a3b8">'+esc(q.en)+'</div></div>'
+        + '<div style="flex:1;min-width:0;font-size:12px;color:#183328">'+farmerHtml+'</div>'
+        + '<div style="flex:0.8;min-width:0;font-size:12px">'+fcHtml+noteHtml+'</div>'
+        + '</div>'
+      );
+    });
+  });
+  const d = new Date();
+  const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return '<div style="font-family:system-ui,sans-serif;width:820px;padding:24px;color:#183328">'
+    + '<div style="text-align:center;margin-bottom:18px"><div style="font-size:18px;font-weight:700">Farm Verification Report</div><div style="font-size:12px;color:#597062">પ્રાકૃતિક ખેડૂતહાટ — ફાર્મ વેરિફિકેશન</div></div>'
+    + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px">'
+      + '<b>'+esc(FARMER.name||'—')+'</b> · Farmer ID: '+esc(FARMER.id||'—')+'<br>'
+      + '<span style="color:#597062">Village: '+esc(FARMER.village||'—')+', Taluka: '+esc(FARMER.taluka||'—')+', District: '+esc(FARMER.district||'—')+'</span><br>'
+      + '<span style="color:#597062">Verified by: '+esc(VERIFIER_NAME||'—')+' · '+dateStr+' · Score: '+(summary?summary.score:0)+'%</span>'
+    + '</div>'
+    + (GENERAL_COMMENTS ? '<div style="font-size:12px;margin:8px 0;padding:8px 10px;background:#fffbeb;border-radius:6px"><b>Overall comments:</b> '+esc(GENERAL_COMMENTS)+'</div>' : '')
+    + rows.join('')
+    + '</div>';
+}
+function downloadVerificationPdf(claims, summary){
+  const btn = $('#downloadVerifPdfBtn');
+  const origLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Preparing…';
+  loadHtml2Pdf().then(() => {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0';
+    el.innerHTML = buildVerificationPdfHtml(claims, summary);
+    document.body.appendChild(el);
+    return window.html2pdf().set({
+      filename: pdfFileName(FARMER.name, 'Verification'),
+      margin: 8,
+      image: {type:'jpeg', quality:0.92},
+      html2canvas: {scale:2, useCORS:true},
+      jsPDF: {unit:'mm', format:'a4', orientation:'landscape'},
+      pagebreak: {mode:['avoid-all','css','legacy']},
+    }).from(el).save().then(() => el.remove());
+  }).catch(err => {
+    toast('Could not build PDF — try again', 'error');
+  }).finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = origLabel;
+  });
+}
 
 function fmtFarmerClaim(q, c){
   if(!c) return '<span style="color:var(--ink-faint);font-style:italic">No claim from farmer</span>';
@@ -2331,9 +2548,18 @@ function submit(){
       window.parent.postMessage(payload, '*');
     }
     toast('Verification submitted ✓');
-    setTimeout(() => {
-      if(window.parent && window.parent !== window) window.parent.postMessage({type:'farm-verification-closed'}, '*');
-    }, 1200);
+    $$('.section').forEach(s => s.classList.remove('active'));
+    $('#farmerCard').style.display = 'none';
+    $('#actionsBar').style.display = 'none';
+    $('#dotsWrap').style.display = 'none';
+    const summaryEl = $('#verifySuccessSummary');
+    if(summaryEl) summaryEl.textContent = FARMER.name + ' — ' + verified + ' / ' + totalAsked + ' verified (' + score + '%)';
+    $('#verifySuccessScreen').classList.add('show');
+    const closeNow = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'farm-verification-closed'}, '*'); };
+    const dlBtn = $('#downloadVerifPdfBtn');
+    if(dlBtn) dlBtn.onclick = () => downloadVerificationPdf(payload.claims, payload.summary);
+    const closeBtn = $('#closeVerifyBtn');
+    if(closeBtn) closeBtn.onclick = closeNow;
   };
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(
@@ -2404,7 +2630,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

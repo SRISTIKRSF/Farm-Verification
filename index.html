@@ -971,6 +971,13 @@ body{background:linear-gradient(180deg,#eef8f0 0, var(--bg) 210px);padding-botto
 .actions{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:9px;box-shadow:0 -8px 24px rgba(15,54,34,.12)}.btn{min-height:52px;padding:13px 15px;border-radius:12px;font-size:15px}.btn-primary,.btn-submit{box-shadow:0 7px 15px -9px rgba(35,122,82,.8)}
 @media(min-width:640px){.wrap{padding:18px}.card{padding:20px}.actions{left:50%;right:auto;width:min(720px,100%);transform:translateX(-50%);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}.field input[type=text],.field input[type=tel],.field input[type=number],.field input[type=date],.field select,.field textarea{font-size:15px}}
 @media(max-width:380px){.head h1{font-size:15.5px}.head .sub{display:none}.head{padding-right:12px;padding-left:12px}.chip{font-size:13px;padding-left:11px;padding-right:11px}.btn{font-size:14px;padding-left:11px;padding-right:11px}.field-pair,.mc-card{grid-template-columns:1fr}.mc-card .mc-count{width:100%}}
+.langbar{display:flex;justify-content:center;gap:8px;padding:9px 14px 3px}
+.langbar label{cursor:pointer;font-size:13px;font-weight:700;padding:7px 22px;border-radius:20px;border:1.5px solid var(--line-strong);background:#fff;color:var(--ink-soft);transition:.15s}
+.langbar label input{position:absolute;opacity:0;width:0;height:0}
+.langbar label.on{border-color:var(--leaf);background:var(--leaf);color:#fff}
+.ten{display:none}
+body.lang-en .tgu{display:none}
+body.lang-en .ten{display:inline}
 </style>
 </head>
 <body>
@@ -984,6 +991,11 @@ body{background:linear-gradient(180deg,#eef8f0 0, var(--bg) 210px);padding-botto
 </div>
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
 <div class="dots" id="dotsWrap"></div>
+
+<div class="langbar" id="langBar">
+  <label class="on" data-v="gu"><input type="radio" name="uiLang" value="gu" checked>ગુજરાતી</label>
+  <label data-v="en"><input type="radio" name="uiLang" value="en">English</label>
+</div>
 
 <div id="draftBanner" style="display:none;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;align-items:center;gap:10px;flex-wrap:wrap">
   <span style="flex:1">અધૂરી Entry મળી. ચાલુ રાખવી? (Unsaved entry found. Continue where you left off?)</span>
@@ -1072,6 +1084,20 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
+/* Language toggle — pure CSS swap (body.lang-en shows .ten spans, hides .tgu
+   ones), never touches input/select/textarea DOM nodes, so toggling mid-entry
+   never loses anything the farmer already typed. Default Gujarati-only. */
+let LANG = 'gu';
+(function initLangBar(){
+  const bar = document.getElementById('langBar');
+  if(!bar) return;
+  bar.querySelectorAll('input[name="uiLang"]').forEach(r => r.onchange = () => {
+    LANG = r.value;
+    document.body.classList.toggle('lang-en', LANG === 'en');
+    bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
+  });
+})();
+
 function showIf(q){
   if(!q.onlyIf) return true;
   const v = ANSWERS[q.onlyIf.id];
@@ -1081,7 +1107,7 @@ function showIf(q){
 function renderField(q){
   const id = q.id;
   const qn = DISPLAY_NUMBERS[q.id] || '';
-  const lbl = \`<div class="q-label">\${qn>0?qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
+  const lbl = \`<div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>\`;
   if(q.id==='aadhaar')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.id==='farm_gps')
@@ -1095,7 +1121,7 @@ function renderField(q){
   if(q.type==='textarea')
     return \`<div class="field" data-q="\${id}">\${lbl}<textarea data-val="\${id}" style="min-height:80px"></textarea></div>\`;
   if(q.type==='yn')
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes">હા / Yes</button><button type="button" data-v="no">ના / No</button></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes"><span class="tgu">હા</span><span class="ten">Yes</span></button><button type="button" data-v="no"><span class="tgu">ના</span><span class="ten">No</span></button></div></div>\`;
   if(q.type==='select'){
     const opts = (q.options||[]).map(o => \`<option>\${esc(o)}</option>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<select data-val="\${id}"><option value="">— પસંદ કરો —</option>\${opts}</select></div>\`;
@@ -1147,7 +1173,7 @@ function renderField(q){
     const DT = (window.parent && window.parent.DISTRICT_TALUKAS) || (typeof DISTRICT_TALUKAS !== 'undefined' ? DISTRICT_TALUKAS : null);
     const districts = DT ? Object.keys(DT) : [];
     const distOpts = districts.length ? districts.map(d=>\`<option>\${d}</option>\`).join('') : '<option>Aravalli</option><option>Banaskantha</option><option>Dahod</option><option>Dang</option><option>Narmada</option><option>Sabarkantha</option><option>Surat</option><option>Vadodara</option>';
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="row2"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block">જિલ્લો / District \${q.req?'<span class="req">*</span>':''}</label><select data-val="district" data-addr="district"><option value="">— પસંદ કરો —</option>\${distOpts}</select></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block">તાલુકો / Taluka \${q.req?'<span class="req">*</span>':''}</label><select data-val="taluka" data-addr="taluka" disabled><option value="">પહેલા જિલ્લો પસંદ કરો</option></select></div></div><div class="row2" style="margin-top:10px"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block">ગામ / Village \${q.req?'<span class="req">*</span>':''}</label><input type="text" data-val="village" placeholder="ગામનું નામ"></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block">પિનકોડ / Pincode</label><input type="text" data-val="pincode" inputmode="numeric" maxlength="6" placeholder="6-અંકનો પિનકોડ"></div></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="row2"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">જિલ્લો</span><span class="ten">District</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="district" data-addr="district"><option value="">— પસંદ કરો —</option>\${distOpts}</select></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">તાલુકો</span><span class="ten">Taluka</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="taluka" data-addr="taluka" disabled><option value="">પહેલા જિલ્લો પસંદ કરો</option></select></div></div><div class="row2" style="margin-top:10px"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">ગામ</span><span class="ten">Village</span> \${q.req?'<span class="req">*</span>':''}</label><input type="text" data-val="village" placeholder="ગામનું નામ"></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">પિનકોડ</span><span class="ten">Pincode</span></label><input type="text" data-val="pincode" inputmode="numeric" maxlength="6" placeholder="6-અંકનો પિનકોડ"></div></div></div>\`;
   }
   return '';
 }
@@ -1180,7 +1206,7 @@ function buildSections(){
     sec.className = 'section' + (idx===0 ? ' active' : '');
     sec.dataset.sec = idx;
     sec.innerHTML =
-      \`<div class="card"><div class="section-title"><div class="num">\${idx+1}</div><div><div class="h">\${esc(cat.gu)}</div><div class="s">\${esc(cat.en)}</div></div></div>\`
+      \`<div class="card"><div class="section-title"><div class="num">\${idx+1}</div><div><div class="h"><span class="tgu">\${esc(cat.gu)}</span><span class="ten">\${esc(cat.en)}</span></div></div></div>\`
       + renderFieldSequence(qs)
       + \`</div>\`;
     sectionsEl.appendChild(sec);
@@ -1275,7 +1301,7 @@ function renderOneStatCards(q){
         // suggestions at all here. Free text stays allowed (a plot's "main +
         // secondary crop" doesn't always match one catalog entry).
         const isCropField = /crop/i.test(f.key);
-        return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block">'+esc(f.gu)+'</label>'
+        return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block"><span class="tgu">'+esc(f.gu)+'</span><span class="ten">'+esc(f.en)+'</span></label>'
           + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+(isCropField?' list="cropSuggestList"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
       }).join('');
       return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
@@ -1763,6 +1789,13 @@ body{background:linear-gradient(180deg,#eef8f0 0,var(--bg) 210px);padding-bottom
 .actions{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:9px;box-shadow:0 -8px 24px rgba(15,54,34,.12)}.btn{min-height:52px;padding:13px 14px;border-radius:12px;font-size:15px}.btn-primary{box-shadow:0 7px 15px -9px rgba(35,122,82,.8)}
 @media(min-width:640px){.wrap{padding:18px}.card{padding:20px}.actions{left:50%;right:auto;width:min(760px,100%);transform:translateX(-50%);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}}
 @media(max-width:380px){.head h1{font-size:15px}.head .sub{display:none}.detail-cell .ico{display:none}.detail-cell .v{font-size:10.5px}.btn{font-size:14px;padding-left:10px;padding-right:10px}.mc-card{grid-template-columns:1fr}}
+.langbar{display:flex;justify-content:center;gap:8px;padding:9px 14px 3px}
+.langbar label{cursor:pointer;font-size:13px;font-weight:700;padding:7px 22px;border-radius:20px;border:1.5px solid var(--line-strong);background:#fff;color:var(--ink-soft);transition:.15s}
+.langbar label input{position:absolute;opacity:0;width:0;height:0}
+.langbar label.on{border-color:var(--leaf);background:var(--leaf);color:#fff}
+.ten{display:none}
+body.lang-en .tgu{display:none}
+body.lang-en .ten{display:inline}
 </style>
 </head>
 <body>
@@ -1777,6 +1810,11 @@ body{background:linear-gradient(180deg,#eef8f0 0,var(--bg) 210px);padding-bottom
 </div>
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
 <div class="dots" id="dotsWrap"></div>
+
+<div class="langbar" id="langBar">
+  <label class="on" data-v="gu"><input type="radio" name="uiLang" value="gu" checked>ગુજરાતી</label>
+  <label data-v="en"><input type="radio" name="uiLang" value="en">English</label>
+</div>
 
 <div class="wrap" id="formWrap">
 
@@ -1826,6 +1864,21 @@ let DISPLAY_NUMBERS = {};   /* visible-question number, rebuilt when the form is
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+/* Language toggle — pure CSS swap (body.lang-en shows .ten spans, hides .tgu
+   ones), never touches input/select/textarea DOM nodes, so toggling mid-review
+   never loses anything the FC already entered. Default Gujarati-only. */
+let LANG = 'gu';
+(function initLangBar(){
+  const bar = document.getElementById('langBar');
+  if(!bar) return;
+  bar.querySelectorAll('input[name="uiLang"]').forEach(r => r.onchange = () => {
+    LANG = r.value;
+    document.body.classList.toggle('lang-en', LANG === 'en');
+    bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
+  });
+})();
+
 function toast(m,type){const t=$('#toast');t.textContent=m;t.classList.toggle('err',type==='error');t.classList.add('show');setTimeout(()=>{t.classList.remove('show','err');},2000);}
 
 function fmtFarmerClaim(q, c){
@@ -1867,7 +1920,7 @@ function renderFcControls(q){
   if(q.askedOf === 'fc-only'){
     let h = '<div class="fc-controls">';
     if(q.type === 'yn'){
-      h += '<div class="l">FC answer</div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit">હા / Yes</button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit">ના / No</button></div>';
+      h += '<div class="l">FC answer</div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">હા</span><span class="ten">Yes</span></button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">ના</span><span class="ten">No</span></button></div>';
     } else if(q.type === 'photo'){
       h += '<div class="l">FC photo upload</div>';
       h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
@@ -1941,8 +1994,7 @@ function renderQuestion(q){
     return \`<div class="q-block" data-q="\${q.id}" style="background:#f8fafc;border-radius:8px;padding:11px 13px;margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?qn+'. ':''}\${esc(q.gu)}</div>
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:1px">\${esc(q.en)}</div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span></div>
         </div>
         <div style="text-align:right;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5">\${fmtFarmerClaim(q, claim)}</div>
       </div>
@@ -1972,8 +2024,7 @@ function renderQuestion(q){
     </div>\`;
   }
   return \`<div class="q-block" data-q="\${q.id}">
-    <div class="q-label">\${qn>0?qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
-    <div class="q-desc">\${esc(q.en)}</div>
+    <div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>
     \${q.askedOf !== 'fc-only' ? \`<div class="farmer-claim-box">
       <div class="l">📋 Farmer's claim</div>
       <div class="v">\${fmtFarmerClaim(q, claim)}</div>
@@ -2000,7 +2051,7 @@ function buildSections(){
     sec.className = 'section' + (secIdx===0 ? ' active' : '');
     sec.dataset.sec = secIdx;
     sec.innerHTML =
-      '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h">'+esc(cat.gu)+'</div><div class="s">'+esc(cat.en)+'</div></div></div>'
+      '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">'+esc(cat.gu)+'</span><span class="ten">'+esc(cat.en)+'</span></div></div></div>'
       + '<div class="summary-strip"><span><span class="dot g"></span>Verified</span><span><span class="dot r"></span>Not Verified</span><span><span class="dot x"></span>N/A</span></div>'
       + qs.map(q => renderQuestion(q)).join('')
       + '</div>';
@@ -2012,7 +2063,7 @@ function buildSections(){
   final.className = 'section';
   final.dataset.sec = secIdx;
   final.innerHTML =
-    '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h">સામાન્ય ટિપ્પણી અને ઘોષણા</div><div class="s">Overall comments &amp; submission</div></div></div>'
+    '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">સામાન્ય ટિપ્પણી અને ઘોષણા</span><span class="ten">Overall comments &amp; submission</span></div></div></div>'
     + '<div class="q-block"><div class="q-label">Overall comments</div><textarea id="generalCmt" style="width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:7px;min-height:80px;font-family:inherit;resize:vertical" placeholder="Any final notes about the visit…"></textarea></div>'
     + '<div class="q-block"><div class="q-label">Summary</div><div id="summaryBox" style="background:var(--leaf-light);padding:12px;border-radius:8px;font-size:13px;color:var(--leaf-dark);font-weight:600">Loading summary…</div></div>'
     + '<button type="button" id="bigSubmitBtn" style="display:block;width:100%;margin-top:14px;padding:18px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">✓ Submit Verification</button>'
@@ -2353,7 +2404,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

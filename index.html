@@ -793,6 +793,38 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<!-- CGPT UI refresh: presentation-only SaaS and FC mobile layer. App logic unchanged. -->
+<style>
+:root{
+  --bg:#f6f8f5;--panel:#ffffff;--panel-2:#f2f6f1;--ink:#173126;--ink-soft:#587061;--ink-faint:#75877b;
+  --line:#e1e9e1;--line-soft:#edf2ed;--line-strong:#ccd9cd;--sidebar:#13372b;--navy:#13372b;--navy-deep:#0b251b;
+  --accent:#237a52;--accent-deep:#17633f;--accent-soft:#e9f6ee;--leaf:#237a52;--leaf-bg:#e9f6ee;
+  --orange:#d77a2a;--orange-bg:#fff5e9;--purple:#7562c8;--purple-bg:#f2efff;--teal:#198c8c;--teal-bg:#e8f7f7;
+  --sh-1:0 1px 2px rgba(18,53,37,.05);--sh-2:0 7px 20px -13px rgba(18,53,37,.25);--sh-3:0 20px 48px -22px rgba(18,53,37,.28);
+  --r:12px;--r-sm:9px;--r-lg:16px;
+}
+body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#edf8ef 0,transparent 30%),var(--bg)}
+.sidebar{background:linear-gradient(180deg,#123d2d 0%,#103025 100%);border-right:1px solid rgba(255,255,255,.07)}
+.brand{padding:22px 20px 18px}.brand .mark{background:linear-gradient(140deg,#62b77d,#237a52);box-shadow:0 6px 16px -8px rgba(92,187,126,.9)}
+.nav{padding:14px 12px}.nav-label{color:#8fa99b;padding-top:18px}.nav-item{border-radius:10px;padding:10px 11px;color:#c8d8cf}.nav-item:hover{background:rgba(255,255,255,.09)}.nav-item.active{background:#2b8359;box-shadow:0 5px 14px -8px rgba(0,0,0,.55)}
+.topbar{min-height:70px;padding:13px 30px;background:rgba(255,255,255,.88);backdrop-filter:blur(12px);border-bottom-color:var(--line)}
+.topbar h2{font-size:20px}.topbar h2 .count{color:var(--accent);background:var(--accent-soft)}.content{padding:26px 30px 72px;max-width:1680px;width:100%;margin:0 auto}
+.search input{width:270px;border-radius:10px;background:#f8fbf8;border-color:transparent;padding-top:9px;padding-bottom:9px}.search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px rgba(35,122,82,.12)}
+.sync{border:1px solid #cdebd8}.btn{border-radius:10px;padding:9px 15px}.btn-primary{background:linear-gradient(135deg,#27845a,#19683f);box-shadow:0 7px 15px -8px rgba(35,122,82,.75)}.btn-primary:hover{background:#17633f}.btn-ghost,.btn-excel{border-color:var(--line-strong);background:#fff}
+.statbox{border-radius:14px;padding:17px;background:linear-gradient(145deg,#fff,#fbfdfb);box-shadow:var(--sh-1)}.statbox:hover{border-color:#bad2c0;box-shadow:var(--sh-2)}
+.table-card,.card,.filter-bar,.chart-card,.dashboard-card{border-radius:14px!important;border-color:var(--line)!important;box-shadow:var(--sh-1)}
+.data-table thead th,.tbl thead th{background:#f3f7f3!important;color:#496454}.data-table tbody tr:hover,.tbl tbody tr:hover{background:#f3faf5!important}
+.drawer{box-shadow:-20px 0 50px -30px rgba(13,45,31,.45)}.drawer-head{background:linear-gradient(135deg,#174a35,#103025)!important}.modal{border-radius:16px!important;box-shadow:var(--sh-3)}
+.field input,.field select,.field textarea{border-radius:10px!important;border-color:var(--line-strong)!important;background:#fcfefc!important}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)!important;box-shadow:0 0 0 4px rgba(35,122,82,.11)!important}
+@media(max-width:880px){.content{padding:18px 18px 82px}.topbar{padding:12px 18px}.search input{width:210px}.statbox-grid{gap:10px}}
+@media(max-width:680px){
+  html,body{min-height:100%;background:var(--bg)}.app{display:block;min-height:100dvh;padding-bottom:70px}.main{display:block}.sidebar{position:fixed;z-index:80;inset:auto 0 0;width:100%;height:70px;border:0;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -8px 24px -16px rgba(13,45,31,.6)}
+  .brand,.sidebar-foot,.nav-label{display:none!important}.nav{height:70px;padding:6px 7px!important;display:flex;align-items:stretch;gap:2px;overflow-x:auto;overflow-y:hidden}.nav-item{min-width:66px;flex:1;justify-content:center;flex-direction:column;gap:2px;padding:5px 6px!important;text-align:center;font-size:9px!important;line-height:1.15}.nav-item svg{width:18px;height:18px}.nav-item .badge{position:absolute;margin:0 0 22px 25px;min-width:16px;padding:0 4px;font-size:9px}
+  .topbar{position:sticky;top:0;z-index:30;min-height:62px;padding:9px 12px;gap:9px;background:rgba(255,255,255,.94)}.topbar h2{font-size:16px}.topbar .tt{max-width:calc(100% - 152px)}.topbar .count{display:none!important}.topbar .search{order:3;width:100%;flex-basis:100%}.topbar .search input{width:100%;height:38px}.topbar .sync,#userPillName,#userPill span:last-child{display:none!important}#userPill{padding:6px!important;border-radius:50%!important}#quickAdd{padding:9px 10px;min-width:40px}#quickAdd span{display:none}
+  .content{padding:14px 12px 22px}.statbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px}.statbox{padding:13px 12px}.statbox .sb-value{font-size:23px}.section-head{margin:18px 0 10px}.filter-row,.toolbar,.table-tools{gap:8px!important}.btn{min-height:40px}.drawer{width:100%!important}.drawer-head{padding:17px 16px!important}.drawer-body{padding:16px!important}.modal{width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;border-radius:14px!important}.modal-head,.modal-body,.modal-foot{padding-left:14px!important;padding-right:14px!important}.modal-foot{position:sticky;bottom:0;background:#fff}.field-row{gap:8px}.data-table,.tbl{font-size:12px}
+}
+@media(max-width:380px){.nav-item{min-width:58px;font-size:8px!important}.topbar .tt{max-width:calc(100% - 126px)}.statbox-grid{grid-template-columns:1fr}.topbar h2{font-size:15px}}
+</style>
 </head>
 <body>
 <div id="offlineBanner">Offline — showing cached data. Changes sync when back online.</div>
@@ -924,6 +956,21 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 .success .ico{width:80px;height:80px;border-radius:50%;background:var(--leaf-light);color:var(--leaf);font-size:42px;display:grid;place-items:center;margin:0 auto 20px}
 .success h2{font-size:21px;font-weight:700;margin-bottom:10px}
 .success p{font-size:14px;color:var(--ink-soft);max-width:420px;margin:0 auto 14px}
+/* Mobile-first enrolment refresh — structure and questions are unchanged. */
+:root{--bg:#f3f7f3;--panel:#fff;--ink:#183328;--ink-soft:#597062;--line:#deeadf;--line-soft:#edf4ee;--line-strong:#c8d9cb;--leaf:#237a52;--leaf-dark:#17613f;--leaf-light:#e5f5e9}
+body{background:linear-gradient(180deg,#eef8f0 0, var(--bg) 210px);padding-bottom:108px;font-size:15.5px}
+.head{position:sticky;top:0;z-index:45;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:linear-gradient(135deg,#1c6947,#155337);box-shadow:0 5px 18px rgba(15,62,39,.2)}
+.head h1{font-size:17px}.head .sub{font-size:11.5px}.head .step{font-variant-numeric:tabular-nums;white-space:nowrap;padding:5px 10px;background:rgba(255,255,255,.15)}
+.progress{top:68px;height:5px;background:#dce8df}.progress .fill{background:linear-gradient(90deg,#57b877,#237a52)}
+.dots{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:10px 14px 6px;gap:7px;scrollbar-width:none}.dots::-webkit-scrollbar{display:none}.dot{min-width:26px;width:26px;height:26px;border:1px solid var(--line);background:#fff;font-size:11px}.dot.current{box-shadow:0 3px 9px rgba(35,122,82,.26)}
+.wrap{padding:10px 12px;max-width:720px}.card{padding:17px 14px;margin-bottom:12px;border-radius:15px;box-shadow:0 7px 20px -18px rgba(18,61,38,.45)}
+.section-title{gap:11px;margin-bottom:18px}.section-title .num{width:36px;height:36px;border-radius:11px;font-size:14px;box-shadow:0 4px 10px rgba(35,122,82,.22)}.section-title .h{font-size:16px}.section-title .s{font-size:12px;line-height:1.35}
+.field{margin-bottom:19px}.field>label.q,.field>.q-label{font-size:14px;margin-bottom:7px}.field .desc{font-size:12px;line-height:1.5;margin-bottom:8px}.field input[type=text],.field input[type=tel],.field input[type=number],.field input[type=date],.field select,.field textarea{min-height:48px;padding:12px 13px;border-radius:11px;font-size:16px;background:#fff}.field textarea{min-height:88px}
+.yn{gap:9px}.yn button{min-height:50px;border-radius:11px;font-size:14px}.chips{gap:8px}.chip{min-height:44px;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.25}.crop-card{border-radius:12px;padding:13px}.crop-fields input,.crop-fields select{min-height:44px;border-radius:9px;font-size:15px}.photo-thumb,.photo-add{width:72px;height:72px;border-radius:11px}.photo-add{background:#f9fcf9}
+.field-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.field-pair>.field{min-width:0}.option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}.option-grid .chip{width:100%;justify-content:flex-start;text-align:left;border-radius:11px}.option-group-label{grid-column:1/-1;padding:8px 2px 1px;font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em}.multi-count{display:grid;gap:8px}.mc-card{display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:8px;padding:8px;border:1px solid var(--line);border-radius:13px;background:#fbfdfb}.mc-card .chip{justify-content:flex-start;text-align:left;border:0;background:transparent;padding:8px}.mc-card .chip.on{background:var(--leaf-light);color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}.mc-card .mc-count{width:100%;min-height:44px;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:10px;font:inherit;font-size:14px;background:#fff}
+.actions{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:9px;box-shadow:0 -8px 24px rgba(15,54,34,.12)}.btn{min-height:52px;padding:13px 15px;border-radius:12px;font-size:15px}.btn-primary,.btn-submit{box-shadow:0 7px 15px -9px rgba(35,122,82,.8)}
+@media(min-width:640px){.wrap{padding:18px}.card{padding:20px}.actions{left:50%;right:auto;width:min(720px,100%);transform:translateX(-50%);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}.field input[type=text],.field input[type=tel],.field input[type=number],.field input[type=date],.field select,.field textarea{font-size:15px}}
+@media(max-width:380px){.head h1{font-size:15.5px}.head .sub{display:none}.head{padding-right:12px;padding-left:12px}.chip{font-size:13px;padding-left:11px;padding-right:11px}.btn{font-size:14px;padding-left:11px;padding-right:11px}.field-pair,.mc-card{grid-template-columns:1fr}.mc-card .mc-count{width:100%}}
 </style>
 </head>
 <body>
@@ -974,6 +1021,7 @@ const CROPS = ['Potato (બટાકા)','Wheat (ઘઉં)','Cotton (કપા
 
 const ANSWERS = {};     /* qid -> value (string | array | object) */
 const PHOTOS  = {};     /* qid -> [{name,type,data}] */
+let DISPLAY_NUMBERS = {}; /* visible-question number, rebuilt when the form is rendered */
 const CROP_ROWS = [{}];
 
 /* v9 process-fix H1 — DRAFT SAVE. Persist farmer's in-progress patrak to
@@ -1032,8 +1080,8 @@ function showIf(q){
 
 function renderField(q){
   const id = q.id;
-  const qn = QUESTIONS.indexOf(q) + 1;
-  const lbl = \`<div class="q-label">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
+  const qn = DISPLAY_NUMBERS[q.id] || '';
+  const lbl = \`<div class="q-label">\${qn>0?qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}<div class="desc">\${esc(q.en)}</div></div>\`;
   if(q.id==='aadhaar')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.id==='farm_gps')
@@ -1061,25 +1109,25 @@ function renderField(q){
       {label:'ખેત વ્યવસ્થા (Cultural)', idx:[18,19,20,21,22,23,24,25]},
     ];
     const inner = groups.map(g =>
-      '<div style="width:100%;padding:4px 0 2px;font-size:10.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em">' + esc(g.label) + '</div>'
+      '<div class="option-group-label">' + esc(g.label) + '</div>'
       + g.idx.map(i => '<button type="button" class="chip" data-v="'+esc(allOpts[i]||'')+'">'+esc(allOpts[i]||'')+'</button>').join('')
     ).join('');
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips" data-multi="\${id}">\${inner}</div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips option-grid" data-multi="\${id}">\${inner}</div></div>\`;
   }
   if(q.type==='multi'){
     const opts = (q.options||[]).map(o => \`<button type="button" class="chip" data-v="\${esc(o)}">\${esc(o)}</button>\`).join('');
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips" data-multi="\${id}">\${opts}</div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips option-grid" data-multi="\${id}">\${opts}</div></div>\`;
   }
   if(q.type==='multi_count'){
     /* Tap a chip → numeric count input appears next to it. Answer shape:
        [{type:'Cow (ગાય)', count:'2'}, ...] — empty count is allowed. */
     const opts = (q.options||[]).map(o => \`
-      <div class="mc-row" data-mc="\${esc(o)}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <div class="mc-row mc-card" data-mc="\${esc(o)}">
         <button type="button" class="chip mc-toggle" data-v="\${esc(o)}">\${esc(o)}</button>
         <input type="number" min="0" placeholder="કેટલા? (How many?)" class="mc-count" data-mcc="\${esc(o)}"
-          style="display:none;width:160px;padding:7px 10px;border:1.5px solid var(--line-strong);border-radius:7px;font-size:13.5px;font-family:inherit">
+          style="display:none">
       </div>\`).join('');
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="multi-count" data-multicount="\${id}" style="display:flex;flex-direction:column">\${opts}</div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="multi-count" data-multicount="\${id}">\${opts}</div></div>\`;
   }
   if(q.type==='photo'){
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="photo-grid" data-photos="\${id}"><label class="photo-add">+<input type="file" accept="image/*" multiple></label></div></div>\`;
@@ -1104,10 +1152,27 @@ function renderField(q){
   return '';
 }
 
+const MOBILE_FIELD_PAIRS = new Set(['survey_no|total_bigha','has_tractor|tractor_hp']);
+function renderFieldSequence(qs){
+  let html = '';
+  for(let i=0;i<qs.length;i++){
+    const key = qs[i].id+'|'+(qs[i+1]&&qs[i+1].id);
+    if(MOBILE_FIELD_PAIRS.has(key)){
+      html += '<div class="field-pair">'+renderField(qs[i])+renderField(qs[i+1])+'</div>';
+      i++;
+    } else html += renderField(qs[i]);
+  }
+  return html;
+}
 function buildSections(){
   /* Group by category, render only farmer-asked questions */
   const sectionsEl = $('#sections');
   sectionsEl.innerHTML = '';
+  DISPLAY_NUMBERS = {};
+  let displayNumber = 0;
+  CATEGORIES.forEach(cat => QUESTIONS.filter(q => q.cat===cat.key && q.askedOf !== 'fc-only').forEach(q => {
+    DISPLAY_NUMBERS[q.id] = ++displayNumber;
+  }));
   CATEGORIES.forEach((cat, idx) => {
     const qs = QUESTIONS.filter(q => q.cat===cat.key && q.askedOf !== 'fc-only');
     if(!qs.length) return;
@@ -1116,7 +1181,7 @@ function buildSections(){
     sec.dataset.sec = idx;
     sec.innerHTML =
       \`<div class="card"><div class="section-title"><div class="num">\${idx+1}</div><div><div class="h">\${esc(cat.gu)}</div><div class="s">\${esc(cat.en)}</div></div></div>\`
-      + qs.map(q => renderField(q)).join('')
+      + renderFieldSequence(qs)
       + \`</div>\`;
     sectionsEl.appendChild(sec);
   });
@@ -1259,6 +1324,12 @@ function renderOneStatCards(q){
 }
 
 function wireFields(){
+  /* Explicit mobile keyboard hints: numeric answers never open the text keyboard.
+     Area fields retain a decimal key; counts, income and IDs use whole-number keys. */
+  $$('input[type=number]').forEach(inp => {
+    const decimal = inp.dataset.val==='total_bigha' || inp.dataset.f==='area' || inp.step==='0.5' || inp.step==='any';
+    inp.setAttribute('inputmode', decimal ? 'decimal' : 'numeric');
+  });
   /* simple inputs */
   $$('input[data-val],select[data-val],textarea[data-val]').forEach(el => {
     el.oninput = el.onchange = () => {
@@ -1682,6 +1753,16 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:var(--leaf);color:#fff;padding:10px 20px;border-radius:8px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.15);transition:.3s;z-index:200}
 .toast.show{transform:translateX(-50%) translateY(0)}
 @media(max-width:600px){.detail-strip{grid-template-columns:1fr}}
+/* Mobile-first verification refresh — no verification questions or rules changed. */
+:root{--bg:#f3f7f3;--panel:#fff;--ink:#183328;--ink-soft:#597062;--line:#deeadf;--line-soft:#edf4ee;--line-strong:#c8d9cb;--leaf:#237a52;--leaf-dark:#17613f;--leaf-light:#e5f5e9}
+body{background:linear-gradient(180deg,#eef8f0 0,var(--bg) 210px);padding-bottom:108px;font-size:15.5px}
+.head{position:sticky;top:0;z-index:45;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 12px;background:linear-gradient(135deg,#1c6947,#155337);box-shadow:0 5px 18px rgba(15,62,39,.2);gap:9px}.head .back{min-width:38px;min-height:38px;border-radius:10px;background:rgba(255,255,255,.12);display:grid;place-items:center;padding:0}.head h1{font-size:17px}.head .sub{font-size:11.5px}.head .step{font-variant-numeric:tabular-nums;white-space:nowrap;padding:5px 9px;background:rgba(255,255,255,.15)}
+.progress{top:68px;height:5px;background:#dce8df}.progress .fill{background:linear-gradient(90deg,#57b877,#237a52)}.dots{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:10px 14px 6px;gap:7px;scrollbar-width:none}.dots::-webkit-scrollbar{display:none}.dot{min-width:26px;width:26px;height:26px;border:1px solid var(--line);background:#fff;font-size:11px}.dot.current{box-shadow:0 3px 9px rgba(35,122,82,.26)}
+.wrap{padding:10px 12px;max-width:760px}.card{padding:15px 14px;margin-bottom:12px;border-radius:15px;box-shadow:0 7px 20px -18px rgba(18,61,38,.45)}.farmer-head{gap:10px;margin-bottom:11px}.avatar{width:48px;height:48px;font-size:19px;background:var(--leaf-light);color:var(--leaf)}.farmer-head .meta{min-width:0}.farmer-head h2{font-size:16px;line-height:1.3}.id-pill{font-size:10px;padding:2px 7px}.farmer-head .addr{font-size:12px;line-height:1.35}.detail-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px;padding-top:11px}.detail-cell{gap:5px;min-width:0}.detail-cell .ico{width:25px;height:25px;border-radius:7px;font-size:11px}.detail-cell .k{font-size:10px}.detail-cell .v{font-size:11.5px;overflow-wrap:anywhere}
+.section-title{gap:11px;margin-bottom:18px}.section-title .num{width:36px;height:36px;border-radius:11px;font-size:14px;box-shadow:0 4px 10px rgba(35,122,82,.22)}.section-title .h{font-size:16px}.section-title .s{font-size:12px;line-height:1.35}.q-block{margin-bottom:20px;padding-bottom:17px}.q-label{font-size:14px;line-height:1.5;margin-bottom:6px}.q-desc{font-size:12px;line-height:1.5;margin-bottom:9px}.farmer-claim-box{border-radius:11px;padding:11px 12px;margin-bottom:11px}.farmer-claim-box .v{font-size:13.5px}.radio-row{gap:10px}.radio-opt{min-height:38px;padding:5px 8px;border:1px solid var(--line);border-radius:10px}.radio-opt input{width:19px;height:19px}.chip{min-height:44px;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.25}.option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}.option-grid .chip{width:100%;justify-content:flex-start;text-align:left;border-radius:11px}.multi-count{display:grid;gap:8px}.mc-card{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;padding:8px;border:1px solid var(--line);border-radius:13px;background:#fbfdfb}.mc-card .chip{justify-content:flex-start;text-align:left;border:0;background:transparent;padding:8px}.mc-card .chip.fc-obs{background:var(--leaf-light);color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}.mc-card .mc-count{width:100%;min-height:44px;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:10px;font:inherit;font-size:14px;background:#fff}.mc-card>span{grid-column:1/-1;padding:0 8px 4px}.fc-note textarea{min-height:82px;padding:12px;border-radius:11px;font-size:16px}
+.actions{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:9px;box-shadow:0 -8px 24px rgba(15,54,34,.12)}.btn{min-height:52px;padding:13px 14px;border-radius:12px;font-size:15px}.btn-primary{box-shadow:0 7px 15px -9px rgba(35,122,82,.8)}
+@media(min-width:640px){.wrap{padding:18px}.card{padding:20px}.actions{left:50%;right:auto;width:min(760px,100%);transform:translateX(-50%);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}}
+@media(max-width:380px){.head h1{font-size:15px}.head .sub{display:none}.detail-cell .ico{display:none}.detail-cell .v{font-size:10.5px}.btn{font-size:14px;padding-left:10px;padding-right:10px}.mc-card{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1740,6 +1821,7 @@ const FC_NOTES = {};        /* qid -> text comment on a both-question */
 const FC_PHOTOS = {};       /* qid -> [{name,type,data}] (FC's own uploads) */
 let GENERAL_COMMENTS = '';
 let VERIFIER_NAME = '';     /* v(fc-redesign) — logged-in FC's display name, sent from parent */
+let DISPLAY_NUMBERS = {};   /* visible-question number, rebuilt when the form is rendered */
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1820,7 +1902,7 @@ function renderFcControls(q){
   if(q.type==='multi'){
     const claim = CLAIMS_BY_ID[q.id];
     const farmerArr = Array.isArray(claim && claim.answer) ? claim.answer : [];
-    h += '<div class="retick"><div class="l">FC observed (re-tick what was seen)</div><div class="chips" data-retick="'+q.id+'">';
+    h += '<div class="retick"><div class="l">FC observed (re-tick what was seen)</div><div class="chips option-grid" data-retick="'+q.id+'">';
     (q.options||[]).forEach(opt => {
       const farmerHas = farmerArr.includes(opt);
       h += '<button type="button" class="chip ' + (farmerHas?'farmer-said':'') + '" data-v="'+esc(opt)+'">' + esc(opt) + (farmerHas?' ★':'') + '</button>';
@@ -1833,13 +1915,13 @@ function renderFcControls(q){
     const farmerArr = Array.isArray(claim && claim.answer) ? claim.answer : [];
     const farmerMap = {};
     farmerArr.forEach(x => { if(x && typeof x==='object') farmerMap[x.type] = x.count||''; else if(typeof x==='string') farmerMap[x] = ''; });
-    h += '<div class="retick"><div class="l">FC observed counts (tick + enter what was seen)</div><div data-retick-mc="'+q.id+'" style="display:flex;flex-direction:column;gap:6px">';
+    h += '<div class="retick"><div class="l">FC observed counts (tick + enter what was seen)</div><div class="multi-count" data-retick-mc="'+q.id+'">';
     (q.options||[]).forEach(opt => {
       const farmerCount = farmerMap[opt];
       const farmerHas = opt in farmerMap;
-      h += '<div class="mc-row" data-mc="'+esc(opt)+'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      h += '<div class="mc-row mc-card" data-mc="'+esc(opt)+'">'
         + '<button type="button" class="chip mc-toggle '+(farmerHas?'farmer-said':'')+'" data-v="'+esc(opt)+'">'+esc(opt)+(farmerHas?' ★':'')+'</button>'
-        + '<input type="number" min="0" placeholder="FC count" class="mc-count" data-mcc="'+esc(opt)+'" style="display:none;width:140px;padding:6px 9px;border:1.5px solid var(--line-strong);border-radius:6px;font-size:13px;font-family:inherit">'
+        + '<input type="number" min="0" placeholder="FC count" class="mc-count" data-mcc="'+esc(opt)+'" style="display:none">'
         + (farmerHas ? '<span style="font-size:11px;color:var(--ink-soft)">Farmer said: <b>'+esc(String(farmerCount||'no count'))+'</b></span>' : '')
         + '</div>';
     });
@@ -1852,14 +1934,14 @@ function renderFcControls(q){
 
 function renderQuestion(q){
   const claim = CLAIMS_BY_ID[q.id];
-  const qn = QUESTIONS.indexOf(q) + 1;
+  const qn = DISPLAY_NUMBERS[q.id] || '';
   /* displayOnly questions: identity facts that the FC cannot meaningfully verify
      (name, age, mobile etc.) — show value, no FC controls. */
   if(q.displayOnly){
     return \`<div class="q-block" data-q="\${q.id}" style="background:#f8fafc;border-radius:8px;padding:11px 13px;margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}</div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?qn+'. ':''}\${esc(q.gu)}</div>
           <div style="font-size:11px;color:var(--ink-soft);margin-top:1px">\${esc(q.en)}</div>
         </div>
         <div style="text-align:right;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5">\${fmtFarmerClaim(q, claim)}</div>
@@ -1890,7 +1972,7 @@ function renderQuestion(q){
     </div>\`;
   }
   return \`<div class="q-block" data-q="\${q.id}">
-    <div class="q-label">\${qn>0?'Q'+qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
+    <div class="q-label">\${qn>0?qn+'. ':''}\${esc(q.gu)}\${q.req?' <span class="req">*</span>':''}</div>
     <div class="q-desc">\${esc(q.en)}</div>
     \${q.askedOf !== 'fc-only' ? \`<div class="farmer-claim-box">
       <div class="l">📋 Farmer's claim</div>
@@ -1904,6 +1986,11 @@ function renderQuestion(q){
 function buildSections(){
   const sectionsEl = $('#sections');
   sectionsEl.innerHTML = '';
+  DISPLAY_NUMBERS = {};
+  let displayNumber = 0;
+  CATEGORIES.forEach(cat => QUESTIONS.filter(q => q.cat === cat.key).forEach(q => {
+    DISPLAY_NUMBERS[q.id] = ++displayNumber;
+  }));
   /* Header card is always visible; sections start at idx=1 */
   let secIdx = 0;
   CATEGORIES.forEach((cat) => {
@@ -1939,6 +2026,8 @@ function buildSections(){
 }
 
 function wireFcControls(){
+  /* Field-count controls on the FC form always request a numeric keyboard. */
+  $$('input[type=number]').forEach(inp => inp.setAttribute('inputmode','numeric'));
   $$('input[type=radio][name^="v_"]').forEach(r => r.onchange = () => {
     VERIFICATIONS[r.name.replace(/^v_/, '')] = r.value;
   });
@@ -2264,7 +2353,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

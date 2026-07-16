@@ -2353,7 +2353,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3187,7 +3187,21 @@ function seedVanshitaDemo(d){
 
 function normaliseDB(d){
   d.fcs=d.fcs||[]; d.haatFarmers=d.haatFarmers||[]; d.convFarmers=d.convFarmers||[];
-  d.haats=d.haats||SEED.haats; d.crops=d.crops||SEED.crops;
+  d.haats=d.haats||SEED.haats;
+  // v(crop-master) — one-time migration + ongoing admin-editable master
+  // list. d.crops used to hold the old messy legacy list (case dupes, no
+  // Gujarati) or nothing. Migrate it ONCE to the clean bilingual catalog
+  // (detected by the 'Other (અન્ય)' sentinel, present only in the new
+  // format) — but never force-override afterwards, unlike districts: crops
+  // are now admin-editable (Settings -> Manage Crops), and a forced
+  // override would silently erase admin edits on every boot. Once migrated,
+  // window.CROPS_CATALOG (read everywhere else in the app) IS d.crops —
+  // same array reference — so admin add/remove writes propagate everywhere
+  // with no other code changes needed.
+  if(!Array.isArray(d.crops) || !d.crops.includes('Other (અન્ય)')){
+    d.crops = (window.CROPS_CATALOG||SEED.crops).slice();
+  }
+  window.CROPS_CATALOG = d.crops;
   d.months=d.months||SEED.months;
   // v(district-cleanup) — force-correct on EVERY boot, not just first-seed.
   // Older/imported data (and even the old SEED literal) carries a messy,
@@ -4789,6 +4803,211 @@ window.CROPS_CATALOG = [
 ];
 window.CROP_SEASONS = ['Kharif (ખરીફ)','Rabi (રવિ)','Year-round','Perennial'];
 
+/* Search aliases — romanized transliterations of the Gujarati name (and a
+   few common English synonyms) so typing e.g. "bataka" finds "Potato
+   (બટાકા)" in a crop picker, without requiring the Gujarati script or the
+   English word. Best-effort transliteration, not admin-editable yet (only
+   the crop names themselves are, via Settings -> Manage Crops) — a crop an
+   admin adds later won't have aliases until this list is extended. Keyed by
+   the exact catalog string; looked up via cropAliasesFor(). */
+window.CROP_ALIASES = {
+  "Potato (બટાકા)": ["bataka","batata","batetu"],
+  "Wheat (ઘઉં)": ["ghau","ghaun","gahu"],
+  "Cotton (કપાસ)": ["kapas"],
+  "Paddy / Rice (ડાંગર)": ["dangar","dhan"],
+  "Maize (મકાઈ)": ["makai","makkai"],
+  "Tomato (ટામેટા)": ["tameta","tamatar"],
+  "Onion (ડુંગળી)": ["dungli","dungadi","kanda"],
+  "Okra / Bhindi (ભીંડા)": ["bhinda","bhindi"],
+  "Soybean (સોયાબીન)": ["soyabean","soya"],
+  "Castor (દિવેલ)": ["divel","erandi","erandia"],
+  "Cumin (જીરુ)": ["jiru","jeeru"],
+  "Groundnut (મગફળી)": ["magfali","mgfali","singdana"],
+  "Tur / Arhar (તુવેર)": ["tuver","tuwer"],
+  "Moong (મગ)": ["mag"],
+  "Chana (ચણા)": ["chana","chna"],
+  "Mustard (રાઇ)": ["rai"],
+  "Sesame (તલ)": ["til","tal"],
+  "Bajri (બાજરી)": ["bajri","bajra"],
+  "Jowar (જુવાર)": ["juvar","jowar"],
+  "Sugarcane (શેરડી)": ["sherdi","sheradi"],
+  "Turmeric (હળદર)": ["haldar","haldi"],
+  "Ginger (આદુ)": ["aadu","adu"],
+  "Garlic (લસણ)": ["lasan","lasun"],
+  "Brinjal (રીંગણ)": ["ringan","ringna","baigan","eggplant"],
+  "Cabbage (કોબી)": ["kobi"],
+  "Cauliflower (ફુલગોબી)": ["fulgobi","phoolgobi"],
+  "Coriander (કોથમીર)": ["kothmir","dhana"],
+  "Methi (મેથી)": ["methi","fenugreek"],
+  "Spinach (પાલક)": ["palak"],
+  "Mango (કેરી)": ["keri","kairi"],
+  "Banana (કેળા)": ["kela"],
+  "Papaya (પપઈયા)": ["papaiya","papaya"],
+  "Guava (જામફળ)": ["jamfal"],
+  "Mango ginger (આંબા હળદર)": ["amba haldar"],
+  "Spine gourd / Kantola (કંકોળા (કંટોલા))": ["kantola","kankoda"],
+  "Karingda (wild round melon) (કારીંગડા)": ["karingda"],
+  "Bitter gourd (કારેલા)": ["karela"],
+  "Capsicum (કેપ્સિકમ)": ["capsicum","simla mirch"],
+  "Wood apple (કોંઠા)": ["kontha","kotha"],
+  "Cabbage (કોબીજ)": ["kobij"],
+  "Pumpkin (કોળું)": ["kolu"],
+  "Cucumber (ખીરા કાકડી)": ["khira","kakdi"],
+  "Sponge gourd (ગલકા)": ["galka"],
+  "Carrot (ગાજર)": ["gajar"],
+  "Lasoda / Gunda (ગુંદા)": ["gunda","lasoda"],
+  "Cluster bean (ગુવાર)": ["guvar","gawar"],
+  "Long melon (ચીભડા)": ["chibhda"],
+  "Cowpea (fresh pods) (ચોળી)": ["choli"],
+  "Ivy gourd / Tindora (ટીંડોળા)": ["tindora","tindola"],
+  "Tinda / Apple gourd (ટીમસા)": ["tinda","timsa"],
+  "Ridge gourd (તુરિયા)": ["turiya"],
+  "Bottle gourd (દૂધી)": ["dudhi"],
+  "Native gooseberry (Amla) (દેશી આમળાં)": ["amla","aamla"],
+  "Native cucumber (દેશી કાકડી)": ["deshi kakdi"],
+  "Pointed gourd / Parwal (પરવળ)": ["parwal","parval"],
+  "French beans (ફણસી)": ["fansi"],
+  "Cauliflower (ફ્લાવર)": ["flower","phoolgobi"],
+  "Beetroot (બીટ)": ["beet","bit"],
+  "Broccoli (બ્રોકોલી)": ["broccoli"],
+  "Chili / Green chili (મરચા)": ["marcha","mircha","mirchi"],
+  "Radish (મૂળા)": ["mula","mooli"],
+  "Mogri radish (મોગરી)": ["mogri"],
+  "Purple yam (રતાળુ)": ["ratalu"],
+  "Ravaiya (small round brinjal, stuffing variety) (રવૈયા)": ["ravaiya"],
+  "Red-yellow Capsicum (લાલ-પીળા કેપ્સિકમ)": ["lal pila capsicum"],
+  "Lemon (લીંબુ)": ["limbu"],
+  "Green pigeon pea (fresh Tur) (લીલી તુવેર)": ["lili tuver"],
+  "Green / fresh Turmeric (લીલી હળદર)": ["lili haldar"],
+  "Green garlic (લીલું લસણ)": ["lilu lasan"],
+  "Lettuce (લેટ્યુસ)": ["lettuce"],
+  "Green peas (વટાણા)": ["vatana"],
+  "Flat beans (Vaal papdi) (વાલોળ પાપડી)": ["valol papdi","vaal papdi"],
+  "Sweet potato (શક્કરીયું)": ["shakariyu","shakkariyu"],
+  "Drumstick (Moringa) (સરગવો)": ["sargavo","saragvo"],
+  "Elephant foot yam (સુરણ)": ["suran"],
+  "Surti papdi (flat beans) (સુરતી પાપડી)": ["surti papdi"],
+  "Sweet corn (સ્વીટકોર્ન)": ["sweet corn"],
+  "Ajwain leaves (અજમાના પાન)": ["ajmana pan"],
+  "Allspice leaves (ઓલસ્પાઈસ પાન)": ["olspice pan"],
+  "Coriander leaves (કોથમીર (લીલા ધાણા))": ["lila dhana"],
+  "Sour Okra (Roselle) (ખાટી ભીંડી)": ["khati bhindi"],
+  "Giloy / Guduchi (ગળો)": ["galo","giloy"],
+  "Dodi greens (Jivanti) (ડોડીની ભાજી (જીવંતી))": ["dodi bhaji"],
+  "Amaranth greens (Tandalja) (તાંદળજો)": ["tandalja"],
+  "Tulsi / Basil leaves (તુલસીના પાન)": ["tulsi"],
+  "Betel leaves (Paan) (નાગરવેલના પાન (કલકત્તિ પાન ))": ["paan","nagarvel"],
+  "Colocasia leaves (Patra) (પાત્રા)": ["patra"],
+  "Spinach (પાલખ)": ["palakh"],
+  "Punarnava (પુનર્નવા)": ["punarnava"],
+  "Mint (ફુદીનો)": ["fudino","phudina"],
+  "Brahmi (બ્રાહ્મી)": ["brahmi"],
+  "Bhumi Amla (Phyllanthus) (ભોંય આંબલી)": ["bhoy amli"],
+  "Curry leaves (sweet neem) (મીઠો લીમડો)": ["mitho limdo","curry patta"],
+  "Green tea leaves (લીલી ચા)": ["lili chaa"],
+  "Luni greens (Purslane) (લુણી ભાજી)": ["luni bhaji"],
+  "Monsoon-season edible flower (વર્ષાડોડીના ફૂલ)": ["varshadodi"],
+  "Vaseti greens (વાસેટીની ભાજી)": ["vaseti bhaji"],
+  "Fig (અંજીર)": ["anjir"],
+  "Karonda (કરમદાં)": ["karamda"],
+  "Raw / Green Banana (કાચા કેળા)": ["kacha kela"],
+  "Raw Papaya (કાચા પપૈયા)": ["kacha papaiya"],
+  "Raw Mango (કાચી કેરી)": ["kachi keri"],
+  "Black Jamun (કાળા જાંબુ)": ["jambu","jamun"],
+  "Kiwi (કીવી)": ["kiwi"],
+  "Dates (ખજૂર)": ["khajur"],
+  "Fresh Red Dates (Kharek) (ખારેક લાલ)": ["kharek"],
+  "Gundi (Cordia fruit) (ગુંદી)": ["gundi"],
+  "Manila tamarind (Gorus Amli) (ગોરસઆંબલી)": ["gorus amli"],
+  "Chikoo / Sapota (ચીકુ)": ["chikoo","chiku"],
+  "Tapioca (ટેપિઓકા)": ["tapioca"],
+  "Dragon fruit (ડ્રેગન-ફ્રૂટ)": ["dragon fruit"],
+  "Watermelon (તળબૂચ)": ["talbuch"],
+  "Pomegranate (દાડમ)": ["dadam"],
+  "Papaya (પપૈયા)": ["papaiya"],
+  "Pineapple (પાઈનેપલ)": ["pineapple"],
+  "Ripe Banana (પાકા કેળા)": ["paka kela"],
+  "Ripe Mango (પાકી કેરી)": ["paki keri"],
+  "Pomelo (પામેલો)": ["pomelo"],
+  "Fresh Yellow Dates (પીળી ખારેક)": ["pili kharek"],
+  "Falsa (ફાલસા)": ["falsa"],
+  "Prickly pear (ફીંડલા)": ["findla"],
+  "Bael fruit (બીલીપત્રના ફળ)": ["beli","bili"],
+  "Sweet lime / Mosambi (મોસંબી)": ["mosambi"],
+  "Rayan (Khirni) (રાયણ)": ["rayan","khirni"],
+  "Green / Tender coconut (લીલું નારિયેળ)": ["lilu nariyer"],
+  "Muskmelon (શક્કરટેટી)": ["shakkarteti"],
+  "Water chestnut (શિંગોડા)": ["shingoda"],
+  "Orange (સંતરા (નારંગી))": ["santra","narangi"],
+  "Apple (સફરજન)": ["safarjan"],
+  "Custard apple (સીતાફળ)": ["sitafal"],
+  "Mulberry (સેતુર)": ["setur"],
+  "Strawberry (સ્ટ્રોબેરી)": ["strawberry"],
+  "A2 Ghee Biscuit (A2 ઘી બીસ્કિટ)": ["a2 ghee biscuit"],
+  "A2 Cheese (A2 ચીઝ)": ["a2 cheese"],
+  "A2 Milk (A2 દૂધ)": ["a2 milk","a2 dudh"],
+  "Kankrej Cow Ghee (કાકરેજ ગાય ઘી)": ["kankrej ghee"],
+  "Gir Cow Ghee (ગીર ગાય ઘી)": ["gir ghee"],
+  "Chocolate Spread (ચોકલેટ સ્પ્રેડ)": ["chocolate spread"],
+  "Buttermilk (છાશ)": ["chaas","chhash"],
+  "Natural Ice Cream (નેચરલ આઇસક્રીમ)": ["ice cream"],
+  "Paneer (પનીર)": ["paneer"],
+  "Mango Shrikhand (મેંગો શ્રીખંડ)": ["mango shrikhand"],
+  "Churned Butter (વલોણાનું માખણ)": ["makhan","valona makhan"],
+  "Healthy Nutribar (હેલ્થી ન્યુટ્રીબાર)": ["nutribar"],
+  "Urad (whole) (અડદ)": ["adad","urad"],
+  "Urad dal (અડદની દાળ)": ["adad dal"],
+  "Urad Mogar dal (અડદની મોગર દાળ)": ["adad mogar dal"],
+  "Horse gram (કળથી)": ["kalthi"],
+  "Kabuli Chana (કાબુલી ચણા (છોલે ચણા))": ["kabuli chana","chole"],
+  "Chana dal (ચણા દાળ)": ["chana dal"],
+  "Cowpea, dried (Red, White) (ચોળી (લાલ, સફેદ))": ["choli"],
+  "Tur dal (તુવેર દાળ)": ["tuver dal"],
+  "Desi Chana (દેશી ચણા)": ["desi chana"],
+  "Desi Val (Field bean) (દેશી વાલ)": ["desi val"],
+  "Moong dal (મગ દાળ)": ["mag dal"],
+  "Moong Mogar dal (મગની મોગર દાળ)": ["mag mogar dal"],
+  "Moth bean (મઠ)": ["math","moth"],
+  "Masoor dal (મસૂર દાળ)": ["masoor dal"],
+  "Rajma / Kidney beans (રાજમા)": ["rajma"],
+  "Whole Barley (આખા જવ)": ["jav","jou"],
+  "Foxtail millet (Kang) (કાંગ)": ["kang"],
+  "Quinoa (કિનોવા)": ["quinoa"],
+  "Kodo millet (કોદરી)": ["kodri"],
+  "Wheat (Bansi) (ઘઉં (બંસી))": ["bansi ghau"],
+  "Wheat (Sona Moti) (ઘઉં (સોના મોતી ))": ["sona moti ghau"],
+  "Rice (ચોખા)": ["chokha"],
+  "Barley (dehusked) (જવ (ફોતરા વગર))": ["jav"],
+  "Poha (flattened rice) (પૌઆ)": ["pauva","poha"],
+  "Cracked grain mix (Dalia) (ફાડા (ઘઉં, જુવાર, બાજરી, જવ, મકાઈ))": ["fada","dalia"],
+  "Banti (grain variety) (બંટી)": ["banti"],
+  "Puffed rice (Mamra) (મમરા)": ["mamra"],
+  "Barnyard millet (Moraiyo) (મોરૈયો)": ["moraiyo"],
+  "Ragi / Finger millet (રાગી)": ["ragi","nagli"],
+  "Rajgira / Amaranth grain (રાજગરો)": ["rajgaro"],
+  "Little millet (Samo) (સામો)": ["samo"],
+  "Semolina (Suji) (સોજી)": ["suji","sooji"],
+  "Foxtail millet (Hari Kang) (હરિ કાંગ)": ["hari kang"],
+  "Long Brinjal (લાંબા રીંગણ)": ["lamba ringan"],
+  "Green onion / Spring onion (લીલી ડુંગળી)": ["lili dungli"],
+  "Green corn / Fresh Maize (લીલી મકાઈ)": ["lili makai"],
+  "Ripe Papaya (પાકા પપૈયા)": ["paka papaiya"],
+  "Coconut (નારિયેળ)": ["nariyer","nariyal"],
+  "Fennel (વરિયાળી)": ["variyali","saunf"],
+  "Tobacco (તમાકુ)": ["tamaku"],
+  "Mustard greens (સરસવ ભાજી)": ["sarsav bhaji"],
+  "Indian jujube (બોર)": ["bor"],
+  "Ajwain (અજમો)": ["ajmo","ajwain"],
+  "Linseed / Flaxseed (અળસી)": ["alsi"],
+  "Grapes (દ્રાક્ષ)": ["draksh"],
+};
+/* Returns "canonical crop string + its aliases", lowercased, space-joined —
+   ready for a single .includes(query) substring test. */
+function cropSearchBlob(crop){
+  const aliases = window.CROP_ALIASES[crop] || [];
+  return (crop + ' ' + aliases.join(' ')).toLowerCase();
+}
+
 /* v8 — Crop label normaliser. Crops can arrive from many sources (KRSF form,
    CSV import, demo seed, manual edit) in various shapes:
      "Wheat", "Wheat (ઘઉં)", "ઘઉં", "Wheat / Ghau", "Bajri  (બાજરી)" …
@@ -5696,7 +5915,7 @@ function openConvScoreModal(id){
   if(vsCropSearchEl) vsCropSearchEl.oninput = e=>{
     const q=e.target.value.trim().toLowerCase();
     document.querySelectorAll('.vs-crop-chip').forEach(btn=>{
-      btn.style.display = (!q || btn.dataset.crop.toLowerCase().includes(q)) ? '' : 'none';
+      btn.style.display = (!q || cropSearchBlob(btn.dataset.crop).includes(q)) ? '' : 'none';
     });
   };
   const modalEl = document.getElementById('modal');
@@ -11085,7 +11304,9 @@ function openFarmerModal(program,id){
   if($('#ffCropSearch')) $('#ffCropSearch').oninput=e=>{
     const q=e.target.value.trim().toLowerCase();
     $('#ffCrops').querySelectorAll('label').forEach(lbl=>{
-      lbl.style.display = (!q || lbl.textContent.toLowerCase().includes(q)) ? '' : 'none';
+      const cb=lbl.querySelector('input[type="checkbox"]');
+      const blob = cb ? cropSearchBlob(cb.value) : lbl.textContent.toLowerCase();
+      lbl.style.display = (!q || blob.includes(q)) ? '' : 'none';
     });
   };
 
@@ -11615,7 +11836,54 @@ function viewSettings(){
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
       <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">📵 Duplicate Phones</div>
+      <div class="tab ${cur==='crops'?'on':''}" data-st="crops">🌾 Manage Crops</div>
     </div>`;
+  }
+  if(STab==='crops'){
+    let h=tabBar();
+    const list = window.CROPS_CATALOG||[];
+    h += `<div class="card" style="padding:18px 20px;max-width:820px">
+      <div class="ct" style="font-size:14px;font-weight:700">🌾 Crop Master List (${list.length})</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
+        This is the single master crop list used by every crop picker in the app (Edit Farmer, visit logging, Conversion enrollment, etc). Add in the same bilingual format as the rest of the list — <b>English (ગુજરાતી)</b>, e.g. <code>Sunflower (સૂર્યમુખી)</code> — so it displays consistently everywhere. Removing a crop only removes it from future pickers; farmers already recorded with it are unaffected.
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="newCropName" placeholder="English (ગુજરાતી)" style="flex:1;padding:8px 12px;border:1px solid var(--line-strong);border-radius:7px">
+        <button class="btn btn-primary btn-sm" id="addCropBtn">${svg(I.plus,2.2)}Add crop</button>
+      </div>
+      <input id="cropListSearch" placeholder="🔍 Search…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;margin-bottom:8px;box-sizing:border-box">
+      <div id="cropListWrap" style="max-height:440px;overflow-y:auto">${list.map((c,i)=>`<div class="row-line" data-croprow style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line-soft)">
+        <span style="flex:1;font-size:13px">${esc(c)}</span>
+        ${c==='Other (અન્ય)'?'<span style="font-size:10.5px;color:var(--ink-faint)">reserved</span>':`<button class="btn-icon" data-crop-del="${i}" aria-label="Delete crop" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--red)">${svg(I.trash,2)}</button>`}
+      </div>`).join('')}</div>
+    </div>`;
+    v.innerHTML=h;
+    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
+    $('#cropListSearch').oninput=e=>{
+      const q=e.target.value.trim().toLowerCase();
+      $('#cropListWrap').querySelectorAll('[data-croprow]').forEach(row=>{
+        row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    };
+    $('#addCropBtn').onclick=async()=>{
+      const name=$('#newCropName').value.trim();
+      if(!name){toast('Crop name is required');return;}
+      if(window.CROPS_CATALOG.some(c=>c.toLowerCase()===name.toLowerCase())){toast('That crop is already in the list','error');return;}
+      window.CROPS_CATALOG.splice(window.CROPS_CATALOG.length-1, 0, name); // keep 'Other' last
+      logActivity('edit', `Crop added to master list — <b>${esc(name)}</b>`);
+      await saveDB(); render();
+      toast('Crop added');
+    };
+    v.querySelectorAll('[data-crop-del]').forEach(b=>b.onclick=async()=>{
+      const i=+b.dataset.cropDel;
+      const removed=window.CROPS_CATALOG[i];
+      if(!confirm('Remove "'+removed+'" from the crop master list?\n\nThis only affects future crop pickers — farmers already recorded with this crop keep it.')) return;
+      window.CROPS_CATALOG.splice(i,1);
+      logActivity('edit', `Crop removed from master list — <b>${esc(removed)}</b>`);
+      await saveDB(); render();
+      toast('Crop removed');
+    });
+    return;
   }
   if(STab==='duplicates'){
     let h=tabBar();

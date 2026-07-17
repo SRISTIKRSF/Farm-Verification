@@ -36,13 +36,6 @@
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <!-- Leaflet (farm-locations map). Loaded lazily — won't block startup. -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<!-- SheetJS (Income Tracking Excel parser). defer — this was a synchronous
-     blocking script tag with no defer/async, unlike leaflet.js right
-     below it; a slow/unreachable cdn.sheetjs.com would
-     block the parser from ever reaching the rest of the head section,
-     including the app's own style/script blocks — full page hang, no
-     error, nothing to click. -->
-<script defer src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
@@ -2791,7 +2784,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v67';
+const APP_VERSION = 'v68';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6899,7 +6892,6 @@ function renderNav(){
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
     {id:'haats',label:'Haats & Markets',ico:I.basket},
-    {id:'income',label:'Income Tracking',ico:I.rupee||I.haat},
     {sec:'Conversion Program'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
     {sec:'Farm Locations'},
@@ -7630,7 +7622,6 @@ const TITLES={
   haat:['Organic Haat Program','Haat Farmers'],
   verification:['Organic Haat Program','Verification Queue'],
   haats:['Organic Haat Program','Haats & Markets'],
-  income:['Organic Haat Program','Income Tracking'],
   conversion:['Conversion Program','Conversion Farmers'],
   // v9 audit-fix #21/#22 — fcInbox & fcs are dead routes (no sidebar entry).
   // Kept commented for archaeology; remove if no one objects in a release.
@@ -8375,6 +8366,7 @@ function exportHaatCSV(rows){
     certification:f.certification||'',facilitator:(fcById(f.fcId)||{}).name||'',
     haat:f.haat||'',status:(HAAT_STATUS[f.status]||{label:''}).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
+    joined_month_year:farmerJoinedLabel(f),
   }));
   download('haat-farmers.csv',toCSV(data));
   toast('Downloaded: haat-farmers.csv');
@@ -12860,8 +12852,8 @@ function viewSettings(){
    Centralised so all three new tabs read the same shape.
    ============================================================ */
 function normHaat(h){
-  // Accepts either a legacy string or the new {name, parent, lat, lng, weekday, type} object.
-  if(typeof h === 'string') return { id:h, name:h, parent:'', lat:null, lng:null, weekday:'', type:'' };
+  // Accepts either a legacy string or the new {name, parent, lat, lng, weekday, type, city} object.
+  if(typeof h === 'string') return { id:h, name:h, parent:'', lat:null, lng:null, weekday:'', type:'', city:'' };
   return {
     id:    h.id || h.name || '',
     name:  h.name || h.id || '',
@@ -12870,6 +12862,7 @@ function normHaat(h){
     lng:   (h.lng != null && h.lng !== '') ? +h.lng : null,
     weekday: h.weekday || '',
     type:  h.type || '',
+    city:  h.city || '',
   };
 }
 function getHaatList(){ return (DB.haats || []).map(normHaat); }
@@ -12914,14 +12907,21 @@ function viewHaats(){
     }
     return { fr, active, avgKm: distCount ? (distSum/distCount).toFixed(1) : null, maxKm: distCount ? distMax.toFixed(1) : null };
   }
+  // v68 — city filter, since one city can host several haats.
+  if(!FILTERS.haatsView.city) FILTERS.haatsView.city = '';
+  const cityFilter = FILTERS.haatsView.city;
+  const cityOpts = [...new Set(haats.map(x=>x.city).filter(Boolean))].sort();
+  const visibleHaats = cityFilter ? haats.filter(x=>x.city===cityFilter) : haats;
+  const visibleNames = new Set(visibleHaats.map(x=>x.name));
   let h = `<div class="toolbar" style="margin-bottom:14px">
     <span style="font-size:12.5px;color:var(--ink-soft)">Tip: parent haats with sub-locations are expandable. Add GPS coordinates so we can measure farm-to-haat distance.</span>
     <div style="flex:1"></div>
+    ${cityOpts.length?`<select id="haatCityF"><option value="">All cities</option>${cityOpts.map(c=>`<option value="${esc(c)}" ${cityFilter===c?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
     <button class="btn btn-primary btn-sm" id="haatAdd">${svg(I.plus,2.2)}Add haat</button>
   </div>`;
   h += `<div class="table-wrap"><table style="min-width:980px"><thead><tr>
     <th style="width:30px"></th>
-    <th>Haat</th><th>Day</th><th>GPS</th>
+    <th>Haat</th><th>City</th><th>Day</th><th>GPS</th>
     <th style="text-align:right">Farmers</th><th style="text-align:right">Active</th>
     <th>Distance (avg / max)</th><th>Actions</th>
   </tr></thead><tbody>`;
@@ -12941,6 +12941,7 @@ function viewHaats(){
     return `<tr style="${indent?'background:var(--panel-2)':''}">
       <td style="padding-left:${10+indent*16}px">${caret}</td>
       <td><b>${esc(haat.name)}</b>${kids.length?` <span style="color:var(--ink-faint);font-size:10.5px">(${kids.length} sub)</span>`:''}</td>
+      <td style="font-size:11.5px;color:var(--ink-soft)">${esc(haat.city||'—')}</td>
       <td style="font-size:11.5px;color:var(--ink-soft)">${esc(haat.weekday||'—')}</td>
       <td>${gps}</td>
       <td style="text-align:right;font-weight:600">${s.fr.length}</td>
@@ -12951,7 +12952,10 @@ function viewHaats(){
         <button class="btn btn-ghost btn-sm" data-haat-del="${esc(haat.name)}" style="color:var(--red)">${svg(I.trash,2)}</button>
       </td></tr>`;
   }
-  tops.forEach(top => {
+  // v68 — city filter applies to top-level haats + orphans; expanded
+  // sub-locations of a visible parent still show regardless of their own
+  // city (they're sub-locations of an already-visible haat).
+  tops.filter(top => !cityFilter || visibleNames.has(top.name)).forEach(top => {
     h += rowFor(top, 0);
     if(expanded[top.name] && childrenOf[top.name]){
       childrenOf[top.name].forEach(c => { h += rowFor(c, 1); });
@@ -12960,9 +12964,9 @@ function viewHaats(){
   // v8 bug fix: orphan children (parent doesn't exist) were previously hidden
   // behind expanded['__orphans__'] which had no UI toggle. Always show them
   // under a synthetic "(Orphans)" group so admins notice and re-parent them.
-  const orphans = haats.filter(haat => haat.parent && !tops.find(t => t.name === haat.parent));
+  const orphans = haats.filter(haat => haat.parent && !tops.find(t => t.name === haat.parent) && (!cityFilter || visibleNames.has(haat.name)));
   if(orphans.length){
-    h += '<tr style="background:#fef3c7"><td></td><td colspan="7" style="font-size:11px;color:var(--yellow);font-weight:700;text-transform:uppercase;letter-spacing:.05em">⚠️ '+orphans.length+' haat'+(orphans.length===1?'':'s')+' with missing parent — edit them to fix the parent</td></tr>';
+    h += '<tr style="background:#fef3c7"><td></td><td colspan="8" style="font-size:11px;color:var(--yellow);font-weight:700;text-transform:uppercase;letter-spacing:.05em">⚠️ '+orphans.length+' haat'+(orphans.length===1?'':'s')+' with missing parent — edit them to fix the parent</td></tr>';
     orphans.forEach(haat => { h += rowFor(haat, 1); });
   }
   h += '</tbody></table></div>';
@@ -12970,6 +12974,7 @@ function viewHaats(){
   v.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
     expanded[b.dataset.toggle] = !expanded[b.dataset.toggle]; render();
   });
+  const haatCityF = $('#haatCityF'); if(haatCityF) haatCityF.onchange = () => { FILTERS.haatsView.city = haatCityF.value; render(); };
   v.querySelectorAll('[data-haat-edit]').forEach(b => b.onclick = () => openHaatEditModal(b.dataset.haatEdit));
   v.querySelectorAll('[data-haat-del]').forEach(b => b.onclick = () => {
     const name = b.dataset.haatDel;
@@ -12983,13 +12988,15 @@ function viewHaats(){
 }
 function openHaatEditModal(name){
   const haat = name ? getHaatByName(name) : null;
-  const existing = haat || { name:'', parent:'', lat:'', lng:'', weekday:'', type:'' };
+  const existing = haat || { name:'', parent:'', lat:'', lng:'', weekday:'', type:'', city:'' };
   const parentOpts = ['', ...getHaatList().filter(h => !h.parent && h.name !== name).map(h => h.name)];
   const weekdayOpts = ['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const body = `<div class="field-row">
-    ${fld('Haat name', `<input id="haatName" value="${esc(existing.name)}" placeholder="e.g. Drive-In Haat">`, true)}
+  const body = `${fld('Haat name', `<input id="haatName" value="${esc(existing.name)}" placeholder="e.g. Drive-In Haat">`, true)}
+  <div class="field-row">
+    ${fld('City', `<input id="haatCity" value="${esc(existing.city||'')}" placeholder="e.g. Ahmedabad" list="haatCityList">`)}
     ${fld('Day of haat', sel('haatDay', weekdayOpts.map(d => [d, d || '— Pick day —']), existing.weekday))}
   </div>
+  <datalist id="haatCityList">${[...new Set(getHaatList().map(h=>h.city).filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
   ${fld('Parent haat (leave blank for top-level)', sel('haatParent', parentOpts.map(p => [p, p || '— Top-level —']), existing.parent))}
   <div class="field-row">
     ${fld('Latitude', `<input id="haatLat" type="number" step="0.0001" value="${existing.lat==null?'':existing.lat}" placeholder="e.g. 23.0225">`)}
@@ -13008,6 +13015,7 @@ function openHaatEditModal(name){
       lat: $('#haatLat').value ? +$('#haatLat').value : null,
       lng: $('#haatLng').value ? +$('#haatLng').value : null,
       weekday: $('#haatDay').value || '',
+      city: $('#haatCity').value.trim(),
     };
     // Replace or append. We persist as objects from now on.
     DB.haats = (DB.haats || []).map(h => normHaat(h));
@@ -13024,633 +13032,6 @@ function openHaatEditModal(name){
     }
     await saveDB(); closeModal(); render();
     toast(name ? 'Haat updated' : 'Haat added');
-  };
-}
-
-/* ============ VIEW: INCOME TRACKING ============
-   Per-farmer income recorded per haat-day. Four sub-views (tabs):
-     • By Farmer (default) — totals + baseline + delta
-     • Monthly — month-grid table, per farmer × per month
-     • Weekly  — week-grid, per farmer × ISO-week
-     • By Haat — total income per haat
-   Excel upload reads BOTH Baseline + Income Track sheets so farmer
-   metadata (name, baseline monthly income, primary product) comes too. */
-function _isoWeek(iso){
-  // Returns { year, week } per ISO-8601 (Mon=1). v8 bug fix: use UTC so
-  // east-of-UTC users don't bucket the same haat-day into different weeks.
-  const d = new Date(iso + 'T00:00:00Z');
-  const day = (d.getUTCDay()+6) % 7;
-  d.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const week = 1 + Math.round(((d - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay()+6)%7)) / 7);
-  return { year:d.getUTCFullYear(), week, key: d.getUTCFullYear()+'-W'+String(week).padStart(2,'0') };
-}
-function _weekStartIso(iso){
-  // Returns the Monday (UTC) of the week containing iso.
-  const d = new Date(iso + 'T00:00:00Z');
-  const day = (d.getUTCDay()+6) % 7;
-  d.setUTCDate(d.getUTCDate() - day);
-  return d.toISOString().slice(0,10);
-}
-function _fmtRupee(n){ n = +n||0; return '₹' + n.toLocaleString('en-IN'); }
-function _farmerLabel(id){
-  const f = DB.haatFarmers.find(x => x.id === id);
-  return f ? f.name : id;
-}
-
-function viewIncomeTracking(){
-  const v = $('#view');
-  if(!FILTERS.income) FILTERS.income = { tab:'farmer', month:'all', haat:'all', q:'' };
-  const F = FILTERS.income;
-  DB.incomeRecords = DB.incomeRecords || [];
-  // Build month + haat lists from records.
-  const monthSet = new Set();
-  DB.incomeRecords.forEach(r => { if(r.haatDate) monthSet.add(r.haatDate.slice(0,7)); });
-  const months = [...monthSet].sort();
-  const monthsDesc = [...months].reverse();
-  // Filter records using top filters.
-  const filtered = DB.incomeRecords.filter(r => {
-    if(F.month !== 'all' && r.haatDate && r.haatDate.slice(0,7) !== F.month) return false;
-    if(F.haat !== 'all' && r.haatName !== F.haat) return false;
-    if(F.q){
-      const q = F.q.toLowerCase();
-      const farmer = DB.haatFarmers.find(f => f.id === r.farmerId);
-      const hay = (r.farmerId + ' ' + ((farmer&&farmer.name)||'') + ' ' + (r.productCategory||'')).toLowerCase();
-      if(!hay.includes(q)) return false;
-    }
-    return true;
-  });
-  // Common stat tiles
-  const totalAll = filtered.reduce((s,r) => s + (+r.amount||0), 0);
-  const farmerSet = new Set(filtered.map(r => r.farmerId));
-  const monthsInFilter = new Set(filtered.map(r => (r.haatDate||'').slice(0,7))).size || 1;
-  let h = '';
-  h += `<div class="statbox-grid cols-4" style="margin-bottom:14px">
-    <div class="statbox" style="--sb-color:var(--green)"><div class="sb-label">Total income</div><div class="sb-num" style="font-size:21px">${_fmtRupee(totalAll)}</div><div class="sb-sub">across ${farmerSet.size} farmer${farmerSet.size===1?'':'s'}</div></div>
-    <div class="statbox" style="--sb-color:var(--accent)"><div class="sb-label">Visits logged</div><div class="sb-num">${filtered.length}</div><div class="sb-sub">haat-day rows</div></div>
-    <div class="statbox" style="--sb-color:var(--orange)"><div class="sb-label">Avg per farmer / month</div><div class="sb-num" style="font-size:18px">${_fmtRupee(farmerSet.size ? Math.round(totalAll/farmerSet.size/monthsInFilter) : 0)}</div><div class="sb-sub">${monthsInFilter} month${monthsInFilter===1?'':'s'} in view</div></div>
-    <div class="statbox" style="--sb-color:var(--purple)"><div class="sb-label">Records on file</div><div class="sb-num">${DB.incomeRecords.length}</div><div class="sb-sub">total</div></div>
-  </div>`;
-  // Top filters + actions
-  h += `<div class="toolbar" style="margin-bottom:12px">
-    <select id="imMonth"><option value="all">All months</option>${monthsDesc.map(m => `<option value="${m}" ${F.month===m?'selected':''}>${m}</option>`).join('')}</select>
-    <select id="imHaat"><option value="all">All haats</option>${getHaatList().map(h=>`<option value="${esc(h.name)}" ${F.haat===h.name?'selected':''}>${esc(h.name)}</option>`).join('')}</select>
-    <input id="imQ" placeholder="Search farmer name / ID / product" value="${esc(F.q||'')}" style="flex:1;max-width:340px">
-    <button class="chip" id="imClear">Clear</button>
-    <div style="flex:1"></div>
-    <button class="btn btn-ghost btn-sm" id="imAdd">${svg(I.plus,2.2)}Add visit</button>
-    <button class="btn btn-primary btn-sm" id="imUpload">${svg(I.download,2.2)}Upload Excel</button>
-  </div>`;
-  // Sub-view tabs
-  const tabs = [
-    {key:'farmer',  label:'👥 By Farmer'},
-    {key:'monthly', label:'📅 Monthly'},
-    {key:'weekly',  label:'📆 Weekly'},
-    {key:'haat',    label:'🛒 By Haat'},
-  ];
-  h += '<div class="tabs" style="margin-bottom:14px">';
-  tabs.forEach(t => { h += `<div class="tab ${F.tab===t.key?'on':''}" data-imt="${t.key}">${t.label}</div>`; });
-  h += '</div>';
-  // ----- Tab: By Farmer -----
-  if(F.tab === 'farmer'){
-    const perFarmer = {};
-    filtered.forEach(r => {
-      const k = r.farmerId;
-      if(!perFarmer[k]) perFarmer[k] = { farmerId:k, total:0, visits:0, products:new Set(), monthsTouched:new Set(), haats:new Set() };
-      perFarmer[k].total += +r.amount || 0;
-      perFarmer[k].visits++;
-      if(r.productCategory) perFarmer[k].products.add(r.productCategory);
-      if(r.haatDate) perFarmer[k].monthsTouched.add(r.haatDate.slice(0,7));
-      if(r.haatName) perFarmer[k].haats.add(r.haatName);
-    });
-    const rows = Object.values(perFarmer).sort((a,b) => b.total - a.total);
-    h += `<div class="table-head"><h3>Income by farmer</h3><span class="meta">${rows.length} farmer${rows.length===1?'':'s'}</span></div>`;
-    h += `<div class="table-wrap"><table style="min-width:1060px"><thead><tr>
-      <th>Farmer</th><th>Haat(s)</th><th>Products</th>
-      <th style="text-align:right">Visits</th>
-      <th style="text-align:right">Avg / month</th>
-      <th style="text-align:right">Baseline / month</th>
-      <th style="text-align:right">Total income</th>
-      <th>Actions</th>
-    </tr></thead><tbody>`;
-    if(!rows.length){
-      h += `<tr><td colspan="8"><div class="empty">${svg(I.haat)}<div>No income records match the current filter. Click <b>Upload Excel</b> or <b>Add visit</b> to start.</div></div></td></tr>`;
-    } else {
-      rows.forEach(r => {
-        const farmer = DB.haatFarmers.find(f => f.id === r.farmerId);
-        const baseline = farmer ? (+farmer.baselineMonthlyIncome || 0) : 0;
-        // v9 process-fix #58 — baseline staleness. If baseline was set more
-        // than 12 months ago (or no timestamp at all but a baseline exists),
-        // mark it stale so admins know the delta is suspect.
-        const baselineSetAt = farmer ? (farmer.baselineSetAt || farmer.publicSubmittedAt || farmer.submittedAt || '') : '';
-        let baselineStale = false;
-        if(baseline){
-          if(!baselineSetAt) baselineStale = true;
-          else {
-            const ageMonths = (Date.now() - new Date(baselineSetAt).getTime()) / (30*24*60*60*1000);
-            if(ageMonths > 12) baselineStale = true;
-          }
-        }
-        const monthsCount = Math.max(r.monthsTouched.size, 1);
-        const avgPerMonth = Math.round(r.total / monthsCount);
-        const delta = baseline ? avgPerMonth - baseline : null;
-        const dColor = delta == null ? '' : delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--ink-faint)';
-        const dStr = delta == null ? '' : (delta > 0 ? '↑' : delta < 0 ? '↓' : '→') + ' ' + _fmtRupee(Math.abs(delta));
-        const staleBadge = baselineStale ? ' <span class="tag yellow" style="font-size:9px;padding:1px 5px;margin-left:4px" title="Baseline set > 12 months ago — delta may be inaccurate">stale</span>' : '';
-        h += `<tr data-im-detail="${esc(r.farmerId)}" style="cursor:pointer">
-          <td><b>${esc(farmer ? farmer.name : r.farmerId)}</b><div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.farmerId)}</div></td>
-          <td>${esc([...r.haats].join(', ')||'—')}</td>
-          <td style="font-size:11.5px">${esc([...r.products].slice(0,3).join(', ') + (r.products.size>3?' +'+(r.products.size-3):'') || '—')}</td>
-          <td style="text-align:right">${r.visits}</td>
-          <td style="text-align:right;font-weight:600">${_fmtRupee(avgPerMonth)}${delta!=null?'<div style="font-size:10.5px;color:'+dColor+'">'+dStr+'</div>':''}</td>
-          <td style="text-align:right;color:var(--ink-soft)">${baseline ? _fmtRupee(baseline) : '—'}${staleBadge}</td>
-          <td style="text-align:right;font-weight:700">${_fmtRupee(r.total)}</td>
-          <td><button class="btn btn-ghost btn-sm" data-im-detail="${esc(r.farmerId)}">${svg(I.eye,2)}View</button></td>
-        </tr>`;
-      });
-    }
-    h += '</tbody></table></div>';
-  }
-  // ----- Tab: Monthly -----
-  else if(F.tab === 'monthly'){
-    const monthList = months.length ? months : [(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'))];
-    const farmerKeys = [...new Set(filtered.map(r => r.farmerId))];
-    // Build a {farmerId × month → total} grid.
-    const grid = {};
-    filtered.forEach(r => {
-      const k = r.farmerId, m = (r.haatDate||'').slice(0,7);
-      if(!grid[k]) grid[k] = {};
-      grid[k][m] = (grid[k][m]||0) + (+r.amount||0);
-    });
-    // Sort farmers by total descending
-    const farmers = farmerKeys.map(k => ({ id:k, total: Object.values(grid[k]||{}).reduce((s,v)=>s+v,0) })).sort((a,b)=>b.total-a.total);
-    h += `<div class="table-head"><h3>Monthly income</h3><span class="meta">${farmers.length} farmer${farmers.length===1?'':'s'} × ${monthList.length} month${monthList.length===1?'':'s'}</span></div>`;
-    h += `<div class="table-wrap"><table style="min-width:${260+monthList.length*120}px"><thead><tr>
-      <th style="min-width:200px">Farmer</th>
-      ${monthList.map(m => `<th style="text-align:right">${m}</th>`).join('')}
-      <th style="text-align:right">Total</th></tr></thead><tbody>`;
-    if(!farmers.length){
-      h += `<tr><td colspan="${monthList.length+2}"><div class="empty">${svg(I.haat)}<div>No monthly data.</div></div></td></tr>`;
-    } else {
-      farmers.forEach(fa => {
-        const farmerObj = DB.haatFarmers.find(x => x.id === fa.id);
-        h += `<tr data-im-detail="${esc(fa.id)}" style="cursor:pointer">
-          <td><b>${esc(farmerObj?farmerObj.name:fa.id)}</b><div style="font-size:10.5px;color:var(--ink-faint)">${esc(fa.id)}</div></td>`;
-        monthList.forEach(m => {
-          const val = (grid[fa.id]||{})[m] || 0;
-          h += `<td style="text-align:right;font-variant-numeric:tabular-nums">${val ? _fmtRupee(val) : '<span style="color:var(--ink-faint)">—</span>'}</td>`;
-        });
-        h += `<td style="text-align:right;font-weight:700">${_fmtRupee(fa.total)}</td></tr>`;
-      });
-      // Footer: column totals
-      const colTotals = monthList.map(m => filtered.filter(r => r.haatDate && r.haatDate.slice(0,7)===m).reduce((s,r)=>s+(+r.amount||0),0));
-      const grand = colTotals.reduce((s,v)=>s+v,0);
-      h += `<tr style="background:var(--panel-2);font-weight:700"><td>Column total</td>${colTotals.map(v=>`<td style="text-align:right">${_fmtRupee(v)}</td>`).join('')}<td style="text-align:right">${_fmtRupee(grand)}</td></tr>`;
-    }
-    h += '</tbody></table></div>';
-  }
-  // ----- Tab: Weekly -----
-  else if(F.tab === 'weekly'){
-    // Build per-farmer × week grid.
-    const weekMap = {};  // key -> {label, startIso}
-    const grid = {};
-    filtered.forEach(r => {
-      if(!r.haatDate) return;
-      const w = _isoWeek(r.haatDate);
-      weekMap[w.key] = { key:w.key, label: w.key, startIso:_weekStartIso(r.haatDate) };
-      const k = r.farmerId;
-      if(!grid[k]) grid[k] = {};
-      grid[k][w.key] = (grid[k][w.key]||0) + (+r.amount||0);
-    });
-    const weeks = Object.values(weekMap).sort((a,b)=>a.startIso.localeCompare(b.startIso));
-    const farmerKeys = Object.keys(grid);
-    const farmers = farmerKeys.map(k => ({ id:k, total: Object.values(grid[k]||{}).reduce((s,v)=>s+v,0) })).sort((a,b)=>b.total-a.total);
-    h += `<div class="table-head"><h3>Weekly income</h3><span class="meta">${farmers.length} farmer${farmers.length===1?'':'s'} × ${weeks.length} ISO-week${weeks.length===1?'':'s'}</span></div>`;
-    h += `<div class="table-wrap"><table style="min-width:${260+weeks.length*90}px"><thead><tr>
-      <th style="min-width:200px">Farmer</th>
-      ${weeks.map(w => `<th style="text-align:right;font-size:10.5px"><div>${w.label}</div><div style="color:var(--ink-faint);font-weight:500">${w.startIso.slice(5)}</div></th>`).join('')}
-      <th style="text-align:right">Total</th></tr></thead><tbody>`;
-    if(!farmers.length){
-      h += `<tr><td colspan="${weeks.length+2}"><div class="empty">${svg(I.haat)}<div>No weekly data.</div></div></td></tr>`;
-    } else {
-      farmers.forEach(fa => {
-        const farmerObj = DB.haatFarmers.find(x => x.id === fa.id);
-        h += `<tr data-im-detail="${esc(fa.id)}" style="cursor:pointer">
-          <td><b>${esc(farmerObj?farmerObj.name:fa.id)}</b><div style="font-size:10.5px;color:var(--ink-faint)">${esc(fa.id)}</div></td>`;
-        weeks.forEach(w => {
-          const val = (grid[fa.id]||{})[w.key] || 0;
-          h += `<td style="text-align:right;font-size:11.5px;font-variant-numeric:tabular-nums">${val ? _fmtRupee(val) : '<span style="color:var(--ink-faint)">—</span>'}</td>`;
-        });
-        h += `<td style="text-align:right;font-weight:700">${_fmtRupee(fa.total)}</td></tr>`;
-      });
-    }
-    h += '</tbody></table></div>';
-  }
-  // ----- Tab: By Haat -----
-  else if(F.tab === 'haat'){
-    const perHaat = {};
-    filtered.forEach(r => {
-      const k = r.haatName || '(unassigned)';
-      if(!perHaat[k]) perHaat[k] = { name:k, total:0, visits:0, farmers:new Set(), months:new Set() };
-      perHaat[k].total += +r.amount || 0;
-      perHaat[k].visits++;
-      perHaat[k].farmers.add(r.farmerId);
-      if(r.haatDate) perHaat[k].months.add(r.haatDate.slice(0,7));
-    });
-    const rows = Object.values(perHaat).sort((a,b) => b.total - a.total);
-    h += `<div class="table-head"><h3>Income by haat</h3><span class="meta">${rows.length} haat${rows.length===1?'':'s'}</span></div>`;
-    h += `<div class="table-wrap"><table style="min-width:860px"><thead><tr>
-      <th>Haat</th>
-      <th style="text-align:right">Visits</th>
-      <th style="text-align:right">Unique farmers</th>
-      <th style="text-align:right">Months</th>
-      <th style="text-align:right">Avg / farmer / month</th>
-      <th style="text-align:right">Total income</th>
-    </tr></thead><tbody>`;
-    if(!rows.length){
-      h += `<tr><td colspan="6"><div class="empty">${svg(I.haat)}<div>No haat-level data.</div></div></td></tr>`;
-    } else {
-      rows.forEach(r => {
-        const months = r.months.size || 1;
-        const farmers = r.farmers.size || 1;
-        const avg = Math.round(r.total / farmers / months);
-        h += `<tr>
-          <td><b>${esc(r.name)}</b></td>
-          <td style="text-align:right">${r.visits}</td>
-          <td style="text-align:right">${r.farmers.size}</td>
-          <td style="text-align:right">${r.months.size}</td>
-          <td style="text-align:right">${_fmtRupee(avg)}</td>
-          <td style="text-align:right;font-weight:700">${_fmtRupee(r.total)}</td>
-        </tr>`;
-      });
-    }
-    h += '</tbody></table></div>';
-  }
-  v.innerHTML = h;
-  const onF = (k, id) => { const el = $('#'+id); if(el) el.onchange = el.oninput = () => { F[k] = el.value; render(); }; };
-  onF('month','imMonth'); onF('haat','imHaat'); onF('q','imQ');
-  $('#imClear').onclick = () => { FILTERS.income = {tab:F.tab, month:'all', haat:'all', q:''}; render(); };
-  $('#imAdd').onclick = () => openIncomeAddModal();
-  $('#imUpload').onclick = () => openIncomeUploadModal();
-  v.querySelectorAll('[data-imt]').forEach(t => t.onclick = () => { F.tab = t.dataset.imt; render(); });
-  // v8 bug fix: the same [data-im-detail] attribute is on both <tr> and the
-  // inner <button>, so a button click would fire BOTH listeners. Stop bubble
-  // on the button so the row listener doesn't fire too.
-  v.querySelectorAll('button[data-im-detail]').forEach(b => b.onclick = e => {
-    e.stopPropagation();
-    openIncomeDetailModal(b.dataset.imDetail);
-  });
-  v.querySelectorAll('tr[data-im-detail]').forEach(b => b.onclick = () => {
-    openIncomeDetailModal(b.dataset.imDetail);
-  });
-}
-function openIncomeAddModal(){
-  const haats = getHaatList();
-  // v9 audit-fix #16 — guard the empty-haats case so admin doesn't hit a
-  // silent broken dropdown.
-  if(!haats.length){
-    modalShell('No haats configured',
-      `<div class="hint">No haats have been added yet. Open <b>Haats & Markets</b> from the sidebar and add at least one haat before recording income.</div>`,
-      `<button class="btn btn-ghost" onclick="closeModal()">Close</button>`);
-    return;
-  }
-  const today = todayISO();
-  // v9 process-fix #50 — only show green + active farmers in the income
-  // dropdown. Inactive/suspended/yellow/red/pending farmers shouldn't have
-  // income recorded against them.
-  const eligibleFarmers = DB.haatFarmers.filter(f => f.status === 'green' && f.active !== false && !f._archived);
-  const farmerOpts = '<option value="">— Select farmer —</option>' +
-    eligibleFarmers.map(f => `<option value="${esc(f.id)}" data-haat="${esc(f.haat||'')}">${esc(f.name)} (${esc(f.id)})${f.haat?' · '+esc(f.haat):''}</option>`).join('');
-  const haatOpts = haats.map(h => `<option value="${esc(h.name)}">${esc(h.name)}</option>`).join('');
-  const body = `<div class="field-row">
-    ${fld('Farmer', `<select id="ivFarmer">${farmerOpts}</select>`, true)}
-    ${fld('Haat', `<select id="ivHaat">${haatOpts}</select>`, true)}
-  </div>
-  <div class="field-row">
-    ${fld('Haat date', `<input type="date" id="ivDate" value="${today}">`, true)}
-    ${fld('Amount (₹)', `<input type="number" id="ivAmt" min="0" placeholder="e.g. 4500">`, true)}
-  </div>
-  ${fld('Product category', `<input id="ivProd" placeholder="Vegetable, Fruit, Dairy, Value Added, …">`)}`;
-  modalShell('Add income visit', body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="ivSave">${svg(I.check)}Save</button>`);
-  // v9 process-fix #50 — when farmer is picked, auto-fill the haat dropdown
-  // to the farmer's assigned haat (admin can override but gets a warning).
-  $('#ivFarmer').onchange = e => {
-    const opt = e.target.selectedOptions[0];
-    const farmerHaat = opt ? (opt.getAttribute('data-haat')||'') : '';
-    if(farmerHaat){
-      const haatSel = $('#ivHaat');
-      const matches = Array.from(haatSel.options).some(o => o.value === farmerHaat);
-      if(matches) haatSel.value = farmerHaat;
-    }
-  };
-  $('#ivSave').onclick = async () => {
-    const farmerId = $('#ivFarmer').value;
-    const haatName = $('#ivHaat').value;
-    const haatDate = $('#ivDate').value;
-    const amount = +$('#ivAmt').value || 0;
-    if(!farmerId || !haatName || !haatDate){ toast('Farmer, haat, and date are required'); return; }
-    if(!amount || amount <= 0){ toast('Amount must be greater than zero','error'); return; }
-    // v9 process-fix #50 — warn if recording at a haat the farmer isn't assigned to.
-    const _frmCheck = (DB.haatFarmers||[]).find(x => x.id === farmerId);
-    if(_frmCheck && _frmCheck.haat && _frmCheck.haat !== haatName){
-      const ok = confirm(`${_frmCheck.name} is assigned to ${_frmCheck.haat}, but you're recording income at ${haatName}. Save anyway?`);
-      if(!ok) return;
-    }
-    DB.incomeRecords = DB.incomeRecords || [];
-    DB.incomeRecords.push(stamp({
-      id: uid('INC'),
-      farmerId, haatName, haatDate,
-      amount,
-      productCategory: $('#ivProd').value.trim(),
-    }));
-    // Also log it so the activity feed picks up the actor stamp.
-    const _frm = (DB.haatFarmers||[]).find(x => x.id === farmerId);
-    logActivity('status', `Income recorded for <b>${esc(_frm?_frm.name:farmerId)}</b> at ${esc(haatName)} — ${_fmtRupee?_fmtRupee(amount):'₹'+amount}`);
-    await saveDB(true); closeModal(); render();
-    toast('Income visit saved');
-  };
-}
-function openIncomeDetailModal(farmerId){
-  const farmer = DB.haatFarmers.find(f => f.id === farmerId);
-  const recs = (DB.incomeRecords||[]).filter(r => r.farmerId === farmerId).sort((a,b) => String(b.haatDate).localeCompare(String(a.haatDate)));
-  const total = recs.reduce((s,r) => s + (+r.amount||0), 0);
-  // Group by month
-  const byMonth = {};
-  recs.forEach(r => {
-    const m = (r.haatDate||'').slice(0,7);
-    if(!byMonth[m]) byMonth[m] = { total:0, rows:[] };
-    byMonth[m].total += +r.amount || 0;
-    byMonth[m].rows.push(r);
-  });
-  let body = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;padding:11px 13px;background:var(--panel-2);border-radius:8px">
-    <div><div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Farmer</div><b style="font-size:14px">${esc(farmer?farmer.name:farmerId)}</b></div>
-    <div><div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Visits</div><b style="font-size:14px">${recs.length}</b></div>
-    <div><div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Total income</div><b style="font-size:16px;color:var(--green)">₹${total.toLocaleString('en-IN')}</b></div>
-  </div>`;
-  Object.keys(byMonth).sort().reverse().forEach(m => {
-    const mg = byMonth[m];
-    body += `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--accent-soft);border-radius:6px;margin-bottom:5px"><b>${esc(m)}</b><b>₹${mg.total.toLocaleString('en-IN')}</b></div>
-      <table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="background:var(--panel-2)"><th style="text-align:left;padding:5px 8px">Date</th><th style="text-align:left;padding:5px 8px">Haat</th><th style="text-align:left;padding:5px 8px">Product</th><th style="text-align:right;padding:5px 8px">Amount</th></tr></thead><tbody>`;
-    mg.rows.forEach(r => {
-      body += `<tr><td style="padding:5px 8px;border-top:1px solid var(--line-soft)">${esc(r.haatDate)}</td><td style="padding:5px 8px;border-top:1px solid var(--line-soft)">${esc(r.haatName||'')}</td><td style="padding:5px 8px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ink-soft)">${esc(r.productCategory||'')}</td><td style="padding:5px 8px;border-top:1px solid var(--line-soft);text-align:right;font-weight:600">₹${(+r.amount||0).toLocaleString('en-IN')}</td></tr>`;
-    });
-    body += '</tbody></table></div>';
-  });
-  modalShell('Income detail · ' + esc(farmer?farmer.name:farmerId), body,
-    '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
-  document.getElementById('modal').classList.add('wide');
-}
-function openIncomeUploadModal(){
-  const body = `<div class="hint" style="margin-bottom:12px">Upload the SRISTI Excel. The parser reads <b>both</b>:<br>
-    • <b>"Baseline"</b> sheet → farmer metadata (name, village, baseline monthly income, primary product)<br>
-    • <b>"Income Track"</b> sheet → per-haat-day income amounts<br>
-    Missing farmers will be auto-created in Haat Farmers. Existing farmers get their baseline updated.</div>
-  <input type="file" id="imFile" accept=".xlsx,.xls,.csv" style="margin-bottom:10px">
-  <div id="imPreview" style="margin-top:10px;max-height:60vh;overflow:auto"></div>`;
-  modalShell('Upload income data', body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="imImport" disabled style="opacity:.5;pointer-events:none">${svg(I.check)}Import</button>`);
-  let parsedIncome = [];
-  let parsedFarmers = [];   // [{id, name, baseline...}] from Baseline sheet
-  function pickHeader(header, ...patterns){
-    for(const p of patterns){
-      const re = new RegExp(p, 'i');
-      const idx = header.findIndex(c => re.test(c));
-      if(idx >= 0) return idx;
-    }
-    return -1;
-  }
-  $('#imFile').onchange = ev => {
-    const file = ev.target.files && ev.target.files[0];
-    if(!file) return;
-    if(typeof XLSX === 'undefined'){
-      $('#imPreview').innerHTML = '<div class="hint" style="color:var(--red)">Excel library failed to load. Check your internet and reload.</div>';
-      return;
-    }
-    const rd = new FileReader();
-    rd.onload = e => {
-      try {
-        const wb = XLSX.read(e.target.result, {type:'array'});
-        // ===== 1. Baseline sheet =====
-        const baselineSheetName = wb.SheetNames.find(n => /baseline/i.test(n));
-        parsedFarmers = [];
-        if(baselineSheetName){
-          const grid = XLSX.utils.sheet_to_json(wb.Sheets[baselineSheetName], {header:1, raw:true, defval:null});
-          if(grid.length){
-            const header = grid[0].map(c => String(c||'').trim());
-            const cId   = pickHeader(header, 'farmer.*id');
-            const cName = pickHeader(header, 'farmer.*name', '^name$');
-            const cHaat = pickHeader(header, '^haat');
-            const cPhone= pickHeader(header, 'contact|phone|mobile');
-            const cGender = pickHeader(header, 'gender');
-            const cAge = pickHeader(header, '^age');
-            const cLand = pickHeader(header, 'land.*acre|land.*cultivation|land\\b');
-            const cVillage = pickHeader(header, 'village');
-            const cDistrict = pickHeader(header, 'district');
-            const cYear = pickHeader(header, 'year.*onboard');
-            const cBaseline = pickHeader(header, 'baseline.*income', 'baseline.*monthly');
-            const cProduct = pickHeader(header, 'primary.*product', 'product');
-            if(cId >= 0){
-              for(let r=1; r<grid.length; r++){
-                const row = grid[r] || [];
-                const id = String(row[cId]||'').trim();
-                if(!id) continue;
-                parsedFarmers.push({
-                  id,
-                  name: cName>=0 ? String(row[cName]||'').trim() : '',
-                  haat: cHaat>=0 ? String(row[cHaat]||'').trim() : '',
-                  phone: cPhone>=0 ? String(row[cPhone]||'').trim() : '',
-                  gender: cGender>=0 ? String(row[cGender]||'').trim() : '',
-                  age: cAge>=0 ? String(row[cAge]||'').trim() : '',
-                  landAcres: cLand>=0 ? (+row[cLand] || 0) : 0,
-                  village: cVillage>=0 ? String(row[cVillage]||'').trim() : '',
-                  district: cDistrict>=0 ? String(row[cDistrict]||'').trim() : '',
-                  yearOnboard: cYear>=0 ? String(row[cYear]||'').trim() : '',
-                  baselineMonthlyIncome: cBaseline>=0 ? (+String(row[cBaseline]||'').replace(/[,₹\s]/g,'') || 0) : 0,
-                  // v9 process-fix #58 — timestamp the baseline so staleness can be detected.
-                  baselineSetAt: new Date().toISOString(),
-                  primaryProduct: cProduct>=0 ? String(row[cProduct]||'').trim() : '',
-                });
-              }
-            }
-          }
-        }
-        // ===== 2. Income Track sheet =====
-        const sheetName = wb.SheetNames.find(n => /income/i.test(n)) || wb.SheetNames[0];
-        const sheet = wb.Sheets[sheetName];
-        const grid = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:null});
-        if(!grid.length){
-          $('#imPreview').innerHTML = '<div class="hint" style="color:var(--red)">Income sheet is empty.</div>';
-          return;
-        }
-        const header = grid[0].map(c => String(c||'').trim());
-        const idCol   = pickHeader(header, 'farmer.*id');
-        const nameCol = pickHeader(header, 'farmer.*name', '^name$');
-        const prodCol = pickHeader(header, 'product');
-        if(idCol < 0){
-          $('#imPreview').innerHTML = '<div class="hint" style="color:var(--red)">Could not find a "Farmer ID" column. Make sure the first row holds headers.</div>';
-          return;
-        }
-        // Date columns: any header that contains a date pattern. Handle excel-serial too.
-        function parseExcelDate(v){
-          if(typeof v === 'number'){
-            const d = new Date(Date.UTC(1899,11,30) + v*86400000);
-            return d.toISOString().slice(0,10);
-          }
-          const text = String(v||'').trim();
-          // v8 bug fix: require all 3 components AND year ≥ 4-digit-resolvable
-          // so "1-5" (Excel meta) doesn't get parsed as "undefined-05-01".
-          const m = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-          if(m && m[3] && m[3].length >= 2){
-            let dd = m[1].padStart(2,'0'), mm = m[2].padStart(2,'0');
-            let yy = m[3].length === 2 ? '20'+m[3] : m[3];
-            // Sanity: month 01-12, day 01-31
-            if(+mm < 1 || +mm > 12 || +dd < 1 || +dd > 31) return null;
-            return `${yy}-${mm}-${dd}`;
-          }
-          return null;
-        }
-        const dateCols = header.map((c,i) => {
-          if(i === idCol || i === nameCol || i === prodCol) return null;
-          const iso = parseExcelDate(c);
-          return iso ? { col:i, date:iso, label:c } : null;
-        }).filter(Boolean);
-        // Parse rows.
-        parsedIncome = [];
-        for(let r=1; r<grid.length; r++){
-          const row = grid[r];
-          if(!row) continue;
-          const farmerId = String(row[idCol]||'').trim();
-          if(!farmerId) continue;
-          const productCategory = prodCol >= 0 ? String(row[prodCol]||'').trim() : '';
-          dateCols.forEach(dc => {
-            const v = row[dc.col];
-            if(v == null || v === '') return;
-            const amt = +String(v).replace(/[,₹\s]/g,'');
-            if(!amt || isNaN(amt)) return;
-            parsedIncome.push({
-              id: uid('INC'),
-              farmerId, haatDate: dc.date, haatName: '',
-              productCategory, amount: amt,
-              recordedAt: new Date().toISOString(),
-              recordedBy: actor().name,        // v9 audit-fix #4 — was DB.session.user (non-existent)
-              importedFromSheet: sheetName,
-            });
-          });
-        }
-        // ===== Preview =====
-        const incomeFarmers = new Set(parsedIncome.map(p => p.farmerId));
-        const existing = new Set(DB.haatFarmers.map(f => f.id));
-        const newFarmerCount = parsedFarmers.filter(p => !existing.has(p.id)).length;
-        const updatedFarmerCount = parsedFarmers.filter(p => existing.has(p.id)).length;
-        const sample = parsedIncome.slice(0, 20).map(p => `<tr><td style="padding:4px 7px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px">${esc(p.farmerId)}</td><td style="padding:4px 7px;font-size:11.5px">${esc(p.haatDate)}</td><td style="padding:4px 7px;font-size:11.5px">${esc(p.productCategory)}</td><td style="padding:4px 7px;font-size:11.5px;text-align:right">₹${p.amount.toLocaleString('en-IN')}</td></tr>`).join('');
-        $('#imPreview').innerHTML = `
-          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-            <div style="flex:1;min-width:140px;background:#ecfdf5;border:1px solid var(--green-line);border-radius:8px;padding:8px 11px">
-              <div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Income visits</div>
-              <div style="font-size:18px;font-weight:700;color:var(--green)">${parsedIncome.length}</div>
-              <div style="font-size:11px;color:var(--ink-soft)">across ${incomeFarmers.size} farmer(s)</div>
-            </div>
-            <div style="flex:1;min-width:140px;background:#eff6ff;border:1px solid var(--accent);border-radius:8px;padding:8px 11px">
-              <div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Baseline rows</div>
-              <div style="font-size:18px;font-weight:700;color:var(--accent)">${parsedFarmers.length}</div>
-              <div style="font-size:11px;color:var(--ink-soft)">${newFarmerCount} new · ${updatedFarmerCount} update</div>
-            </div>
-            <div style="flex:1;min-width:140px;background:#fef9c3;border:1px solid var(--yellow-line);border-radius:8px;padding:8px 11px">
-              <div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;font-weight:700;letter-spacing:.05em">Date columns</div>
-              <div style="font-size:18px;font-weight:700;color:var(--yellow)">${dateCols.length}</div>
-              <div style="font-size:11px;color:var(--ink-soft);font-style:italic">${dateCols.length ? dateCols[0].date + ' → ' + dateCols[dateCols.length-1].date : 'none'}</div>
-            </div>
-          </div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px">Sample (first 20 rows):</div>
-          <div style="border:1px solid var(--line);border-radius:8px;max-height:240px;overflow:auto">
-            <table style="width:100%;font-size:12px"><thead><tr style="background:var(--panel-2);position:sticky;top:0">
-              <th style="text-align:left;padding:5px 7px">Farmer ID</th>
-              <th style="text-align:left;padding:5px 7px">Date</th>
-              <th style="text-align:left;padding:5px 7px">Product</th>
-              <th style="text-align:right;padding:5px 7px">Amount</th>
-            </tr></thead><tbody>${sample}${parsedIncome.length>20?`<tr><td colspan="4" style="padding:6px;color:var(--ink-faint);text-align:center;font-style:italic">…and ${parsedIncome.length-20} more</td></tr>`:''}</tbody></table>
-          </div>`;
-        const btn = $('#imImport');
-        const hasWork = parsedIncome.length + parsedFarmers.length;
-        btn.disabled = !hasWork;
-        btn.style.opacity = hasWork ? '1' : '.5';
-        btn.style.pointerEvents = hasWork ? 'auto' : 'none';
-        btn.innerHTML = `${svg(I.check)}Import ${parsedIncome.length} income + ${newFarmerCount} new farmer${newFarmerCount===1?'':'s'}`;
-      } catch(err){
-        $('#imPreview').innerHTML = `<div class="hint" style="color:var(--red)">Could not parse: ${esc(err.message||String(err))}</div>`;
-      }
-    };
-    rd.readAsArrayBuffer(file);
-  };
-  $('#imImport').onclick = async () => {
-    // 1) Upsert farmers from Baseline sheet
-    const month = (DB.months||['2026-05'])[(DB.months||[]).length-1] || '2026-05';
-    const existingIds = new Set(DB.haatFarmers.map(f => f.id));
-    let newCt = 0, updCt = 0;
-    parsedFarmers.forEach(p => {
-      const existing = DB.haatFarmers.find(f => f.id === p.id);
-      if(existing){
-        // Merge — never blow away existing data, only fill blanks/baseline.
-        if(!existing.name && p.name) existing.name = p.name;
-        if(!existing.village && p.village) existing.village = p.village;
-        if(!existing.district && p.district) existing.district = p.district;
-        if(!existing.phone && p.phone) existing.phone = p.phone;
-        if(p.haat && !existing.haat) existing.haat = p.haat;
-        if(p.baselineMonthlyIncome) existing.baselineMonthlyIncome = p.baselineMonthlyIncome;
-        if(p.primaryProduct) existing.primaryProduct = p.primaryProduct;
-        if(p.gender) existing.gender = p.gender;
-        if(p.age) existing.age = p.age;
-        if(p.landAcres && !existing.landAcres) existing.landAcres = p.landAcres;
-        updCt++;
-      } else {
-        DB.haatFarmers.push({
-          id: p.id, program:'haat', name: p.name || p.id,
-          phone: p.phone || '', village: p.village || '', taluka: '',
-          district: p.district || '', state: 'Gujarat',
-          landAcres: p.landAcres || 0, vertical:'Livelihood',
-          yearsOrganic:0, certification:'Registration pending', crops:[],
-          fcId:'', haat: p.haat || '',
-          enrolledMonth: month, stage:'verified', status:'green', active:true,
-          visits:[], lat:null, lng:null,
-          baselineMonthlyIncome: p.baselineMonthlyIncome || 0,
-          primaryProduct: p.primaryProduct || '',
-          gender: p.gender || '', age: p.age || '',
-          yearOnboard: p.yearOnboard || '',
-          source: 'income-excel-import',
-        });
-        newCt++;
-      }
-    });
-    // 2) Append income records — v8 dedup on (farmerId, haatDate, amount) so
-    //    re-uploading the same workbook doesn't double everything.
-    DB.incomeRecords = DB.incomeRecords || [];
-    const existingKey = new Set(DB.incomeRecords.map(x => x.farmerId + '|' + x.haatDate + '|' + (+x.amount||0)));
-    const knownHaats = new Set((DB.haats||[]).map(h => typeof h === 'string' ? h : h.name));
-    let imported = 0, dupSkipped = 0, unknownHaatCount = 0;
-    parsedIncome.forEach(p => {
-      const k = p.farmerId + '|' + p.haatDate + '|' + (+p.amount||0);
-      if(existingKey.has(k)){ dupSkipped++; return; }
-      // v9 process-fix M4 — resolve haatName from farmer's current haat
-      // assignment; if neither matches a known haat, tag the record so admin
-      // can clean up.
-      if(!p.haatName){
-        const _frm = DB.haatFarmers.find(x => x.id === p.farmerId);
-        if(_frm && _frm.haat) p.haatName = _frm.haat;
-      }
-      if(p.haatName && !knownHaats.has(p.haatName)){
-        p.haatNameUnknown = true;
-        unknownHaatCount++;
-      }
-      DB.incomeRecords.push(p);
-      existingKey.add(k);
-      imported++;
-    });
-    logActivity('edit', `Imported ${imported} income visits + ${newCt} new farmers (${updCt} updated, ${dupSkipped} duplicate visits skipped${unknownHaatCount?', '+unknownHaatCount+' with unknown haat name':''}) from Excel`);
-    await saveDB(true); closeModal(); render();
-    toast(`Imported ${imported} income visits · ${newCt} new farmer${newCt===1?'':'s'}` + (dupSkipped?` · skipped ${dupSkipped} duplicate${dupSkipped===1?'':'s'}`:''));
   };
 }
 
@@ -13786,6 +13167,7 @@ function viewData(){
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
     status:(HAAT_STATUS[f.status]||{label:''}).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
+    joined_month_year:farmerJoinedLabel(f),
   }))));
   $('#expConv').onclick=()=>download('conversion-farmers.csv',toCSV(DB.convFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
@@ -13794,6 +13176,7 @@ function viewData(){
     status:(CONV_STATUS[f.transitionStatus]||{label:''}).label,
     observations:(f.observations||[]).length,
     next_visit:f.nextVisitDue||'',enrolled:f.enrolledMonth||'',
+    joined_month_year:farmerJoinedLabel(f),
   }))));
   $('#impFile').onchange=e=>{
     const file=e.target.files[0];if(!file)return;
@@ -13873,7 +13256,7 @@ function render(){
   // v9 Batch 4 — route guard: FCs are confined to their action surfaces.
   // Any analytics, system, or config route bounces them to their home
   // (Verification Queue).
-  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','income'].indexOf(ROUTE) >= 0){
+  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
   document.body.classList.toggle('fc-mode', !isAdminUser());
@@ -13906,7 +13289,7 @@ function render(){
     haats:viewHaats,conversion:viewConversion,
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
-    farmMap:viewFarmMap, income:viewIncomeTracking,
+    farmMap:viewFarmMap,
     public_landing:renderPublicLanding,
     public_haat_form:viewPublicHaatForm,
     public_conv_form:viewPublicConvForm,

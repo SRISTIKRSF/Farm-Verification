@@ -987,6 +987,7 @@ body{background:linear-gradient(180deg,#eef8f0 0, var(--bg) 210px);padding-botto
 .ten{display:none}
 body.lang-en .tgu{display:none}
 body.lang-en .ten{display:inline}
+.crop-dd-opt:hover{background:var(--leaf-light)}
 </style>
 </head>
 <body>
@@ -1385,17 +1386,40 @@ function buildCropRows(){
    in ANSWERS[q.id]: array of {item, <field.key>: value, ...} — only rows with
    real data are kept (fixed rows with nothing filled in are dropped on submit,
    matching how crops_table drops blank rows). */
-function buildStatCards(){
-  // Live cross-frame read of the parent app's master crop catalog — same
-  // pattern already used for the district/taluka cascade below, so this
-  // stays correct automatically as the catalog grows, no postMessage payload
-  // to keep in sync.
-  try{
+/* A native <input list> datalist only ever substring-matches the raw crop
+   text — it has no idea "keri" means Mango (કેરી), so typing a
+   transliteration found nothing. Cross-frame read of the parent's alias
+   map (same live-reference pattern as CROPS_CATALOG below) powers a real
+   custom dropdown instead, matched the same way the alias-aware search
+   boxes elsewhere in the app already work. */
+function cropSearchBlobLocal(crop){
+  const aliases = (window.parent && window.parent.CROP_ALIASES && window.parent.CROP_ALIASES[crop]) || [];
+  return (crop + ' ' + aliases.join(' ')).toLowerCase();
+}
+function wireCropSearchInput(inp){
+  const dd = inp.nextElementSibling;
+  if(!dd || !dd.hasAttribute('data-cropdd')) return;
+  const showMatches = () => {
+    const query = inp.value.trim().toLowerCase();
     const catalog = (window.parent && window.parent.CROPS_CATALOG) || [];
-    let dl = document.getElementById('cropSuggestList');
-    if(!dl){ dl = document.createElement('datalist'); dl.id = 'cropSuggestList'; document.body.appendChild(dl); }
-    dl.innerHTML = catalog.filter(c => c !== 'Other (અન્ય)').map(c => '<option value="'+esc(c)+'">').join('');
-  }catch(e){ /* non-fatal — falls back to plain free text */ }
+    const matches = catalog.filter(c => c !== 'Other (અન્ય)' && (!query || cropSearchBlobLocal(c).includes(query))).slice(0, 8);
+    if(!matches.length){ dd.style.display = 'none'; return; }
+    dd.innerHTML = matches.map(c => '<div class="crop-dd-opt" data-cropval="'+esc(c)+'" style="padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line-soft)">'+esc(c)+'</div>').join('');
+    dd.style.display = 'block';
+    dd.querySelectorAll('[data-cropval]').forEach(opt => {
+      opt.onmousedown = e => {
+        e.preventDefault(); // fires before blur — keeps the click from being lost
+        inp.value = opt.dataset.cropval;
+        inp.dispatchEvent(new Event('input', {bubbles:true})); // triggers rebuild() — and showMatches(), which is why the close below has to come after it, not before
+        dd.style.display = 'none';
+      };
+    });
+  };
+  inp.addEventListener('focus', showMatches);
+  inp.addEventListener('input', showMatches);
+  inp.addEventListener('blur', () => setTimeout(() => { dd.style.display = 'none'; }, 150));
+}
+function buildStatCards(){
   QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => renderOneStatCards(q));
 }
 function cascadeGatedStatCards(sourceId){
@@ -1422,22 +1446,37 @@ function renderOneStatCards(q){
     const rows = isFixed ? items.map(it => ({item: it})) : (saved.length ? saved : [{}]);
     wrap.innerHTML = rows.map((r, i) => {
       const savedRow = isFixed ? saved.find(s => s.item === r.item) : saved[i];
+      // Fixed single-field cards (e.g. "how many of each animal") read far
+      // more naturally as one compact row — name in column 1, the count in
+      // column 2 — than a name stacked above a full-width field.
+      if(isFixed && q.fields.length===1){
+        const f = q.fields[0];
+        const val = savedRow ? (savedRow[f.key]||'') : '';
+        return '<div class="sc-card" data-scitem="'+esc(r.item)+'" style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:6px;background:#fbfbfd">'
+          + '<div style="display:grid;grid-template-columns:1fr 100px;gap:10px;align-items:center">'
+          + '<div style="font-weight:700;font-size:13.5px">'+esc(r.item)+'</div>'
+          + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+esc(r.item)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.gu)+'" style="width:100%;padding:6px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;text-align:center;box-sizing:border-box">'
+          + '</div></div>';
+      }
       const heading = isFixed
         ? '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>'
         : '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-          + '<input type="text" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item"'+(q.itemIsCrop?' list="cropSuggestList"':'')+' value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;flex:1;font-family:inherit">'
+          + '<div style="position:relative;flex:1">'
+          + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;width:100%;font-family:inherit;box-sizing:border-box">'
+          + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
+          + '</div>'
           + (rows.length>1 ? '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>' : '')
           + '</div>';
       const fieldsHtml = q.fields.map(f => {
         const val = savedRow ? (savedRow[f.key]||'') : '';
-        // Crop-name fields (monsoonCrop/winterCrop/summerCrop) get a searchable
-        // suggestion list from the parent app's master crop catalog — was plain
-        // free text with zero catalog backing, so farmers/FCs saw stale/no
-        // suggestions at all here. Free text stays allowed (a plot's "main +
-        // secondary crop" doesn't always match one catalog entry).
+        // Crop-name fields (monsoonCrop/winterCrop/summerCrop) get the same
+        // searchable suggestion dropdown as the item-name field above.
         const isCropField = /crop/i.test(f.key);
         return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block"><span class="tgu">'+esc(f.gu)+'</span><span class="ten">'+esc(f.en)+'</span></label>'
-          + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+(isCropField?' list="cropSuggestList"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px"></div>';
+          + '<div style="position:relative">'
+          + '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;box-sizing:border-box">'
+          + (isCropField ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
+          + '</div></div>';
       }).join('');
       return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
         + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
@@ -1466,6 +1505,7 @@ function renderOneStatCards(q){
       cascadeGatedStatCards(q.id);
     };
     wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { inp.oninput = rebuild; });
+    wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(wireCropSearchInput);
     wrap.querySelectorAll('.sc-del').forEach(btn => btn.onclick = () => {
       const idx = +btn.dataset.scdel;
       const cur = (ANSWERS[q.id]||[]).slice();
@@ -2674,7 +2714,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v59';
+const APP_VERSION = 'v60';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

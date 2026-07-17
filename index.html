@@ -2791,7 +2791,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6924,7 +6924,7 @@ function renderNav(){
   });
   $('#nav').innerHTML=h;
   $('#nav').querySelectorAll('.nav-item').forEach(b=>{
-    b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
+    b.onclick=()=>{ROUTE=b.dataset.route;SORT=(ROUTE==='haat'||ROUTE==='conversion')?{col:'_sortTs',dir:-1}:{col:'name',dir:1};render();};
   });
 }
 
@@ -6958,7 +6958,7 @@ function renderFcBottomNav(){
       <span>${t.label}</span>
     </button>`).join('');
   el.querySelectorAll('.fc-ni').forEach(b=>{
-    b.onclick=()=>{ROUTE=b.dataset.route;SORT={col:'name',dir:1};render();};
+    b.onclick=()=>{ROUTE=b.dataset.route;SORT=(ROUTE==='haat'||ROUTE==='conversion')?{col:'_sortTs',dir:-1}:{col:'name',dir:1};render();};
   });
 }
 /* ===== v(fc-redesign) Phase 5 — Haat Farmers, reference-only =====
@@ -7006,6 +7006,7 @@ function openFcRefModal(program, id){
 function _fcRefCards(farmers,F,program){
   let rows=[...farmers];
   if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  rows.sort((a,b)=>farmerLatestTs(b)-farmerLatestTs(a)); // latest-submitted first
   const visible=rows.slice(0,F.lim),more=rows.length-F.lim;
   const ce=document.getElementById('fcHCount');if(ce)ce.textContent=rows.length+' farmers';
   const el=document.getElementById('fcHCards');if(!el)return;
@@ -7058,6 +7059,7 @@ function _fcConvCards(farmers,F){
   let rows=[...farmers];
   if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
   if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q));}
+  rows.sort((a,b)=>farmerLatestTs(b)-farmerLatestTs(a)); // latest-submitted first
   const now=Date.now(),visible=rows.slice(0,F.lim),more=rows.length-F.lim;
   const ce=document.getElementById('fcCCount');if(ce)ce.textContent=rows.length+' farmers';
   document.querySelectorAll('.fc-pill').forEach(p=>p.classList.toggle('active',p.dataset.cat===F.cat));
@@ -7766,6 +7768,38 @@ function viewDashboard(){
     </div>
   </div>`;
 
+  // ===== farmers joined, by calendar year (both programs) =====
+  const yearStats=enrollmentYearStats();
+  if(yearStats.length){
+    const yearGrandTotal=yearStats.reduce((a,r)=>a+r.total,0);
+    h+=`<div class="card chart-card" style="margin-bottom:18px">
+      <div class="chart-head">
+        <div><div class="ct">Farmers Joined — by year</div>
+        <div class="cs">Haat + Conversion enrollments, grouped by the year each farmer joined</div></div>
+        <div class="chart-total"><b>${yearGrandTotal}</b> total</div>
+      </div>
+      ${barChart(yearStats.slice().reverse().map(r=>({label:String(r.year),haat:r.haat,conv:r.conv})),['haat','conv'],['var(--c-onboard)','var(--leaf)'])}
+      <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft)">
+        <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--c-onboard);margin-right:5px"></span>Haat</span>
+        <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--leaf);margin-right:5px"></span>Conversion</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:14px">
+        <thead><tr style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);border-bottom:1px solid var(--line)">
+          <th style="text-align:left;padding:7px 8px">Year</th>
+          <th style="text-align:right;padding:7px 8px">Haat</th>
+          <th style="text-align:right;padding:7px 8px">Conversion</th>
+          <th style="text-align:right;padding:7px 8px">Total</th>
+        </tr></thead><tbody>
+        ${yearStats.map(r=>`<tr style="border-bottom:1px solid var(--line-soft)">
+          <td style="padding:7px 8px;font-weight:600">${r.year}</td>
+          <td style="padding:7px 8px;text-align:right">${r.haat}</td>
+          <td style="padding:7px 8px;text-align:right">${r.conv}</td>
+          <td style="padding:7px 8px;text-align:right;font-weight:700">${r.total}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
+
   // ===== two summary tables, sitting under the two charts =====
   // LEFT: haat-wise active farmers   RIGHT: FC-wise verifications (last 3 months + total)
   const haatRows=getHaatList().map(_h=>_h.name).map(hn=>{
@@ -8203,11 +8237,11 @@ function viewHaat(){
     <th style="width:34px"><input type="checkbox" id="archSelAll_haat" ${_haatAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>${th('haat','Haat')}
-    ${th('status','Status')}<th>Active</th><th>Last visit</th>
+    ${th('status','Status')}<th>Active</th><th>Last visit</th>${th('_sortTs','Joined')}
     ${ARCH_SHOW.haat?'<th></th>':''}
   </tr></thead><tbody>`;
   if(!rows.length){
-    h+=`<tr><td colspan="10"><div class="empty">${svg(I.haat)}<div>${ARCH_SHOW.haat?'No archived farmers.':'No farmers match these filters.'}</div></div></td></tr>`;
+    h+=`<tr><td colspan="11"><div class="empty">${svg(I.haat)}<div>${ARCH_SHOW.haat?'No archived farmers.':'No farmers match these filters.'}</div></div></td></tr>`;
   }
   pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
@@ -8232,6 +8266,7 @@ function viewHaat(){
       <td><span class="tag ${st.cls}"><span class="d"></span>${st.label}</span></td>
       <td>${activeCell}</td>
       <td style="font-size:11.5px">${lastV}</td>
+      <td style="font-size:11.5px">${farmerJoinedLabel(r)}</td>
       ${ARCH_SHOW.haat?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
@@ -8275,8 +8310,48 @@ function th(col,label){
   const active=SORT.col===col;
   return `<th data-sort="${col}">${label} <span class="ar">${active?(SORT.dir>0?'▲':'▼'):'⇅'}</span></th>`;
 }
+// Farmer records don't have one consistent "when was this created" field —
+// haat farmers usually carry enrollmentFormSubmittedAt, conversion farmers
+// (and public submissions of either program) carry submittedAt/
+// publicSubmittedAt. This picks whichever is actually present so both
+// programs' lists can sort by the same virtual "_sortTs" column. Records
+// with nothing parseable (very old imports) fall to 0 — bottom of a
+// latest-first sort, not the top, since we don't actually know when they
+// were created.
+function farmerLatestTs(f){
+  const candidates = [f.submittedAt, f.enrollmentFormSubmittedAt, f.publicSubmittedAt, f.verificationFormSubmittedAt, f.enrolledMonth];
+  for(const c of candidates){
+    if(!c) continue;
+    const t = Date.parse(c);
+    if(!isNaN(t)) return t;
+  }
+  return 0;
+}
+function farmerJoinedLabel(f){
+  const ts=farmerLatestTs(f);
+  if(!ts) return '—';
+  const d=new Date(ts);
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]+' '+d.getFullYear();
+}
+// Groups every farmer (both programs) by the calendar year of farmerLatestTs(),
+// for the "Farmers Joined — by year" dashboard report. Records with no
+// parseable date are excluded entirely (not bucketed under a fake year).
+function enrollmentYearStats(){
+  const years={};
+  function bump(f,key){
+    const ts=farmerLatestTs(f);
+    if(!ts) return;
+    const y=new Date(ts).getFullYear();
+    if(!years[y]) years[y]={year:y,haat:0,conv:0};
+    years[y][key]++;
+  }
+  (DB.haatFarmers||[]).forEach(f=>bump(f,'haat'));
+  (DB.convFarmers||[]).forEach(f=>bump(f,'conv'));
+  return Object.values(years).sort((a,b)=>b.year-a.year).map(r=>({...r,total:r.haat+r.conv}));
+}
 function sortRows(rows){
   const c=SORT.col,d=SORT.dir;
+  if(c==='_sortTs') rows.forEach(r=>{ r._sortTs = farmerLatestTs(r); });
   return rows.sort((a,b)=>{
     let x=a[c],y=b[c];
     if(x==null)x='';if(y==null)y='';
@@ -8973,10 +9048,10 @@ function viewConversion(){
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>
     ${th('fcId','Facilitator')}<th>Organic progress</th>
-    ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}<th>Action</th>
+    ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}${th('_sortTs','Joined')}<th>Action</th>
     ${ARCH_SHOW.conv?'<th></th>':''}
   </tr></thead><tbody>`;
-  if(!rows.length)h+=`<tr><td colspan="11"><div class="empty">${svg(I.convert)}<div>${ARCH_SHOW.conv?'No archived farmers.':'No conversion farmers match.'}</div></div></td></tr>`;
+  if(!rows.length)h+=`<tr><td colspan="12"><div class="empty">${svg(I.convert)}<div>${ARCH_SHOW.conv?'No archived farmers.':'No conversion farmers match.'}</div></div></td></tr>`;
   const today=todayISO();
   pagedConvRows.forEach(r=>{
     const fc=fcById(r.fcId);
@@ -9002,6 +9077,7 @@ function viewConversion(){
       <td>${convScoreCell(r)}</td>
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
+      <td style="font-size:11.5px">${farmerJoinedLabel(r)}</td>
       <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button></td>
       ${ARCH_SHOW.conv?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
@@ -10967,6 +11043,7 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
     <div class="detail-cell"><div class="k">Facilitator</div><div class="v">${fc?esc(fc.name):'—'}</div></div>
     <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
+    <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
       <div class="v">${f.crops.map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')}</div></div>
     ${(typeof f.lat === 'number' && typeof f.lng === 'number' && isFinite(f.lat) && isFinite(f.lng)) ? `
@@ -11127,7 +11204,7 @@ function openConvDrawer(id){
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>
     <div class="detail-cell"><div class="k">Facilitator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
-    <div class="detail-cell"><div class="k">Enrolled</div><div class="v">${esc(f.enrolledMonth||'')}</div></div>
+    <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell"><div class="k">Last visit</div><div class="v">${f.lastVisitAt?fmtDate(f.lastVisitAt):'—'}</div></div>
     <div class="detail-cell"><div class="k">Next visit due</div><div class="v">${f.nextVisitDue?fmtDate(f.nextVisitDue):'—'}</div></div>
     <div class="detail-cell full"><div class="k">Current crops</div>

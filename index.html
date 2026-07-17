@@ -788,6 +788,9 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .fc-lv svg{width:11px;height:11px}
 .fc-prog-l svg{width:11px;height:11px}
 .fc-tb svg{width:20px;height:20px}
+.crop-del-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 10px;color:#dc2626;cursor:pointer;font-size:11px;font-weight:600;flex-shrink:0;transition:.12s;font-family:inherit}
+.crop-del-btn:hover{background:#fee2e2;border-color:#fca5a5}
+.crop-del-btn svg{width:13px;height:13px;flex-shrink:0}
 </style>
 <!-- Firebase SDK (Realtime Database) — loaded before the app script -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -884,7 +887,13 @@ const KISAN_FORM_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Non-blocking font load: a slow/unreachable fonts.googleapis.com request
+     was found to stall this whole document's parser (and every inline
+     <script> after it) indefinitely in a srcdoc iframe — real risk on the
+     flaky field connections this form is used on. media="print" keeps this
+     off the render-blocking path; onload swaps it to apply once loaded. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <title>કિસાન નોંધણી પત્રક</title>
 <style>
 :root{
@@ -1832,7 +1841,9 @@ const VERIF_FORM_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Non-blocking font load — see matching comment in the enrollment form. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <title>Farmer Verification</title>
 <style>
 :root{
@@ -2663,7 +2674,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12164,7 +12175,7 @@ function viewSettings(){
       <input id="cropListSearch" placeholder="🔍 Search…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;margin-bottom:8px;box-sizing:border-box">
       <div id="cropListWrap" style="max-height:440px;overflow-y:auto">${list.map((c,i)=>`<div class="row-line" data-croprow style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line-soft)">
         <span style="flex:1;font-size:13px">${esc(c)}</span>
-        ${c==='Other (અન્ય)'?'<span style="font-size:10.5px;color:var(--ink-faint)">reserved</span>':`<button class="btn-icon" data-crop-del="${i}" aria-label="Delete crop" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--red)">${svg(I.trash,2)}</button>`}
+        ${c==='Other (અન્ય)'?'<span style="font-size:10.5px;color:var(--ink-faint)">reserved</span>':`<button class="crop-del-btn" data-crop-del="${i}" aria-label="Remove ${esc(c)} from the crop master list" title="Remove from crop master list">${svg(I.trash,2)}Remove</button>`}
       </div>`).join('')}</div>
     </div>`;
     v.innerHTML=h;

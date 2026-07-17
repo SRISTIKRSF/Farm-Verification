@@ -236,37 +236,29 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .oc-chip.active{outline:2px solid currentColor;outline-offset:-2px;font-weight:700}
 /* hover tooltip — plain-language Gujarati explanation. Generalized to any
    [data-tip] element (pipeline steps AND conversion score cards below), not
-   just .jstep. Gated to real-hover pointers only (mouse) — on touch devices
-   a tap fires a synthetic :hover that browsers then leave "stuck" until the
-   next tap elsewhere, since these elements are also buttons with their own
-   tap-to-filter action. That stuck tooltip is position:absolute with
-   z-index:60, so on mobile it visually sat on top of the filter dropdowns
-   just below the pipeline strip, blocking them. */
+   just .jstep. The bubble itself is a real DOM node inserted by JS (see
+   BOOTSTRAP below) — CSS content:attr() text mis-shaped Gujarati conjuncts
+   (e.g. ર્મ in "ફાર્મ" rendered as a stray floating mark) in some engines,
+   and a real DOM node gets full normal text shaping like every other label
+   in the app. JS only attaches the show/hide listeners on real-hover
+   pointers, so a tap on a touch device can never leave one "stuck" open
+   over the controls below it (position:absolute + z-index:60 would
+   otherwise visually block them). */
 [data-tip]{position:relative}
-@media (hover:hover) and (pointer:fine){
-[data-tip]:hover::after{
-  content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
+.tip-bubble{
+  position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
   width:250px;max-width:70vw;background:var(--navy-deep);color:#fff;padding:10px 13px;border-radius:8px;
-  /* font-weight:400 (not 500) — 500 isn't preloaded, so a quick hover could
-     trigger an on-demand Hind Vadodara fetch and briefly render Gujarati in
-     a fallback font mid-swap. 400 is already loaded by normal body text.
-     Explicit font-family (not inherit) guarantees a real Gujarati-capable
-     font even if Hind Vadodara itself hasn't loaded (slow/offline network). */
   font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',system-ui,-apple-system,sans-serif;
   font-size:12.5px;font-weight:400;line-height:1.55;text-align:left;white-space:normal;
   box-shadow:var(--sh-2);z-index:60;pointer-events:none}
-[data-tip]:hover::before{
-  content:"";position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);
-  border:6px solid transparent;border-bottom-color:var(--navy-deep);z-index:61;pointer-events:none}
-}
+.tip-bubble::before{
+  content:"";position:absolute;left:50%;top:-6px;transform:translateX(-50%);
+  border:6px solid transparent;border-bottom-color:var(--navy-deep)}
 @media(max-width:680px){
   .journey{flex-direction:column;gap:2px;padding:10px}
   .jstep{padding:12px 12px}
   .jstep+.jstep::before{left:22px;top:-7px;transform:rotate(135deg)}
-}
-@media(max-width:680px) and (hover:hover) and (pointer:fine){
-  [data-tip]:hover::after{left:12px;transform:none;width:calc(100vw - 64px)}
-  [data-tip]:hover::before{left:24px;transform:none}
+  .tip-bubble{left:12px;transform:none;width:calc(100vw - 64px)}
 }
 
 /* ============ CONVERSION FUNNEL (2 steps -> branch into 3 score bands) ============
@@ -2793,7 +2785,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v69';
+const APP_VERSION = 'v70';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14678,6 +14670,31 @@ window.addEventListener('message',async ev=>{
 /* ============ BOOTSTRAP ============ */
 $('#overlay').onclick=()=>{closeDrawer();closeModal();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDrawer();closeModal();}});
+// [data-tip] hover tooltip — a REAL DOM text node, not CSS content:attr().
+// CSS generated-content text goes through a different, weaker text-shaping
+// path in some engines and was mis-forming Gujarati conjuncts (e.g. ર્મ in
+// "ફાર્મ" rendered as a stray floating mark instead of the joined glyph).
+// A real DOM node gets full normal text shaping, same as every other
+// Gujarati label in the app. Desktop-hover only — matches the tooltip's
+// original intent and, since the listeners are simply never attached on
+// touch, a tap can never leave one "stuck" open over the controls below it.
+if(window.matchMedia && matchMedia('(hover:hover) and (pointer:fine)').matches){
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest('[data-tip]');
+    if(!t || !t.dataset.tip || t.querySelector(':scope > .tip-bubble')) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'tip-bubble';
+    bubble.textContent = t.dataset.tip;
+    t.appendChild(bubble);
+  });
+  document.addEventListener('mouseout', e => {
+    const t = e.target.closest('[data-tip]');
+    if(!t) return;
+    if(e.relatedTarget && t.contains(e.relatedTarget)) return;
+    const bubble = t.querySelector(':scope > .tip-bubble');
+    if(bubble) bubble.remove();
+  });
+}
 $('#globalSearch').oninput=e=>{
   window._q=e.target.value.trim();
   if(['haat','conversion'].includes(ROUTE))render();

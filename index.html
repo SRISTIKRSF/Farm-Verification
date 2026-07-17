@@ -1154,10 +1154,31 @@ function scrollQuestionToTop(e){
 document.addEventListener('focusin', scrollQuestionToTop);
 document.addEventListener('click', scrollQuestionToTop);
 
+/* A handful of yes/no-style questions (added later, via the admin Question
+   Manager) were built as type:'select' with options like "Yes"/"No" or
+   "Yes હા"/"No ના" instead of the standard type:'yn', which stores the
+   literal 'yes'/'no'. Rather than risk breaking onlyIf matching against
+   whatever a farmer already answered under the old format, this treats any
+   answer that starts with "yes"/"no" (case-insensitive) as a match — old
+   and new formats both gate correctly. */
+function _answerIsYes(v){ if(v==null) return false; const s=String(v).trim().toLowerCase(); return s==='yes' || s.indexOf('yes')===0; }
+function _answerIsNo(v){ if(v==null) return false; const s=String(v).trim().toLowerCase(); return s==='no' || s.indexOf('no')===0; }
+function _matchOnlyIf(c){
+  const v = ANSWERS[c.id];
+  if(c.equals==='yes') return _answerIsYes(v);
+  if(c.equals==='no') return _answerIsNo(v);
+  if(c.equals!=null) return v === c.equals;
+  if(c.notEquals==='yes') return !_answerIsYes(v);
+  if(c.notEquals==='no') return !_answerIsNo(v);
+  if(c.notEquals!=null) return v !== c.notEquals;
+  return true;
+}
 function showIf(q){
   if(!q.onlyIf) return true;
-  const v = ANSWERS[q.onlyIf.id];
-  return q.onlyIf.equals ? v === q.onlyIf.equals : (q.onlyIf.notEquals ? v !== q.onlyIf.notEquals : true);
+  // onlyIf can be a single {id,equals|notEquals} condition, or an array of
+  // them (all must match) for questions gated by more than one parent.
+  const conditions = Array.isArray(q.onlyIf) ? q.onlyIf : [q.onlyIf];
+  return conditions.every(_matchOnlyIf);
 }
 
 /* ============ PDF export — pure client-side, no Firebase involved ============
@@ -2764,7 +2785,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4851,6 +4872,7 @@ window.QUESTIONS_V5 = [
   {id:'aadhaar', displayOnly:true,     cat:'basic', gu:'આધાર નંબર',                  en:'Aadhaar number',          type:'text',  askedOf:'both'},
   {id:'address',     cat:'basic', gu:'સંપૂર્ણ સરનામું',               en:'Full address',            type:'textarea', askedOf:'both'},
   {id:'village_taluka_district', cat:'basic', gu:'જિલ્લો / તાલુકો / ગામ / પિનકોડ', en:'District / Taluka / Village / Pincode', type:'address_cascade', askedOf:'both', req:true},
+  {id:'soil_test_available', cat:'basic', gu:'જમીનની ચકાસણી કરાવો છો', en:'Soil Test available ?', type:'select', options:['Yes','No'], askedOf:'both'},
 
   /* ============ 2. FARM, LAND, CROPS & VALUE ADDITION ============ */
   {id:'survey_no',    cat:'farm', gu:'સર્વે નંબર',                     en:'Survey number',        type:'text',   askedOf:'both'},
@@ -4886,6 +4908,11 @@ window.QUESTIONS_V5 = [
   {id:'cert_agency', cat:'cert', gu:'સર્ટિફિકેટ કઈ સંસ્થાનું છે?',       en:'Certificate agency',       type:'text', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
   {id:'cert_expiry', cat:'cert', gu:'સર્ટિફિકેટ કઈ તારીખ સુધી માન્ય છે?', en:'Certificate valid until', type:'date', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
   {id:'cert_photo',  cat:'cert', gu:'સર્ટિફિકેટનો ફોટો',                en:'Certificate photo',        type:'photo',askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
+  {id:'have_you_done_soil_testing', cat:'cert', gu:'જમીનની ચકાસણી (Soil Test) કરાવો છો ?', en:'Have you conducted a soil test?', type:'yn', askedOf:'both', req:true},
+  {id:'soil_test_photo', cat:'cert', gu:'જમીનના ટેસ્ટનો ફોટો', en:'Soil Test photo', type:'photo', askedOf:'both', req:true, onlyIf:{id:'have_you_done_soil_testing',equals:'yes'}},
+  {id:'do_you_have_fassai_certificate', cat:'cert', gu:'FASSAIનું સર્ટીફિકેટ છો ?', en:'Do you have FASSAI Certificate?', type:'yn', askedOf:'both'},
+  {id:'certificate_valid_until', cat:'cert', gu:'FASSAI નું સર્ટિફિકેટ ક્યાં સુધી માન્ય છે', en:'FASSAI Certificate valid until', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
+  {id:'fassai_certificate_photo', cat:'cert', gu:'FASSAIનો photo', en:'FASSAI Certificate photo', type:'photo', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
   {id:'sale_channels',  cat:'cert', gu:'અગાઉના વર્ષે ઉપજનું વેચાણ ક્યાં કર્યું? (બધા)', en:'Sale channels last year (multi)', type:'multi',
     options:['Local market (સ્થાનિક બજાર)','APMC','Khedut Haat (ખેડૂતહાટ)','Direct to customer (સીધું)','Wholesale (થોકવેચાણ)','Online','None / self-use (પોતા માટે)'], askedOf:'both'},
 
@@ -4899,6 +4926,7 @@ window.QUESTIONS_V5 = [
   {id:'livestock_counts', cat:'livestock', gu:'પશુઓની ઉપલબ્ધતા (સંખ્યા લખો)', en:'Animal availability (enter count)', type:'stat_cards',
     items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
     fields:[{key:'count', gu:'સંખ્યા', en:'Count', type:'number'}], askedOf:'both'},
+  {id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat', cat:'livestock', gu:'ખેડૂત હાટમાં દૂધમાથી બનાવેલી મૂલ્યવર્ધિત પ્રોડક્ટ વેચવા માંગો છો ?', en:'Do you want to sale value added milk production at Khedut Haat?', type:'yn', askedOf:'both', req:true},
   {id:'animal_stats', cat:'livestock', gu:'પશુઓની સ્થિતિ (ફોર્મ ભર્યું એ દિવસની સ્થિતિ)', en:"Animal status (as of today)", type:'stat_cards',
     items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
     gateBy:'livestock_counts', gateField:'count', gateHint:'ઉપર દરેક પશુની સંખ્યા લખો — સંખ્યા 0 કરતાં વધુ હોય એ પશુની વિગતો અહીં આપોઆપ ખૂલશે. (Enter a count above — animals with count > 0 open here automatically.)',
@@ -4908,32 +4936,32 @@ window.QUESTIONS_V5 = [
       {key:'dry',       gu:'વસુકાયેલ / બિન ઉત્પાદક',            en:'Dry / non-productive',     type:'number'},
       {key:'young',     gu:'નાના વાછરું / બચ્ચાં',              en:'Young calves',             type:'number'},
       {key:'dailyMilk', gu:'સવાર-સાંજનું દૂધ ઉત્પાદન (લિટર)',   en:'Daily milk, morning+evening (liters)', type:'number'},
-    ], askedOf:'both'},
-  {id:'milk_daily_total',    cat:'livestock', gu:'હાલ કેટલા લિટર દૂધનું કુલ ઉત્પાદન થાય છે? (દૈનિક)', en:'Total daily milk production (liters)', type:'number', askedOf:'both'},
-  {id:'milk_monthly_total',  cat:'livestock', gu:'કુલ દૂધ ઉત્પાદન (માસિક)',                          en:'Total monthly milk production (liters)', type:'number', askedOf:'both'},
-  {id:'milk_local_sale',     cat:'livestock', gu:'સ્થાનિક વેચાણ કેટલું થાય છે? (દૈનિક લિટરમાં)',      en:'Local milk sale (liters/day)', type:'number', askedOf:'both'},
-  {id:'milk_used_for_ghee',  cat:'livestock', gu:'કેટલા લિટર દૂધ ઘી બનાવવા ઉપયોગ કરો છો?',           en:'Milk used to make ghee (liters)', type:'number', askedOf:'both'},
-  {id:'ghee_monthly_production', cat:'livestock', gu:'દર મહિને કેટલા કિલો ઘી નું ઉત્પાદન થાય છે?',   en:'Ghee produced per month (kg)', type:'number', askedOf:'both'},
-  {id:'ghee_local_sale',     cat:'livestock', gu:'ઘી નું સ્થાનિક વેચાણ (કિલોમાં)',                    en:'Ghee sold locally (kg)', type:'number', askedOf:'both'},
-  {id:'ghee_unsold',         cat:'livestock', gu:'વેચાણ વગર કેટલા કિલો ઘી રહે છે?',                   en:'Ghee left unsold (kg)', type:'number', askedOf:'both'},
-  {id:'milk_for_other_products', cat:'livestock', gu:'અન્ય પ્રોડક્ટ (પનીર, ચીઝ) બનાવતા હોવ તો કેટલા લિટર દૂધ વપરાય છે?', en:'Milk used for other products like paneer/cheese (liters)', type:'number', askedOf:'both'},
-  {id:'ghee_making_process', cat:'livestock', gu:'ઘી બનાવવાની પ્રક્રિયા વિશે લખો — દૂધમાંથી મલાઈ કાઢીને ઘી બનાવો છો? કે દહીંનું માખણ બનાવી?', en:'Describe the ghee-making process (cream from milk, or butter from curd?)', type:'textarea', askedOf:'both'},
-  {id:'fodder_land_organic', cat:'livestock', gu:'પશુઓને જે ઘાસચારો ખવડાવો છો એ ખેતર પ્રાકૃતિક ખેતીના સિદ્ધાંતો મુજબ ખેતી થાય છે ખરી?', en:'Is the fodder grown following organic farming principles?', type:'yn', askedOf:'both'},
-  {id:'fodder_acreage_monsoon', cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ચોમાસું (એકરમાં)', en:'Fodder acreage — monsoon (acre)', type:'number', askedOf:'both'},
-  {id:'fodder_acreage_winter',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — શિયાળુ (એકરમાં)',  en:'Fodder acreage — winter (acre)', type:'number', askedOf:'both'},
-  {id:'fodder_acreage_summer',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ઉનાળુ (એકરમાં)',   en:'Fodder acreage — summer (acre)', type:'number', askedOf:'both'},
-  {id:'fodder_purchased',    cat:'livestock', gu:'બહારથી ખરીદીને ક્યું ઘાસ લાવો છો?',                 en:'Fodder purchased from outside (which kind)', type:'text', askedOf:'both'},
-  {id:'fodder_other',        cat:'livestock', gu:'ઘાસચારો — અન્ય',                                   en:'Fodder — other', type:'text', askedOf:'both'},
-  {id:'feed_market',         cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — બજારનું',              en:'Feed given — market-bought (details)', type:'text', askedOf:'both'},
-  {id:'feed_homemade',       cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — ઘરે બનાવેલું',          en:'Feed given — home-made (details)', type:'text', askedOf:'both'},
-  {id:'feed_other',          cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — અન્ય',                 en:'Feed given — other (details)', type:'text', askedOf:'both'},
-  {id:'feed_is_organic',     cat:'livestock', gu:'જે દાણ ખવડાવો છો એ પ્રાકૃતિક અનાજ/કઠોળ/ઔષધિયો છે ખરી?', en:'Is the feed organic grain/pulses/herbal?', type:'yn', askedOf:'both'},
-  {id:'uses_allopathy',      cat:'livestock', gu:'પશુઓ બીમાર પડે ત્યારે એલોપેથી દવાઓનો ઉપયોગ કરો છો?', en:'Use allopathy medicines when animals fall sick?', type:'yn', askedOf:'both'},
-  {id:'allopathy_diseases',  cat:'livestock', gu:'મુખ્ય કઈ-કઈ બીમારી માટે એલોપેથી દવાઓ ઉપયોગ થાય છે?', en:'Which illnesses mainly use allopathy medicines?', type:'text', askedOf:'both', onlyIf:{id:'uses_allopathy',equals:'yes'}},
-  {id:'vaccines_given',      cat:'livestock', gu:'કઈ-કઈ રસીઓ અપાવો છો?',                              en:'Which vaccines are given?', type:'text', askedOf:'both'},
-  {id:'blood_test_yearly',   cat:'livestock', gu:'દર વર્ષે પશુઓના કોઈ બ્લડ ટેસ્ટ કરાવો છો ખરા?',       en:'Any yearly blood tests done for animals?', type:'yn', askedOf:'both'},
-  {id:'traditional_vet',     cat:'livestock', gu:'કોઈ સ્થાનિક પરંપરાગત પશુ વૈદની સેવા લો છો?',         en:'Use services of a local traditional animal healer?', type:'yn', askedOf:'both'},
-  {id:'shelter_pest_control', cat:'livestock', gu:'પશુ રહેઠાણની જગ્યાએ જૂઆ-ઈતરડી, ચાંચડનો ઉપદ્રવ છે? તેના નિવારણ માટે શું કરો છો?', en:'Lice/ticks/fleas at the animal shelter? What do you do about it?', type:'textarea', askedOf:'both'},
+    ], askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_daily_total',    cat:'livestock', gu:'હાલ કેટલા લિટર દૂધનું કુલ ઉત્પાદન થાય છે? (દૈનિક)', en:'Total daily milk production (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_monthly_total',  cat:'livestock', gu:'કુલ દૂધ ઉત્પાદન (માસિક)',                          en:'Total monthly milk production (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_local_sale',     cat:'livestock', gu:'સ્થાનિક વેચાણ કેટલું થાય છે? (દૈનિક લિટરમાં)',      en:'Local milk sale (liters/day)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_used_for_ghee',  cat:'livestock', gu:'કેટલા લિટર દૂધ ઘી બનાવવા ઉપયોગ કરો છો?',           en:'Milk used to make ghee (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_monthly_production', cat:'livestock', gu:'દર મહિને કેટલા કિલો ઘી નું ઉત્પાદન થાય છે?',   en:'Ghee produced per month (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_local_sale',     cat:'livestock', gu:'ઘી નું સ્થાનિક વેચાણ (કિલોમાં)',                    en:'Ghee sold locally (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_unsold',         cat:'livestock', gu:'વેચાણ વગર કેટલા કિલો ઘી રહે છે?',                   en:'Ghee left unsold (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_for_other_products', cat:'livestock', gu:'અન્ય પ્રોડક્ટ (પનીર, ચીઝ) બનાવતા હોવ તો કેટલા લિટર દૂધ વપરાય છે?', en:'Milk used for other products like paneer/cheese (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_making_process', cat:'livestock', gu:'ઘી બનાવવાની પ્રક્રિયા વિશે લખો — દૂધમાંથી મલાઈ કાઢીને ઘી બનાવો છો? કે દહીંનું માખણ બનાવી?', en:'Describe the ghee-making process (cream from milk, or butter from curd?)', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_land_organic', cat:'livestock', gu:'પશુઓને જે ઘાસચારો ખવડાવો છો એ ખેતર પ્રાકૃતિક ખેતીના સિદ્ધાંતો મુજબ ખેતી થાય છે ખરી?', en:'Is the fodder grown following organic farming principles?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_monsoon', cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ચોમાસું (એકરમાં)', en:'Fodder acreage — monsoon (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_winter',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — શિયાળુ (એકરમાં)',  en:'Fodder acreage — winter (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_summer',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ઉનાળુ (એકરમાં)',   en:'Fodder acreage — summer (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_purchased',    cat:'livestock', gu:'બહારથી ખરીદીને ક્યું ઘાસ લાવો છો?',                 en:'Fodder purchased from outside (which kind)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_other',        cat:'livestock', gu:'ઘાસચારો — અન્ય',                                   en:'Fodder — other', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_market',         cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — બજારનું',              en:'Feed given — market-bought (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_homemade',       cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — ઘરે બનાવેલું',          en:'Feed given — home-made (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_other',          cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — અન્ય',                 en:'Feed given — other (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_is_organic',     cat:'livestock', gu:'જે દાણ ખવડાવો છો એ પ્રાકૃતિક અનાજ/કઠોળ/ઔષધિયો છે ખરી?', en:'Is the feed organic grain/pulses/herbal?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'uses_allopathy',      cat:'livestock', gu:'પશુઓ બીમાર પડે ત્યારે એલોપેથી દવાઓનો ઉપયોગ કરો છો?', en:'Use allopathy medicines when animals fall sick?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'allopathy_diseases',  cat:'livestock', gu:'મુખ્ય કઈ-કઈ બીમારી માટે એલોપેથી દવાઓ ઉપયોગ થાય છે?', en:'Which illnesses mainly use allopathy medicines?', type:'text', askedOf:'both', onlyIf:[{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'},{id:'uses_allopathy',equals:'yes'}]},
+  {id:'vaccines_given',      cat:'livestock', gu:'કઈ-કઈ રસીઓ અપાવો છો?',                              en:'Which vaccines are given?', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'blood_test_yearly',   cat:'livestock', gu:'દર વર્ષે પશુઓના કોઈ બ્લડ ટેસ્ટ કરાવો છો ખરા?',       en:'Any yearly blood tests done for animals?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'traditional_vet',     cat:'livestock', gu:'કોઈ સ્થાનિક પરંપરાગત પશુ વૈદની સેવા લો છો?',         en:'Use services of a local traditional animal healer?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'shelter_pest_control', cat:'livestock', gu:'પશુ રહેઠાણની જગ્યાએ જૂઆ-ઈતરડી, ચાંચડનો ઉપદ્રવ છે? તેના નિવારણ માટે શું કરો છો?', en:'Lice/ticks/fleas at the animal shelter? What do you do about it?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
   {id:'dung_use_methods',    cat:'livestock', gu:'પશુના ગોબર-ગૌમૂત્રનો ઉપયોગ કેવી રીતે કરો છો? (બધા પસંદ કરો)', en:'How is dung/urine used? (multi)', type:'multi',
     options:['ઉકરડામાં છાણિયું ખાતર (Manure pit)','કમ્પોસ્ટ ખાતર (Compost)','વર્મી કમ્પોસ્ટ (Vermicompost)'], askedOf:'both'},
   {id:'biogas_plant',        cat:'livestock', gu:'ગોબર ગેસ પ્લાન્ટ છે?',                              en:'Have a biogas plant?', type:'yn', askedOf:'both'},
@@ -4946,7 +4974,7 @@ window.QUESTIONS_V5 = [
       {key:'packSize', gu:'પેકિંગ સાઈઝ', en:'Pack size', type:'text'},
       {key:'price',    gu:'કિંમત (₹)',   en:'Price (₹)', type:'number'},
     ], askedOf:'both'},
-  {id:'haat_products_to_sell', cat:'livestock', gu:'સૃષ્ટિ ખેડૂતહાટમાં ક્યું ઉત્પાદન વેચવું છે?',      en:'Which product(s) do you want to sell at the Sristi Khedut Haat?', type:'textarea', askedOf:'both'},
+  {id:'haat_products_to_sell', cat:'livestock', gu:'સૃષ્ટિ ખેડૂતહાટમાં ક્યું ઉત્પાદન વેચવું છે?',      en:'Which product(s) do you want to sell at the Sristi Khedut Haat?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
 
   /* ============ 5. WEEDING, MULCHING & IRRIGATION ============ */
   {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          type:'yn',    askedOf:'both'},

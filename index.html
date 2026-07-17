@@ -403,6 +403,12 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .toolbar select,.toolbar input{
   padding:7px 11px;border:1px solid var(--line-strong);border-radius:7px;
   background:var(--panel);transition:.13s;
+  /* A <select> without an explicit width sizes to its WIDEST <option>, not
+     the current selection — one long crop name (e.g. "Karingda (wild round
+     melon) (કારીંગડા)") was blowing the crop filter out to ~500px, wrapping
+     the whole toolbar onto 2-3 lines. Cap width + ellipsis the closed-state
+     label; the dropdown's own option list still shows full text. */
+  max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .toolbar select:hover{border-color:var(--ink-faint)}
 .toolbar select:focus,.toolbar input:focus{outline:none;border-color:var(--accent);
@@ -2785,7 +2791,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v70';
+const APP_VERSION = 'v71';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

@@ -13,11 +13,21 @@
 <title>Sristi Farm Verification</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Non-blocking font load — see matching comment in the enrollment form.
+     This is the one copy of that pattern that was never converted, and a
+     slow/unreachable fonts.googleapis.com here would stall the WHOLE app
+     shell, not just one form. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <!-- Leaflet (farm-locations map). Loaded lazily — won't block startup. -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<!-- SheetJS (Income Tracking Excel parser). -->
-<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<!-- SheetJS (Income Tracking Excel parser). defer — this was a synchronous
+     blocking script tag with no defer/async, unlike leaflet.js right
+     below it; a slow/unreachable cdn.sheetjs.com would
+     block the parser from ever reaching the rest of the head section,
+     including the app's own style/script blocks — full page hang, no
+     error, nothing to click. -->
+<script defer src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
@@ -2739,7 +2749,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v62';
+const APP_VERSION = 'v63';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

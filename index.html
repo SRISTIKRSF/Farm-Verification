@@ -2674,7 +2674,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v58';
+const APP_VERSION = 'v59';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9173,6 +9173,14 @@ function attachQuestionSchemaLiveListener(){
     if(!d || !Array.isArray(d.categories) || !Array.isArray(d.questions)) return;
     window.CATEGORIES_V5 = d.categories;
     window.QUESTIONS_V5 = d.questions;
+    // The schema stored in Firebase can itself predate a core-question
+    // redesign (e.g. the old crops_table → plot_crops_table/major_crops_table
+    // split) — this listener used to apply it as-is, silently re-infecting
+    // every device with the stale question on every sync even after
+    // reconcileCoreQuestionsV5() had already fixed it locally on page load.
+    // Reconcile here too, and if it changed anything, push the healed
+    // version back so every OTHER device stops inheriting the staleness.
+    if(reconcileCoreQuestionsV5()) qmPushToFirebase('v5');
     saveQuestionSchemaOverrideV5();   // keep the offline cache current too
     if(_qmState.form === 'v5' && document.getElementById('qmResetBtn')) qmRefresh();
   });

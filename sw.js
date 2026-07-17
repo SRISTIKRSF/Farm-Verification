@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v67';
+const CACHE = 'sristi-fv-v68';
 
 const SHELL = [
   './',
@@ -10,7 +10,6 @@ const SHELL = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
   'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
 ];
 

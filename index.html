@@ -2739,7 +2739,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9243,9 +9243,16 @@ function attachQuestionSchemaLiveListener(){
     // split) — this listener used to apply it as-is, silently re-infecting
     // every device with the stale question on every sync even after
     // reconcileCoreQuestionsV5() had already fixed it locally on page load.
-    // Reconcile here too, and if it changed anything, push the healed
-    // version back so every OTHER device stops inheriting the staleness.
-    if(reconcileCoreQuestionsV5()) qmPushToFirebase('v5');
+    // Reconcile here too so this device stays healed.
+    // NOT pushing the fix back to Firebase from here on purpose: doing so
+    // rewrites the exact node this listener is watching, and if the
+    // round-tripped data doesn't come back byte-identical to what
+    // reconcile compares against (Firebase can reorder object keys),
+    // reconcile "finds" staleness again on the very data it just fixed —
+    // an infinite reconcile→push→refire loop that pins the main thread and
+    // makes the whole app unresponsive. Each device just heals its own
+    // view instead; harmless since this runs on every sync anyway.
+    reconcileCoreQuestionsV5();
     saveQuestionSchemaOverrideV5();   // keep the offline cache current too
     if(_qmState.form === 'v5' && document.getElementById('qmResetBtn')) qmRefresh();
   });

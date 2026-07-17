@@ -1531,10 +1531,14 @@ function wireFields(){
     const decimal = inp.dataset.val==='total_bigha' || inp.dataset.f==='area' || inp.step==='0.5' || inp.step==='any';
     inp.setAttribute('inputmode', decimal ? 'decimal' : 'numeric');
   });
-  /* simple inputs */
+  /* simple inputs — #2 restore: a resumed draft populates ANSWERS but these
+     plain fields were never painted back into the DOM, so "Restore" looked
+     like it did nothing (the farmer/FC just saw a blank form again) even
+     though the data was sitting right there in memory the whole time. */
   $$('input[data-val],select[data-val],textarea[data-val]').forEach(el => {
+    const k = el.dataset.val;
+    if(k !== 'taluka' && ANSWERS[k] != null && ANSWERS[k] !== '') el.value = ANSWERS[k];
     el.oninput = el.onchange = () => {
-      const k = el.dataset.val;
       ANSWERS[k] = el.value;
       applyConditionalVisibility();
       scheduleDraftSave();
@@ -1555,6 +1559,18 @@ function wireFields(){
       talSel.disabled = !talukas.length;
       ANSWERS.taluka = '';
     });
+    // #2 — the taluka <select> starts with no <option>s until the district
+    // 'change' handler above populates it, so a restored taluka answer would
+    // silently no-op (nothing to select) without doing this same population
+    // up front, keyed off the restored district instead of a change event.
+    if(ANSWERS.district){
+      const talukas = DT[ANSWERS.district] || [];
+      if(talukas.length){
+        talSel.innerHTML = '<option value="">— તાલુકો પસંદ કરો —</option>' + talukas.map(t=>'<option>'+t+'</option>').join('');
+        talSel.disabled = false;
+        if(ANSWERS.taluka) talSel.value = ANSWERS.taluka;
+      }
+    }
   }
   /* yn chips */
   $$('.yn[data-yn]').forEach(yn => {
@@ -1615,22 +1631,31 @@ function wireFields(){
   $$('.photo-grid[data-photos]').forEach(grid => {
     const q = grid.dataset.photos;
     PHOTOS[q] = PHOTOS[q] || [];
+    const addThumb = (photo) => {
+      const t = document.createElement('div');
+      t.className = 'photo-thumb';
+      t.innerHTML = '<img src="'+photo.data+'"><span class="x">×</span>';
+      grid.insertBefore(t, grid.querySelector('.photo-add'));
+      t.querySelector('.x').onclick = () => {
+        const idx = PHOTOS[q].findIndex(x => x.data===photo.data);
+        if(idx>=0) PHOTOS[q].splice(idx,1);
+        t.remove();
+        scheduleDraftSave();   // #3
+      };
+    };
+    // #2 — a restored draft's photos (real base64 data, already in memory)
+    // never got drawn as thumbnails, so a farmer/FC resuming a draft with
+    // photos already attached saw an empty photo picker and had no way to
+    // tell whether re-uploading would duplicate what was already there.
+    PHOTOS[q].forEach(addThumb);
     grid.querySelector('input[type=file]').addEventListener('change', e => {
       [...e.target.files].forEach(f => {
         const rd = new FileReader();
         rd.onload = () => {
-          PHOTOS[q].push({name:f.name, type:f.type, data:rd.result});
+          const photo = {name:f.name, type:f.type, data:rd.result};
+          PHOTOS[q].push(photo);
           scheduleDraftSave();   // #3
-          const t = document.createElement('div');
-          t.className = 'photo-thumb';
-          t.innerHTML = '<img src="'+rd.result+'"><span class="x">×</span>';
-          grid.insertBefore(t, grid.querySelector('.photo-add'));
-          t.querySelector('.x').onclick = () => {
-            const idx = PHOTOS[q].findIndex(x => x.data===rd.result);
-            if(idx>=0) PHOTOS[q].splice(idx,1);
-            t.remove();
-            scheduleDraftSave();   // #3
-          };
+          addThumb(photo);
         };
         rd.readAsDataURL(f);
       });
@@ -2714,7 +2739,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

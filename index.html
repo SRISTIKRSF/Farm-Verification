@@ -3,6 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Firebase SDK scripts below (~line 806) are plain blocking <script src>
+     tags — can't switch them to defer/async because they must execute, in
+     this exact order, before the app's own (non-deferred) script runs
+     later in the body; deferring would flip that order and leave
+     `firebase` undefined when the app needs it, which is worse than the
+     problem being fixed here. Preloading them as early as physically
+     possible in <head> at least gets the browser fetching all three the
+     moment the response starts arriving — same wait-then-block behavior on
+     a fully dead connection, but on the slow-but-working connections this
+     app actually runs on in the field, the fetch is usually already done
+     by the time the parser reaches the blocking tag. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js">
+<link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js">
+<link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3b82f6">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2749,7 +2764,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

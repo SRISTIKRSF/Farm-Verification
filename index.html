@@ -2791,7 +2791,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16048,11 +16048,26 @@ window.addEventListener('hashchange', () => {
 // Registering here, once, with a guarded reload fixes all of that.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
+    // v72 — controllerchange fires in TWO different situations, and only one
+    // of them means "a new version is available, reload to get it":
+    //   1. This SW's activate handler calls self.clients.claim(), which makes
+    //      it take control of the CURRENTLY-OPEN page immediately — this
+    //      fires controllerchange on literally every first-ever visit
+    //      (uncontrolled -> controlled), not just on real updates.
+    //   2. An already-installed SW gets replaced by a newer one (the actual
+    //      "update available" case).
+    // Reloading unconditionally on every controllerchange (as before) meant
+    // EVERY fresh visitor got a forced reload seconds after their first
+    // load — "the app loads twice" / "the form refreshes" if that landed
+    // while someone was mid-entry. Only reload for case 2: when the page
+    // was ALREADY controlled at load time and control then changed hands.
+    var hadControllerAtLoad = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('./sw.js').catch(function (e) {
       console.warn('[SW] registration failed:', e);
     });
     var _swRefreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadControllerAtLoad) { hadControllerAtLoad = true; return; } // first-ever claim, not an update
       if (_swRefreshing) return;   // guard: reload at most once (no reload loop)
       _swRefreshing = true;
       window.location.reload();

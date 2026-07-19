@@ -825,29 +825,35 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 <!-- CGPT UI refresh: presentation-only SaaS and FC mobile layer. App logic unchanged. -->
 <style>
 :root{
-  --bg:#f6f8f5;--panel:#ffffff;--panel-2:#f2f6f1;--ink:#173126;--ink-soft:#587061;--ink-faint:#75877b;
-  --line:#e1e9e1;--line-soft:#edf2ed;--line-strong:#ccd9cd;--sidebar:#13372b;--navy:#13372b;--navy-deep:#0b251b;
-  --accent:#237a52;--accent-deep:#17633f;--accent-soft:#e9f6ee;--leaf:#237a52;--leaf-bg:#e9f6ee;
+  /* v74 — brand theme recolored to match the Farm Verification logo (brown
+     seedling on soil). Status/semantic colors (--green/--red/--yellow/--blue/
+     --grey, --c-onboard/--c-visit chart bars, --leaf/--orange/--purple/--teal
+     category tags) are intentionally left untouched — those encode meaning
+     across dashboard/funnels/tables, not brand chrome, and the user asked to
+     keep them as-is. */
+  --bg:#f2f1ef;--panel:#ffffff;--panel-2:#f5f0ea;--ink:#3d2419;--ink-soft:#8a5a47;--ink-faint:#846b60;
+  --line:#e8e1d9;--line-soft:#f0ebe4;--line-strong:#d9d2cc;--sidebar:#4a2a20;--navy:#4a2a20;--navy-deep:#2e1810;
+  --accent:#8b5d4e;--accent-deep:#723e31;--accent-soft:#f3e7df;--leaf:#237a52;--leaf-bg:#e9f6ee;
   --orange:#d77a2a;--orange-bg:#fff5e9;--purple:#7562c8;--purple-bg:#f2efff;--teal:#198c8c;--teal-bg:#e8f7f7;
-  --sh-1:0 1px 2px rgba(18,53,37,.05);--sh-2:0 7px 20px -13px rgba(18,53,37,.25);--sh-3:0 20px 48px -22px rgba(18,53,37,.28);
+  --sh-1:0 1px 2px rgba(45,24,16,.05);--sh-2:0 7px 20px -13px rgba(45,24,16,.25);--sh-3:0 20px 48px -22px rgba(45,24,16,.28);
   --r:12px;--r-sm:9px;--r-lg:16px;
 }
-body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#edf8ef 0,transparent 30%),var(--bg)}
-.sidebar{background:linear-gradient(180deg,#123d2d 0%,#103025 100%);border-right:1px solid rgba(255,255,255,.07)}
-.brand{padding:22px 20px 18px}.brand .mark{background:linear-gradient(140deg,#62b77d,#237a52);box-shadow:0 6px 16px -8px rgba(92,187,126,.9)}
-.nav{padding:14px 12px}.nav-label{color:#8fa99b;padding-top:18px}.nav-item{border-radius:10px;padding:10px 11px;color:#c8d8cf}.nav-item:hover{background:rgba(255,255,255,.09)}.nav-item.active{background:#2b8359;box-shadow:0 5px 14px -8px rgba(0,0,0,.55)}
+body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#f5e9dc 0,transparent 30%),var(--bg)}
+.sidebar{background:linear-gradient(180deg,#4a2a20 0%,#2e1810 100%);border-right:1px solid rgba(255,255,255,.07)}
+.brand{padding:22px 20px 18px}.brand .mark{background:linear-gradient(140deg,#b4826e,#8b5d4e);box-shadow:0 6px 16px -8px rgba(139,93,78,.9)}
+.nav{padding:14px 12px}.nav-label{color:#b5a395;padding-top:18px}.nav-item{border-radius:10px;padding:10px 11px;color:#e3d9ce}.nav-item:hover{background:rgba(255,255,255,.09)}.nav-item.active{background:#8b5d4e;box-shadow:0 5px 14px -8px rgba(0,0,0,.55)}
 .topbar{min-height:70px;padding:13px 30px;background:rgba(255,255,255,.88);backdrop-filter:blur(12px);border-bottom-color:var(--line)}
 .topbar h2{font-size:20px}.topbar h2 .count{color:var(--accent);background:var(--accent-soft)}.content{padding:26px 30px 72px;max-width:1680px;width:100%;margin:0 auto}
-.search input{width:270px;border-radius:10px;background:#f8fbf8;border-color:transparent;padding-top:9px;padding-bottom:9px}.search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px rgba(35,122,82,.12)}
-.sync{border:1px solid #cdebd8}.btn{border-radius:10px;padding:9px 15px}.btn-primary{background:linear-gradient(135deg,#27845a,#19683f);box-shadow:0 7px 15px -8px rgba(35,122,82,.75)}.btn-primary:hover{background:#17633f}.btn-ghost,.btn-excel{border-color:var(--line-strong);background:#fff}
-.statbox{border-radius:14px;padding:17px;background:linear-gradient(145deg,#fff,#fbfdfb);box-shadow:var(--sh-1)}.statbox:hover{border-color:#bad2c0;box-shadow:var(--sh-2)}
+.search input{width:270px;border-radius:10px;background:#faf7f3;border-color:transparent;padding-top:9px;padding-bottom:9px}.search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px rgba(139,93,78,.16)}
+.sync{border:1px solid #e3d5c8}.btn{border-radius:10px;padding:9px 15px}.btn-primary{background:linear-gradient(135deg,#8b5d4e,#723e31);box-shadow:0 7px 15px -8px rgba(139,93,78,.75)}.btn-primary:hover{background:#723e31}.btn-ghost,.btn-excel{border-color:var(--line-strong);background:#fff}
+.statbox{border-radius:14px;padding:17px;background:linear-gradient(145deg,#fff,#fdfbfa);box-shadow:var(--sh-1)}.statbox:hover{border-color:#d9b18e;box-shadow:var(--sh-2)}
 .table-card,.card,.filter-bar,.chart-card,.dashboard-card{border-radius:14px!important;border-color:var(--line)!important;box-shadow:var(--sh-1)}
-.data-table thead th,.tbl thead th{background:#f3f7f3!important;color:#496454}.data-table tbody tr:hover,.tbl tbody tr:hover{background:#f3faf5!important}
-.drawer{box-shadow:-20px 0 50px -30px rgba(13,45,31,.45)}.drawer-head{background:linear-gradient(135deg,#174a35,#103025)!important}.modal{border-radius:16px!important;box-shadow:var(--sh-3)}
-.field input,.field select,.field textarea{border-radius:10px!important;border-color:var(--line-strong)!important;background:#fcfefc!important}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)!important;box-shadow:0 0 0 4px rgba(35,122,82,.11)!important}
+.data-table thead th,.tbl thead th{background:#f5f0ea!important;color:#6b4a3d}.data-table tbody tr:hover,.tbl tbody tr:hover{background:#faf5ef!important}
+.drawer{box-shadow:-20px 0 50px -30px rgba(45,24,16,.45)}.drawer-head{background:linear-gradient(135deg,#5a3226,#2e1810)!important}.modal{border-radius:16px!important;box-shadow:var(--sh-3)}
+.field input,.field select,.field textarea{border-radius:10px!important;border-color:var(--line-strong)!important;background:#fefcfa!important}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)!important;box-shadow:0 0 0 4px rgba(139,93,78,.15)!important}
 @media(max-width:880px){.content{padding:18px 18px 82px}.topbar{padding:12px 18px}.search input{width:210px}.statbox-grid{gap:10px}}
 @media(max-width:680px){
-  html,body{min-height:100%;background:var(--bg)}.app{display:block;min-height:100dvh;padding-bottom:70px}.main{display:block}.sidebar{position:fixed;z-index:80;inset:auto 0 0;width:100%;height:70px;border:0;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -8px 24px -16px rgba(13,45,31,.6)}
+  html,body{min-height:100%;background:var(--bg)}.app{display:block;min-height:100dvh;padding-bottom:70px}.main{display:block}.sidebar{position:fixed;z-index:80;inset:auto 0 0;width:100%;height:70px;border:0;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -8px 24px -16px rgba(45,24,16,.6)}
   .brand,.sidebar-foot,.nav-label{display:none!important}.nav{height:70px;padding:6px 7px!important;display:flex;align-items:stretch;gap:2px;overflow-x:auto;overflow-y:hidden}.nav-item{min-width:66px;flex:1;justify-content:center;flex-direction:column;gap:2px;padding:5px 6px!important;text-align:center;font-size:9px!important;line-height:1.15}.nav-item svg{width:18px;height:18px}.nav-item .badge{position:absolute;margin:0 0 22px 25px;min-width:16px;padding:0 4px;font-size:9px}
   .topbar{position:sticky;top:0;z-index:30;min-height:62px;padding:9px 12px;gap:9px;background:rgba(255,255,255,.94)}.topbar h2{font-size:16px}.topbar .tt{max-width:calc(100% - 152px)}.topbar .count{display:none!important}.topbar .search{order:3;width:100%;flex-basis:100%}.topbar .search input{width:100%;height:38px}.topbar .sync,#userPillName,#userPill span:last-child{display:none!important}#userPill{padding:6px!important;border-radius:50%!important}#quickAdd{padding:9px 10px;min-width:40px}#quickAdd span{display:none}
   .content{padding:14px 12px 22px}.statbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px}.statbox{padding:13px 12px}.statbox .sb-value{font-size:23px}.section-head{margin:18px 0 10px}.filter-row,.toolbar,.table-tools{gap:8px!important}.btn{min-height:40px}.drawer{width:100%!important}.drawer-head{padding:17px 16px!important}.drawer-body{padding:16px!important}.modal{width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;border-radius:14px!important}.modal-head,.modal-body,.modal-foot{padding-left:14px!important;padding-right:14px!important}.modal-foot{position:sticky;bottom:0;background:#fff}.field-row{gap:8px}.data-table,.tbl{font-size:12px}
@@ -2790,7 +2796,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v74';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8442,7 +8448,7 @@ function viewVerification(){
   if(fcMine){
     const myFc = (DB.fcs||[]).find(x => x.id === fcMine);
     const myName = (myFc && myFc.name) || SESSION.userName || 'FC';
-    h += `<div style="background:linear-gradient(135deg,#eef3fe 0%,#dcfce7 100%);border:1px solid var(--accent);border-radius:14px;padding:14px 18px;margin-bottom:16px">
+    h += `<div style="background:linear-gradient(135deg,#f3e7df 0%,#f5f0ea 100%);border:1px solid var(--accent);border-radius:14px;padding:14px 18px;margin-bottom:16px">
       <div style="font-size:11.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">My work queue</div>
       <div style="font-size:20px;font-weight:800;color:var(--ink);font-family:'Hind Vadodara','Plus Jakarta Sans',sans-serif">Hi ${esc(myName)} 👋</div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">Tap a farmer below to start verifying.</div>
@@ -8659,7 +8665,7 @@ function viewVerification(){
     let hh = '';
     if(me){
       hh += `<div style="display:flex;gap:14px;flex-wrap:wrap;margin:14px 0 14px">
-        <div style="flex:1;min-width:160px;background:#eef3fe;border:1px solid var(--accent);border-radius:10px;padding:12px 14px">
+        <div style="flex:1;min-width:160px;background:#f3e7df;border:1px solid var(--accent);border-radius:10px;padding:12px 14px">
           <div style="font-size:10.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.05em">My planned visits</div>
           <div style="font-size:24px;font-weight:800;color:var(--ink);margin-top:2px">${mineCount}</div>
         </div>
@@ -8725,7 +8731,7 @@ function viewVerification(){
       const fcName     = fc ? esc(fc.name) : (p.fcId ? esc(p.fcId) : '— unassigned —');
       const isMine     = (p.fcId === me);
       const canAct     = isMine || isAdminUser();
-      const rowBg      = isMine ? 'background:#eef3fe' : '';
+      const rowBg      = isMine ? 'background:#f3e7df' : '';
       const planType   = p.type === 'seasonal'
         ? '<span class="tag yellow" style="font-size:10.5px"><span class="d"></span>Seasonal</span>'
         : p.type === 'conv'
@@ -12323,7 +12329,7 @@ function openCompareFormsModal(id){
               || (latestVisit && (latestVisit.byName || latestVisit.fcName))
               || (verif && verif._submittedByName)
               || '—';
-  body += '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,#eef3fe 0%,#dcfce7 100%);border:1px solid var(--accent);border-radius:10px;margin-bottom:14px">'
+  body += '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,#f3e7df 0%,#f5f0ea 100%);border:1px solid var(--accent);border-radius:10px;margin-bottom:14px">'
        +   '<div style="width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px;font-family:inherit;flex-shrink:0">' + esc(fcName.charAt(0).toUpperCase()) + '</div>'
        +   '<div style="flex:1;min-width:0">'
        +     '<div style="font-size:10.5px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.06em">Field verification by</div>'
@@ -14800,7 +14806,7 @@ function enterPublicMode(targetRoute){
   css.textContent = `
     .lb-overlay { position: fixed; inset: 0; background: rgba(11,15,25,0.92); z-index: 9999; display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
     .lb-overlay.show { display: flex; }
-    .lb-overlay img { max-width: 92vw; max-height: 88vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,0.6); object-fit: contain; background: #1b2333; }
+    .lb-overlay img { max-width: 92vw; max-height: 88vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,0.6); object-fit: contain; background: #3d2419; }
     .lb-overlay .lb-close { position: absolute; top: 16px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.12); color: #fff; border: 0; font-size: 22px; cursor: pointer; display: grid; place-items: center; font-family: inherit; }
     .lb-overlay .lb-close:hover { background: rgba(255,255,255,0.24); }
     .lb-overlay .lb-cap { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font-size: 12px; font-family: inherit; max-width: 80vw; text-align: center; }
@@ -14854,6 +14860,11 @@ function enterPublicMode(targetRoute){
   css.textContent = `
     body.public-mode .sidebar, body.public-mode .topbar { display: none !important; }
     body.public-mode .main { margin-left: 0 !important; width: 100% !important; }
+    /* v74 — .app reserves 70px padding-bottom at phone widths for the fixed
+       bottom nav bar (@media max-width:680px), but that nav is hidden in
+       public mode — the empty reserved space was the extra scroll on the
+       public landing page. */
+    body.public-mode .app { padding-bottom: 0 !important; }
     body.public-mode .content {
       padding: 0 !important; max-width: 100% !important; min-height: 100vh;
       background: url('image-1781925519749.webp') center/cover no-repeat fixed;
@@ -14887,22 +14898,41 @@ function enterPublicMode(targetRoute){
     .public-cards.three .public-card .en { margin: 0 0 4px; }
     .public-cards.three .public-card .desc { font-size: 12.5px; line-height: 1.5; margin: 0; flex: 1; }
     .public-cards.three .public-card .text-col { flex: 1; min-width: 0; }
-    .public-cards.three .public-card .cta { color: #3f5fd8; font-weight: 700; font-size: 14px; margin-left: 8px; white-space: nowrap; flex-shrink: 0; }
+    .public-cards.three .public-card .cta { color: #8b5d4e; font-weight: 700; font-size: 14px; margin-left: 8px; white-space: nowrap; flex-shrink: 0; }
+    /* v74 — cards used to stack icon-on-top-of-text below 540px, which
+       roughly doubled each card's height and was the main reason the public
+       landing page needed to scroll on phones. Keep the compact horizontal
+       row on every width; just tighten padding/icon size so it stays
+       comfortable at phone widths. */
     @media (max-width: 540px) {
-      .public-cards.three .public-card { flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; }
-      .public-cards.three .public-card .cta { margin: 4px 0 0; }
+      .public-cards.three .public-card { padding: 14px 16px; gap: 14px; }
+      .public-cards.three .public-card-emoji { font-size: 30px; width: 42px; }
+      .public-cards.three .public-card .cta { display: none; }
     }
-    .public-card:hover { border-color: #3f5fd8; box-shadow: 0 6px 20px rgba(63,95,216,0.13); transform: translateY(-2px); }
+    @media (max-width: 480px) {
+      .public-wrap { padding: 14px 14px 20px; }
+      .public-hero { padding: 10px 0 16px; }
+      .public-hero .logo img { width: 48px !important; height: 48px !important; }
+      .public-hero .org { font-size: 10.5px; margin-bottom: 2px; }
+      .public-hero h1 { font-size: 22px; margin: 4px 0 6px; }
+      .public-hero .sub { font-size: 12.5px; line-height: 1.4; }
+      .public-cards.three { gap: 10px; margin-top: 14px; }
+      .public-cards.three .public-card h2 { font-size: 14.5px; }
+      .public-cards.three .public-card .desc { font-size: 11.5px; line-height: 1.4; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+      .public-foot { padding: 12px 0 0; font-size: 11px; }
+      .public-foot > div { margin-bottom: 8px !important; padding: 10px 14px !important; }
+    }
+    .public-card:hover { border-color: #8b5d4e; box-shadow: 0 6px 20px rgba(139,93,78,0.13); transform: translateY(-2px); }
     .public-card.login { background: linear-gradient(180deg,#fff 0%, #f5f7fb 100%); }
-    .public-card.login:hover { border-color: #1b2333; box-shadow: 0 6px 20px rgba(27,35,51,0.12); }
-    .public-card.login .cta { color: #1b2333; }
+    .public-card.login:hover { border-color: #3d2419; box-shadow: 0 6px 20px rgba(45,24,16,0.12); }
+    .public-card.login .cta { color: #3d2419; }
     .public-card-emoji { font-size: 38px; line-height: 1; margin-bottom: 6px; }
-    .public-card h2 { font-size: 18.5px; font-weight: 700; margin: 0 0 2px; line-height: 1.35; color: #1b2333; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; }
+    .public-card h2 { font-size: 18.5px; font-weight: 700; margin: 0 0 2px; line-height: 1.35; color: #3d2419; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; }
     .public-card .en { font-size: 11.5px; color: #929fb5; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
     .public-card .desc { font-size: 13.5px; color: #515f78; line-height: 1.6; margin: 0 0 16px; font-family: 'Hind Vadodara',sans-serif; }
-    .public-card .cta { color: #3f5fd8; font-weight: 700; font-size: 14px; margin-top: auto; }
+    .public-card .cta { color: #8b5d4e; font-weight: 700; font-size: 14px; margin-top: auto; }
     .public-foot { text-align: center; padding: 36px 0 0; color: #929fb5; font-size: 12.5px; }
-    .public-foot a { color: #3f5fd8; font-weight: 600; text-decoration: none; }
+    .public-foot a { color: #8b5d4e; font-weight: 600; text-decoration: none; }
     .public-foot a:hover { text-decoration: underline; }
 
     /* Public form layout */
@@ -14910,11 +14940,11 @@ function enterPublicMode(targetRoute){
     .pf-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
     .pf-back { background: #fff; border: 1.5px solid #e7e9f0; border-radius: 999px; width: 38px; height: 38px; cursor: pointer; display: grid; place-items: center; font-size: 18px; color: #515f78; }
     .pf-back:hover { background: #f5f6f9; }
-    .pf-head h1 { font-size: 22px; font-weight: 800; margin: 0; color: #1b2333; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; line-height: 1.3; }
+    .pf-head h1 { font-size: 22px; font-weight: 800; margin: 0; color: #3d2419; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; line-height: 1.3; }
     .pf-head .en { font-size: 11.5px; color: #929fb5; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
     .pf-card { background: #fff; border: 1.5px solid #e7e9f0; border-radius: 14px; padding: 22px 22px 14px; }
     .pf-fld { margin-bottom: 16px; }
-    .pf-fld label { display: block; font-size: 13.5px; color: #1b2333; font-weight: 600; margin-bottom: 6px; font-family: 'Hind Vadodara',sans-serif; }
+    .pf-fld label { display: block; font-size: 13.5px; color: #3d2419; font-weight: 600; margin-bottom: 6px; font-family: 'Hind Vadodara',sans-serif; }
     .pf-fld label .req { color: #d9543f; margin-left: 2px; }
     .pf-fld label .en { color: #929fb5; font-weight: 500; font-size: 11.5px; margin-left: 4px; }
     .pf-fld input, .pf-fld select, .pf-fld textarea {
@@ -14922,28 +14952,28 @@ function enterPublicMode(targetRoute){
       font-family: inherit; font-size: 15px; background: #fff; box-sizing: border-box; min-height: 46px;
     }
     .pf-fld textarea { min-height: 80px; resize: vertical; font-family: 'Hind Vadodara',sans-serif; }
-    .pf-fld input:focus, .pf-fld select:focus, .pf-fld textarea:focus { border-color: #3f5fd8; outline: none; box-shadow: 0 0 0 3px rgba(63,95,216,0.12); }
+    .pf-fld input:focus, .pf-fld select:focus, .pf-fld textarea:focus { border-color: #8b5d4e; outline: none; box-shadow: 0 0 0 3px rgba(139,93,78,0.12); }
     .pf-yn { display: flex; gap: 8px; flex-wrap: wrap; }
     .pf-yn .chip { flex: 1; min-width: 100px; min-height: 46px; padding: 10px 16px; border-radius: 9px; border: 1.5px solid #d6dae3; background: #fff; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600; }
-    .pf-yn .chip.on { background: #3f5fd8; color: #fff; border-color: #3f5fd8; }
+    .pf-yn .chip.on { background: #8b5d4e; color: #fff; border-color: #8b5d4e; }
     .pf-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     @media (max-width: 540px) { .pf-checks { grid-template-columns: 1fr; } }
     .pf-check { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: #fff; border: 1.5px solid #d6dae3; border-radius: 9px; cursor: pointer; font-size: 13.5px; font-family: 'Hind Vadodara',sans-serif; min-height: 44px; }
     .pf-check input { width: 17px; height: 17px; margin: 0; }
-    .pf-check.checked { background: #eef3fe; border-color: #3f5fd8; }
-    .pf-submit { width: 100%; padding: 15px; background: #3f5fd8; color: #fff; border: 0; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; min-height: 52px; }
-    .pf-submit:hover { background: #3550b5; }
+    .pf-check.checked { background: #f3e7df; border-color: #8b5d4e; }
+    .pf-submit { width: 100%; padding: 15px; background: #8b5d4e; color: #fff; border: 0; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; font-family: 'Hind Vadodara','Plus Jakarta Sans',sans-serif; min-height: 52px; }
+    .pf-submit:hover { background: #723e31; }
     .pf-submit:disabled { background: #929fb5; cursor: not-allowed; }
     .pf-err { background: #fadfd9; color: #991b1b; padding: 11px 14px; border-radius: 8px; font-size: 13.5px; margin-bottom: 14px; }
 
     /* Thank-you */
     .pf-thanks { text-align: center; padding: 40px 20px; max-width: 580px; margin: 0 auto; }
     .pf-thanks .check { width: 84px; height: 84px; background: #1c976a; color: #fff; border-radius: 50%; display: grid; place-items: center; font-size: 48px; margin: 0 auto 22px; }
-    .pf-thanks h1 { font-size: 26px; font-weight: 800; color: #1b2333; margin: 0 0 8px; font-family: 'Hind Vadodara',sans-serif; }
-    .pf-thanks .id { display: inline-block; background: #f5f6f9; border: 1px solid #e7e9f0; padding: 8px 16px; border-radius: 8px; font-size: 14px; color: #1b2333; margin: 14px 0; font-family: 'IBM Plex Mono',monospace; font-weight: 600; }
+    .pf-thanks h1 { font-size: 26px; font-weight: 800; color: #3d2419; margin: 0 0 8px; font-family: 'Hind Vadodara',sans-serif; }
+    .pf-thanks .id { display: inline-block; background: #f5f6f9; border: 1px solid #e7e9f0; padding: 8px 16px; border-radius: 8px; font-size: 14px; color: #3d2419; margin: 14px 0; font-family: 'IBM Plex Mono',monospace; font-weight: 600; }
     .pf-thanks p { font-size: 14.5px; color: #515f78; line-height: 1.6; margin: 8px 0; font-family: 'Hind Vadodara',sans-serif; }
     .pf-thanks .wa-btn { display: inline-flex; align-items: center; gap: 10px; background: #25D366; color: #fff; padding: 14px 28px; border-radius: 999px; text-decoration: none; font-weight: 700; font-size: 15px; margin: 18px 0 8px; }
-    .pf-thanks .home-link { display: block; margin-top: 18px; color: #3f5fd8; font-weight: 600; font-size: 13px; text-decoration: none; }
+    .pf-thanks .home-link { display: block; margin-top: 18px; color: #8b5d4e; font-weight: 600; font-size: 13px; text-decoration: none; }
   `;
   document.head.appendChild(css);
 })();
@@ -14980,7 +15010,7 @@ function renderPublicLanding(){
         <div class="logo" style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:4px">
           <img src="sristi-logo.jpg" alt="Sristi" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#fff;border:2px solid rgba(255,255,255,0.5)">
           <div style="width:1.5px;height:40px;background:rgba(255,255,255,0.3);border-radius:1px"></div>
-          <img src="krsf-logo.png" alt="KRSF" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.4)">
+          <img src="krsf-logo.png" alt="KRSF" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#fff;border:2px solid rgba(255,255,255,0.5)">
         </div>
         <div class="org">Sristi · KRSF</div>
         <h1>સૃષ્ટિ ખેડૂત હાટ</h1>
@@ -15017,7 +15047,7 @@ function renderPublicLanding(){
           <span style="font-size:24px">📞</span>
           <div style="text-align:left">
             <div style="font-size:11px;color:#929fb5;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:2px">SRISTI Office · સહાય માટે ફોન કરો</div>
-            <a href="tel:+919510386635" style="font-size:18px;font-weight:800;color:#1b2333;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">+91 95103 86635</a>
+            <a href="tel:+919510386635" style="font-size:18px;font-weight:800;color:#3d2419;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">+91 95103 86635</a>
           </div>
         </div>
         <p style="font-size:11.5px;color:#929fb5">Sristi · KRSF · Gujarat · 2026-27 &nbsp;·&nbsp; <span style="font-weight:700">Prakrutik Khedut Haat ${APP_VERSION.toUpperCase()}</span></p>
@@ -15289,14 +15319,14 @@ function openLoginModal(){
         width: 100%; padding: 12px 14px; border: 1.5px solid var(--line-strong); border-radius: 9px;
         font-family: inherit; font-size: 15px; background: #fff; box-sizing: border-box; min-height: 46px;
       }
-      .login-modal-wrap input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(63,95,216,0.12); }
+      .login-modal-wrap input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(139,93,78,0.12); }
       .login-modal-wrap .lm-err { background: #fadfd9; color: #991b1b; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
       .login-modal-wrap .lm-submit {
         width: 100%; padding: 14px; background: var(--accent); color: #fff; border: 0;
         border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 8px;
         font-family: inherit; min-height: 50px;
       }
-      .login-modal-wrap .lm-submit:hover { background: #3550b5; }
+      .login-modal-wrap .lm-submit:hover { background: #723e31; }
       .login-modal-wrap .lm-submit:disabled { background: #929fb5; cursor: not-allowed; }
       @media (max-width:640px){
         #overlay.show { z-index:210!important; }

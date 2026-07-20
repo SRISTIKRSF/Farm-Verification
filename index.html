@@ -2833,7 +2833,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v83';
+const APP_VERSION = 'v84';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6820,30 +6820,99 @@ function monthlyForms(){
     onboarded:DB.haatFarmers.filter(f=>f.enrolledMonth===m&&f.status==='green').length,
   }));
 }
-/* cumulative running totals, month by month.
-   onboarded  = a green farmer counts from the month of their FIRST verification visit
-   visited    = every farm visit recorded, accumulated
+/* ============ ONBOARDING DATE + FINANCIAL YEAR (v84) ============
+   A green farmer's effective onboarding month, used everywhere below:
+     1. f.associationYear — a manually-entered legacy year (e.g. "2023") for
+        farmers who've been with Sristi since before this app existed.
+        Placed in JUNE of that year: we only know the YEAR for these
+        farmers, not the month, so June is a deliberate, honest placeholder
+        — not a guess at precision we don't have.
+     2. f.decisionAt — every real admin accept/hold/reject decision stamps
+        this (see openDecisionModal). This is the real onboarding date for
+        every farmer processed through the app going forward.
+     3. Fallback (enrolledMonth, then latest known activity) only so a green
+        farmer already in the system never silently drops out of the total
+        if somehow neither of the above is set.
+   Financial Year = April to March (India), not calendar year. */
+function farmerOnboardYM(f){
+  if(f.associationYear) return f.associationYear+'-06';
+  if(f.decisionAt) return f.decisionAt.slice(0,7);
+  if(f.enrolledMonth) return f.enrolledMonth;
+  const ts=farmerLatestTs(f);
+  return ts ? new Date(ts).toISOString().slice(0,7) : null;
+}
+const FY_START_MONTH=4; // April
+function fyStartYearOfYM(ym){
+  const [y,m]=ym.split('-').map(Number);
+  return m>=FY_START_MONTH ? y : y-1;
+}
+function fyLabel(fyStartYear){ return 'FY '+fyStartYear+'-'+String(fyStartYear+1).slice(2); }
+// Ordered 'YYYY-MM' list for the FY starting in fyStartYear, April → March.
+function monthsInFY(fyStartYear){
+  const out=[];
+  for(let i=0;i<12;i++){
+    const m=FY_START_MONTH+i;
+    const y = m<=12 ? fyStartYear : fyStartYear+1;
+    out.push(y+'-'+String(((m-1)%12)+1).padStart(2,'0'));
+  }
+  return out;
+}
+function _ymRangeInclusive(minYM,maxYM){
+  const out=[]; let [y,m]=minYM.split('-').map(Number); const [ey,em]=maxYM.split('-').map(Number);
+  while(y<ey || (y===ey && m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} }
+  return out;
+}
+/* cumulative running totals, month by month, from real inception to today.
+   onboarded = a green farmer counts in the month from farmerOnboardYM()
+   visited   = every farm visit recorded, in the month it happened
    Each month's value = total up to and including that month (never decreases). */
 function cumulativeData(){
-  const months=DB.months;
-  // per-month new counts
+  const farmers=_excludeSeeds(DB.haatFarmers||[]);
   const newOnboarded={}, newVisits={};
-  months.forEach(m=>{newOnboarded[m]=0;newVisits[m]=0;});
-  DB.haatFarmers.forEach(f=>{
-    // count each visit in the month it happened
-    f.visits.forEach(v=>{
-      const mk=v.date.slice(0,7);
-      if(newVisits[mk]!=null) newVisits[mk]++;
-    });
-    // an onboarded (green) farmer is attributed to the month of their first visit
-    if(f.status==='green' && f.visits.length){
-      const first=f.visits.map(v=>v.date.slice(0,7)).sort()[0];
-      if(newOnboarded[first]!=null) newOnboarded[first]++;
-    }
+  let minYM=null, maxYM=null;
+  const bump=(map,ym)=>{
+    if(!ym) return;
+    map[ym]=(map[ym]||0)+1;
+    if(!minYM||ym<minYM) minYM=ym;
+    if(!maxYM||ym>maxYM) maxYM=ym;
+  };
+  farmers.forEach(f=>{
+    (f.visits||[]).forEach(v=>{ if(v.date) bump(newVisits, v.date.slice(0,7)); });
+    if(f.status==='green') bump(newOnboarded, farmerOnboardYM(f));
   });
+  const todayYM=todayISO().slice(0,7);
+  if(!maxYM||todayYM>maxYM) maxYM=todayYM;
+  if(!minYM) minYM=todayYM;
   let oRun=0,vRun=0;
-  return months.map(m=>{
-    const oNew=newOnboarded[m], vNew=newVisits[m];
+  return _ymRangeInclusive(minYM,maxYM).map(m=>{
+    const oNew=newOnboarded[m]||0, vNew=newVisits[m]||0;
+    oRun+=oNew; vRun+=vNew;
+    return {m, onboardedNew:oNew, onboardedTotal:oRun, visitsNew:vNew, visitsTotal:vRun};
+  });
+}
+// Each FY's OWN total (not a slice of the all-time running total) — answers
+// "how many this financial year", for the Year-wise drill-down level.
+function fyWiseData(monthlyRows){
+  const byFY={};
+  monthlyRows.forEach(r=>{
+    const fy=fyStartYearOfYM(r.m);
+    if(!byFY[fy]) byFY[fy]={fy, onboardedNew:0, visitsNew:0};
+    byFY[fy].onboardedNew+=r.onboardedNew;
+    byFY[fy].visitsNew+=r.visitsNew;
+  });
+  return Object.keys(byFY).map(Number).sort((a,b)=>a-b).map(fy=>({
+    fy, onboardedNew:byFY[fy].onboardedNew, onboardedTotal:byFY[fy].onboardedNew,
+    visitsNew:byFY[fy].visitsNew, visitsTotal:byFY[fy].visitsNew,
+  }));
+}
+// One FY's own running total, RESET to 0 at April and ending at that FY's
+// total in March — shows the year's own build-up, for the Month-wise level.
+function fyMonthWiseData(monthlyRows, fyStartYear){
+  const byM={}; monthlyRows.forEach(r=>{ byM[r.m]=r; });
+  let oRun=0,vRun=0;
+  return monthsInFY(fyStartYear).map(m=>{
+    const r=byM[m];
+    const oNew=r?r.onboardedNew:0, vNew=r?r.visitsNew:0;
     oRun+=oNew; vRun+=vNew;
     return {m, onboardedNew:oNew, onboardedTotal:oRun, visitsNew:vNew, visitsTotal:vRun};
   });
@@ -6896,12 +6965,14 @@ function barChart(rows,keys,colors,maxOverride){
 
 /* ============ CHART: cumulative bars (running total + monthly delta) ============ */
 function cumulativeChart(rows,color){
-  // rows: [{label, total, delta}]
+  // rows: [{label, total, delta, key}] — key is optional; when present the
+  // column gets a data-bar="key" click target (used by the dashboard's
+  // year-wise drill-down) without affecting any other caller.
   const max=Math.max(1,...rows.map(r=>r.total));
   let h='<div class="cbars">';
   rows.forEach(r=>{
     const hp=Math.max(r.total>0?6:0,(r.total/max)*100);
-    h+=`<div class="cbar-col">
+    h+=`<div class="cbar-col"${r.key!=null?` data-bar="${esc(String(r.key))}" style="cursor:pointer"`:''}>
       <div class="cbar-total">${r.total||''}</div>
       <div class="cbar-stack" style="height:${hp}%;background:${color}"></div>
       <div class="cbar-lbl">${esc(r.label)}</div>
@@ -6909,6 +6980,43 @@ function cumulativeChart(rows,color){
     </div>`;
   });
   return h+'</div>';
+}
+
+/* Cumulative/Year-wise/Month-wise drill-down chart card, shared by the
+   dashboard's "Farmers Onboarded" and "Field Visits Done" charts.
+   stateKey: 'onboard' | 'visits' — keyed into window.DASH_CUM so each
+   chart's drill state is independent. pickTotal/pickNew read the right
+   field off a row regardless of whether it's a monthly or FY-shaped row. */
+function _cumChartCard(stateKey, title, color, monthlyRows, pickTotal, pickNew){
+  if(!window.DASH_CUM) window.DASH_CUM={};
+  const st = window.DASH_CUM[stateKey] = window.DASH_CUM[stateKey] || {mode:'cumulative', fy:null};
+  let bars, subtitle, crumbLabel, crumbTo, total;
+  if(st.mode==='year'){
+    const rows=fyWiseData(monthlyRows);
+    subtitle='Totals by financial year (Apr–Mar) — click a year to see months';
+    bars=cumulativeChart(rows.map(r=>({label:fyLabel(r.fy),total:pickTotal(r),delta:null,key:r.fy})),color);
+    crumbLabel='← All-time'; crumbTo=stateKey+':cumulative';
+    total=rows.reduce((a,r)=>a+pickNew(r),0);
+  } else if(st.mode==='month'){
+    const rows=fyMonthWiseData(monthlyRows, st.fy);
+    subtitle=fyLabel(st.fy)+' — running total, month by month';
+    bars=cumulativeChart(rows.map(r=>({label:monthLabel(r.m),total:pickTotal(r),delta:pickNew(r)})),color);
+    crumbLabel='← Back to years'; crumbTo=stateKey+':year';
+    total=rows.length?pickTotal(rows[rows.length-1]):0;
+  } else {
+    subtitle='Running total, month by month';
+    bars=cumulativeChart(monthlyRows.map(r=>({label:monthLabel(r.m),total:pickTotal(r),delta:pickNew(r)})),color);
+    crumbLabel='View by year →'; crumbTo=stateKey+':year';
+    total=monthlyRows.length?pickTotal(monthlyRows[monthlyRows.length-1]):0;
+  }
+  return `<div class="card chart-card" data-chart="${stateKey}">
+    <div class="chart-head">
+      <div><div class="ct">${esc(title)}</div>
+      <div class="cs">${subtitle} &nbsp;·&nbsp; <a data-cumview="${crumbTo}" style="cursor:pointer;color:var(--accent);font-weight:600;text-decoration:none">${crumbLabel}</a></div></div>
+      <div class="chart-total"><b>${total}</b> total</div>
+    </div>
+    ${bars}
+  </div>`;
 }
 
 /* ============ CHART: donut ============ */
@@ -7794,27 +7902,11 @@ function viewDashboard(){
   h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program</h3><div class="line"></div></div>`;
   h+=convPointerHtml(cs);
 
-  // ===== two cumulative charts side by side =====
+  // ===== two cumulative charts side by side — Cumulative / Year-wise (FY, Apr–Mar) / Month-wise =====
   const cum=cumulativeData();
-  const onbTotal=cum[cum.length-1].onboardedTotal;
-  const visTotal=cum[cum.length-1].visitsTotal;
   h+=`<div class="panel-grid two-eq">
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div><div class="ct">Farmers Onboarded — cumulative</div>
-        <div class="cs">Running total of farmers approved, month by month</div></div>
-        <div class="chart-total"><b>${onbTotal}</b> total</div>
-      </div>
-      ${cumulativeChart(cum.map(r=>({label:monthLabel(r.m),total:r.onboardedTotal,delta:r.onboardedNew})),'var(--c-onboard)')}
-    </div>
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div><div class="ct">Field Visits Done — cumulative</div>
-        <div class="cs">Running total of farm verification visits</div></div>
-        <div class="chart-total"><b>${visTotal}</b> total</div>
-      </div>
-      ${cumulativeChart(cum.map(r=>({label:monthLabel(r.m),total:r.visitsTotal,delta:r.visitsNew})),'var(--c-visit)')}
-    </div>
+    ${_cumChartCard('onboard','Farmers Onboarded','var(--c-onboard)',cum,r=>r.onboardedTotal,r=>r.onboardedNew)}
+    ${_cumChartCard('visits','Field Visits Done','var(--c-visit)',cum,r=>r.visitsTotal,r=>r.visitsNew)}
   </div>`;
 
   // ===== farmers joined, by calendar year (both programs) =====
@@ -7994,6 +8086,26 @@ function viewDashboard(){
       const program = row.dataset.program;
       if(program === 'haat' && typeof openHaatDrawer === 'function'){ openHaatDrawer(id); }
       else if(program === 'conv' && typeof openConvDrawer === 'function'){ openConvDrawer(id); }
+    };
+  });
+  // Cumulative/Year-wise/Month-wise drill-down (Farmers Onboarded, Field Visits Done)
+  v.querySelectorAll('[data-cumview]').forEach(a=>{
+    a.onclick=()=>{
+      const [key,mode]=a.dataset.cumview.split(':');
+      if(!window.DASH_CUM) window.DASH_CUM={};
+      window.DASH_CUM[key]=window.DASH_CUM[key]||{mode:'cumulative',fy:null};
+      window.DASH_CUM[key].mode=mode;
+      viewDashboard();
+    };
+  });
+  v.querySelectorAll('.cbar-col[data-bar]').forEach(col=>{
+    col.onclick=()=>{
+      const card=col.closest('[data-chart]');
+      if(!card) return;
+      const key=card.dataset.chart;
+      if(!window.DASH_CUM) window.DASH_CUM={};
+      window.DASH_CUM[key]={mode:'month', fy:+col.dataset.bar};
+      viewDashboard();
     };
   });
   // haat-wise table rows -> filter Haat Farmers by haat
@@ -11935,6 +12047,11 @@ function openFarmerModal(program,id){
       ${fld('Years doing organic',`<input type="number" id="ffYears" value="${f.yearsOrganic||''}">`)}
       ${fld('Certification',sel('ffCert',['GOPCA','PGS','None (Tribal exemption)','Registration pending'],f.certification))}
     </div>`;
+    // v84 — legacy farmers (200+) have been with Sristi since before this app
+    // existed; their real in-app enrollment date only reflects when they were
+    // digitally added, not when they actually joined. This manually-entered
+    // year overrides that for the Onboarded charts — see farmerOnboardYM().
+    body+=fld('Association with Sristi (year)',`<input type="number" id="ffAssocYear" min="2000" max="${new Date().getFullYear()}" placeholder="e.g. 2023 — only for legacy farmers, leave blank otherwise" value="${f.associationYear||''}">`);
     body+=fld('Crops grown',`<input type="text" id="ffCropSearch" placeholder="🔍 Search crop…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:7px;box-sizing:border-box"><div class="checkgrid" id="ffCrops" style="max-height:260px;overflow-y:auto">${cropChecks}</div>`);
   }
 
@@ -12034,6 +12151,8 @@ function openFarmerModal(program,id){
       if(program==='haat'){
         f.yearsOrganic=+$('#ffYears').value||0;
         f.certification=$('#ffCert').value;
+        const assocYear=$('#ffAssocYear').value.trim();
+        if(assocYear) f.associationYear=assocYear; else delete f.associationYear;
       }else{f.nextVisitDue=$('#ffNext')?.value||'';}
       // v9 audit-fix #5 — record who edited and when.
       const aE = actor();
@@ -12045,10 +12164,12 @@ function openFarmerModal(program,id){
     }else{
       const m=DB.months[DB.months.length-1];
       if(program==='haat'){
+        const _assocYear=$('#ffAssocYear')?.value.trim();
         DB.haatFarmers.push({
           id:uid('HF'),program:'haat',...base,
           vertical:'Livelihood',yearsOrganic:+($('#ffYears')?.value)||0,
           certification:($('#ffCert')?.value)||'Registration pending',
+          ...(_assocYear?{associationYear:_assocYear}:{}),
           haat:'',enrolledMonth:m,stage:'verification_pending',status:'pending',
           active:false,visits:[],lat:null,lng:null,
         });

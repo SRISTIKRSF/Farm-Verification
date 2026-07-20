@@ -1599,7 +1599,10 @@ function renderOneStatCards(q){
     const addBtn = document.getElementById('scAdd_'+q.id);
     if(addBtn) addBtn.onclick = () => {
       const cur = ANSWERS[q.id] || [];
-      if(cur.length >= (q.maxRows||3)) return;
+      // v87 — no q.maxRows means unlimited (was defaulting to 3, silently
+      // capping every addable stat_cards question that forgot to set one,
+      // and — the real bug report — major_crops_table at a hardcoded 5).
+      if(q.maxRows && cur.length >= q.maxRows) return;
       ANSWERS[q.id] = [...cur, {}];
       renderOneStatCards(q);
       scheduleDraftSave();
@@ -2866,7 +2869,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v86';
+const APP_VERSION = 'v87';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5013,7 +5016,10 @@ window.QUESTIONS_V5 = [
       {key:'acres', gu:'એકર', en:'Area (acre)', type:'number'},
     ], askedOf:'both'},
   {id:'major_crops_table', cat:'farm', gu:'મુખ્ય પાકોની વિગત', en:'Major crops grown', type:'stat_cards',
-    addable:true, maxRows:5, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop'}, itemIsCrop:true,
+    // v87 — no maxRows: a farmer can grow more than 5 crops. Omitting the
+    // field (rather than setting a big number) is the buildStatCards() /
+    // reconcileCoreQuestionsV5() convention for "unlimited" on this type.
+    addable:true, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop'}, itemIsCrop:true,
     fields:[
       {key:'area',       gu:'એકર',                     en:'Area (acre)',        type:'number'},
       {key:'production', gu:'અંદાજિત ઉત્પાદન',         en:'Approx. production', type:'text'},
@@ -5226,7 +5232,13 @@ function reconcileCoreQuestionsV5(){
       window.QUESTIONS_V5.push(JSON.parse(JSON.stringify(def)));
       changed = true;
     } else if(JSON.stringify(window.QUESTIONS_V5[idx].fields||null) !== JSON.stringify(def.fields||null)
-           || window.QUESTIONS_V5[idx].type !== def.type){
+           || window.QUESTIONS_V5[idx].type !== def.type
+           // v87 — maxRows is developer-owned (Question Manager never lets an
+           // admin touch it), so a mismatch means it's a stale synced copy of
+           // an old default, not an intentional customization. Catches the
+           // major_crops_table maxRows:5->unlimited fix reaching a device/
+           // Firebase schema that already synced the old value.
+           || (window.QUESTIONS_V5[idx].maxRows||null) !== (def.maxRows||null)){
       const cur = window.QUESTIONS_V5[idx];
       window.QUESTIONS_V5[idx] = Object.assign({}, JSON.parse(JSON.stringify(def)), {
         gu: cur.gu || def.gu, en: cur.en || def.en, req: cur.req,
@@ -7985,15 +7997,8 @@ function viewDashboard(){
   }
 
   let h = _datePillsHtml();
-  h+=`<div class="section-head"><h3>Prakrutik Khedut Haat Program</h3><div class="line"></div></div>`;
+  h+=`<div class="section-head"><h3>🛒 Prakrutik Khedut Haat Program — Farmers</h3><div class="line"></div></div>`;
   h+=journeyBoxesHtml(hs,'nav');
-
-  // v33 — the full Conversion funnel used to sit here as its own 5-box grid,
-  // right under the Haat funnel, and read as a confusing second/duplicate
-  // pipeline. It now lives entirely on the Conversion Farmers page; the
-  // Dashboard just gets a one-line peek + link (see convPointerHtml).
-  h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program</h3><div class="line"></div></div>`;
-  h+=convPointerHtml(cs);
 
   // ===== two cumulative charts side by side — Cumulative / Year-wise (FY, Apr–Mar) / Month-wise =====
   const cum=cumulativeData();
@@ -8111,6 +8116,17 @@ function viewDashboard(){
   });
   h+=`</tbody></table></div></div>
   </div>`;
+
+  // v33 — the full Conversion funnel used to sit here as its own 5-box grid,
+  // right under the Haat funnel, and read as a confusing second/duplicate
+  // pipeline. It now lives entirely on the Conversion Farmers page; the
+  // Dashboard just gets a one-line peek + link (see convPointerHtml).
+  // v87 — moved down to sit right above Recent updates (was directly under
+  // the Haat funnel, where its own "applications" number sat right next to
+  // the Haat funnel's "Farmers applied" number and read as one confusing
+  // pipeline instead of two separate programs).
+  h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program — Farmers</h3><div class="line"></div></div>`;
+  h+=convPointerHtml(cs);
 
   // ===== recent updates (activity log) =====
   const log=(DB.activity||[]).slice(0,12);

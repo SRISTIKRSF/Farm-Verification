@@ -1064,6 +1064,7 @@ body.lang-en .ten{display:inline}
     <h2>પત્રક સફળતાપૂર્વક જમા થયું!</h2>
     <p>તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</p>
     <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
+    <p id="photoUploadStatus" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-top:10px"></p>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button type="button" id="downloadPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px">📄 PDF ડાઉનલોડ કરો</button>
       <button type="button" id="successContinueBtn" style="padding:12px 24px;background:none;border:1.5px solid var(--leaf);color:var(--leaf-dark);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">આગળ વધો →</button>
@@ -1927,9 +1928,41 @@ function submit(){
   // off) — the timer routinely won, yanking the screen away before the
   // download could happen. Now the farmer decides when to move on.
   const _continueBtn = $('#successContinueBtn');
-  if(_continueBtn) _continueBtn.onclick = () => {
-    if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done'}, '*');
-  };
+  const _goDone = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done'}, '*'); };
+  // v85 — photos only finish uploading while THIS tab stays open (a ~30s
+  // background timer does it); a public farmer typically closes the tab
+  // within seconds of reaching this screen. Without waiting here, a photo
+  // can be silently unrecoverable forever the moment they leave — no other
+  // device can ever see it. Hold "Continue" until the parent confirms the
+  // upload actually happened (or times out on a genuinely bad connection).
+  const _statusEl = $('#photoUploadStatus');
+  const _hasPhotos = Object.keys(PHOTOS).some(k => Array.isArray(PHOTOS[k]) && PHOTOS[k].length);
+  if(_hasPhotos && _continueBtn){
+    _continueBtn.disabled = true;
+    _continueBtn.style.opacity = '.5';
+    _continueBtn.style.cursor = 'not-allowed';
+    _continueBtn.textContent = '⏳ ફોટા save થઈ રહ્યા છે…';
+    if(_statusEl){ _statusEl.style.display = ''; _statusEl.textContent = '📤 ફોટા save થઈ રહ્યા છે — થોડી સેકંડ રાહ જુઓ (Saving photos, please wait)'; }
+    let _photoAckDone = false;
+    const _releaseBtn = (msg) => {
+      if(_photoAckDone) return;
+      _photoAckDone = true;
+      _continueBtn.disabled = false;
+      _continueBtn.style.opacity = '';
+      _continueBtn.style.cursor = '';
+      _continueBtn.textContent = 'આગળ વધો →';
+      if(_statusEl) _statusEl.textContent = msg;
+    };
+    const _photoAckTimer = setTimeout(() => _releaseBtn('ⓘ ફોટા upload ચાલુ છે — connection મળતાં પૂર્ણ થશે.'), 20000);
+    window.addEventListener('message', function _onPhotoAck(ev){
+      const dd = ev.data;
+      if(!dd || dd.type !== 'photo-upload-result') return;
+      window.removeEventListener('message', _onPhotoAck);
+      clearTimeout(_photoAckTimer);
+      _releaseBtn(dd.ok ? '✓ ફોટા સચવાઈ ગયા' : 'ⓘ ફોટા upload બાકી છે — connection મળતાં પૂર્ણ થશે.');
+    });
+  }
+  if(_continueBtn) _continueBtn.onclick = () => { if(!_continueBtn.disabled) _goDone(); };
 }
 
 /* receive schema from parent */
@@ -2833,7 +2866,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4317,7 +4350,7 @@ function photoPendingPlaceholder(){
    so one mutation fixes both. If IndexedDB is unavailable the leaf is left
    untouched (old base64-in-record behaviour as a fallback). */
 function _isDataUrlImage(v){ return typeof v==='string' && v.slice(0,11)==='data:image/' && v.slice(0,19)!=='data:image/svg+xml;'; }
-async function extractPhotos(payload, ctx){
+async function extractPhotos(payload, ctx, outIds){
   ctx = ctx || {};
   const leaves = [];
   const visited = new WeakSet();
@@ -4366,6 +4399,7 @@ async function extractPhotos(payload, ctx){
       leaf.pending = true;
       delete leaf.data;
       queued++;
+      if(outIds) outIds.push(photoId);
     }catch(e){
       // IndexedDB unavailable — keep base64 embedded rather than lose the photo.
       console.warn('[Sristi] photo queue failed, keeping inline:', e);
@@ -4378,6 +4412,17 @@ async function extractPhotos(payload, ctx){
 /* ---------- background uploader ---------- */
 let _photoFlushBusy = false;
 let _photoFlushLastErr = '';
+// Uploads one already-queued photo and applies the result to whatever
+// farmer record / cached form holds it. Throws on failure — callers decide
+// how to handle retry/give-up. Shared by flushPhotoQueue() (background,
+// whole-queue) and flushSpecificPhotos() (foreground, just-queued IDs).
+async function _uploadQueuedPhoto(it){
+  const up = await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
+  const repl = { photoId: it.photoId, url: up.url, w: up.w, h: up.h, bytes: up.bytes, name: it.name || '' };
+  _photoSession[it.photoId] = _photoSession[it.photoId] || it.dataUrl;
+  applyPhotoUrl(it, repl);
+  await idbDel('photoQueue', it.photoId);
+}
 async function flushPhotoQueue(){
   if(_photoFlushBusy) return;
   if(!navigator.onLine || !cloudinaryConfigured()){ updatePhotoBadge(); return; }
@@ -4396,11 +4441,7 @@ async function flushPhotoQueue(){
     const realItems = items.filter(it => !(it.dataUrl && it.dataUrl.slice(0,19)==='data:image/svg+xml;') && (it.tries||0) < 8);
     for(const it of realItems){
       try{
-        const up = await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
-        const repl = { photoId: it.photoId, url: up.url, w: up.w, h: up.h, bytes: up.bytes, name: it.name || '' };
-        _photoSession[it.photoId] = _photoSession[it.photoId] || it.dataUrl;
-        applyPhotoUrl(it, repl);
-        await idbDel('photoQueue', it.photoId);
+        await _uploadQueuedPhoto(it);
         uploaded++;
       }catch(e){
         const msg = (e && e.message) ? e.message : String(e);
@@ -4423,6 +4464,44 @@ async function flushPhotoQueue(){
     _photoFlushBusy = false;
     updatePhotoBadge();
   }
+}
+// v85 — actively uploads just the given photoIds and waits (up to timeoutMs)
+// for the result, instead of relying on the ~30s background pump. Used to
+// hold a public farmer's "Application Received" screen until their photos
+// have actually left the device — see the kisan-haat-full handler below.
+// Runs independently of flushPhotoQueue()'s busy-lock: on the rare overlap
+// where both grab the same fresh item, idbGet returning null (already
+// uploaded/deleted by the other) is treated as success, not a failure.
+async function flushSpecificPhotos(photoIds, timeoutMs){
+  if(!photoIds || !photoIds.length) return {uploaded:0, failed:0, timedOut:false};
+  if(!navigator.onLine || !cloudinaryConfigured()) return {uploaded:0, failed:photoIds.length, timedOut:false};
+  const run = (async () => {
+    let uploaded=0, failed=0;
+    for(const photoId of photoIds){
+      const it = await idbGet('photoQueue', photoId).catch(()=>null);
+      if(!it){ uploaded++; continue; }
+      try{ await _uploadQueuedPhoto(it); uploaded++; }
+      catch(e){ failed++; await idbPut('photoQueue', it).catch(()=>{}); }
+    }
+    updatePhotoBadge();
+    return {uploaded, failed, timedOut:false};
+  })();
+  if(!timeoutMs) return run;
+  const timeout = new Promise(res => setTimeout(()=>res({uploaded:0, failed:0, timedOut:true}), timeoutMs));
+  return Promise.race([run, timeout]);
+}
+// v85 — after queuing a Haat enrollment's photos (public or FC/admin), actively
+// upload them and tell the enrollment iframe's success screen it's safe to let
+// the farmer move on. See KISAN_FORM_HTML's submit()/successScreen wiring —
+// it holds the "Continue" button disabled until this posts back.
+async function _flushAndAckEnrollPhotos(photoIds){
+  let ok = true;
+  if(photoIds && photoIds.length){
+    const res = await flushSpecificPhotos(photoIds, 15000);
+    ok = res.failed===0 && !res.timedOut;
+  }
+  const frame = document.getElementById('enrollFrame');
+  if(frame && frame.contentWindow) frame.contentWindow.postMessage({type:'photo-upload-result', ok}, '*');
 }
 function replacePhotoById(obj, photoId, repl){
   let hit = false;
@@ -14050,7 +14129,8 @@ window.addEventListener('message',async ev=>{
         if(rec){
           // v11 — base64 photos go to the upload queue; the heavy form goes
           // to forms/{id}; the record itself stays lean.
-          await extractPhotos(d.data, {program:'haat', farmerId: rec.id});
+          const _photoIds = [];
+          await extractPhotos(d.data, {program:'haat', farmerId: rec.id}, _photoIds);
           setForms(rec.id, 'enrol', d.data);
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
@@ -14070,6 +14150,7 @@ window.addEventListener('message',async ev=>{
             try { await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))); } catch(e) { console.warn('haatFarmer full update:',e); }
           }
           cacheLocal();
+          await _flushAndAckEnrollPhotos(_photoIds);
         }
         return;
       }
@@ -14082,7 +14163,8 @@ window.addEventListener('message',async ev=>{
       const last = fresh || DB.haatFarmers[DB.haatFarmers.length-1];
       if(last){
         // v11 — photos to upload queue, form text to forms/{id}.
-        await extractPhotos(d.data, {program:'haat', farmerId: last.id});
+        const _photoIds = [];
+        await extractPhotos(d.data, {program:'haat', farmerId: last.id}, _photoIds);
         setForms(last.id, 'enrol', d.data);
         last.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
         /* v6 - populate legacy f.crops from v5 crops_table claim so the Haat
@@ -14127,6 +14209,7 @@ window.addEventListener('message',async ev=>{
           });
         }
         await saveDB(true);
+        await _flushAndAckEnrollPhotos(_photoIds);
       }
     }, 600);
     return;

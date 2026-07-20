@@ -2833,7 +2833,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6829,14 +6829,24 @@ function monthlyForms(){
         — not a guess at precision we don't have.
      2. f.decisionAt — every real admin accept/hold/reject decision stamps
         this (see openDecisionModal). This is the real onboarding date for
-        every farmer processed through the app going forward.
-     3. Fallback (enrolledMonth, then latest known activity) only so a green
-        farmer already in the system never silently drops out of the total
-        if somehow neither of the above is set.
+        every farmer DECIDED through the app going forward.
+     3. First field visit date — every farmer already green before decisionAt
+        tracking existed has NO decisionAt (confirmed live: 0 of 352 current
+        green farmers have it), so without this step they'd all collapse
+        onto step 4's enrolledMonth, which is a bulk-creation placeholder
+        that piles many unrelated farmers into the same month. First-visit
+        date is real, per-farmer, and well distributed — it's what the
+        original chart used before this redefinition.
+     4. Fallback (enrolledMonth, then latest known activity) only so a green
+        farmer with no visits either never silently drops out of the total.
    Financial Year = April to March (India), not calendar year. */
 function farmerOnboardYM(f){
   if(f.associationYear) return f.associationYear+'-06';
   if(f.decisionAt) return f.decisionAt.slice(0,7);
+  if(f.visits && f.visits.length){
+    const first=f.visits.map(v=>v.date).filter(Boolean).sort()[0];
+    if(first) return first.slice(0,7);
+  }
   if(f.enrolledMonth) return f.enrolledMonth;
   const ts=farmerLatestTs(f);
   return ts ? new Date(ts).toISOString().slice(0,7) : null;
@@ -6867,7 +6877,11 @@ function _ymRangeInclusive(minYM,maxYM){
    visited   = every farm visit recorded, in the month it happened
    Each month's value = total up to and including that month (never decreases). */
 function cumulativeData(){
-  const farmers=_excludeSeeds(DB.haatFarmers||[]);
+  // v85 — archived farmers are hidden from every other list/count in the app
+  // (haatStats() etc. all filter !x._archived); this chart hadn't been,
+  // which is why it still showed hundreds of "onboarded" farmers after
+  // most of the farmer base was archived.
+  const farmers=_excludeSeeds(DB.haatFarmers||[]).filter(f=>!f._archived);
   const newOnboarded={}, newVisits={};
   let minYM=null, maxYM=null;
   const bump=(map,ym)=>{

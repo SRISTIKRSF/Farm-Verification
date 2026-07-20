@@ -1517,25 +1517,31 @@ function cascadeGatedStatCards(sourceId){
 // lost scroll position and looked like the page jumping back to row 1.
 // Delete is now always shown (was hidden on a lone row) so a single card
 // never needs special-casing here.
-function buildStatCardHtml(q, i, savedRow){
-  const heading = '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-    + '<div style="position:relative;flex:1">'
-    + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;width:100%;font-family:inherit;box-sizing:border-box">'
-    + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
-    + '</div>'
-    + '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>'
+// v89 — one row per item: name + every field side by side, not stacked.
+// Column labels render once as a header (buildStatCardRowHeaderHtml) instead
+// of repeating inside every row.
+function buildStatCardRowCols(q){
+  return 'minmax(84px,1.5fr) ' + q.fields.map(function(){ return '1fr'; }).join(' ') + ' 20px';
+}
+function buildStatCardRowHeaderHtml(q){
+  const labels = [esc((q.itemLabel&&q.itemLabel.gu)||'નામ')].concat(q.fields.map(function(f){ return esc(f.gu); })).concat(['']);
+  return '<div style="display:grid;grid-template-columns:'+buildStatCardRowCols(q)+';gap:5px;margin-bottom:4px">'
+    + labels.map(function(l){ return '<div style="font-size:10px;color:var(--ink-soft);font-weight:600">'+l+'</div>'; }).join('')
     + '</div>';
-  const fieldsHtml = q.fields.map(f => {
+}
+function buildStatCardHtml(q, i, savedRow){
+  const itemCell = '<div style="position:relative">'
+    + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="width:100%;padding:6px 7px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:12.5px;font-weight:700;box-sizing:border-box">'
+    + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
+    + '</div>';
+  const fieldCells = q.fields.map(function(f){
     const val = savedRow ? (savedRow[f.key]||'') : '';
-    const isCropField = /crop/i.test(f.key);
-    return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block"><span class="tgu">'+esc(f.gu)+'</span><span class="ten">'+esc(f.en)+'</span></label>'
-      + '<div style="position:relative">'
-      + '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;box-sizing:border-box">'
-      + (isCropField ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
-      + '</div></div>';
+    return '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="'+f.key+'" value="'+esc(val)+'" style="width:100%;padding:6px 7px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:12.5px;box-sizing:border-box">';
   }).join('');
-  return '<div class="sc-card" data-scitem="" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
-    + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
+  return '<div class="sc-card" data-scitem="" style="display:grid;grid-template-columns:'+buildStatCardRowCols(q)+';gap:5px;align-items:center;margin-bottom:6px">'
+    + itemCell + fieldCells
+    + '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px;line-height:1" title="Remove">✕</button>'
+    + '</div>';
 }
 function rebuildStatAnswers(q, wrap, isFixed){
   const cards = [...wrap.querySelectorAll('.sc-card')];
@@ -1591,12 +1597,17 @@ function renderOneStatCards(q){
       return;
     }
     const rows = isFixed ? items.map(it => ({item: it})) : (saved.length ? saved : [{}]);
+    if(!isFixed){
+      // v89 — one row per item now (buildStatCardHtml), so the field labels
+      // that used to sit inside every row render once here instead.
+      wrap.innerHTML = buildStatCardRowHeaderHtml(q) + rows.map((r, i) => buildStatCardHtml(q, i, saved[i])).join('');
+    } else {
     wrap.innerHTML = rows.map((r, i) => {
-      const savedRow = isFixed ? saved.find(s => s.item === r.item) : saved[i];
+      const savedRow = saved.find(s => s.item === r.item);
       // Fixed single-field cards (e.g. "how many of each animal") read far
       // more naturally as one compact row — name in column 1, the count in
       // column 2 — than a name stacked above a full-width field.
-      if(isFixed && q.fields.length===1){
+      if(q.fields.length===1){
         const f = q.fields[0];
         const val = savedRow ? (savedRow[f.key]||'') : '';
         return '<div class="sc-card" data-scitem="'+esc(r.item)+'" style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:6px;background:#fbfbfd">'
@@ -1605,7 +1616,6 @@ function renderOneStatCards(q){
           + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+esc(r.item)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.gu)+'" style="width:100%;padding:6px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;text-align:center;box-sizing:border-box">'
           + '</div></div>';
       }
-      if(!isFixed) return buildStatCardHtml(q, i, savedRow);
       const heading = '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>';
       const fieldsHtml = q.fields.map(f => {
         const val = savedRow ? (savedRow[f.key]||'') : '';
@@ -1619,6 +1629,7 @@ function renderOneStatCards(q){
       return '<div class="sc-card" data-scitem="'+esc(r.item)+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
         + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
     }).join('');
+    }
     wrap.querySelectorAll('.sc-card').forEach(card => wireStatCard(q, wrap, isFixed, card));
     const addBtn = document.getElementById('scAdd_'+q.id);
     if(addBtn) addBtn.onclick = () => {
@@ -2915,7 +2926,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v88';
+const APP_VERSION = 'v89';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

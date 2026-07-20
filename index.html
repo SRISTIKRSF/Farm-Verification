@@ -2833,7 +2833,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v81';
+const APP_VERSION = 'v82';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15088,6 +15088,14 @@ const SRISTI_OFFICE_WHATSAPP = '919510386635';  // SRISTI office WhatsApp — ev
 // === PUBLIC LANDING ===
 function renderPublicLanding(){
   const v = $('#view');
+  // v81 — a farmer who arrived via a direct share link (/haat/, /conv/ →
+  // #haat/#conv) and then taps "back" or "Home" lands here. Showing the
+  // "Sristi Login" card to a farmer is confusing at best (they were never
+  // meant to see an internal login screen) — only show it when nothing in
+  // this session points back to a direct-link entry, i.e. real staff who
+  // opened the bare site URL. The hash still holds the original #haat/#conv
+  // (in-app back/home never changes it), so it's a reliable signal here.
+  const viaDirectLink = /^#(haat|apply|public_haat_form|conv|convert|public_conv_form)$/i.test(location.hash||'');
   v.innerHTML = `
     <div class="public-wrap">
       <div class="public-hero">
@@ -15100,7 +15108,7 @@ function renderPublicLanding(){
         <h1>સૃષ્ટિ ખેડૂત હાટ</h1>
         <div class="sub">પ્રાકૃતિક ખેતી કરો, યોગ્ય ભાવે વેચો. ગુજરાતના ખેડૂતો માટે — સૃષ્ટિ KRSF નો કાર્યક્રમ.</div>
       </div>
-      <div class="public-cards three">
+      <div class="public-cards${viaDirectLink?'':' three'}">
         <button class="public-card" data-action="haat">
           <div class="public-card-emoji">🛒</div>
           <div class="text-col">
@@ -15117,14 +15125,14 @@ function renderPublicLanding(){
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>
-        <button class="public-card login" data-action="login">
+        ${viaDirectLink?'':`<button class="public-card login" data-action="login">
           <div class="public-card-emoji">🔐</div>
           <div class="text-col">
             <h2>Sristi Login</h2>
             <p class="desc">તમારું ID અને Password નાખીને ડેશબોર્ડ ખોલો.</p>
           </div>
           <span class="cta">Sign in →</span>
-        </button>
+        </button>`}
       </div>
       <div class="public-foot">
         <div style="margin-bottom:18px;padding:14px 18px;background:#fff;border:1.5px solid #e7e9f0;border-radius:12px;display:inline-flex;align-items:center;gap:12px;font-family:'Hind Vadodara',sans-serif">

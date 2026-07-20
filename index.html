@@ -2804,7 +2804,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -11114,6 +11114,7 @@ function openHaatDrawer(id){
     ${f.status==='green'?`<button class="btn btn-ghost btn-sm" data-d="toggle">${svg(I.leaf,2.2)}Mark ${f.active?'inactive':'active'}</button>`:''}
     ${(f.enrollmentFormFull||f.verificationFormFull||f.enrollmentFormSubmittedAt||f.verificationFormSubmittedAt)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
     <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
+    <button class="btn btn-ghost btn-sm" id="drawerPdfBtn">${svg(I.download,2.2)}Download PDF</button>
   </div>`;
 
   // ============ ENROLLMENT FORM DATA — what the farmer filled in the long Gujarati patrak ============
@@ -11228,6 +11229,12 @@ function openHaatDrawer(id){
       else if(a==='toggle'){f.active=!f.active;await saveDB();closeDrawer();render();toast(f.active?'Marked active':'Marked inactive');}
     };
   });
+  const drawerPdfBtn = $('#drawerPdfBtn');
+  if(drawerPdfBtn) drawerPdfBtn.onclick = async () => {
+    let claims = f.enrollmentFormFull?.claims;
+    if(!claims){ try { await loadForms(id); claims = f.enrollmentFormFull?.claims; } catch(e) {} }
+    await downloadFarmerPdfOuter(f, claims, 'કિસાન નોંધણી પત્રક', drawerPdfBtn);
+  };
   openDrawer();
 }
 
@@ -11270,6 +11277,7 @@ function openConvDrawer(id){
     ${!f.fcId?`<button class="btn btn-primary btn-sm" data-d="assign">${svg(I.fc,2.2)}Assign FC</button>`:''}
     <button class="btn btn-ghost btn-sm" data-d="status">${svg(I.check,2.2)}Override stage</button>
     <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
+    <button class="btn btn-ghost btn-sm" id="drawerPdfBtnConv">${svg(I.download,2.2)}Download PDF</button>
   </div>`;
   // Legacy "Practice package adoption" grid (Land demarcation, Composting, etc.)
   // removed — the 100-mark framework above is the canonical scoring view now.
@@ -11368,6 +11376,12 @@ function openConvDrawer(id){
       else                 openFarmerModal('conv',id);
     };
   });
+  const drawerPdfBtnConv = $('#drawerPdfBtnConv');
+  if(drawerPdfBtnConv) drawerPdfBtnConv.onclick = async () => {
+    let claims = f.enrollmentFormFull?.claims;
+    if(!claims){ try { await loadForms(id); claims = f.enrollmentFormFull?.claims; } catch(e) {} }
+    await downloadFarmerPdfOuter(f, claims, 'કન્વર્ઝન નોંધણી પત્રક', drawerPdfBtnConv);
+  };
   openDrawer();
 }
 /* ============ MODAL CORE ============ */
@@ -14974,8 +14988,13 @@ function enterPublicMode(targetRoute){
     .pf-submit:disabled { background: #929fb5; cursor: not-allowed; }
     .pf-err { background: #fadfd9; color: #991b1b; padding: 11px 14px; border-radius: 8px; font-size: 13.5px; margin-bottom: 14px; }
 
-    /* Thank-you */
-    .pf-thanks { text-align: center; padding: 40px 20px; max-width: 580px; margin: 0 auto; }
+    /* Thank-you — v78: this used to render directly on the dark public-mode
+       photo background with dark text (no card), same as every other public
+       step, but unlike the landing hero (white text) or the form cards
+       (white background) neither treatment was applied here — dark text on
+       a dark photo, unreadable. Give it its own white card like the
+       application cards use. */
+    .pf-thanks { text-align: center; padding: 40px 20px; max-width: 580px; margin: 40px auto; background: #fff; border: 1.5px solid #e7e9f0; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
     .pf-thanks .check { width: 84px; height: 84px; background: #1c976a; color: #fff; border-radius: 50%; display: grid; place-items: center; font-size: 48px; margin: 0 auto 22px; }
     .pf-thanks h1 { font-size: 26px; font-weight: 800; color: #3d2419; margin: 0 0 8px; font-family: 'Hind Vadodara',sans-serif; }
     .pf-thanks .id { display: inline-block; background: #f5f6f9; border: 1px solid #e7e9f0; padding: 8px 16px; border-radius: 8px; font-size: 14px; color: #3d2419; margin: 14px 0; font-family: 'IBM Plex Mono',monospace; font-weight: 600; }
@@ -15675,6 +15694,107 @@ async function submitPublicForm(kind){
   }
 }
 
+// === PDF EXPORT (outer app) ===
+// v78 — the enrollment iframe (KISAN_FORM_HTML) already has its own PDF
+// button on ITS OWN success screen, but in public (farmer self-service)
+// mode that screen is force-closed 1.5s after submit (see the
+// kisan-haat-done handler above) — nowhere near enough time to notice the
+// button, read it, and tap it, let alone for html2pdf.js itself to finish
+// loading over a rural connection before the iframe gets destroyed out
+// from under it. Rather than touch that timer, this gives both the farmer
+// (on the stable, non-expiring public_thanks screen) and the FC/admin
+// (from the farmer's detail drawer, any time later) their own independent,
+// un-timed way to get a PDF.
+let _html2pdfLoadingOuter = null;
+function loadHtml2PdfOuter(){
+  if(window.html2pdf) return Promise.resolve();
+  if(_html2pdfLoadingOuter) return _html2pdfLoadingOuter;
+  _html2pdfLoadingOuter = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('html2pdf.js failed to load'));
+    document.head.appendChild(s);
+  });
+  return _html2pdfLoadingOuter;
+}
+function pdfFileNameOuter(base, suffix){
+  const clean = String(base||'Farmer').trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,60) || 'Farmer';
+  const d = new Date();
+  const stamp = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return clean + (suffix?'_'+suffix:'') + '_' + stamp + '.pdf';
+}
+// Builds from stored form claims ({id,gu,en,answer}) when available (richer,
+// matches what the farmer actually answered); falls back to the handful of
+// basic fields every farmer record has (name/village/land/crops/...) so the
+// button always produces something, even before claims have loaded/synced.
+function buildFarmerSummaryPdfHtml(f, claims, title){
+  let rowsHtml;
+  if(Array.isArray(claims) && claims.length){
+    rowsHtml = claims.map(c => {
+      const val = c.answer;
+      let displayVal;
+      if(val==null || val==='' || (Array.isArray(val) && !val.length)) displayVal = '<span style="color:#94a3b8;font-style:italic">— જવાબ નથી —</span>';
+      else if(Array.isArray(val)) displayVal = val.map(x => esc(typeof x==='object' && x ? Object.values(x).join(' — ') : String(x))).join(', ');
+      else displayVal = esc(String(val));
+      return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">'
+        + '<div style="flex:1;min-width:0;font-size:12px;font-weight:600;color:#2e1f16">'+esc(c.gu||c.id||'')+'</div>'
+        + '<div style="flex:1;min-width:0;font-size:12px;color:#2e1f16">'+displayVal+'</div>'
+        + '</div>';
+    }).join('');
+  } else {
+    const basicRows = [
+      ['નામ / Name', f.name],
+      ['ગામ / Village', f.village],
+      ['તાલુકો / Taluka', talukaDisplayName ? talukaDisplayName(f.taluka,f.district) : f.taluka],
+      ['જિલ્લો / District', f.district],
+      ['ફોન / Phone', f.phone||f.mobile],
+      ['જમીન (એકર) / Land (acres)', f.landAcres],
+      ['પાક / Crops', (f.crops||[]).length ? (f.crops||[]).map(c=>cropDisplayName?cropDisplayName(c):c).join(', ') : ''],
+    ];
+    if(f.yearsOrganic!=null) basicRows.push(['વર્ષ પ્રાકૃતિક ખેતી / Years organic', f.yearsOrganic]);
+    if(f.convertBigha!=null) basicRows.push(['કન્વર્ટ (વીઘા) / Convert (bigha)', f.convertBigha]);
+    if(f.notes) basicRows.push(['નોંધ / Notes', f.notes]);
+    rowsHtml = basicRows.filter(([,v]) => v!=null && v!=='').map(([label,v]) =>
+      '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">'
+      + '<div style="flex:1;min-width:0;font-size:12px;font-weight:600;color:#2e1f16">'+esc(label)+'</div>'
+      + '<div style="flex:1;min-width:0;font-size:12px;color:#2e1f16">'+esc(String(v))+'</div>'
+      + '</div>'
+    ).join('');
+  }
+  const d = new Date();
+  const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return '<div style="font-family:system-ui,sans-serif;width:760px;padding:24px;color:#2e1f16">'
+    + '<div style="text-align:center;margin-bottom:18px"><div style="font-size:18px;font-weight:700">'+esc(title)+'</div><div style="font-size:12px;color:#7a6a5c">સૃષ્ટિ પ્રાકૃતિક ખેડૂતહાટ</div></div>'
+    + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px"><b>'+esc(f.name||'—')+'</b> · '+esc(f.phone||f.mobile||'—')+'<br><span style="color:#7a6a5c">જમા તારીખ: '+dateStr+'</span></div>'
+    + (rowsHtml || '<div style="padding:20px;text-align:center;color:#94a3b8">No form data available.</div>')
+    + '</div>';
+}
+async function downloadFarmerPdfOuter(f, claims, title, btnEl){
+  const origLabel = btnEl ? btnEl.innerHTML : null;
+  if(btnEl){ btnEl.disabled = true; btnEl.innerHTML = '⏳ તૈયાર થાય છે…'; }
+  try {
+    await loadHtml2PdfOuter();
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0';
+    el.innerHTML = buildFarmerSummaryPdfHtml(f, claims, title);
+    document.body.appendChild(el);
+    await window.html2pdf().set({
+      filename: pdfFileNameOuter(f.name),
+      margin: 8,
+      image: {type:'jpeg', quality:0.92},
+      html2canvas: {scale:2, useCORS:true},
+      jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
+      pagebreak: {mode:['avoid-all','css','legacy']},
+    }).from(el).save();
+    el.remove();
+  } catch(e) {
+    toast('PDF બનાવવામાં ભૂલ — ફરી પ્રયત્ન કરો', 'error');
+  } finally {
+    if(btnEl){ btnEl.disabled = false; btnEl.innerHTML = origLabel; }
+  }
+}
+
 // === THANK YOU SCREEN ===
 // v9 process-fix #48 — pick an FC for this farmer by matching the FC's
 // district to the submission's district. Falls back to first FC with a phone,
@@ -15714,11 +15834,23 @@ function viewPublicThanks(){
         <span style="font-size:22px">💬</span>
         <span>WhatsApp પર ${esc(fcDisplayName)} ને Message કરો</span>
       </a>
+      <button type="button" id="pfPdfBtn" style="display:inline-flex;align-items:center;gap:7px;padding:12px 24px;background:var(--accent);color:#fff;border:none;border-radius:999px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin:4px 0 8px">📄 PDF ડાઉનલોડ કરો</button>
       <p style="font-size:12px;color:#929fb5;margin-top:4px">If you don't hear back within 7 days, use the WhatsApp button above to follow up.</p>
       <a href="#farmer" class="home-link" id="pfHome">← Home page પર પાછા જાઓ</a>
     </div>
   `;
   $('#pfHome').onclick = e => { e.preventDefault(); enterPublicMode('public_landing'); };
+  $('#pfPdfBtn').onclick = async () => {
+    const btn = $('#pfPdfBtn');
+    // Best-effort: the full form (claims) may already be on the record by
+    // now (kisan-haat-full lands within ~1.5s of submit too), or may still
+    // be mid-flight — either way this never blocks the download itself.
+    let claims = app.enrollmentFormFull?.claims;
+    if(!claims && app.id){
+      try { await loadForms(app.id); claims = app.enrollmentFormFull?.claims; } catch(e) {}
+    }
+    await downloadFarmerPdfOuter(app, claims, isHaat ? 'કિસાન નોંધણી પત્રક' : 'કન્વર્ઝન નોંધણી પત્રક', btn);
+  };
 }
 
 // === FORMS RECEIVED VIEW ===

@@ -1064,8 +1064,9 @@ body.lang-en .ten{display:inline}
     <h2>પત્રક સફળતાપૂર્વક જમા થયું!</h2>
     <p>તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</p>
     <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
-    <div style="margin-top:16px">
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button type="button" id="downloadPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px">📄 PDF ડાઉનલોડ કરો</button>
+      <button type="button" id="successContinueBtn" style="padding:12px 24px;background:none;border:1.5px solid var(--leaf);color:var(--leaf-dark);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">આગળ વધો →</button>
     </div>
   </div>
 </div>
@@ -1921,7 +1922,14 @@ function submit(){
   $('#actionsBar').style.display = 'none';
   $('#dotsWrap').style.display = 'none';
   $('#progressFill').style.width = '100%';
-  setTimeout(()=>{ if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done'}, '*'); }, 1500);
+  // v80 — this used to auto-close on a fixed 1.5s timer, racing the farmer's
+  // own tap on the PDF button above (and the async PDF generation it kicks
+  // off) — the timer routinely won, yanking the screen away before the
+  // download could happen. Now the farmer decides when to move on.
+  const _continueBtn = $('#successContinueBtn');
+  if(_continueBtn) _continueBtn.onclick = () => {
+    if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done'}, '*');
+  };
 }
 
 /* receive schema from parent */
@@ -2825,7 +2833,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v80';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};

@@ -175,6 +175,13 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .btn-sm{padding:5px 11px;font-size:11.5px;gap:5px}
 .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
 .btn-danger:hover{background:#fde0e0}
+/* v79 — icon-only delete buttons across the app (Haats & Markets row
+   delete, facilitator delete, photo delete, ...) used background:none +
+   a neutral border + just a red icon — invisible at rest, only readable
+   once you happened to hover. Same visible-at-rest treatment as
+   .btn-danger, sized for an icon-only control. */
+.btn-icon-danger{background:var(--red-bg);border:1px solid var(--red-line);border-radius:6px;padding:5px 7px;color:var(--red);cursor:pointer;transition:.13s;display:inline-flex;align-items:center}
+.btn-icon-danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .btn-excel{background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)}
 .btn-excel:hover{background:var(--panel-2)}
 
@@ -1279,10 +1286,18 @@ function downloadEnrollmentPdf(){
   btn.disabled = true;
   btn.innerHTML = '⏳ તૈયાર થાય છે…';
   loadHtml2Pdf().then(() => {
+    // v79 — position:fixed (and even position:absolute at extreme offsets)
+    // silently broke html2canvas's capture here: it would report a real
+    // element (correct width) but 0 height and produce a valid-looking,
+    // completely BLANK pdf — no error, nothing to see, just no content.
+    // A plain div in normal document flow, clipped by a height:0;
+    // overflow:hidden wrapper, captures correctly.
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'height:0;overflow:hidden';
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:-9999px;top:0';
     el.innerHTML = buildEnrollmentPdfHtml();
-    document.body.appendChild(el);
+    wrap.appendChild(el);
+    document.body.appendChild(wrap);
     return window.html2pdf().set({
       filename: pdfFileName(ANSWERS.farmer_name),
       margin: 8,
@@ -1290,7 +1305,7 @@ function downloadEnrollmentPdf(){
       html2canvas: {scale:2, useCORS:true},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['avoid-all','css','legacy']},
-    }).from(el).save().then(() => el.remove());
+    }).from(el).save().then(() => wrap.remove());
   }).catch(err => {
     toast('PDF બનાવવામાં ભૂલ — ફરી પ્રયત્ન કરો');
   }).finally(() => {
@@ -2252,10 +2267,16 @@ function downloadVerificationPdf(claims, summary){
   btn.disabled = true;
   btn.innerHTML = '⏳ Preparing…';
   loadHtml2Pdf().then(() => {
+    // See matching comment in the enrollment form's PDF handler —
+    // position:fixed broke html2canvas's capture here (0-height, blank PDF,
+    // no error). Normal document flow inside a height:0 clipping wrapper
+    // captures correctly.
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'height:0;overflow:hidden';
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:-9999px;top:0';
     el.innerHTML = buildVerificationPdfHtml(claims, summary);
-    document.body.appendChild(el);
+    wrap.appendChild(el);
+    document.body.appendChild(wrap);
     return window.html2pdf().set({
       filename: pdfFileName(FARMER.name, 'Verification'),
       margin: 8,
@@ -2263,7 +2284,7 @@ function downloadVerificationPdf(claims, summary){
       html2canvas: {scale:2, useCORS:true},
       jsPDF: {unit:'mm', format:'a4', orientation:'landscape'},
       pagebreak: {mode:['avoid-all','css','legacy']},
-    }).from(el).save().then(() => el.remove());
+    }).from(el).save().then(() => wrap.remove());
   }).catch(err => {
     toast('Could not build PDF — try again', 'error');
   }).finally(() => {
@@ -2804,7 +2825,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v78';
+const APP_VERSION = 'v79';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10266,7 +10287,7 @@ function viewFCs(){
     h+=`<div class="card" style="padding:16px 18px;position:relative">
       <div style="position:absolute;top:11px;right:11px;display:flex;gap:4px">
         <button class="btn-icon" data-edit-fc="${fc.id}" title="Edit facilitator" aria-label="Edit facilitator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);transition:.13s">${svg(I.edit,2)}</button>
-        <button class="btn-icon" data-del-fc="${fc.id}" title="Delete facilitator" aria-label="Delete facilitator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--red);transition:.13s">${svg(I.trash,2)}</button>
+        <button class="btn-icon-danger" data-del-fc="${fc.id}" title="Delete facilitator" aria-label="Delete facilitator">${svg(I.trash,2)}</button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-right:74px">
         <div class="fc-avatar" style="--accent:${ac}">${initials(fc.name)}</div>
@@ -12164,7 +12185,7 @@ function viewFieldCoordinators(){
         <td style="font-size:11.5px">${r.lastVisitAt?fmtDate(r.lastVisitAt):'<span style="color:var(--ink-faint);font-size:11px">No visits yet</span>'}</td>
         <td>
           <button class="btn-icon" data-edit-ffc="${fc.id}" title="Rename" aria-label="Rename field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);margin-right:3px">${svg(I.edit,2)}</button>
-          <button class="btn-icon" data-del-ffc="${fc.id}" title="Delete" aria-label="Delete field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--red)">${svg(I.trash,2)}</button>
+          <button class="btn-icon-danger" data-del-ffc="${fc.id}" title="Delete" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
         </td>
       </tr>`;
     });
@@ -12571,7 +12592,7 @@ function viewSettings(){
             + '<span style="color:var(--ink-faint);font-size:10.5px;font-weight:700;width:18px">' + (i+1) + '</span>'
             + '<input type="text" value="' + esc(p.label) + '" data-pfld="' + k + ':' + i + ':label" placeholder="English label" style="flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:5px;font-size:12.5px">'
             + '<input type="text" value="' + esc(p.gu||'') + '" data-pfld="' + k + ':' + i + ':gu" placeholder="ગુજરાતી" style="flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:5px;font-size:12.5px">'
-            + '<button class="btn-icon" data-pdel="' + k + ':' + i + '" aria-label="Delete photo" style="background:none;border:1px solid var(--line);border-radius:5px;padding:4px 6px;color:var(--red);cursor:pointer">' + svg(I.trash,2) + '</button>'
+            + '<button class="btn-icon-danger" data-pdel="' + k + ':' + i + '" aria-label="Delete photo" style="border-radius:5px;padding:4px 6px">' + svg(I.trash,2) + '</button>'
             + '</div>').join('')
         + '<button class="btn btn-ghost btn-sm" data-padd="' + k + '" style="align-self:flex-start;margin-top:4px">' + svg(I.plus,2.2) + 'Add practice</button>'
         + '</div></div>';
@@ -12713,7 +12734,7 @@ function viewSettings(){
       <div id="haatList">${getHaatList().map((haatObj,i)=>`<div class="row-line" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line-soft)">
         <span style="flex:1;font-weight:600">${esc(haatObj.name)}</span>
         <span style="font-size:11px;color:var(--ink-faint)">${DB.haatFarmers.filter(f=>f.haat===haatObj.name&&f.status==='green').length} farmer(s) assigned</span>
-        <button class="btn-icon" data-haat-del="${i}" aria-label="Delete haat entry" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--red)">${svg(I.trash,2)}</button>
+        <button class="btn-icon-danger" data-haat-del="${i}" aria-label="Delete haat entry">${svg(I.trash,2)}</button>
       </div>`).join('')||'<div style="padding:16px;color:var(--ink-faint);text-align:center">No haats yet</div>'}</div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <input id="newHaatName" placeholder="New haat name" style="flex:1;padding:8px 12px;border:1px solid var(--line-strong);border-radius:7px">
@@ -12761,7 +12782,7 @@ function viewSettings(){
         <td>${assigned}</td>
         <td>
           <button class="btn-icon" data-edit-fc="${fc.id}" aria-label="Edit field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--ink-soft);margin-right:3px">${svg(I.edit,2)}</button>
-          <button class="btn-icon" data-del-fc="${fc.id}" aria-label="Delete field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--red)">${svg(I.trash,2)}</button>
+          <button class="btn-icon-danger" data-del-fc="${fc.id}" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
         </td></tr>`;
     });
     h+=`</tbody></table></div>
@@ -13026,7 +13047,7 @@ function viewHaats(){
       <td>${dist}</td>
       <td>
         <button class="btn btn-ghost btn-sm" data-haat-edit="${esc(haat.name)}">${svg(I.edit,2)}</button>
-        <button class="btn btn-ghost btn-sm" data-haat-del="${esc(haat.name)}" style="color:var(--red)">${svg(I.trash,2)}</button>
+        <button class="btn-icon-danger" data-haat-del="${esc(haat.name)}" aria-label="Delete haat">${svg(I.trash,2)}</button>
       </td></tr>`;
   }
   // v68 — city filter applies to top-level haats + orphans; expanded
@@ -15775,10 +15796,19 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
   if(btnEl){ btnEl.disabled = true; btnEl.innerHTML = '⏳ તૈયાર થાય છે…'; }
   try {
     await loadHtml2PdfOuter();
+    // v79 — position:fixed silently broke html2canvas's capture: it read a
+    // real element (correct width) but 0 height, and produced a valid-
+    // looking, completely blank PDF — no error, nothing visibly wrong, just
+    // no content. Verified by comparing output byte size against a
+    // deliberately-empty element: identical size either way with
+    // position:fixed; a real, content-sized PDF once switched to a plain
+    // div in normal document flow, clipped by a height:0 wrapper.
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'height:0;overflow:hidden';
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:-9999px;top:0';
     el.innerHTML = buildFarmerSummaryPdfHtml(f, claims, title);
-    document.body.appendChild(el);
+    wrap.appendChild(el);
+    document.body.appendChild(wrap);
     await window.html2pdf().set({
       filename: pdfFileNameOuter(f.name),
       margin: 8,
@@ -15787,7 +15817,7 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['avoid-all','css','legacy']},
     }).from(el).save();
-    el.remove();
+    wrap.remove();
   } catch(e) {
     toast('PDF બનાવવામાં ભૂલ — ફરી પ્રયત્ન કરો', 'error');
   } finally {

@@ -1510,6 +1510,71 @@ function cascadeGatedStatCards(sourceId){
   // livestock_counts) so they update live as the gating question is typed in.
   QUESTIONS.filter(dq => dq.type==='stat_cards' && dq.gateBy===sourceId).forEach(renderOneStatCards);
 }
+// v88 — builds ONE non-fixed card's HTML (crop rows, plot rows, product
+// rows). Pulled out of renderOneStatCards() so addBtn.onclick can append a
+// single new card instead of rebuilding the whole list — the full rebuild
+// was destroying and recreating every existing input on each add, which
+// lost scroll position and looked like the page jumping back to row 1.
+// Delete is now always shown (was hidden on a lone row) so a single card
+// never needs special-casing here.
+function buildStatCardHtml(q, i, savedRow){
+  const heading = '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+    + '<div style="position:relative;flex:1">'
+    + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;width:100%;font-family:inherit;box-sizing:border-box">'
+    + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
+    + '</div>'
+    + '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>'
+    + '</div>';
+  const fieldsHtml = q.fields.map(f => {
+    const val = savedRow ? (savedRow[f.key]||'') : '';
+    const isCropField = /crop/i.test(f.key);
+    return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block"><span class="tgu">'+esc(f.gu)+'</span><span class="ten">'+esc(f.en)+'</span></label>'
+      + '<div style="position:relative">'
+      + '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;box-sizing:border-box">'
+      + (isCropField ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
+      + '</div></div>';
+  }).join('');
+  return '<div class="sc-card" data-scitem="" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
+    + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
+}
+function rebuildStatAnswers(q, wrap, isFixed){
+  const cards = [...wrap.querySelectorAll('.sc-card')];
+  const rendered = cards.map(card => {
+    // Fixed rows (e.g. animal species) have no editable "item" input — the
+    // species name lives on the card itself and must be seeded here, else
+    // a saved row has no way to say which species the numbers belong to.
+    const rec = card.dataset.scitem ? {item: card.dataset.scitem} : {};
+    card.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { rec[inp.dataset.sck] = inp.value; });
+    return rec;
+  }).filter(r => isFixed ? Object.keys(r).some(k => k!=='item' && r[k]) : (r.item && r.item.trim()));
+  if(isFixed && q.gateBy){
+    // Rows hidden by the gate (count dropped to 0) aren't in "rendered" —
+    // keep their previously-saved data so toggling the count back doesn't
+    // wipe details the farmer already filled in.
+    const renderedItems = new Set(rendered.map(r => r.item));
+    const preserved = (ANSWERS[q.id]||[]).filter(r => !renderedItems.has(r.item));
+    ANSWERS[q.id] = [...preserved, ...rendered];
+  } else {
+    ANSWERS[q.id] = rendered;
+  }
+  scheduleDraftSave();
+  cascadeGatedStatCards(q.id);
+}
+function wireStatCard(q, wrap, isFixed, card){
+  card.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => {
+    inp.oninput = () => rebuildStatAnswers(q, wrap, isFixed);
+    wireCropSearchInput(inp);
+  });
+  const delBtn = card.querySelector('.sc-del');
+  if(delBtn) delBtn.onclick = () => {
+    const idx = +delBtn.dataset.scdel;
+    const cur = (ANSWERS[q.id]||[]).slice();
+    cur.splice(idx, 1);
+    ANSWERS[q.id] = cur;
+    renderOneStatCards(q);
+    scheduleDraftSave();
+  };
+}
 function renderOneStatCards(q){
     const wrap = document.querySelector('[data-scwrap="'+q.id+'"]');
     if(!wrap) return;
@@ -1540,62 +1605,21 @@ function renderOneStatCards(q){
           + '<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+esc(r.item)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.gu)+'" style="width:100%;padding:6px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;text-align:center;box-sizing:border-box">'
           + '</div></div>';
       }
-      const heading = isFixed
-        ? '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>'
-        : '<div class="sc-card-h" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-          + '<div style="position:relative;flex:1">'
-          + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="font-weight:700;font-size:13.5px;border:1.5px solid var(--line-strong);border-radius:7px;padding:6px 9px;width:100%;font-family:inherit;box-sizing:border-box">'
-          + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
-          + '</div>'
-          + (rows.length>1 ? '<button type="button" class="sc-del" data-scdel="'+i+'" style="border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 4px" title="Remove">✕</button>' : '')
-          + '</div>';
+      if(!isFixed) return buildStatCardHtml(q, i, savedRow);
+      const heading = '<div class="sc-card-h" style="font-weight:700;font-size:13.5px;margin-bottom:6px">'+esc(r.item)+'</div>';
       const fieldsHtml = q.fields.map(f => {
         const val = savedRow ? (savedRow[f.key]||'') : '';
-        // Crop-name fields (monsoonCrop/winterCrop/summerCrop) get the same
-        // searchable suggestion dropdown as the item-name field above.
         const isCropField = /crop/i.test(f.key);
         return '<div class="sc-fld"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block"><span class="tgu">'+esc(f.gu)+'</span><span class="ten">'+esc(f.en)+'</span></label>'
           + '<div style="position:relative">'
-          + '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+(isFixed?esc(r.item):i)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;box-sizing:border-box">'
+          + '<input type="'+(f.type==='number'?'number':'text')+'" autocomplete="off"'+(f.type==='number'?' inputmode="numeric"':'')+' data-sc="'+q.id+'" data-scidx="'+esc(r.item)+'" data-sck="'+f.key+'" value="'+esc(val)+'" placeholder="'+esc(f.en)+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:13.5px;box-sizing:border-box">'
           + (isCropField ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
           + '</div></div>';
       }).join('');
-      return '<div class="sc-card" data-scitem="'+(isFixed?esc(r.item):'')+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
+      return '<div class="sc-card" data-scitem="'+esc(r.item)+'" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfbfd">'
         + heading + '<div class="sc-fields" style="display:grid;grid-template-columns:'+(q.fields.length===1?'1fr':'1fr 1fr')+';gap:6px">' + fieldsHtml + '</div></div>';
     }).join('');
-    const rebuild = () => {
-      const cards = [...wrap.querySelectorAll('.sc-card')];
-      const rendered = cards.map(card => {
-        // Fixed rows (e.g. animal species) have no editable "item" input — the
-        // species name lives on the card itself and must be seeded here, else
-        // a saved row has no way to say which species the numbers belong to.
-        const rec = card.dataset.scitem ? {item: card.dataset.scitem} : {};
-        card.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { rec[inp.dataset.sck] = inp.value; });
-        return rec;
-      }).filter(r => isFixed ? Object.keys(r).some(k => k!=='item' && r[k]) : (r.item && r.item.trim()));
-      if(isFixed && q.gateBy){
-        // Rows hidden by the gate (count dropped to 0) aren't in "rendered" —
-        // keep their previously-saved data so toggling the count back doesn't
-        // wipe details the farmer already filled in.
-        const renderedItems = new Set(rendered.map(r => r.item));
-        const preserved = (ANSWERS[q.id]||[]).filter(r => !renderedItems.has(r.item));
-        ANSWERS[q.id] = [...preserved, ...rendered];
-      } else {
-        ANSWERS[q.id] = rendered;
-      }
-      scheduleDraftSave();
-      cascadeGatedStatCards(q.id);
-    };
-    wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(inp => { inp.oninput = rebuild; });
-    wrap.querySelectorAll('[data-sc="'+q.id+'"]').forEach(wireCropSearchInput);
-    wrap.querySelectorAll('.sc-del').forEach(btn => btn.onclick = () => {
-      const idx = +btn.dataset.scdel;
-      const cur = (ANSWERS[q.id]||[]).slice();
-      cur.splice(idx, 1);
-      ANSWERS[q.id] = cur;
-      renderOneStatCards(q);
-      scheduleDraftSave();
-    });
+    wrap.querySelectorAll('.sc-card').forEach(card => wireStatCard(q, wrap, isFixed, card));
     const addBtn = document.getElementById('scAdd_'+q.id);
     if(addBtn) addBtn.onclick = () => {
       const cur = ANSWERS[q.id] || [];
@@ -1603,9 +1627,18 @@ function renderOneStatCards(q){
       // capping every addable stat_cards question that forgot to set one,
       // and — the real bug report — major_crops_table at a hardcoded 5).
       if(q.maxRows && cur.length >= q.maxRows) return;
+      const i = cur.length;
       ANSWERS[q.id] = [...cur, {}];
-      renderOneStatCards(q);
+      // v88 — append just the new card instead of calling renderOneStatCards()
+      // (full rebuild), which is what was destroying every already-filled
+      // row's DOM node and losing scroll position on every add.
+      wrap.insertAdjacentHTML('beforeend', buildStatCardHtml(q, i, null));
+      const newCard = wrap.lastElementChild;
+      wireStatCard(q, wrap, false, newCard);
       scheduleDraftSave();
+      const nameInput = newCard.querySelector('[data-sck="item"]');
+      if(nameInput) nameInput.focus({preventScroll:true});
+      newCard.scrollIntoView({block:'center', behavior:'smooth'});
     };
 }
 
@@ -1805,6 +1838,10 @@ $('#nextBtn').onclick = () => {
     if(!curEl.querySelector('[data-q="'+q.id+'"]')) return false;
     if(q.type==='address_cascade'||q.type==='composite_address') return !(ANSWERS.district&&ANSWERS.taluka&&ANSWERS.village);
     if(q.type==='crops_table') return !CROP_ROWS.some(r=>r.name);
+    // v88 — same fix as submit()'s validation: a photo answer lives in
+    // PHOTOS[q.id], not ANSWERS[q.id], so this always blocked "Next" on a
+    // section with a required photo even after a real photo was attached.
+    if(q.type==='photo') return !(PHOTOS[q.id] && PHOTOS[q.id].length);
     return !ANSWERS[q.id];
   });
   if(curMissing.length){
@@ -1853,6 +1890,15 @@ function submit(){
     }
     if(q.type === 'crops_table'){
       return !CROP_ROWS.some(r => r.name);
+    }
+    // v88 — photo answers live in PHOTOS[q.id], never in ANSWERS[q.id] (see
+    // the photo-grid upload wiring). A required photo question fell through
+    // to the generic ANSWERS check below, which is always empty for a
+    // photo question, so it was permanently flagged missing even with a
+    // real photo attached — blocking submission entirely for anyone
+    // answering "yes" to a photo-gated question (soil test, FASSAI cert).
+    if(q.type === 'photo'){
+      return !(PHOTOS[q.id] && PHOTOS[q.id].length);
     }
     return !ANSWERS[q.id];
   });
@@ -2869,7 +2915,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v88';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5020,11 +5066,16 @@ window.QUESTIONS_V5 = [
     // field (rather than setting a big number) is the buildStatCards() /
     // reconcileCoreQuestionsV5() convention for "unlimited" on this type.
     addable:true, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop'}, itemIsCrop:true,
+    // v88 — dropped per-crop income (moved to farming_total_income, one
+    // combined figure below this question instead of per crop). Production
+    // is now numeric with units in the label so both fields get a numeric
+    // keyboard on mobile (buildStatCards() adds inputmode=numeric whenever
+    // field.type is number).
     fields:[
-      {key:'area',       gu:'એકર',                     en:'Area (acre)',        type:'number'},
-      {key:'production', gu:'અંદાજિત ઉત્પાદન',         en:'Approx. production', type:'text'},
-      {key:'income',     gu:'અંદાજિત આવક ₹',           en:'Approx. income (₹)', type:'number'},
+      {key:'area',       gu:'એકર',                        en:'Area (acre)',            type:'number'},
+      {key:'production', gu:'અંદાજિત ઉત્પાદન (kg)',       en:'Approx. production (kg)', type:'number'},
     ], askedOf:'both'},
+  {id:'farming_total_income', cat:'farm', gu:'ખેતીમાંથી અંદાજિત કુલ આવક ₹', en:'Estimated total income from farming (₹)', type:'number', askedOf:'both'},
   {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', type:'number', askedOf:'both'},
   {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
   {id:'farming_who',      cat:'farm', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], askedOf:'both'},
@@ -5173,7 +5224,7 @@ window.QUESTIONS_V5 = [
    dedup, etc.) — the Question Manager lets you edit their text/options/
    required flag/section but not delete them or change their id.
    ============================================================= */
-window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table','major_crops_table'];
+window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table','major_crops_table','farming_total_income'];
 window.DEFAULT_CATEGORIES_V5 = JSON.parse(JSON.stringify(window.CATEGORIES_V5));
 window.DEFAULT_QUESTIONS_V5  = JSON.parse(JSON.stringify(window.QUESTIONS_V5));
 const QSCHEMA_KEY_V5 = 'krsf_question_schema_v5';

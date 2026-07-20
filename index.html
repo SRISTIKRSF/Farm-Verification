@@ -180,7 +180,7 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
    a neutral border + just a red icon — invisible at rest, only readable
    once you happened to hover. Same visible-at-rest treatment as
    .btn-danger, sized for an icon-only control. */
-.btn-icon-danger{background:var(--red-bg);border:1px solid var(--red-line);border-radius:6px;padding:5px 7px;color:var(--red);cursor:pointer;transition:.13s;display:inline-flex;align-items:center}
+.btn-icon-danger{background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--red);cursor:pointer;transition:.13s;display:inline-flex;align-items:center}
 .btn-icon-danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
 .btn-excel{background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)}
 .btn-excel:hover{background:var(--panel-2)}
@@ -2833,9 +2833,9 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v80';
+const APP_VERSION = 'v81';
 const STORE_KEY='sristi_haat_v2_real';
-let DB=null, ROUTE='dashboard', SORT={col:'name',dir:1};
+let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
 
 /* ---------- FIREBASE CONFIG ----------
@@ -6801,6 +6801,9 @@ function convStats(){
     chemFlag, firstVisitDue, overdue, readyToAdopt,
     dropped:f.filter(x=>x.transitionStatus==='dropped').length,
     pendingVisits:f.filter(x=>x.transitionStatus!=='dropped').length,
+    // v80 — question 3 "Organic Commitment" at intake: willingChemFree==='no'
+    // means the farmer said they're not ready to go chem-free right now.
+    notInterested:f.filter(x=>x.intake && x.intake.willingChemFree==='no').length,
   };
 }
 /* monthly form counts (haat) */
@@ -8047,7 +8050,7 @@ function journeyBoxesHtml(hs, mode, activeStatus){
    score bands (there's no admin-approval gate here, unlike Haat's journey
    bar above). Used only on the Conversion Farmers list page (filter-toggle
    clicks via data-box, matching that page's existing F.status logic). */
-function convFunnelHtml(cs, activeStatus){
+function convFunnelHtml(cs, activeStatus, notInterestedOn){
   const on = k => (activeStatus||'')===k;
   let h = '<div class="conv-wrap"><div class="conv-flow">';
   h += `<button class="conv-step jstep${on('')?' active':''}" data-box="" data-tip="કન્વર્ઝન પ્રોગ્રામમાં જોડાવા માટે કુલ આટલી અરજી આવી છે.">
@@ -8084,6 +8087,20 @@ function convFunnelHtml(cs, activeStatus){
   h += '</div></div>';
   h += '<div class="conv-note">ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.</div>';
   h += '</div>';
+  // v80 — "Organic Commitment" (question 3 at intake) is a separate axis from
+  // the score bands above (that's adoption progress; this is willingness at
+  // signup). Farmers who answered "Not yet" get surfaced here so admin can
+  // see how many aren't ready to convert, independent of where they land
+  // on the score funnel.
+  if(cs.notInterested){
+    h += `<button class="conv-pointer" data-notinterested="1" style="border-left-color:var(--red)${notInterestedOn?';box-shadow:var(--sh-2)':''}">
+      <div>
+        <div class="cp-main">⚠ ${cs.notInterested} farmer${cs.notInterested===1?'':'s'} not interested in converting</div>
+        <div class="cp-sub">Answered "Not yet" to organic commitment at intake</div>
+      </div>
+      <span class="cp-cta">${notInterestedOn?'Showing — clear ✕':'View list →'}</span>
+    </button>`;
+  }
   return h;
 }
 /* Small dashboard "peek" card — the full conversion funnel lives on the
@@ -9080,7 +9097,7 @@ function viewConversion(){
   const cs=convStats();
   const F=FILTERS.conv;
   if(!F.dateRange) F.dateRange={preset:'all',from:'',to:''};
-  let h=convFunnelHtml(cs,F.status);
+  let h=convFunnelHtml(cs,F.status,F.notInterested);
   h+=dateRangePillsHtml(F.dateRange);
   const convDistricts=[...new Set(DB.convFarmers.map(x=>x.district).filter(Boolean))].sort();
   h+=`<div class="toolbar">
@@ -9101,6 +9118,7 @@ function viewConversion(){
   // archive: hide archived unless "Show archived" is on (then show ONLY archived)
   rows = rows.filter(r => ARCH_SHOW.conv ? r._archived : !r._archived);
   if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
+  if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>r.district===F.district);
   if(F.fc==='__none__') rows=rows.filter(r=>!r.fcId);
@@ -9184,6 +9202,8 @@ function viewConversion(){
   v.querySelectorAll('.conv-step[data-box],.score-card[data-box]').forEach(b=>{
     b.onclick=()=>{const k=b.dataset.box;F.status=(F.status||'')===k?'':k;F.page=0;render();};
   });
+  const notInterestedBtn = v.querySelector('[data-notinterested]');
+  if(notInterestedBtn) notInterestedBtn.onclick = () => { F.notInterested = !F.notInterested; F.page=0; render(); };
   v.querySelectorAll('thead th[data-sort]').forEach(t=>t.onclick=()=>{
     const c=t.dataset.sort;if(SORT.col===c)SORT.dir*=-1;else{SORT.col=c;SORT.dir=1;}F.page=0;render();});
   v.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=e=>{
@@ -12958,15 +12978,21 @@ function viewSettings(){
    Centralised so all three new tabs read the same shape.
    ============================================================ */
 function normHaat(h){
-  // Accepts either a legacy string or the new {name, parent, lat, lng, weekday, type, city} object.
-  if(typeof h === 'string') return { id:h, name:h, parent:'', lat:null, lng:null, weekday:'', type:'', city:'' };
+  // Accepts either a legacy string or the new {name, parent, lat, lng, weekday, weekdays, type, city} object.
+  if(typeof h === 'string') return { id:h, name:h, parent:'', lat:null, lng:null, weekday:'', weekdays:[], type:'', city:'' };
+  // v80 — a haat can run on multiple days a week (e.g. Anand Haat = Wed + Sat),
+  // so the single `weekday` string became a `weekdays` array. Old records only
+  // have `weekday`; migrate them into a 1-item array on read. `weekday` is kept
+  // in sync (first day) for any other reader that hasn't been updated.
+  const weekdays = Array.isArray(h.weekdays) && h.weekdays.length ? h.weekdays.slice() : (h.weekday ? [h.weekday] : []);
   return {
     id:    h.id || h.name || '',
     name:  h.name || h.id || '',
     parent: h.parent || '',
     lat:   (h.lat != null && h.lat !== '') ? +h.lat : null,
     lng:   (h.lng != null && h.lng !== '') ? +h.lng : null,
-    weekday: h.weekday || '',
+    weekday: weekdays[0] || '',
+    weekdays,
     type:  h.type || '',
     city:  h.city || '',
   };
@@ -13048,7 +13074,7 @@ function viewHaats(){
       <td style="padding-left:${10+indent*16}px">${caret}</td>
       <td><b>${esc(haat.name)}</b>${kids.length?` <span style="color:var(--ink-faint);font-size:10.5px">(${kids.length} sub)</span>`:''}</td>
       <td style="font-size:11.5px;color:var(--ink-soft)">${esc(haat.city||'—')}</td>
-      <td style="font-size:11.5px;color:var(--ink-soft)">${esc(haat.weekday||'—')}</td>
+      <td style="font-size:11.5px;color:var(--ink-soft)">${esc((haat.weekdays&&haat.weekdays.length)?haat.weekdays.join(', '):'—')}</td>
       <td>${gps}</td>
       <td style="text-align:right;font-weight:600">${s.fr.length}</td>
       <td style="text-align:right">${s.active}</td>
@@ -13092,17 +13118,16 @@ function viewHaats(){
   });
   $('#haatAdd').onclick = () => openHaatEditModal(null);
 }
+const HAAT_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function openHaatEditModal(name){
   const haat = name ? getHaatByName(name) : null;
-  const existing = haat || { name:'', parent:'', lat:'', lng:'', weekday:'', type:'', city:'' };
+  const existing = haat || { name:'', parent:'', lat:'', lng:'', weekday:'', weekdays:[], type:'', city:'' };
   const parentOpts = ['', ...getHaatList().filter(h => !h.parent && h.name !== name).map(h => h.name)];
-  const weekdayOpts = ['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const body = `${fld('Haat name', `<input id="haatName" value="${esc(existing.name)}" placeholder="e.g. Drive-In Haat">`, true)}
-  <div class="field-row">
-    ${fld('City', `<input id="haatCity" value="${esc(existing.city||'')}" placeholder="e.g. Ahmedabad" list="haatCityList">`)}
-    ${fld('Day of haat', sel('haatDay', weekdayOpts.map(d => [d, d || '— Pick day —']), existing.weekday))}
-  </div>
+  ${fld('City', `<input id="haatCity" value="${esc(existing.city||'')}" placeholder="e.g. Ahmedabad" list="haatCityList">`)}
   <datalist id="haatCityList">${[...new Set(getHaatList().map(h=>h.city).filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+  ${fld('Day(s) of haat', `<div id="haatDays" style="display:flex;flex-wrap:wrap;gap:6px">${HAAT_WEEKDAYS.map(d=>
+    `<button type="button" class="chip${(existing.weekdays||[]).includes(d)?' on':''}" data-day="${d}">${d}</button>`).join('')}</div>`)}
   ${fld('Parent haat (leave blank for top-level)', sel('haatParent', parentOpts.map(p => [p, p || '— Top-level —']), existing.parent))}
   <div class="field-row">
     ${fld('Latitude', `<input id="haatLat" type="number" step="0.0001" value="${existing.lat==null?'':existing.lat}" placeholder="e.g. 23.0225">`)}
@@ -13112,15 +13137,18 @@ function openHaatEditModal(name){
   modalShell(name ? 'Edit haat — ' + esc(name) : 'Add haat', body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="haatSave">${svg(I.check)}Save</button>`);
+  $('#haatDays').querySelectorAll('[data-day]').forEach(b => b.onclick = () => b.classList.toggle('on'));
   $('#haatSave').onclick = async () => {
     const newName = $('#haatName').value.trim();
     if(!newName){ toast('Name is required'); return; }
+    const weekdays = HAAT_WEEKDAYS.filter(d => $('#haatDays').querySelector(`[data-day="${d}"]`).classList.contains('on'));
     const rec = {
       id: newName, name: newName,
       parent: $('#haatParent').value || '',
       lat: $('#haatLat').value ? +$('#haatLat').value : null,
       lng: $('#haatLng').value ? +$('#haatLng').value : null,
-      weekday: $('#haatDay').value || '',
+      weekday: weekdays[0] || '',
+      weekdays,
       city: $('#haatCity').value.trim(),
     };
     // Replace or append. We persist as objects from now on.
@@ -13197,7 +13225,7 @@ function viewFarmMap(){
     haats.forEach(haat => {
       if(haat.lat == null || haat.lng == null) return;
       const m = L.circleMarker([haat.lat, haat.lng], {radius:9, color:'#1e40af', fillColor:'#3b82f6', fillOpacity:.95, weight:2}).addTo(map);
-      m.bindPopup(`<b>🛒 ${esc(haat.name)}</b><br>${esc(haat.weekday||'')}<br><i>${DB.haatFarmers.filter(f=>f.haat===haat.name).length} farmers</i>`);
+      m.bindPopup(`<b>🛒 ${esc(haat.name)}</b><br>${esc((haat.weekdays||[]).join(', '))}<br><i>${DB.haatFarmers.filter(f=>f.haat===haat.name).length} farmers</i>`);
     });
     // Fit to plotted points if any.
     const allLayers = [];

@@ -2991,7 +2991,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16769,6 +16769,15 @@ window.addEventListener('hashchange', () => {
       loadDB()
         .then(startBackgroundPumps)   // pumps start once Firebase init resolves
         .catch(e => console.warn('[Sristi] Background DB load failed:', e));
+      // v91 — a fresh/bookmarked #admin or #fc link with no session yet lands
+      // in PUBLIC_MODE (detectPublicMode() requires an existing session to
+      // grant admin mode) and used to dead-end on the public landing, since
+      // the only way into the login modal was the "Sristi Login" card — now
+      // removed from the farmer-facing landing. Open it directly instead.
+      const h = (location.hash||'').toLowerCase();
+      if((h === '#admin' || h === '#fc') && typeof openLoginModal === 'function'){
+        setTimeout(() => openLoginModal(), 60);
+      }
     } else {
       // Admin/FC mode — need data before showing anything.
       await loadDB();

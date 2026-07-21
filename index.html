@@ -1030,8 +1030,11 @@ body{background:linear-gradient(180deg,#f8f1e9 0, var(--bg) 210px);padding-botto
 .langbar label input{position:absolute;opacity:0;width:0;height:0}
 .langbar label.on{border-color:var(--leaf);background:var(--leaf);color:#fff}
 .ten{display:none}
+.thi{display:none}
 body.lang-en .tgu{display:none}
 body.lang-en .ten{display:inline}
+body.lang-hi .tgu{display:none}
+body.lang-hi .thi{display:inline}
 .crop-dd-opt:hover{background:var(--leaf-light)}
 </style>
 </head>
@@ -1049,32 +1052,33 @@ body.lang-en .ten{display:inline}
 
 <div class="langbar" id="langBar">
   <label class="on" data-v="gu"><input type="radio" name="uiLang" value="gu" checked>ગુજરાતી</label>
+  <label data-v="hi"><input type="radio" name="uiLang" value="hi">हिंदी</label>
   <label data-v="en"><input type="radio" name="uiLang" value="en">English</label>
 </div>
 
 <div id="draftBanner" style="display:none;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="flex:1">અધૂરી Entry મળી. ચાલુ રાખવી? (Unsaved entry found. Continue where you left off?)</span>
-  <button type="button" onclick="restoreDraft();document.getElementById('draftBanner').style.display='none';buildSections();" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">Restore</button>
-  <button type="button" onclick="clearDraft();document.getElementById('draftBanner').style.display='none';" style="background:none;border:1px solid #d97706;border-radius:6px;padding:6px 14px;font-size:12px;color:#92400e;cursor:pointer">Start fresh</button>
+  <span style="flex:1"><span class="tgu">અધૂરી Entry મળી. ચાલુ રાખવી?</span><span class="thi">अधूरी एंट्री मिली. जारी रखें?</span><span class="ten">Unsaved entry found. Continue where you left off?</span></span>
+  <button type="button" onclick="restoreDraft();document.getElementById('draftBanner').style.display='none';buildSections();" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer"><span class="tgu">ચાલુ રાખો</span><span class="thi">जारी रखें</span><span class="ten">Restore</span></button>
+  <button type="button" onclick="clearDraft();document.getElementById('draftBanner').style.display='none';" style="background:none;border:1px solid #d97706;border-radius:6px;padding:6px 14px;font-size:12px;color:#92400e;cursor:pointer"><span class="tgu">નવેસરથી શરૂ કરો</span><span class="thi">नए सिरे से शुरू करें</span><span class="ten">Start fresh</span></button>
 </div>
 <div class="wrap" id="formWrap">
   <div id="sections"></div>
   <div class="success" id="successScreen">
     <div class="ico">✓</div>
-    <h2>પત્રક સફળતાપૂર્વક જમા થયું!</h2>
-    <p>તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</p>
+    <h2><span class="tgu">પત્રક સફળતાપૂર્વક જમા થયું!</span><span class="thi">फॉर्म सफलतापूर्वक जमा हुआ!</span><span class="ten">Form submitted successfully!</span></h2>
+    <p><span class="tgu">તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</span><span class="thi">आपकी नोंधणी स्वीकार हो गई है। FC जल्द ही आपके खेत की मुलाकात के लिए संपर्क करेंगे।</span><span class="ten">Your enrolment has been received. An FC will contact you soon to visit your farm.</span></p>
     <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
     <p id="photoUploadStatus" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-top:10px"></p>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-      <button type="button" id="downloadPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px">📄 PDF ડાઉનલોડ કરો</button>
-      <button type="button" id="successContinueBtn" style="padding:12px 24px;background:none;border:1.5px solid var(--leaf);color:var(--leaf-dark);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">આગળ વધો →</button>
+      <button type="button" id="downloadPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px">📄 <span class="tgu">PDF ડાઉનલોડ કરો</span><span class="thi">PDF डाउनलोड करें</span><span class="ten">Download PDF</span></button>
+      <button type="button" id="successContinueBtn" style="padding:12px 24px;background:none;border:1.5px solid var(--leaf);color:var(--leaf-dark);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit"><span class="tgu">આગળ વધો →</span><span class="thi">आगे बढ़ें →</span><span class="ten">Continue →</span></button>
     </div>
   </div>
 </div>
 
 <div class="actions" id="actionsBar">
-  <button class="btn btn-secondary" id="prevBtn" disabled>← પાછળ</button>
-  <button class="btn btn-primary" id="nextBtn">આગળ →</button>
+  <button class="btn btn-secondary" id="prevBtn" disabled>← <span class="tgu">પાછળ</span><span class="thi">पीछे</span><span class="ten">Back</span></button>
+  <button class="btn btn-primary" id="nextBtn"><span class="tgu">આગળ</span><span class="thi">आगे</span><span class="ten">Next</span> →</button>
 </div>
 
 <datalist id="talukaList">
@@ -1154,9 +1158,27 @@ let LANG = 'gu';
   bar.querySelectorAll('input[name="uiLang"]').forEach(r => r.onchange = () => {
     LANG = r.value;
     document.body.classList.toggle('lang-en', LANG === 'en');
+    document.body.classList.toggle('lang-hi', LANG === 'hi');
     bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
+    // stat_cards row headers/placeholders/add-buttons are computed from LANG
+    // at build time via langText() (three languages made a static per-row
+    // .tgu/.thi/.ten span too repetitive) — re-render so they don't stay
+    // stuck in whichever language was active when the section first opened.
+    // ANSWERS[q.id] already has anything typed so far, so nothing is lost.
+    if(typeof buildStatCards === 'function') buildStatCards();
+    if(typeof refreshStatCardAddButtons === 'function') refreshStatCardAddButtons();
   });
 })();
+// Picks the right-language string off a {gu,en,hi} object (question, field,
+// itemLabel, ...), falling back to Gujarati if a translation is missing —
+// used anywhere text isn't baked in as static .tgu/.thi/.ten spans (e.g.
+// stat_cards row headers, built dynamically per LANG rather than in HTML).
+function langText(obj){
+  if(!obj) return '';
+  if(LANG==='hi') return obj.hi || obj.gu || obj.en || '';
+  if(LANG==='en') return obj.en || obj.gu || '';
+  return obj.gu || obj.en || '';
+}
 
 /* Auto-scroll so whichever question the farmer is currently on sits at the
    top of the screen — a one-question-at-a-time feel inside each section's
@@ -1319,7 +1341,7 @@ function downloadEnrollmentPdf(){
 function renderField(q){
   const id = q.id;
   const qn = DISPLAY_NUMBERS[q.id] || '';
-  const lbl = \`<div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>\`;
+  const lbl = \`<div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="thi">\${esc(q.hi||q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>\`;
   if(q.id==='aadhaar')
     return \`<div class="field" data-q="\${id}">\${lbl}<input type="text" inputmode="numeric" maxlength="12" placeholder="12-અંકનો આધાર નંબર" data-val="\${id}"></div>\`;
   if(q.id==='farm_gps')
@@ -1333,7 +1355,7 @@ function renderField(q){
   if(q.type==='textarea')
     return \`<div class="field" data-q="\${id}">\${lbl}<textarea data-val="\${id}" style="min-height:80px"></textarea></div>\`;
   if(q.type==='yn')
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes"><span class="tgu">હા</span><span class="ten">Yes</span></button><button type="button" data-v="no"><span class="tgu">ના</span><span class="ten">No</span></button></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes"><span class="tgu">હા</span><span class="thi">हाँ</span><span class="ten">Yes</span></button><button type="button" data-v="no"><span class="tgu">ના</span><span class="thi">नहीं</span><span class="ten">No</span></button></div></div>\`;
   if(q.type==='select'){
     const opts = (q.options||[]).map(o => \`<option>\${esc(o)}</option>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<select data-val="\${id}"><option value="">— પસંદ કરો —</option>\${opts}</select></div>\`;
@@ -1341,10 +1363,10 @@ function renderField(q){
   if(q.id==='protection_methods'){
     const allOpts = q.options||[];
     const groups = [
-      {label:'સાપળા (Traps)', idx:[0,1,2,3,4]},
-      {label:'અર્ક / નીમ (Extracts)', idx:[5,6,7,8,9,10]},
-      {label:'જૈવ (Microbial)', idx:[11,12,13,14,15,16,17]},
-      {label:'ખેત વ્યવસ્થા (Cultural)', idx:[18,19,20,21,22,23,24,25]},
+      {label: LANG==='en'?'Traps':LANG==='hi'?'जाल':'સાપળા (Traps)', idx:[0,1,2,3,4]},
+      {label: LANG==='en'?'Extracts':LANG==='hi'?'अर्क / नीम':'અર્ક / નીમ (Extracts)', idx:[5,6,7,8,9,10]},
+      {label: LANG==='en'?'Microbial':LANG==='hi'?'जैविक':'જૈવ (Microbial)', idx:[11,12,13,14,15,16,17]},
+      {label: LANG==='en'?'Cultural':LANG==='hi'?'खेत प्रबंधन':'ખેત વ્યવસ્થા (Cultural)', idx:[18,19,20,21,22,23,24,25]},
     ];
     // Groups are hardcoded index ranges over q.options; if an admin removes
     // an option via the Question Manager the array gets shorter but these
@@ -1384,14 +1406,16 @@ function renderField(q){
        q.addable+q.maxRows = farmer-typed rows up to a cap (e.g. products).
        Cards + inputs are built by buildStatCards() after the section mounts;
        this just outputs the (initially empty) wrapper + optional add button. */
-    const addBtnHtml = q.items ? '' : \`<button type="button" id="scAdd_\${id}" style="margin-top:8px;padding:7px 16px;background:none;border:1.5px dashed var(--line-strong);border-radius:8px;font-size:13px;color:var(--ink-soft);cursor:pointer;width:100%;font-family:inherit">+ \${esc((q.itemLabel&&q.itemLabel.gu)||'હરોળ')} ઉમેરો</button>\`;
+    const scItemLabel = langText(q.itemLabel) || (LANG==='en'?'row':LANG==='hi'?'हरोळ':'હરોળ');
+    const addBtnText = LANG==='en' ? ('+ Add '+scItemLabel) : LANG==='hi' ? ('+ '+scItemLabel+' जोड़ें') : ('+ '+scItemLabel+' ઉમેરો');
+    const addBtnHtml = q.items ? '' : \`<button type="button" id="scAdd_\${id}" style="margin-top:8px;padding:7px 16px;background:none;border:1.5px dashed var(--line-strong);border-radius:8px;font-size:13px;color:var(--ink-soft);cursor:pointer;width:100%;font-family:inherit">\${esc(addBtnText)}</button>\`;
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="sc-wrap" data-scwrap="\${id}"></div>\${addBtnHtml}</div>\`;
   }
   if(q.type==='composite_address' || q.type==='address_cascade'){
     const DT = (window.parent && window.parent.DISTRICT_TALUKAS) || (typeof DISTRICT_TALUKAS !== 'undefined' ? DISTRICT_TALUKAS : null);
     const districts = DT ? Object.keys(DT) : [];
     const distOpts = districts.length ? districts.map(d=>\`<option>\${d}</option>\`).join('') : '<option>Aravalli</option><option>Banaskantha</option><option>Dahod</option><option>Dang</option><option>Narmada</option><option>Sabarkantha</option><option>Surat</option><option>Vadodara</option>';
-    return \`<div class="field" data-q="\${id}">\${lbl}<div class="row2"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">જિલ્લો</span><span class="ten">District</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="district" data-addr="district"><option value="">— પસંદ કરો —</option>\${distOpts}</select></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">તાલુકો</span><span class="ten">Taluka</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="taluka" data-addr="taluka" disabled><option value="">પહેલા જિલ્લો પસંદ કરો</option></select></div></div><div class="row2" style="margin-top:10px"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">ગામ</span><span class="ten">Village</span> \${q.req?'<span class="req">*</span>':''}</label><input type="text" data-val="village" placeholder="ગામનું નામ"></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">પિનકોડ</span><span class="ten">Pincode</span></label><input type="text" data-val="pincode" inputmode="numeric" maxlength="6" placeholder="6-અંકનો પિનકોડ"></div></div></div>\`;
+    return \`<div class="field" data-q="\${id}">\${lbl}<div class="row2"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">જિલ્લો</span><span class="thi">जिला</span><span class="ten">District</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="district" data-addr="district"><option value="">— પસંદ કરો —</option>\${distOpts}</select></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">તાલુકો</span><span class="thi">तालुका</span><span class="ten">Taluka</span> \${q.req?'<span class="req">*</span>':''}</label><select data-val="taluka" data-addr="taluka" disabled><option value="">પહેલા જિલ્લો પસંદ કરો</option></select></div></div><div class="row2" style="margin-top:10px"><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">ગામ</span><span class="thi">गांव</span><span class="ten">Village</span> \${q.req?'<span class="req">*</span>':''}</label><input type="text" data-val="village" placeholder="ગામનું નામ"></div><div><label style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:4px;display:block"><span class="tgu">પિનકોડ</span><span class="thi">पिनकोड</span><span class="ten">Pincode</span></label><input type="text" data-val="pincode" inputmode="numeric" maxlength="6" placeholder="6-અંકનો પિનકોડ"></div></div></div>\`;
   }
   return '';
 }
@@ -1424,7 +1448,7 @@ function buildSections(){
     sec.className = 'section' + (idx===0 ? ' active' : '');
     sec.dataset.sec = idx;
     sec.innerHTML =
-      \`<div class="card"><div class="section-title"><div class="num">\${idx+1}</div><div><div class="h"><span class="tgu">\${esc(cat.gu)}</span><span class="ten">\${esc(cat.en)}</span></div></div></div>\`
+      \`<div class="card"><div class="section-title"><div class="num">\${idx+1}</div><div><div class="h"><span class="tgu">\${esc(cat.gu)}</span><span class="thi">\${esc(cat.hi||cat.gu)}</span><span class="ten">\${esc(cat.en)}</span></div></div></div>\`
       + renderFieldSequence(qs)
       + \`</div>\`;
     sectionsEl.appendChild(sec);
@@ -1486,7 +1510,8 @@ function wireCropSearchInput(inp){
     const catalog = (window.parent && window.parent.CROPS_CATALOG) || [];
     const matches = catalog.filter(c => c !== 'Other (અન્ય)' && (!query || cropSearchBlobLocal(c).includes(query))).slice(0, 8);
     if(!matches.length){ dd.style.display = 'none'; return; }
-    dd.innerHTML = matches.map(c => '<div class="crop-dd-opt" data-cropval="'+esc(c)+'" style="padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line-soft)">'+esc(c)+'</div>').join('');
+    const cropLabel = c => (LANG==='hi' && window.parent && window.parent.cropHiLabel) ? window.parent.cropHiLabel(c) : c;
+    dd.innerHTML = matches.map(c => '<div class="crop-dd-opt" data-cropval="'+esc(c)+'" style="padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line-soft)">'+esc(cropLabel(c))+'</div>').join('');
     dd.style.display = 'block';
     dd.querySelectorAll('[data-cropval]').forEach(opt => {
       opt.onmousedown = e => {
@@ -1503,6 +1528,17 @@ function wireCropSearchInput(inp){
 }
 function buildStatCards(){
   QUESTIONS.filter(q => q.type==='stat_cards').forEach(q => renderOneStatCards(q));
+}
+// The "+ Add row" button (unlike the sc-wrap cards it sits next to) is baked
+// into the field wrapper once in renderField() at buildSections() time, so a
+// later language switch needs to explicitly refresh its text too.
+function refreshStatCardAddButtons(){
+  QUESTIONS.filter(q => q.type==='stat_cards' && !q.items).forEach(q => {
+    const btn = document.getElementById('scAdd_'+q.id);
+    if(!btn) return;
+    const scItemLabel = langText(q.itemLabel) || (LANG==='en'?'row':LANG==='hi'?'हरोळ':'હરોળ');
+    btn.textContent = LANG==='en' ? ('+ Add '+scItemLabel) : LANG==='hi' ? ('+ '+scItemLabel+' जोड़ें') : ('+ '+scItemLabel+' ઉમેરો');
+  });
 }
 function cascadeGatedStatCards(sourceId){
   // Re-render any stat_cards question whose visible rows depend on sourceId's
@@ -1524,14 +1560,16 @@ function buildStatCardRowCols(q){
   return 'minmax(84px,1.5fr) ' + q.fields.map(function(){ return '1fr'; }).join(' ') + ' 20px';
 }
 function buildStatCardRowHeaderHtml(q){
-  const labels = [esc((q.itemLabel&&q.itemLabel.gu)||'નામ')].concat(q.fields.map(function(f){ return esc(f.gu); })).concat(['']);
+  const nameLabel = langText(q.itemLabel) || (LANG==='en'?'Name':LANG==='hi'?'नाम':'નામ');
+  const labels = [esc(nameLabel)].concat(q.fields.map(function(f){ return esc(langText(f)); })).concat(['']);
   return '<div style="display:grid;grid-template-columns:'+buildStatCardRowCols(q)+';gap:5px;margin-bottom:4px">'
     + labels.map(function(l){ return '<div style="font-size:10px;color:var(--ink-soft);font-weight:600">'+l+'</div>'; }).join('')
     + '</div>';
 }
 function buildStatCardHtml(q, i, savedRow){
+  const scNamePlaceholder = langText(q.itemLabel) || (LANG==='en'?'Name':LANG==='hi'?'नाम':'નામ');
   const itemCell = '<div style="position:relative">'
-    + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc((q.itemLabel&&q.itemLabel.gu)||'નામ')+'" style="width:100%;padding:6px 7px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:12.5px;font-weight:700;box-sizing:border-box">'
+    + '<input type="text" autocomplete="off" data-sc="'+q.id+'" data-scidx="'+i+'" data-sck="item" value="'+esc((savedRow&&savedRow.item)||'')+'" placeholder="'+esc(scNamePlaceholder)+'" style="width:100%;padding:6px 7px;border:1.5px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:12.5px;font-weight:700;box-sizing:border-box">'
     + (q.itemIsCrop ? '<div data-cropdd style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line-strong);border-radius:7px;margin-top:2px;max-height:180px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>' : '')
     + '</div>';
   const fieldCells = q.fields.map(function(f){
@@ -1861,11 +1899,12 @@ $('#nextBtn').onclick = () => {
     if(el){
       el.style.outline='2px solid #ef4444'; el.style.borderRadius='6px'; el.style.padding='4px';
       let errEl=el.querySelector('.field-err'); if(!errEl){errEl=document.createElement('div');errEl.className='field-err';errEl.style.cssText='font-size:12px;color:#ef4444;margin-top:4px;font-weight:600';el.appendChild(errEl);}
-      errEl.textContent='⚠ જરૂરી: '+q.gu;
+      const reqWord = LANG==='en'?'Required':LANG==='hi'?'ज़रूरी':'જરૂરી';
+      errEl.textContent='⚠ '+reqWord+': '+langText(q);
       el.addEventListener('click',()=>{el.style.outline='';el.style.padding='';if(errEl)errEl.remove();},{once:true});
       el.addEventListener('input',()=>{el.style.outline='';el.style.padding='';if(errEl)errEl.remove();},{once:true});
       el.scrollIntoView({behavior:'smooth',block:'center'});
-    } else { toast('જરૂરી ભરો: '+q.gu); }
+    } else { const reqWord = LANG==='en'?'Please fill in':LANG==='hi'?'ज़रूर भरें':'જરૂરી ભરો'; toast(reqWord+': '+langText(q)); }
     return;
   }
   goto(cur+1);
@@ -1915,13 +1954,17 @@ function submit(){
   });
   if(missing.length){
     const q = missing[0];
-    let msg = 'જરૂરી ભરો: ' + q.gu;
+    const reqWord = LANG==='en'?'Please fill in':LANG==='hi'?'ज़रूर भरें':'જરૂરી ભરો';
+    let msg = reqWord + ': ' + langText(q);
     if(q.type==='address_cascade'){
+      const dName = LANG==='en'?'District':LANG==='hi'?'जिला':'જિલ્લો';
+      const tName = LANG==='en'?'Taluka':LANG==='hi'?'तालुका':'તાલુકો';
+      const vName = LANG==='en'?'Village':LANG==='hi'?'गांव':'ગામ';
       const what = [];
-      if(!ANSWERS.district) what.push('જિલ્લો');
-      if(!ANSWERS.taluka) what.push('તાલુકો');
-      if(!ANSWERS.village) what.push('ગામ');
-      if(what.length) msg = what.join(' / ') + ' ભરો';
+      if(!ANSWERS.district) what.push(dName);
+      if(!ANSWERS.taluka) what.push(tName);
+      if(!ANSWERS.village) what.push(vName);
+      if(what.length) msg = what.join(' / ') + ' — ' + reqWord;
     }
     toast(msg);
     /* Jump to the section and highlight the missing field */
@@ -2179,8 +2222,11 @@ body{background:linear-gradient(180deg,#f8f1e9 0,var(--bg) 210px);padding-bottom
 .langbar label input{position:absolute;opacity:0;width:0;height:0}
 .langbar label.on{border-color:var(--leaf);background:var(--leaf);color:#fff}
 .ten{display:none}
+.thi{display:none}
 body.lang-en .tgu{display:none}
 body.lang-en .ten{display:inline}
+body.lang-hi .tgu{display:none}
+body.lang-hi .thi{display:inline}
 .success{display:none;text-align:center;padding:40px 24px}.success.show{display:block}
 .success .ico{width:80px;height:80px;border-radius:50%;background:var(--leaf-light);color:var(--leaf);font-size:42px;display:grid;place-items:center;margin:0 auto 20px}
 .success h2{font-size:21px;font-weight:700;margin-bottom:10px}
@@ -2192,8 +2238,8 @@ body.lang-en .ten{display:inline}
 <div class="head">
   <button class="back" id="backBtn">←</button>
   <div>
-    <h1>Farmer Verification</h1>
-    <div class="sub">Visit &amp; validate farmer details and farm practices</div>
+    <h1><span class="tgu">ખેડૂત ચકાસણી</span><span class="thi">किसान सत्यापन</span><span class="ten">Farmer Verification</span></h1>
+    <div class="sub"><span class="tgu">ખેડૂતની વિગતો અને ખેત પદ્ધતિઓની મુલાકાત લઈ ચકાસો</span><span class="thi">किसान की जानकारी और खेती के तरीकों की मुलाकात लेकर जांच करें</span><span class="ten">Visit &amp; validate farmer details and farm practices</span></div>
   </div>
   <div class="step" id="stepLabel">1 / —</div>
 </div>
@@ -2202,6 +2248,7 @@ body.lang-en .ten{display:inline}
 
 <div class="langbar" id="langBar">
   <label class="on" data-v="gu"><input type="radio" name="uiLang" value="gu" checked>ગુજરાતી</label>
+  <label data-v="hi"><input type="radio" name="uiLang" value="hi">हिंदी</label>
   <label data-v="en"><input type="radio" name="uiLang" value="en">English</label>
 </div>
 
@@ -2212,14 +2259,14 @@ body.lang-en .ten{display:inline}
     <div class="farmer-head">
       <div class="avatar" id="avatar">👤</div>
       <div class="meta">
-        <h2><span id="fName">—</span> <span class="id-pill">Farmer ID: <span id="fId">—</span></span></h2>
-        <div class="addr">Village: <span id="fVillage">—</span>, Taluka: <span id="fTaluka">—</span>, District: <span id="fDistrict">—</span></div>
+        <h2><span id="fName">—</span> <span class="id-pill"><span class="tgu">ખેડૂત ID</span><span class="thi">किसान ID</span><span class="ten">Farmer ID</span>: <span id="fId">—</span></span></h2>
+        <div class="addr"><span class="tgu">ગામ</span><span class="thi">गांव</span><span class="ten">Village</span>: <span id="fVillage">—</span>, <span class="tgu">તાલુકો</span><span class="thi">तालुका</span><span class="ten">Taluka</span>: <span id="fTaluka">—</span>, <span class="tgu">જિલ્લો</span><span class="thi">जिला</span><span class="ten">District</span>: <span id="fDistrict">—</span></div>
       </div>
     </div>
     <div class="detail-strip">
-      <div class="detail-cell"><div class="ico">📞</div><div><div class="k">Phone</div><div class="v" id="fPhone">—</div></div></div>
-      <div class="detail-cell"><div class="ico">🪪</div><div><div class="k">Aadhaar</div><div class="v" id="fAadhaar">—</div></div></div>
-      <div class="detail-cell"><div class="k" style="font-size:11px;color:var(--ink-soft);font-weight:500">Submitted</div><div class="v" id="fSubmitted">—</div></div>
+      <div class="detail-cell"><div class="ico">📞</div><div><div class="k"><span class="tgu">ફોન</span><span class="thi">फोन</span><span class="ten">Phone</span></div><div class="v" id="fPhone">—</div></div></div>
+      <div class="detail-cell"><div class="ico">🪪</div><div><div class="k"><span class="tgu">આધાર</span><span class="thi">आधार</span><span class="ten">Aadhaar</span></div><div class="v" id="fAadhaar">—</div></div></div>
+      <div class="detail-cell"><div class="k" style="font-size:11px;color:var(--ink-soft);font-weight:500"><span class="tgu">જમા થયું</span><span class="thi">जमा हुआ</span><span class="ten">Submitted</span></div><div class="v" id="fSubmitted">—</div></div>
     </div>
   </div>
 
@@ -2227,19 +2274,19 @@ body.lang-en .ten{display:inline}
 
   <div class="success" id="verifySuccessScreen">
     <div class="ico">✓</div>
-    <h2>Verification submitted!</h2>
+    <h2><span class="tgu">ચકાસણી જમા થઈ!</span><span class="thi">सत्यापन जमा हुआ!</span><span class="ten">Verification submitted!</span></h2>
     <p id="verifySuccessSummary"></p>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-      <button type="button" id="downloadVerifPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📄 Download PDF</button>
-      <button type="button" id="closeVerifyBtn" style="padding:12px 24px;background:#fff;color:var(--leaf);border:1.5px solid var(--leaf);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✕ Close</button>
+      <button type="button" id="downloadVerifPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📄 <span class="tgu">PDF ડાઉનલોડ કરો</span><span class="thi">PDF डाउनलोड करें</span><span class="ten">Download PDF</span></button>
+      <button type="button" id="closeVerifyBtn" style="padding:12px 24px;background:#fff;color:var(--leaf);border:1.5px solid var(--leaf);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✕ <span class="tgu">બંધ કરો</span><span class="thi">बंद करें</span><span class="ten">Close</span></button>
     </div>
   </div>
 
 </div>
 
 <div class="actions" id="actionsBar">
-  <button class="btn btn-secondary" id="prevBtn" disabled>← Previous</button>
-  <button class="btn btn-primary" id="nextBtn">Next →</button>
+  <button class="btn btn-secondary" id="prevBtn" disabled>← <span class="tgu">પાછળ</span><span class="thi">पीछे</span><span class="ten">Previous</span></button>
+  <button class="btn btn-primary" id="nextBtn"><span class="tgu">આગળ</span><span class="thi">आगे</span><span class="ten">Next</span> →</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -2274,9 +2321,27 @@ let LANG = 'gu';
   bar.querySelectorAll('input[name="uiLang"]').forEach(r => r.onchange = () => {
     LANG = r.value;
     document.body.classList.toggle('lang-en', LANG === 'en');
+    document.body.classList.toggle('lang-hi', LANG === 'hi');
     bar.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.dataset.v === LANG));
+    // stat_cards row headers/placeholders/add-buttons are computed from LANG
+    // at build time via langText() (three languages made a static per-row
+    // .tgu/.thi/.ten span too repetitive) — re-render so they don't stay
+    // stuck in whichever language was active when the section first opened.
+    // ANSWERS[q.id] already has anything typed so far, so nothing is lost.
+    if(typeof buildStatCards === 'function') buildStatCards();
+    if(typeof refreshStatCardAddButtons === 'function') refreshStatCardAddButtons();
   });
 })();
+// Picks the right-language string off a {gu,en,hi} object (question, field,
+// itemLabel, ...), falling back to Gujarati if a translation is missing —
+// used anywhere text isn't baked in as static .tgu/.thi/.ten spans (e.g.
+// stat_cards row headers, built dynamically per LANG rather than in HTML).
+function langText(obj){
+  if(!obj) return '';
+  if(LANG==='hi') return obj.hi || obj.gu || obj.en || '';
+  if(LANG==='en') return obj.en || obj.gu || '';
+  return obj.gu || obj.en || '';
+}
 
 /* Auto-scroll so whichever question the FC is currently on sits at the top
    of the screen — see the matching comment in the enrollment form for why
@@ -2433,14 +2498,14 @@ function renderFcControls(q){
   if(q.askedOf === 'fc-only'){
     let h = '<div class="fc-controls">';
     if(q.type === 'yn'){
-      h += '<div class="l">FC answer</div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">હા</span><span class="ten">Yes</span></button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">ના</span><span class="ten">No</span></button></div>';
+      h += '<div class="l"><span class="tgu">FC જવાબ</span><span class="thi">FC जवाब</span><span class="ten">FC answer</span></div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">હા</span><span class="thi">हाँ</span><span class="ten">Yes</span></button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">ના</span><span class="thi">नहीं</span><span class="ten">No</span></button></div>';
     } else if(q.type === 'photo'){
-      h += '<div class="l">FC photo upload</div>';
+      h += '<div class="l"><span class="tgu">FC ફોટો અપલોડ</span><span class="thi">FC फोटो अपलोड</span><span class="ten">FC photo upload</span></div>';
       h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
     } else {
       /* text / textarea */
       const ph = q.type==='textarea' ? 'FC writes their observation here…' : 'FC answer';
-      h += '<div class="l">FC answer</div>';
+      h += '<div class="l"><span class="tgu">FC જવાબ</span><span class="thi">FC जवाब</span><span class="ten">FC answer</span></div>';
       if(q.type === 'textarea'){
         h += '<textarea data-fc-ans="'+q.id+'" style="width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:7px;min-height:80px;font-family:inherit;resize:vertical;font-size:14px" placeholder="'+ph+'"></textarea>';
       } else {
@@ -2453,22 +2518,22 @@ function renderFcControls(q){
 
   /* Regular both-questions: Verified / Not Verified / N/A + optional multi retick + note */
   let h = \`<div class="fc-controls">
-    <div class="l">Field verification (FC)</div>
+    <div class="l"><span class="tgu">ક્ષેત્ર ચકાસણી (FC)</span><span class="thi">क्षेत्र सत्यापन (FC)</span><span class="ten">Field verification (FC)</span></div>
     <div class="radio-row">
-      <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="verified"><span class="lbl">✓ Verified</span></label>
-      <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="not_verified"><span class="lbl">✗ Not Verified</span></label>
+      <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="verified"><span class="lbl">✓ <span class="tgu">ચકાસાયેલ</span><span class="thi">सत्यापित</span><span class="ten">Verified</span></span></label>
+      <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="not_verified"><span class="lbl">✗ <span class="tgu">ચકાસાયેલ નથી</span><span class="thi">सत्यापित नहीं</span><span class="ten">Not Verified</span></span></label>
       <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="na"><span class="lbl">N/A</span></label>
     </div>\`;
   /* For photo questions asked of both (e.g. cert_photo), let the FC upload
      their own verification photo in addition to the radio. */
   if(q.type==='photo'){
-    h += '<div class="fc-photo-row" style="margin-top:10px"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">📷 FC verification photo (optional)</div>'
+    h += '<div class="fc-photo-row" style="margin-top:10px"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">📷 <span class="tgu">FC ચકાસણી ફોટો (વૈકલ્પિક)</span><span class="thi">FC सत्यापन फोटो (वैकल्पिक)</span><span class="ten">FC verification photo (optional)</span></div>'
        + '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div></div>';
   }
   if(q.type==='multi'){
     const claim = CLAIMS_BY_ID[q.id];
     const farmerArr = Array.isArray(claim && claim.answer) ? claim.answer : [];
-    h += '<div class="retick"><div class="l">FC observed (re-tick what was seen)</div><div class="chips option-grid" data-retick="'+q.id+'">';
+    h += '<div class="retick"><div class="l"><span class="tgu">FC એ જોયું (જે જોયું તે ફરી ટિક કરો)</span><span class="thi">FC ने देखा (जो देखा वह फिर टिक करें)</span><span class="ten">FC observed (re-tick what was seen)</span></div><div class="chips option-grid" data-retick="'+q.id+'">';
     (q.options||[]).forEach(opt => {
       const farmerHas = farmerArr.includes(opt);
       h += '<button type="button" class="chip ' + (farmerHas?'farmer-said':'') + '" data-v="'+esc(opt)+'">' + esc(opt) + (farmerHas?' ★':'') + '</button>';
@@ -2481,19 +2546,19 @@ function renderFcControls(q){
     const farmerArr = Array.isArray(claim && claim.answer) ? claim.answer : [];
     const farmerMap = {};
     farmerArr.forEach(x => { if(x && typeof x==='object') farmerMap[x.type] = x.count||''; else if(typeof x==='string') farmerMap[x] = ''; });
-    h += '<div class="retick"><div class="l">FC observed counts (tick + enter what was seen)</div><div class="multi-count" data-retick-mc="'+q.id+'">';
+    h += '<div class="retick"><div class="l"><span class="tgu">FC એ જોયેલ સંખ્યા (ટિક કરો + જોયેલ સંખ્યા લખો)</span><span class="thi">FC ने देखी संख्या (टिक करें + देखी गई संख्या लिखें)</span><span class="ten">FC observed counts (tick + enter what was seen)</span></div><div class="multi-count" data-retick-mc="'+q.id+'">';
     (q.options||[]).forEach(opt => {
       const farmerCount = farmerMap[opt];
       const farmerHas = opt in farmerMap;
       h += '<div class="mc-row mc-card" data-mc="'+esc(opt)+'">'
         + '<button type="button" class="chip mc-toggle '+(farmerHas?'farmer-said':'')+'" data-v="'+esc(opt)+'">'+esc(opt)+(farmerHas?' ★':'')+'</button>'
         + '<input type="number" min="0" placeholder="FC count" class="mc-count" data-mcc="'+esc(opt)+'" style="display:none">'
-        + (farmerHas ? '<span style="font-size:11px;color:var(--ink-soft)">Farmer said: <b>'+esc(String(farmerCount||'no count'))+'</b></span>' : '')
+        + (farmerHas ? '<span style="font-size:11px;color:var(--ink-soft)"><span class="tgu">ખેડૂતે કહ્યું</span><span class="thi">किसान ने बताया</span><span class="ten">Farmer said</span>: <b>'+esc(String(farmerCount||'no count'))+'</b></span>' : '')
         + '</div>';
     });
     h += '</div></div>';
   }
-  h += '<div class="fc-note"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">FC observation / comment (optional)</div><textarea data-note="'+q.id+'" placeholder="What did the FC observe? Any differences from the farmer claim?"></textarea></div>';
+  h += '<div class="fc-note"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px"><span class="tgu">FC અવલોકન / ટિપ્પણી (વૈકલ્પિક)</span><span class="thi">FC अवलोकन / टिप्पणी (वैकल्पिक)</span><span class="ten">FC observation / comment (optional)</span></div><textarea data-note="'+q.id+'" placeholder="What did the FC observe? Any differences from the farmer claim?"></textarea></div>';
   h += '</div>';
   return h;
 }
@@ -2507,11 +2572,11 @@ function renderQuestion(q){
     return \`<div class="q-block" data-q="\${q.id}" style="background:#f8fafc;border-radius:8px;padding:11px 13px;margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span></div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink)">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="thi">\${esc(q.hi||q.gu)}</span><span class="ten">\${esc(q.en)}</span></div>
         </div>
         <div style="text-align:right;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5">\${fmtFarmerClaim(q, claim)}</div>
       </div>
-      <div style="font-size:10.5px;color:var(--ink-faint);font-style:italic;margin-top:6px">📋 Pre-fetched from enrolment — no verification needed</div>
+      <div style="font-size:10.5px;color:var(--ink-faint);font-style:italic;margin-top:6px">📋 <span class="tgu">નોંધણીમાંથી લેવાયેલ — ચકાસણીની જરૂર નથી</span><span class="thi">नोंधणी से लिया गया — सत्यापन की ज़रूरत नहीं</span><span class="ten">Pre-fetched from enrolment — no verification needed</span></div>
     </div>\`;
   }
   /* H2 — render a "Previous FC observation" box if this is a seasonal
@@ -2537,9 +2602,9 @@ function renderQuestion(q){
     </div>\`;
   }
   return \`<div class="q-block" data-q="\${q.id}">
-    <div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>
+    <div class="q-label">\${qn>0?qn+'. ':''}<span class="tgu">\${esc(q.gu)}</span><span class="thi">\${esc(q.hi||q.gu)}</span><span class="ten">\${esc(q.en)}</span>\${q.req?' <span class="req">*</span>':''}</div>
     \${q.askedOf !== 'fc-only' ? \`<div class="farmer-claim-box">
-      <div class="l">📋 Farmer's claim</div>
+      <div class="l">📋 <span class="tgu">ખેડૂતનો દાવો</span><span class="thi">किसान का दावा</span><span class="ten">Farmer's claim</span></div>
       <div class="v">\${fmtFarmerClaim(q, claim)}</div>
     </div>\` : ''}
     \${prevBoxHtml}
@@ -2564,8 +2629,8 @@ function buildSections(){
     sec.className = 'section' + (secIdx===0 ? ' active' : '');
     sec.dataset.sec = secIdx;
     sec.innerHTML =
-      '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">'+esc(cat.gu)+'</span><span class="ten">'+esc(cat.en)+'</span></div></div></div>'
-      + '<div class="summary-strip"><span><span class="dot g"></span>Verified</span><span><span class="dot r"></span>Not Verified</span><span><span class="dot x"></span>N/A</span></div>'
+      '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">'+esc(cat.gu)+'</span><span class="thi">'+esc(cat.hi||cat.gu)+'</span><span class="ten">'+esc(cat.en)+'</span></div></div></div>'
+      + '<div class="summary-strip"><span><span class="dot g"></span><span class="tgu">ચકાસાયેલ</span><span class="thi">सत्यापित</span><span class="ten">Verified</span></span><span><span class="dot r"></span><span class="tgu">ચકાસાયેલ નથી</span><span class="thi">सत्यापित नहीं</span><span class="ten">Not Verified</span></span><span><span class="dot x"></span>N/A</span></div>'
       + qs.map(q => renderQuestion(q)).join('')
       + '</div>';
     sectionsEl.appendChild(sec);
@@ -2576,11 +2641,11 @@ function buildSections(){
   final.className = 'section';
   final.dataset.sec = secIdx;
   final.innerHTML =
-    '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">સામાન્ય ટિપ્પણી અને ઘોષણા</span><span class="ten">Overall comments &amp; submission</span></div></div></div>'
-    + '<div class="q-block"><div class="q-label">Overall comments</div><textarea id="generalCmt" style="width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:7px;min-height:80px;font-family:inherit;resize:vertical" placeholder="Any final notes about the visit…"></textarea></div>'
-    + '<div class="q-block"><div class="q-label">Summary</div><div id="summaryBox" style="background:var(--leaf-light);padding:12px;border-radius:8px;font-size:13px;color:var(--leaf-dark);font-weight:600">Loading summary…</div></div>'
-    + '<button type="button" id="bigSubmitBtn" style="display:block;width:100%;margin-top:14px;padding:18px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">✓ Submit Verification</button>'
-    + '<div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--ink-soft)">You can also tap the green button at the bottom of the screen.</div>'
+    '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">સામાન્ય ટિપ્પણી અને ઘોષણા</span><span class="thi">सामान्य टिप्पणी और घोषणा</span><span class="ten">Overall comments &amp; submission</span></div></div></div>'
+    + '<div class="q-block"><div class="q-label"><span class="tgu">સામાન્ય ટિપ્પણી</span><span class="thi">सामान्य टिप्पणी</span><span class="ten">Overall comments</span></div><textarea id="generalCmt" style="width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:7px;min-height:80px;font-family:inherit;resize:vertical" placeholder="Any final notes about the visit…"></textarea></div>'
+    + '<div class="q-block"><div class="q-label"><span class="tgu">સારાંશ</span><span class="thi">सारांश</span><span class="ten">Summary</span></div><div id="summaryBox" style="background:var(--leaf-light);padding:12px;border-radius:8px;font-size:13px;color:var(--leaf-dark);font-weight:600">Loading summary…</div></div>'
+    + '<button type="button" id="bigSubmitBtn" style="display:block;width:100%;margin-top:14px;padding:18px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">✓ <span class="tgu">ચકાસણી જમા કરો</span><span class="thi">सत्यापन जमा करें</span><span class="ten">Submit Verification</span></button>'
+    + '<div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--ink-soft)"><span class="tgu">તમે સ્ક્રીનની નીચે લીલા બટન પર પણ ટેપ કરી શકો છો.</span><span class="thi">आप स्क्रीन के नीचे हरे बटन पर भी टैप कर सकते हैं।</span><span class="ten">You can also tap the green button at the bottom of the screen.</span></div>'
     + '</div>';
   sectionsEl.appendChild(final);
   wireFcControls();
@@ -2843,7 +2908,7 @@ function submit(){
     if(window.parent && window.parent !== window){
       window.parent.postMessage(payload, '*');
     }
-    toast('Verification submitted ✓');
+    toast((LANG==='en'?'Verification submitted':LANG==='hi'?'सत्यापन जमा हुआ':'ચકાસણી જમા થઈ')+' ✓');
     $$('.section').forEach(s => s.classList.remove('active'));
     $('#farmerCard').style.display = 'none';
     $('#actionsBar').style.display = 'none';
@@ -2926,7 +2991,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v89';
+const APP_VERSION = 'v90';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5041,153 +5106,160 @@ const HAAT_STATUS={
    v5.2 — MASTER QUESTION SCHEMA (consolidated to 10 sections)
    ============================================================= */
 window.CATEGORIES_V5 = [
-  {key:'basic',     gu:'ખેડૂતની મૂળભૂત માહિતી',                    en:'Basic information'},
-  {key:'farm',      gu:'ખેતર, જમીન, પાક અને મૂલ્યવર્ધન',            en:'Farm, land, crops & value addition'},
-  {key:'cert',      gu:'ઓર્ગેનિક સર્ટિફિકેટ તથા બજાર',                en:'Organic certificate & market'},
-  {key:'livestock', gu:'પશુધન અને સાધનો',                           en:'Livestock & equipment'},
-  {key:'practices', gu:'નીંદામણ, મલ્ચિંગ, પિયત',                     en:'Weeding, mulching & irrigation'},
-  {key:'irrigation',gu:'ખાતર, પાક સંરક્ષણ, બિયારણ',                  en:'Manure, plant protection & seeds'},
+  {key:'basic',     gu:'ખેડૂતની મૂળભૂત માહિતી',                    en:'Basic information', hi:'किसान की मूल जानकारी'},
+  {key:'farm',      gu:'ખેતર, જમીન, પાક અને મૂલ્યવર્ધન',            en:'Farm, land, crops & value addition', hi:'खेत, जमीन, फसल और मूल्यवर्धन'},
+  {key:'cert',      gu:'ઓર્ગેનિક સર્ટિફિકેટ તથા બજાર',                en:'Organic certificate & market', hi:'ऑर्गेनिक सर्टिफिकेट और बाजार'},
+  {key:'livestock', gu:'પશુધન અને સાધનો',                           en:'Livestock & equipment', hi:'पशुधन और उपकरण'},
+  {key:'practices', gu:'નીંદામણ, મલ્ચિંગ, પિયત',                     en:'Weeding, mulching & irrigation', hi:'निराई, मल्चिंग और सिंचाई'},
+  {key:'irrigation',gu:'ખાતર, પાક સંરક્ષણ, બિયારણ',                  en:'Manure, plant protection & seeds', hi:'खाद, पौध सुरक्षा और बीज'},
 ];
 
 window.QUESTIONS_V5 = [
   /* ============ 1. BASIC INFO ============ */
-  {id:'farmer_name', displayOnly:true, cat:'basic', gu:'ખેડૂતનું પૂરું નામ',         en:"Farmer's full name",      type:'text',  askedOf:'both', req:true},
-  {id:'father_name', displayOnly:true, cat:'basic', gu:"પિતા/પતિનું નામ",            en:"Father's / spouse's name",type:'text',  askedOf:'both'},
-  {id:'age', displayOnly:true,         cat:'basic', gu:'ઉંમર',                        en:'Age',                     type:'number',askedOf:'both'},
-  {id:'gender', displayOnly:true,      cat:'basic', gu:'લિંગ',                        en:'Gender',                  type:'select',options:['Male (પુરુષ)','Female (સ્ત્રી)','Other (અન્ય)'], askedOf:'both'},
-  {id:'mobile', displayOnly:true,      cat:'basic', gu:'મોબાઈલ',                      en:'Mobile (10-digit)',       type:'tel10', askedOf:'both', req:true},
-  {id:'aadhaar', displayOnly:true,     cat:'basic', gu:'આધાર નંબર',                  en:'Aadhaar number',          type:'text',  askedOf:'both'},
-  {id:'address',     cat:'basic', gu:'સંપૂર્ણ સરનામું',               en:'Full address',            type:'textarea', askedOf:'both'},
-  {id:'village_taluka_district', cat:'basic', gu:'જિલ્લો / તાલુકો / ગામ / પિનકોડ', en:'District / Taluka / Village / Pincode', type:'address_cascade', askedOf:'both', req:true},
-  {id:'soil_test_available', cat:'basic', gu:'જમીનની ચકાસણી કરાવો છો', en:'Soil Test available ?', type:'select', options:['Yes','No'], askedOf:'both'},
+  {id:'farmer_name', displayOnly:true, cat:'basic', gu:'ખેડૂતનું પૂરું નામ',         en:"Farmer's full name",      hi:'किसान का पूरा नाम', type:'text',  askedOf:'both', req:true},
+  {id:'father_name', displayOnly:true, cat:'basic', gu:"પિતા/પતિનું નામ",            en:"Father's / spouse's name",hi:'पिता / पति का नाम', type:'text',  askedOf:'both'},
+  {id:'age', displayOnly:true,         cat:'basic', gu:'ઉંમર',                        en:'Age',                     hi:'उम्र', type:'number',askedOf:'both'},
+  {id:'gender', displayOnly:true,      cat:'basic', gu:'લિંગ',                        en:'Gender',                  hi:'लिंग', type:'select',options:['Male (પુરુષ)','Female (સ્ત્રી)','Other (અન્ય)'], optionsHi:['पुरुष','महिला','अन्य'], askedOf:'both'},
+  {id:'mobile', displayOnly:true,      cat:'basic', gu:'મોબાઈલ',                      en:'Mobile (10-digit)',       hi:'मोबाइल (10 अंक)', type:'tel10', askedOf:'both', req:true},
+  {id:'aadhaar', displayOnly:true,     cat:'basic', gu:'આધાર નંબર',                  en:'Aadhaar number',          hi:'आधार नंबर', type:'text',  askedOf:'both'},
+  {id:'address',     cat:'basic', gu:'સંપૂર્ણ સરનામું',               en:'Full address',            hi:'पूरा पता', type:'textarea', askedOf:'both'},
+  {id:'village_taluka_district', cat:'basic', gu:'જિલ્લો / તાલુકો / ગામ / પિનકોડ', en:'District / Taluka / Village / Pincode', hi:'जिला / तालुका / गांव / पिनकोड', type:'address_cascade', askedOf:'both', req:true},
+  {id:'soil_test_available', cat:'basic', gu:'જમીનની ચકાસણી કરાવો છો', en:'Soil Test available ?', hi:'मिट्टी की जांच कराते हैं?', type:'select', options:['Yes','No'], optionsHi:['हाँ','नहीं'], askedOf:'both'},
 
   /* ============ 2. FARM, LAND, CROPS & VALUE ADDITION ============ */
-  {id:'survey_no',    cat:'farm', gu:'સર્વે નંબર',                     en:'Survey number',        type:'text',   askedOf:'both'},
-  {id:'total_bigha',  cat:'farm', gu:'કુલ જમીન (એકર)',                en:'Total land (acre)',   type:'number', askedOf:'both'},
-  {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         type:'textarea',askedOf:'both'},
-  {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', type:'text', askedOf:'both'},
-  {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           type:'photo',  askedOf:'both'},
-  {id:'plot_crops_table', cat:'farm', gu:'ખેતર/પ્લોટની વિગત (સર્વે નંબર પ્રમાણે)', en:'Farm/plot details (by survey number)', type:'stat_cards',
-    addable:true, maxRows:5, itemLabel:{gu:'સર્વે નંબર', en:'Survey number'},
+  {id:'survey_no',    cat:'farm', gu:'સર્વે નંબર',                     en:'Survey number',        hi:'सर्वे नंबर', type:'text',   askedOf:'both'},
+  {id:'total_bigha',  cat:'farm', gu:'કુલ જમીન (એકર)',                en:'Total land (acre)',   hi:'कुल जमीन (एकड़)', type:'number', askedOf:'both'},
+  {id:'farm_address', cat:'farm', gu:'ખેતરનું સરનામું',                 en:'Farm address',         hi:'खेत का पता', type:'textarea',askedOf:'both'},
+  {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', hi:'खेत का GPS लोकेशन (Google लिंक या lat/long)', type:'text', askedOf:'both'},
+  {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           hi:'खेत की फोटो', type:'photo',  askedOf:'both'},
+  {id:'plot_crops_table', cat:'farm', gu:'ખેતર/પ્લોટની વિગત (સર્વે નંબર પ્રમાણે)', en:'Farm/plot details (by survey number)', hi:'खेत/प्लॉट का विवरण (सर्वे नंबर अनुसार)', type:'stat_cards',
+    addable:true, maxRows:5, itemLabel:{gu:'સર્વે નંબર', en:'Survey number', hi:'सर्वे नंबर'},
     fields:[
-      {key:'acres', gu:'એકર', en:'Area (acre)', type:'number'},
+      {key:'acres', gu:'એકર', en:'Area (acre)', hi:'क्षेत्रफल (एकड़)', type:'number'},
     ], askedOf:'both'},
-  {id:'major_crops_table', cat:'farm', gu:'મુખ્ય પાકોની વિગત', en:'Major crops grown', type:'stat_cards',
+  {id:'major_crops_table', cat:'farm', gu:'મુખ્ય પાકોની વિગત', en:'Major crops grown', hi:'मुख्य फसलों का विवरण', type:'stat_cards',
     // v87 — no maxRows: a farmer can grow more than 5 crops. Omitting the
     // field (rather than setting a big number) is the buildStatCards() /
     // reconcileCoreQuestionsV5() convention for "unlimited" on this type.
-    addable:true, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop'}, itemIsCrop:true,
+    addable:true, itemLabel:{gu:'પાક પસંદ કરો', en:'Select crop', hi:'फसल चुनें'}, itemIsCrop:true,
     // v88 — dropped per-crop income (moved to farming_total_income, one
     // combined figure below this question instead of per crop). Production
     // is now numeric with units in the label so both fields get a numeric
     // keyboard on mobile (buildStatCards() adds inputmode=numeric whenever
     // field.type is number).
     fields:[
-      {key:'area',       gu:'એકર',                        en:'Area (acre)',            type:'number'},
-      {key:'production', gu:'અંદાજિત ઉત્પાદન (kg)',       en:'Approx. production (kg)', type:'number'},
+      {key:'area',       gu:'એકર',                        en:'Area (acre)',            hi:'क्षेत्रफल (एकड़)', type:'number'},
+      {key:'production', gu:'અંદાજિત ઉત્પાદન (kg)',       en:'Approx. production (kg)', hi:'अनुमानित उत्पादन (kg)', type:'number'},
     ], askedOf:'both'},
-  {id:'farming_total_income', cat:'farm', gu:'ખેતીમાંથી અંદાજિત કુલ આવક ₹', en:'Estimated total income from farming (₹)', type:'number', askedOf:'both'},
-  {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', type:'number', askedOf:'both'},
-  {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], askedOf:'both'},
-  {id:'farming_who',      cat:'farm', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], askedOf:'both'},
-  {id:'years_organic',     cat:'farm', gu:'કેટલા વર્ષથી પ્રાકૃતિક ખેતી કરો છો?', en:'Years of organic farming',     type:'number',   askedOf:'both'},
-  {id:'chem_runoff',      cat:'farm', gu:'બાજુના રાસાયણિક ખેતરનું પાણી તમારા ખેતરમાં આવે છે?', en:'Chemical runoff from neighbouring farm?', type:'yn', askedOf:'both'},
-  {id:'has_living_fence', cat:'farm', gu:'ખેતરની ચારેબાજુ લીલી વાડ છે?',                     en:'Has living fence around the farm?',       type:'yn', askedOf:'both'},
-  {id:'flora_around',     cat:'farm', gu:'ખેતરમાં કઈ વનસ્પતિ, વૃક્ષો, વેલીઓ જોવા મળે છે?',     en:'Flora / trees / creepers on farm',         type:'textarea', askedOf:'both'},
-  {id:'seed_source',    cat:'farm', gu:'બીજ અને ધરું ક્યાંથી લાવો છો?', en:'Seeds & seedlings source', type:'text',  askedOf:'both'},
-  {id:'does_value_add', cat:'farm', gu:'કોઈ ખેત પેદાશમાં મૂલ્યવર્ધન કરો છો?',          en:'Does any value addition?',           type:'yn',       askedOf:'both'},
-  {id:'value_products', cat:'farm', gu:'કઈ પેદાશમાંથી શું બનાવો છો?',                  en:'What products do you make?',         type:'textarea', askedOf:'both', onlyIf:{id:'does_value_add',equals:'yes'}},
+  {id:'farming_total_income', cat:'farm', gu:'ખેતીમાંથી અંદાજિત કુલ આવક ₹', en:'Estimated total income from farming (₹)', hi:'खेती से अनुमानित कुल आय (₹)', type:'number', askedOf:'both'},
+  {id:'organic_acres', cat:'farm', gu:'કેટલા એકર માં ઓર્ગનિક / પ્રાકૃતિક / ઝેરમુક્ત ખેતી કરો છો ?', en:'How many acres under organic/natural/chemical-free farming?', hi:'कितने एकड़ में ऑर्गेनिक / प्राकृतिक / जहरमुक्त खेती करते हैं?', type:'number', askedOf:'both'},
+  {id:'land_ownership',   cat:'farm', gu:'જમીન પોતાની છે કે ભાડે?',                          en:'Land ownership',  hi:'जमीन अपनी है या किराए की?', type:'select', options:['Own (પોતાની)','Lease (ભાડે)','Mixed (બંને)'], optionsHi:['अपनी','किराए पर','मिश्रित'], askedOf:'both'},
+  {id:'farming_who',      cat:'farm', gu:'ખેતી કોણ કરે છે?',                                 en:'Who does the farming?', hi:'खेती कौन करता है?', type:'select', options:['Self (પોતે)','Family (પરિવાર)','Labour (મજૂરી)','Mixed (બધા)'], optionsHi:['स्वयं','परिवार','मजदूर','सभी मिलकर'], askedOf:'both'},
+  {id:'years_organic',     cat:'farm', gu:'કેટલા વર્ષથી પ્રાકૃતિક ખેતી કરો છો?', en:'Years of organic farming',     hi:'कितने वर्षों से प्राकृतिक खेती करते हैं?', type:'number',   askedOf:'both'},
+  {id:'chem_runoff',      cat:'farm', gu:'બાજુના રાસાયણિક ખેતરનું પાણી તમારા ખેતરમાં આવે છે?', en:'Chemical runoff from neighbouring farm?', hi:'बगल के रासायणिक खेत का पानी आपके खेत में आता है?', type:'yn', askedOf:'both'},
+  {id:'has_living_fence', cat:'farm', gu:'ખેતરની ચારેબાજુ લીલી વાડ છે?',                     en:'Has living fence around the farm?',       hi:'खेत के चारों ओर हरी बाड़ है?', type:'yn', askedOf:'both'},
+  {id:'flora_around',     cat:'farm', gu:'ખેતરમાં કઈ વનસ્પતિ, વૃક્ષો, વેલીઓ જોવા મળે છે?',     en:'Flora / trees / creepers on farm',         hi:'खेत में कौन से पौधे, पेड़, बेलें दिखती हैं?', type:'textarea', askedOf:'both'},
+  {id:'seed_source',    cat:'farm', gu:'બીજ અને ધરું ક્યાંથી લાવો છો?', en:'Seeds & seedlings source', hi:'बीज और पौध कहाँ से लाते हैं?', type:'text',  askedOf:'both'},
+  {id:'does_value_add', cat:'farm', gu:'કોઈ ખેત પેદાશમાં મૂલ્યવર્ધન કરો છો?',          en:'Does any value addition?',           hi:'किसी फसल उत्पाद में मूल्यवर्धन करते हैं?', type:'yn',       askedOf:'both'},
+  {id:'value_products', cat:'farm', gu:'કઈ પેદાશમાંથી શું બનાવો છો?',                  en:'What products do you make?',         hi:'किस उत्पाद से क्या बनाते हैं?', type:'textarea', askedOf:'both', onlyIf:{id:'does_value_add',equals:'yes'}},
 
   /* ============ 3. ORGANIC CERTIFICATE & MARKET ============ */
-  {id:'has_cert',    cat:'cert', gu:'ઓર્ગેનિક સર્ટિફિકેટ છે?',         en:'Has organic certificate?', type:'yn',   askedOf:'both'},
-  {id:'cert_agency', cat:'cert', gu:'સર્ટિફિકેટ કઈ સંસ્થાનું છે?',       en:'Certificate agency',       type:'text', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
-  {id:'cert_expiry', cat:'cert', gu:'સર્ટિફિકેટ કઈ તારીખ સુધી માન્ય છે?', en:'Certificate valid until', type:'date', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
-  {id:'cert_photo',  cat:'cert', gu:'સર્ટિફિકેટનો ફોટો',                en:'Certificate photo',        type:'photo',askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
-  {id:'have_you_done_soil_testing', cat:'cert', gu:'જમીનની ચકાસણી (Soil Test) કરાવો છો ?', en:'Have you conducted a soil test?', type:'yn', askedOf:'both', req:true},
-  {id:'soil_test_photo', cat:'cert', gu:'જમીનના ટેસ્ટનો ફોટો', en:'Soil Test photo', type:'photo', askedOf:'both', req:true, onlyIf:{id:'have_you_done_soil_testing',equals:'yes'}},
-  {id:'do_you_have_fassai_certificate', cat:'cert', gu:'FASSAIનું સર્ટીફિકેટ છો ?', en:'Do you have FASSAI Certificate?', type:'yn', askedOf:'both'},
-  {id:'certificate_valid_until', cat:'cert', gu:'FASSAI નું સર્ટિફિકેટ ક્યાં સુધી માન્ય છે', en:'FASSAI Certificate valid until', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
-  {id:'fassai_certificate_photo', cat:'cert', gu:'FASSAIનો photo', en:'FASSAI Certificate photo', type:'photo', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
-  {id:'sale_channels',  cat:'cert', gu:'અગાઉના વર્ષે ઉપજનું વેચાણ ક્યાં કર્યું? (બધા)', en:'Sale channels last year (multi)', type:'multi',
-    options:['Local market (સ્થાનિક બજાર)','APMC','Khedut Haat (ખેડૂતહાટ)','Direct to customer (સીધું)','Wholesale (થોકવેચાણ)','Online','None / self-use (પોતા માટે)'], askedOf:'both'},
+  {id:'has_cert',    cat:'cert', gu:'ઓર્ગેનિક સર્ટિફિકેટ છે?',         en:'Has organic certificate?', hi:'ऑर्गेनिक सर्टिफिकेट है?', type:'yn',   askedOf:'both'},
+  {id:'cert_agency', cat:'cert', gu:'સર્ટિફિકેટ કઈ સંસ્થાનું છે?',       en:'Certificate agency',       hi:'सर्टिफिकेट किस संस्था का है?', type:'text', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
+  {id:'cert_expiry', cat:'cert', gu:'સર્ટિફિકેટ કઈ તારીખ સુધી માન્ય છે?', en:'Certificate valid until', hi:'सर्टिफिकेट किस तारीख तक मान्य है?', type:'date', askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
+  {id:'cert_photo',  cat:'cert', gu:'સર્ટિફિકેટનો ફોટો',                en:'Certificate photo',        hi:'सर्टिफिकेट की फोटो', type:'photo',askedOf:'both', onlyIf:{id:'has_cert',equals:'yes'}},
+  {id:'have_you_done_soil_testing', cat:'cert', gu:'જમીનની ચકાસણી (Soil Test) કરાવો છો ?', en:'Have you conducted a soil test?', hi:'मिट्टी की जांच (Soil Test) कराते हैं?', type:'yn', askedOf:'both', req:true},
+  {id:'soil_test_photo', cat:'cert', gu:'જમીનના ટેસ્ટનો ફોટો', en:'Soil Test photo', hi:'मिट्टी की जांच की फोटो', type:'photo', askedOf:'both', req:true, onlyIf:{id:'have_you_done_soil_testing',equals:'yes'}},
+  {id:'do_you_have_fassai_certificate', cat:'cert', gu:'FASSAIનું સર્ટીફિકેટ છો ?', en:'Do you have FASSAI Certificate?', hi:'FASSAI सर्टिफिकेट है?', type:'yn', askedOf:'both'},
+  {id:'certificate_valid_until', cat:'cert', gu:'FASSAI નું સર્ટિફિકેટ ક્યાં સુધી માન્ય છે', en:'FASSAI Certificate valid until', hi:'FASSAI सर्टिफिकेट किस तारीख तक मान्य है', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
+  {id:'fassai_certificate_photo', cat:'cert', gu:'FASSAIનો photo', en:'FASSAI Certificate photo', hi:'FASSAI सर्टिफिकेट की फोटो', type:'photo', askedOf:'both', req:true, onlyIf:{id:'do_you_have_fassai_certificate',equals:'yes'}},
+  {id:'sale_channels',  cat:'cert', gu:'અગાઉના વર્ષે ઉપજનું વેચાણ ક્યાં કર્યું? (બધા)', en:'Sale channels last year (multi)', hi:'पिछले साल उपज कहाँ बेची? (एक से ज़्यादा चुनें)', type:'multi',
+    options:['Local market (સ્થાનિક બજાર)','APMC','Khedut Haat (ખેડૂતહાટ)','Direct to customer (સીધું)','Wholesale (થોકવેચાણ)','Online','None / self-use (પોતા માટે)'],
+    optionsHi:['स्थानीय बाजार','APMC','खेडूत हाट','सीधे ग्राहक को','थोक बिक्री','ऑनलाइन','कोई नहीं / स्वयं उपयोग'], askedOf:'both'},
 
   /* ============ 4. LIVESTOCK & EQUIPMENT ============ */
-  {id:'livestock_types', cat:'livestock', gu:'પશુધનમાં શું છે? (દરેક માટે સંખ્યા લખો)', en:'Livestock present (tick + enter count for each)', type:'multi_count',
-    options:['Cow (ગાય)','Buffalo (ભેંસ)','Goat (બકરી)','Sheep (ઘેટું)','Bullock (બળદ)','Poultry (કુક્કુટ)','None (કોઈ નહીં)'], askedOf:'both'},
-  {id:'has_tractor', cat:'livestock', gu:'હાલમાં ખેડાણ કેવી રીતે કરો છો?',  en:'How do you currently plow?', type:'select',
-    options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'], askedOf:'both'},
+  {id:'livestock_types', cat:'livestock', gu:'પશુધનમાં શું છે? (દરેક માટે સંખ્યા લખો)', en:'Livestock present (tick + enter count for each)', hi:'पशुधन में क्या है? (हर एक की संख्या लिखें)', type:'multi_count',
+    options:['Cow (ગાય)','Buffalo (ભેંસ)','Goat (બકરી)','Sheep (ઘેટું)','Bullock (બળદ)','Poultry (કુક્કુટ)','None (કોઈ નહીં)'],
+    optionsHi:['गाय','भैंस','बकरी','भेड़','बैल','मुर्गी पालन','कोई नहीं'], askedOf:'both'},
+  {id:'has_tractor', cat:'livestock', gu:'હાલમાં ખેડાણ કેવી રીતે કરો છો?',  en:'How do you currently plow?', hi:'अभी जुताई कैसे करते हैं?', type:'select',
+    options:['Small tractor (નાનું ટ્રેક્ટર)','Large tractor (મોટું ટ્રેક્ટર)','Bullock (બળદથી)','Does not plow (ખેડાણ કરતા નથી)'],
+    optionsHi:['छोटा ट्रैक्टर','बड़ा ट्रैक्टर','बैल से','जुताई नहीं करते'], askedOf:'both'},
 
   /* ---- Pashupalan (animal husbandry) — from the 2026-27 નોંધણી પત્રક ---- */
-  {id:'livestock_counts', cat:'livestock', gu:'પશુઓની ઉપલબ્ધતા (સંખ્યા લખો)', en:'Animal availability (enter count)', type:'stat_cards',
+  {id:'livestock_counts', cat:'livestock', gu:'પશુઓની ઉપલબ્ધતા (સંખ્યા લખો)', en:'Animal availability (enter count)', hi:'पशुओं की उपलब्धता (संख्या लिखें)', type:'stat_cards',
     items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
-    fields:[{key:'count', gu:'સંખ્યા', en:'Count', type:'number'}], askedOf:'both'},
-  {id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat', cat:'livestock', gu:'ખેડૂત હાટમાં દૂધમાથી બનાવેલી મૂલ્યવર્ધિત પ્રોડક્ટ વેચવા માંગો છો ?', en:'Do you want to sale value added milk production at Khedut Haat?', type:'yn', askedOf:'both', req:true},
-  {id:'animal_stats', cat:'livestock', gu:'પશુઓની સ્થિતિ (ફોર્મ ભર્યું એ દિવસની સ્થિતિ)', en:"Animal status (as of today)", type:'stat_cards',
+    fields:[{key:'count', gu:'સંખ્યા', en:'Count', hi:'संख्या', type:'number'}], askedOf:'both'},
+  {id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat', cat:'livestock', gu:'ખેડૂત હાટમાં દૂધમાથી બનાવેલી મૂલ્યવર્ધિત પ્રોડક્ટ વેચવા માંગો છો ?', en:'Do you want to sale value added milk production at Khedut Haat?', hi:'क्या खेडूत हाट में दूध से बने मूल्यवर्धित उत्पाद बेचना चाहते हैं?', type:'yn', askedOf:'both', req:true},
+  {id:'animal_stats', cat:'livestock', gu:'પશુઓની સ્થિતિ (ફોર્મ ભર્યું એ દિવસની સ્થિતિ)', en:"Animal status (as of today)", hi:'पशुओं की स्थिति (आज के दिन अनुसार)', type:'stat_cards',
     items:['ગીર ગાય','કાંકરેજ ગાય','શંકર ગાય','ભેંસ','ઘેટાં','બકરાં','ઊંટ'],
     gateBy:'livestock_counts', gateField:'count', gateHint:'ઉપર દરેક પશુની સંખ્યા લખો — સંખ્યા 0 કરતાં વધુ હોય એ પશુની વિગતો અહીં આપોઆપ ખૂલશે. (Enter a count above — animals with count > 0 open here automatically.)',
+    gateHintHi:'ऊपर हर पशु की संख्या लिखें — संख्या 0 से अधिक होने पर उस पशु का विवरण यहाँ अपने आप खुलेगा।',
     fields:[
-      {key:'milking',   gu:'દૂધાળી',                          en:'Milking',                  type:'number'},
-      {key:'pregnant',  gu:'ગાભણ',                            en:'Pregnant',                 type:'number'},
-      {key:'dry',       gu:'વસુકાયેલ / બિન ઉત્પાદક',            en:'Dry / non-productive',     type:'number'},
-      {key:'young',     gu:'નાના વાછરું / બચ્ચાં',              en:'Young calves',             type:'number'},
-      {key:'dailyMilk', gu:'સવાર-સાંજનું દૂધ ઉત્પાદન (લિટર)',   en:'Daily milk, morning+evening (liters)', type:'number'},
+      {key:'milking',   gu:'દૂધાળી',                          en:'Milking',                  hi:'दूध देने वाली', type:'number'},
+      {key:'pregnant',  gu:'ગાભણ',                            en:'Pregnant',                 hi:'गाभिन', type:'number'},
+      {key:'dry',       gu:'વસુકાયેલ / બિન ઉત્પાદક',            en:'Dry / non-productive',     hi:'सूखी / अनुत्पादक', type:'number'},
+      {key:'young',     gu:'નાના વાછરું / બચ્ચાં',              en:'Young calves',             hi:'छोटे बछड़े', type:'number'},
+      {key:'dailyMilk', gu:'સવાર-સાંજનું દૂધ ઉત્પાદન (લિટર)',   en:'Daily milk, morning+evening (liters)', hi:'सुबह-शाम का दूध उत्पादन (लीटर)', type:'number'},
     ], askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'milk_daily_total',    cat:'livestock', gu:'હાલ કેટલા લિટર દૂધનું કુલ ઉત્પાદન થાય છે? (દૈનિક)', en:'Total daily milk production (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'milk_monthly_total',  cat:'livestock', gu:'કુલ દૂધ ઉત્પાદન (માસિક)',                          en:'Total monthly milk production (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'milk_local_sale',     cat:'livestock', gu:'સ્થાનિક વેચાણ કેટલું થાય છે? (દૈનિક લિટરમાં)',      en:'Local milk sale (liters/day)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'milk_used_for_ghee',  cat:'livestock', gu:'કેટલા લિટર દૂધ ઘી બનાવવા ઉપયોગ કરો છો?',           en:'Milk used to make ghee (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'ghee_monthly_production', cat:'livestock', gu:'દર મહિને કેટલા કિલો ઘી નું ઉત્પાદન થાય છે?',   en:'Ghee produced per month (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'ghee_local_sale',     cat:'livestock', gu:'ઘી નું સ્થાનિક વેચાણ (કિલોમાં)',                    en:'Ghee sold locally (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'ghee_unsold',         cat:'livestock', gu:'વેચાણ વગર કેટલા કિલો ઘી રહે છે?',                   en:'Ghee left unsold (kg)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'milk_for_other_products', cat:'livestock', gu:'અન્ય પ્રોડક્ટ (પનીર, ચીઝ) બનાવતા હોવ તો કેટલા લિટર દૂધ વપરાય છે?', en:'Milk used for other products like paneer/cheese (liters)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'ghee_making_process', cat:'livestock', gu:'ઘી બનાવવાની પ્રક્રિયા વિશે લખો — દૂધમાંથી મલાઈ કાઢીને ઘી બનાવો છો? કે દહીંનું માખણ બનાવી?', en:'Describe the ghee-making process (cream from milk, or butter from curd?)', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_land_organic', cat:'livestock', gu:'પશુઓને જે ઘાસચારો ખવડાવો છો એ ખેતર પ્રાકૃતિક ખેતીના સિદ્ધાંતો મુજબ ખેતી થાય છે ખરી?', en:'Is the fodder grown following organic farming principles?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_acreage_monsoon', cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ચોમાસું (એકરમાં)', en:'Fodder acreage — monsoon (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_acreage_winter',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — શિયાળુ (એકરમાં)',  en:'Fodder acreage — winter (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_acreage_summer',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ઉનાળુ (એકરમાં)',   en:'Fodder acreage — summer (acre)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_purchased',    cat:'livestock', gu:'બહારથી ખરીદીને ક્યું ઘાસ લાવો છો?',                 en:'Fodder purchased from outside (which kind)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'fodder_other',        cat:'livestock', gu:'ઘાસચારો — અન્ય',                                   en:'Fodder — other', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'feed_market',         cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — બજારનું',              en:'Feed given — market-bought (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'feed_homemade',       cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — ઘરે બનાવેલું',          en:'Feed given — home-made (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'feed_other',          cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — અન્ય',                 en:'Feed given — other (details)', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'feed_is_organic',     cat:'livestock', gu:'જે દાણ ખવડાવો છો એ પ્રાકૃતિક અનાજ/કઠોળ/ઔષધિયો છે ખરી?', en:'Is the feed organic grain/pulses/herbal?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'uses_allopathy',      cat:'livestock', gu:'પશુઓ બીમાર પડે ત્યારે એલોપેથી દવાઓનો ઉપયોગ કરો છો?', en:'Use allopathy medicines when animals fall sick?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'allopathy_diseases',  cat:'livestock', gu:'મુખ્ય કઈ-કઈ બીમારી માટે એલોપેથી દવાઓ ઉપયોગ થાય છે?', en:'Which illnesses mainly use allopathy medicines?', type:'text', askedOf:'both', onlyIf:[{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'},{id:'uses_allopathy',equals:'yes'}]},
-  {id:'vaccines_given',      cat:'livestock', gu:'કઈ-કઈ રસીઓ અપાવો છો?',                              en:'Which vaccines are given?', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'blood_test_yearly',   cat:'livestock', gu:'દર વર્ષે પશુઓના કોઈ બ્લડ ટેસ્ટ કરાવો છો ખરા?',       en:'Any yearly blood tests done for animals?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'traditional_vet',     cat:'livestock', gu:'કોઈ સ્થાનિક પરંપરાગત પશુ વૈદની સેવા લો છો?',         en:'Use services of a local traditional animal healer?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'shelter_pest_control', cat:'livestock', gu:'પશુ રહેઠાણની જગ્યાએ જૂઆ-ઈતરડી, ચાંચડનો ઉપદ્રવ છે? તેના નિવારણ માટે શું કરો છો?', en:'Lice/ticks/fleas at the animal shelter? What do you do about it?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
-  {id:'dung_use_methods',    cat:'livestock', gu:'પશુના ગોબર-ગૌમૂત્રનો ઉપયોગ કેવી રીતે કરો છો? (બધા પસંદ કરો)', en:'How is dung/urine used? (multi)', type:'multi',
-    options:['ઉકરડામાં છાણિયું ખાતર (Manure pit)','કમ્પોસ્ટ ખાતર (Compost)','વર્મી કમ્પોસ્ટ (Vermicompost)'], askedOf:'both'},
-  {id:'biogas_plant',        cat:'livestock', gu:'ગોબર ગેસ પ્લાન્ટ છે?',                              en:'Have a biogas plant?', type:'yn', askedOf:'both'},
-  {id:'gomutra_collected',   cat:'livestock', gu:'ગૌમૂત્ર એકત્ર કરો છો?',                             en:'Do you collect cow urine (gomutra)?', type:'yn', askedOf:'both'},
-  {id:'dung_product_sale',   cat:'livestock', gu:'ગોબર-ગૌમૂત્રમાંથી કોઈ વિશેષ સેન્દ્રિય ખાતર બનાવી વેચાણ કરો છો?', en:'Sell any special organic manure made from dung/urine?', type:'yn', askedOf:'both'},
-  {id:'dung_other_product',  cat:'livestock', gu:'ગોબરમાંથી અન્ય કોઈ ઉત્પાદન બનાવો છો? વિગત લખો', en:'Any other product made from dung? Describe', type:'textarea', askedOf:'both'},
-  {id:'product_pricing', cat:'livestock', gu:'ગોપાલન આધારિત ઉત્પાદનોની કિંમત અને પેકિંગ સાઈઝ', en:'Dairy-product pricing & pack size', type:'stat_cards',
-    addable:true, maxRows:3, itemLabel:{gu:'પેદાશનું નામ', en:'Product name'},
+  {id:'milk_daily_total',    cat:'livestock', gu:'હાલ કેટલા લિટર દૂધનું કુલ ઉત્પાદન થાય છે? (દૈનિક)', en:'Total daily milk production (liters)', hi:'अभी कुल कितने लीटर दूध का उत्पादन होता है? (रोज)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_monthly_total',  cat:'livestock', gu:'કુલ દૂધ ઉત્પાદન (માસિક)',                          en:'Total monthly milk production (liters)', hi:'कुल दूध उत्पादन (मासिक)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_local_sale',     cat:'livestock', gu:'સ્થાનિક વેચાણ કેટલું થાય છે? (દૈનિક લિટરમાં)',      en:'Local milk sale (liters/day)', hi:'स्थानीय बिक्री कितनी होती है? (रोज लीटर में)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_used_for_ghee',  cat:'livestock', gu:'કેટલા લિટર દૂધ ઘી બનાવવા ઉપયોગ કરો છો?',           en:'Milk used to make ghee (liters)', hi:'कितने लीटर दूध घी बनाने में उपयोग करते हैं?', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_monthly_production', cat:'livestock', gu:'દર મહિને કેટલા કિલો ઘી નું ઉત્પાદન થાય છે?',   en:'Ghee produced per month (kg)', hi:'हर महीने कितने किलो घी का उत्पादन होता है?', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_local_sale',     cat:'livestock', gu:'ઘી નું સ્થાનિક વેચાણ (કિલોમાં)',                    en:'Ghee sold locally (kg)', hi:'घी की स्थानीय बिक्री (किलो में)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_unsold',         cat:'livestock', gu:'વેચાણ વગર કેટલા કિલો ઘી રહે છે?',                   en:'Ghee left unsold (kg)', hi:'बिना बिके कितना किलो घी रह जाता है?', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'milk_for_other_products', cat:'livestock', gu:'અન્ય પ્રોડક્ટ (પનીર, ચીઝ) બનાવતા હોવ તો કેટલા લિટર દૂધ વપરાય છે?', en:'Milk used for other products like paneer/cheese (liters)', hi:'अन्य उत्पाद (पनीर, चीज़) बनाते हैं तो कितने लीटर दूध उपयोग होता है?', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'ghee_making_process', cat:'livestock', gu:'ઘી બનાવવાની પ્રક્રિયા વિશે લખો — દૂધમાંથી મલાઈ કાઢીને ઘી બનાવો છો? કે દહીંનું માખણ બનાવી?', en:'Describe the ghee-making process (cream from milk, or butter from curd?)', hi:'घी बनाने की प्रक्रिया के बारे में लिखें — क्या दूध से मलाई निकालकर घी बनाते हैं? या दही का मक्खन बनाकर?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_land_organic', cat:'livestock', gu:'પશુઓને જે ઘાસચારો ખવડાવો છો એ ખેતર પ્રાકૃતિક ખેતીના સિદ્ધાંતો મુજબ ખેતી થાય છે ખરી?', en:'Is the fodder grown following organic farming principles?', hi:'जो चारा पशुओं को खिलाते हैं वह खेत प्राकृतिक खेती के सिद्धांतों अनुसार उगाया जाता है क्या?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_monsoon', cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ચોમાસું (એકરમાં)', en:'Fodder acreage — monsoon (acre)', hi:'चारे की खेती — मानसून (एकड़ में)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_winter',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — શિયાળુ (એકરમાં)',  en:'Fodder acreage — winter (acre)', hi:'चारे की खेती — सर्दी (एकड़ में)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_acreage_summer',  cat:'livestock', gu:'ઘાસચારાનું વાવેતર — ઉનાળુ (એકરમાં)',   en:'Fodder acreage — summer (acre)', hi:'चारे की खेती — गर्मी (एकड़ में)', type:'number', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_purchased',    cat:'livestock', gu:'બહારથી ખરીદીને ક્યું ઘાસ લાવો છો?',                 en:'Fodder purchased from outside (which kind)', hi:'बाहर से खरीदकर कौन सा चारा लाते हैं?', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'fodder_other',        cat:'livestock', gu:'ઘાસચારો — અન્ય',                                   en:'Fodder — other', hi:'चारा — अन्य', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_market',         cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — બજારનું',              en:'Feed given — market-bought (details)', hi:'पशुओं को कौन सा दाना खिलाते हैं? — बाजार से', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_homemade',       cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — ઘરે બનાવેલું',          en:'Feed given — home-made (details)', hi:'पशुओं को कौन सा दाना खिलाते हैं? — घर पर बनाया हुआ', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_other',          cat:'livestock', gu:'પશુઓને દાણ કયું ખવડાવો છો? — અન્ય',                 en:'Feed given — other (details)', hi:'पशुओं को कौन सा दाना खिलाते हैं? — अन्य', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'feed_is_organic',     cat:'livestock', gu:'જે દાણ ખવડાવો છો એ પ્રાકૃતિક અનાજ/કઠોળ/ઔષધિયો છે ખરી?', en:'Is the feed organic grain/pulses/herbal?', hi:'जो दाना खिलाते हैं वह प्राकृतिक अनाज/दाल/जड़ी-बूटी है क्या?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'uses_allopathy',      cat:'livestock', gu:'પશુઓ બીમાર પડે ત્યારે એલોપેથી દવાઓનો ઉપયોગ કરો છો?', en:'Use allopathy medicines when animals fall sick?', hi:'पशु बीमार पड़ने पर एलोपैथी दवाओं का उपयोग करते हैं?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'allopathy_diseases',  cat:'livestock', gu:'મુખ્ય કઈ-કઈ બીમારી માટે એલોપેથી દવાઓ ઉપયોગ થાય છે?', en:'Which illnesses mainly use allopathy medicines?', hi:'मुख्य किन-किन बीमारियों के लिए एलोपैथी दवाओं का उपयोग होता है?', type:'text', askedOf:'both', onlyIf:[{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'},{id:'uses_allopathy',equals:'yes'}]},
+  {id:'vaccines_given',      cat:'livestock', gu:'કઈ-કઈ રસીઓ અપાવો છો?',                              en:'Which vaccines are given?', hi:'कौन-कौन से टीके लगवाते हैं?', type:'text', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'blood_test_yearly',   cat:'livestock', gu:'દર વર્ષે પશુઓના કોઈ બ્લડ ટેસ્ટ કરાવો છો ખરા?',       en:'Any yearly blood tests done for animals?', hi:'हर साल पशुओं का कोई ब्लड टेस्ट कराते हैं क्या?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'traditional_vet',     cat:'livestock', gu:'કોઈ સ્થાનિક પરંપરાગત પશુ વૈદની સેવા લો છો?',         en:'Use services of a local traditional animal healer?', hi:'किसी स्थानीय पारंपरिक पशु वैद्य की सेवा लेते हैं?', type:'yn', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'shelter_pest_control', cat:'livestock', gu:'પશુ રહેઠાણની જગ્યાએ જૂઆ-ઈતરડી, ચાંચડનો ઉપદ્રવ છે? તેના નિવારણ માટે શું કરો છો?', en:'Lice/ticks/fleas at the animal shelter? What do you do about it?', hi:'पशु आवास स्थान पर जूं-किलनी, पिस्सू का प्रकोप है? इसकी रोकथाम के लिए क्या करते हैं?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'dung_use_methods',    cat:'livestock', gu:'પશુના ગોબર-ગૌમૂત્રનો ઉપયોગ કેવી રીતે કરો છો? (બધા પસંદ કરો)', en:'How is dung/urine used? (multi)', hi:'पशु के गोबर-गौमूत्र का उपयोग कैसे करते हैं? (सभी चुनें)', type:'multi',
+    options:['ઉકરડામાં છાણિયું ખાતર (Manure pit)','કમ્પોસ્ટ ખાતર (Compost)','વર્મી કમ્પોસ્ટ (Vermicompost)'],
+    optionsHi:['खाद गड्ढा','कंपोस्ट','वर्मी कंपोस्ट'], askedOf:'both'},
+  {id:'biogas_plant',        cat:'livestock', gu:'ગોબર ગેસ પ્લાન્ટ છે?',                              en:'Have a biogas plant?', hi:'गोबर गैस प्लांट है क्या?', type:'yn', askedOf:'both'},
+  {id:'gomutra_collected',   cat:'livestock', gu:'ગૌમૂત્ર એકત્ર કરો છો?',                             en:'Do you collect cow urine (gomutra)?', hi:'गौमूत्र इकट्ठा करते हैं?', type:'yn', askedOf:'both'},
+  {id:'dung_product_sale',   cat:'livestock', gu:'ગોબર-ગૌમૂત્રમાંથી કોઈ વિશેષ સેન્દ્રિય ખાતર બનાવી વેચાણ કરો છો?', en:'Sell any special organic manure made from dung/urine?', hi:'गोबर-गौमूत्र से कोई विशेष जैविक खाद बनाकर बेचते हैं?', type:'yn', askedOf:'both'},
+  {id:'dung_other_product',  cat:'livestock', gu:'ગોબરમાંથી અન્ય કોઈ ઉત્પાદન બનાવો છો? વિગત લખો', en:'Any other product made from dung? Describe', hi:'गोबर से कोई अन्य उत्पाद बनाते हैं? विवरण लिखें', type:'textarea', askedOf:'both'},
+  {id:'product_pricing', cat:'livestock', gu:'ગોપાલન આધારિત ઉત્પાદનોની કિંમત અને પેકિંગ સાઈઝ', en:'Dairy-product pricing & pack size', hi:'गोपालन आधारित उत्पादों की कीमत और पैकिंग साइज', type:'stat_cards',
+    addable:true, maxRows:3, itemLabel:{gu:'પેદાશનું નામ', en:'Product name', hi:'उत्पाद का नाम'},
     fields:[
-      {key:'packSize', gu:'પેકિંગ સાઈઝ', en:'Pack size', type:'text'},
-      {key:'price',    gu:'કિંમત (₹)',   en:'Price (₹)', type:'number'},
+      {key:'packSize', gu:'પેકિંગ સાઈઝ', en:'Pack size', hi:'पैकिंग साइज', type:'text'},
+      {key:'price',    gu:'કિંમત (₹)',   en:'Price (₹)', hi:'कीमत (₹)', type:'number'},
     ], askedOf:'both'},
-  {id:'haat_products_to_sell', cat:'livestock', gu:'સૃષ્ટિ ખેડૂતહાટમાં ક્યું ઉત્પાદન વેચવું છે?',      en:'Which product(s) do you want to sell at the Sristi Khedut Haat?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
+  {id:'haat_products_to_sell', cat:'livestock', gu:'સૃષ્ટિ ખેડૂતહાટમાં ક્યું ઉત્પાદન વેચવું છે?',      en:'Which product(s) do you want to sell at the Sristi Khedut Haat?', hi:'सृष्टि खेडूत हाट में कौन सा उत्पाद बेचना है?', type:'textarea', askedOf:'both', req:true, onlyIf:{id:'do_you_want_to_sale_value_added_milk_production_at_khedut_haat',equals:'yes'}},
 
   /* ============ 5. WEEDING, MULCHING & IRRIGATION ============ */
-  {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          type:'yn',    askedOf:'both'},
-  {id:'weed_types',      cat:'practices', gu:'ખેતરમાં કયું નિંદામણ છે?',                en:'Which weeds?',                    type:'text',  askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
-  {id:'weed_photo',      cat:'practices', gu:'નિંદામણનો ફોટો',                          en:'Weeds photo',                     type:'photo', askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
-  {id:'chem_weedicide',  cat:'practices', gu:'નિંદામણ દૂર કરવા રાસાયણિક દવા વાપરો છો?', en:'Uses chemical weedicide?',        type:'yn',    askedOf:'both'},
-  {id:'weed_removal_method', cat:'practices', gu:'તો નિંદામણ કેવી રીતે દૂર કરો છો?', en:'How do you remove weeds then?', type:'text', askedOf:'both', onlyIf:{id:'chem_weedicide',equals:'no'}},
-  {id:'does_mulching',   cat:'practices', gu:'મલ્ચિંગ / આચ્છાદન કરે છે?',                en:'Does mulching?',                  type:'yn',    askedOf:'both'},
-  {id:'mulch_type',      cat:'practices', gu:'કયા પ્રકારનું મલ્ચિંગ કરો છો?',           en:'Type of mulching',                type:'text',  askedOf:'both', onlyIf:{id:'does_mulching',equals:'yes'}},
-  {id:'irrigation_methods', cat:'practices', gu:'પિયત કયું છે? (બધા પસંદ કરો)', en:'Irrigation methods (multi)', type:'multi',
-    options:['Borewell (બોરવેલ)','Well (કૂવો)','Canal (નહેર)','River (નદી)','Pond (તળાવ)','Rain-fed (વરસાદ)','Drip (ટપક)','Sprinkler (ફુવારો)'], askedOf:'both'},
-  {id:'irrigation_photo',   cat:'practices', gu:'પિયત પદ્ધતિનો ફોટો',                en:'Irrigation photo',           type:'photo',    askedOf:'both'},
+  {id:'has_weeds',       cat:'practices', gu:'ખેતરમાં નિંદામણની હાજરી છે?',           en:'Weeds present on farm?',          hi:'खेत में खरपतवार की मौजूदगी है?', type:'yn',    askedOf:'both'},
+  {id:'weed_types',      cat:'practices', gu:'ખેતરમાં કયું નિંદામણ છે?',                en:'Which weeds?',                    hi:'खेत में कौन सा खरपतवार है?', type:'text',  askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
+  {id:'weed_photo',      cat:'practices', gu:'નિંદામણનો ફોટો',                          en:'Weeds photo',                     hi:'खरपतवार की फोटो', type:'photo', askedOf:'both', onlyIf:{id:'has_weeds',equals:'yes'}},
+  {id:'chem_weedicide',  cat:'practices', gu:'નિંદામણ દૂર કરવા રાસાયણિક દવા વાપરો છો?', en:'Uses chemical weedicide?',        hi:'खरपतवार हटाने के लिए रासायणिक दवा उपयोग करते हैं?', type:'yn',    askedOf:'both'},
+  {id:'weed_removal_method', cat:'practices', gu:'તો નિંદામણ કેવી રીતે દૂર કરો છો?', en:'How do you remove weeds then?', hi:'तो खरपतवार कैसे हटाते हैं?', type:'text', askedOf:'both', onlyIf:{id:'chem_weedicide',equals:'no'}},
+  {id:'does_mulching',   cat:'practices', gu:'મલ્ચિંગ / આચ્છાદન કરે છે?',                en:'Does mulching?',                  hi:'मल्चिंग / आच्छादन करते हैं?', type:'yn',    askedOf:'both'},
+  {id:'mulch_type',      cat:'practices', gu:'કયા પ્રકારનું મલ્ચિંગ કરો છો?',           en:'Type of mulching',                hi:'किस प्रकार का मल्चिंग करते हैं?', type:'text',  askedOf:'both', onlyIf:{id:'does_mulching',equals:'yes'}},
+  {id:'irrigation_methods', cat:'practices', gu:'પિયત કયું છે? (બધા પસંદ કરો)', en:'Irrigation methods (multi)', hi:'सिंचाई कैसे करते हैं? (सभी चुनें)', type:'multi',
+    options:['Borewell (બોરવેલ)','Well (કૂવો)','Canal (નહેર)','River (નદી)','Pond (તળાવ)','Rain-fed (વરસાદ)','Drip (ટપક)','Sprinkler (ફુવારો)'],
+    optionsHi:['बोरवेल','कुआं','नहर','नदी','तालाब','वर्षा-आधारित','ड्रिप','स्प्रिंकलर'], askedOf:'both'},
+  {id:'irrigation_photo',   cat:'practices', gu:'પિયત પદ્ધતિનો ફોટો',                en:'Irrigation photo',           hi:'सिंचाई पद्धति की फोटो', type:'photo',    askedOf:'both'},
 
   /* ============ 6. MANURE, PLANT PROTECTION & SEEDS ============ */
-  {id:'manure_methods',  cat:'irrigation', gu:'સેન્દ્રિય ખાતર બનાવવા કઈ વ્યવસ્થા છે? (બધા)', en:'Manure systems (multi)', type:'multi',
-    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Oil cake (ખોળ)','Bio-culture (બાયો-કલ્ચર)','Algae/BGA (લીલ)'], askedOf:'both'},
-  {id:'manure_photo',    cat:'irrigation', gu:'ખાતર બનાવવાના એકમના ફોટા',               en:'Manure setup photos',             type:'photo', askedOf:'both'},
-  {id:'protection_methods', cat:'irrigation', gu:'પાક સંરક્ષણ માટે શું કરો છો? (બધા પસંદ કરો)', en:'Plant protection methods (multi-select organic IPM)', type:'multi', askedOf:'both',
+  {id:'manure_methods',  cat:'irrigation', gu:'સેન્દ્રિય ખાતર બનાવવા કઈ વ્યવસ્થા છે? (બધા)', en:'Manure systems (multi)', hi:'जैविक खाद बनाने की क्या व्यवस्था है? (सभी चुनें)', type:'multi',
+    options:['Compost pit (કમ્પોસ્ટ ખાડો)','Vermicompost (વર્મીકમ્પોસ્ટ)','Jeevamrut (જીવામૃત)','Bijamrut (બીજામૃત)','Dashparni Ark (દશપર્ણી અર્ક)','FYM (ગોબર ખાતર)','Green manure (લીલું ખાતર)','Oil cake (ખોળ)','Bio-culture (બાયો-કલ્ચર)','Algae/BGA (લીલ)'],
+    optionsHi:['कंपोस्ट गड्ढा','वर्मी कंपोस्ट','जीवामृत','बीजामृत','दशपर्णी अर्क','गोबर खाद','हरी खाद','खली','बायो-कल्चर','शैवाल'], askedOf:'both'},
+  {id:'manure_photo',    cat:'irrigation', gu:'ખાતર બનાવવાના એકમના ફોટા',               en:'Manure setup photos',             hi:'खाद बनाने की इकाई की फोटो', type:'photo', askedOf:'both'},
+  {id:'protection_methods', cat:'irrigation', gu:'પાક સંરક્ષણ માટે શું કરો છો? (બધા પસંદ કરો)', en:'Plant protection methods (multi-select organic IPM)', hi:'फसल सुरक्षा के लिए क्या करते हैं? (सभी चुनें)', type:'multi', askedOf:'both',
     options:[
       'પીળા ચીકણા સાપળા (Yellow sticky traps)',
       'ભૂરા ચીકણા સાપળા (Blue sticky traps)',
@@ -5215,11 +5287,17 @@ window.QUESTIONS_V5 = [
       'રાખ (Plant ash)',
       'હીંગ દ્રાવણ (Asafoetida solution)',
       'અન્ય (Other)',
+    ],
+    optionsHi:[
+      'पीले चिपचिपे जाल','नीले चिपचिपे जाल','फेरोमोन ट्रैप','प्रकाश जाल','पक्षी बैठने के अड्डे',
+      'नीमास्त्र','अग्न्यास्त्र','ब्रह्मास्त्र','दशपर्णी अर्क','नीम तेल','नीम खली',
+      'गौमूत्र छिड़काव','छाछ छिड़काव','ट्राइकोडर्मा','ब्यूवेरिया','मेटारायझियम','स्यूडोमोनास','एनपीवी वायरस',
+      'गेंदा अंतरफसल','ट्रैप फसल','फसल चक्र','मिश्रित खेती','हाथ से चुनना','राख','हींग घोल','अन्य',
     ]},
-  {id:'protection_other', cat:'irrigation', gu:'અન્ય સંરક્ષણ પદ્ધતિ (વર્ણન)', en:'Other plant protection details', type:'textarea', askedOf:'both'},
-  {id:'friendly_insects',   cat:'irrigation', gu:'ખેતરમાં મિત્ર કીટકો જોવા મળે છે?',  en:'Beneficial insects observed', type:'text',    askedOf:'both'},
-  {id:'pests_observed',     cat:'irrigation', gu:'ખેતરમાં રોગ, જીવાત કે કીટકો જોવા મળે છે?', en:'Pests / disease observed', type:'text',   askedOf:'both'},
-  {id:'pests_photo',        cat:'irrigation', gu:'કીટકોના ફોટા',                       en:'Pest photos',                type:'photo',    askedOf:'both'},
+  {id:'protection_other', cat:'irrigation', gu:'અન્ય સંરક્ષણ પદ્ધતિ (વર્ણન)', en:'Other plant protection details', hi:'अन्य सुरक्षा पद्धति (विवरण)', type:'textarea', askedOf:'both'},
+  {id:'friendly_insects',   cat:'irrigation', gu:'ખેતરમાં મિત્ર કીટકો જોવા મળે છે?',  en:'Beneficial insects observed', hi:'खेत में मित्र कीट दिखते हैं?', type:'text',    askedOf:'both'},
+  {id:'pests_observed',     cat:'irrigation', gu:'ખેતરમાં રોગ, જીવાત કે કીટકો જોવા મળે છે?', en:'Pests / disease observed', hi:'खेत में रोग, कीट या जीव दिखते हैं?', type:'text',   askedOf:'both'},
+  {id:'pests_photo',        cat:'irrigation', gu:'કીટકોના ફોટા',                       en:'Pest photos',                hi:'कीटों की फोटो', type:'photo',    askedOf:'both'},
 ];
 
 /* =============================================================
@@ -5307,6 +5385,25 @@ function reconcileCoreQuestionsV5(){
       });
       changed = true;
     }
+  });
+  // Hindi backfill — hi/optionsHi were added after some devices/schema
+  // overrides already existed. Question Manager never lets admins edit these
+  // (code-level only, no admin UI), so any question missing them just needs
+  // the current default's translation copied in without touching admin-owned
+  // gu/en/options text.
+  window.QUESTIONS_V5.forEach(q => {
+    const def = window.DEFAULT_QUESTIONS_V5.find(d => d.id === q.id);
+    if(!def) return;
+    if(!q.hi && def.hi){ q.hi = def.hi; changed = true; }
+    if(!q.optionsHi && def.optionsHi){ q.optionsHi = def.optionsHi; changed = true; }
+    if(q.itemLabel && def.itemLabel && !q.itemLabel.hi && def.itemLabel.hi){ q.itemLabel.hi = def.itemLabel.hi; changed = true; }
+    if(Array.isArray(q.fields) && Array.isArray(def.fields)){
+      q.fields.forEach((f,i) => { if(f && !f.hi && def.fields[i] && def.fields[i].hi){ f.hi = def.fields[i].hi; changed = true; } });
+    }
+  });
+  (window.CATEGORIES_V5||[]).forEach(cat => {
+    const def = (window.DEFAULT_CATEGORIES_V5||[]).find(d => d.key === cat.key);
+    if(def && !cat.hi && def.hi){ cat.hi = def.hi; changed = true; }
   });
   return changed;
 }
@@ -5442,6 +5539,80 @@ window.CROPS_CATALOG = [
   "Other (અન્ય)",
 ];
 window.CROP_SEASONS = ['Kharif (ખરીફ)','Rabi (રવિ)','Year-round','Perennial'];
+
+/* Hindi display names for CROPS_CATALOG, keyed by the exact catalog string
+   (the canonical English/Gujarati string stays the stored value everywhere —
+   this is display-only, looked up via cropHiLabel()). Not admin-editable
+   (Manage Crops only edits the canonical name); a crop added later without
+   an entry here falls back to the canonical string in Hindi mode. */
+window.CROPS_CATALOG_HI = {
+  "Potato (બટાકા)":"आलू","Wheat (ઘઉં)":"गेहूं","Cotton (કપાસ)":"कपास",
+  "Paddy / Rice (ડાંગર)":"धान / चावल","Maize (મકાઈ)":"मक्का","Tomato (ટામેટા)":"टमाटर",
+  "Onion (ડુંગળી)":"प्याज","Okra / Bhindi (ભીંડા)":"भिंडी","Soybean (સોયાબીન)":"सोयाबीन",
+  "Castor (દિવેલ)":"अरंडी","Cumin (જીરુ)":"जीरा","Groundnut (મગફળી)":"मूंगफली",
+  "Tur / Arhar (તુવેર)":"तुअर / अरहर","Moong (મગ)":"मूंग","Chana (ચણા)":"चना",
+  "Mustard (રાઇ)":"सरसों","Sesame (તલ)":"तिल","Bajri (બાજરી)":"बाजरा",
+  "Jowar (જુવાર)":"ज्वार","Sugarcane (શેરડી)":"गन्ना","Turmeric (હળદર)":"हल्दी",
+  "Ginger (આદુ)":"अदरक","Garlic (લસણ)":"लहसुन","Brinjal (રીંગણ)":"बैंगन",
+  "Cabbage (કોબી)":"पत्ता गोभी","Cauliflower (ફુલગોબી)":"फूल गोभी","Coriander (કોથમીર)":"धनिया",
+  "Methi (મેથી)":"मेथी","Spinach (પાલક)":"पालक","Mango (કેરી)":"आम",
+  "Banana (કેળા)":"केला","Papaya (પપઈયા)":"पपीता","Guava (જામફળ)":"अमरूद",
+  "Mango ginger (આંબા હળદર)":"आमा हल्दी","Spine gourd / Kantola (કંકોળા (કંટોલા))":"ककोड़ा / कंटोला","Karingda (wild round melon) (કારીંગડા)":"कारिंगड़ा (जंगली ककड़ी)",
+  "Bitter gourd (કારેલા)":"करेला","Capsicum (કેપ્સિકમ)":"शिमला मिर्च","Wood apple (કોંઠા)":"कैथा",
+  "Cabbage (કોબીજ)":"पत्ता गोभी","Pumpkin (કોળું)":"कद्दू","Cucumber (ખીરા કાકડી)":"खीरा",
+  "Sponge gourd (ગલકા)":"तोरई (गिल्की)","Carrot (ગાજર)":"गाजर","Lasoda / Gunda (ગુંદા)":"लसोड़ा / गोंदा",
+  "Cluster bean (ગુવાર)":"ग्वार फली","Long melon (ચીભડા)":"ककड़ी (चिभड़ा)","Cowpea (fresh pods) (ચોળી)":"लोबिया (फली)",
+  "Ivy gourd / Tindora (ટીંડોળા)":"टिंडोरा (कुंदरू)","Tinda / Apple gourd (ટીમસા)":"टिंडा","Ridge gourd (તુરિયા)":"तोरी",
+  "Bottle gourd (દૂધી)":"लौकी","Native gooseberry (Amla) (દેશી આમળાં)":"देसी आंवला","Native cucumber (દેશી કાકડી)":"देसी खीरा",
+  "Pointed gourd / Parwal (પરવળ)":"परवल","French beans (ફણસી)":"फ्रेंच बीन्स","Cauliflower (ફ્લાવર)":"फूल गोभी",
+  "Beetroot (બીટ)":"चुकंदर","Broccoli (બ્રોકોલી)":"ब्रोकली","Chili / Green chili (મરચા)":"मिर्च / हरी मिर्च",
+  "Radish (મૂળા)":"मूली","Mogri radish (મોગરી)":"मोगरी (छोटी मूली)","Purple yam (રતાળુ)":"रतालू",
+  "Ravaiya (small round brinjal, stuffing variety) (રવૈયા)":"रवैया (गोल भरवां बैंगन)","Red-yellow Capsicum (લાલ-પીળા કેપ્સિકમ)":"लाल-पीली शिमला मिर्च","Lemon (લીંબુ)":"नींबू",
+  "Green pigeon pea (fresh Tur) (લીલી તુવેર)":"हरी तुअर","Green / fresh Turmeric (લીલી હળદર)":"हरी हल्दी","Green garlic (લીલું લસણ)":"हरा लहसुन",
+  "Lettuce (લેટ્યુસ)":"लेट्यूस (सलाद पत्ता)","Green peas (વટાણા)":"मटर","Flat beans (Vaal papdi) (વાલોળ પાપડી)":"वाल पापड़ी (सेम की फली)",
+  "Sweet potato (શક્કરીયું)":"शकरकंद","Drumstick (Moringa) (સરગવો)":"सहजन (मोरिंगा)","Elephant foot yam (સુરણ)":"सूरन (जिमीकंद)",
+  "Surti papdi (flat beans) (સુરતી પાપડી)":"सूरती पापड़ी","Sweet corn (સ્વીટકોર્ન)":"स्वीट कॉर्न","Ajwain leaves (અજમાના પાન)":"अजवाइन के पत्ते",
+  "Allspice leaves (ઓલસ્પાઈસ પાન)":"ऑलस्पाइस पत्ते","Coriander leaves (કોથમીર (લીલા ધાણા))":"हरा धनिया","Sour Okra (Roselle) (ખાટી ભીંડી)":"खट्टी भिंडी (अंबाड़ी)",
+  "Giloy / Guduchi (ગળો)":"गिलोय","Dodi greens (Jivanti) (ડોડીની ભાજી (જીવંતી))":"डोडी भाजी (जीवंती)","Amaranth greens (Tandalja) (તાંદળજો)":"चौलाई भाजी",
+  "Tulsi / Basil leaves (તુલસીના પાન)":"तुलसी के पत्ते","Betel leaves (Paan) (નાગરવેલના પાન (કલકત્તિ પાન ))":"पान के पत्ते","Colocasia leaves (Patra) (પાત્રા)":"अरबी के पत्ते (पात्रा)",
+  "Spinach (પાલખ)":"पालक","Punarnava (પુનર્નવા)":"पुनर्नवा","Mint (ફુદીનો)":"पुदीना",
+  "Brahmi (બ્રાહ્મી)":"ब्राह्मी","Bhumi Amla (Phyllanthus) (ભોંય આંબલી)":"भूमि आंवला","Curry leaves (sweet neem) (મીઠો લીમડો)":"करी पत्ता (मीठा नीम)",
+  "Green tea leaves (લીલી ચા)":"हरी चाय पत्ती","Luni greens (Purslane) (લુણી ભાજી)":"लूनी भाजी (कुलफा)","Monsoon-season edible flower (વર્ષાડોડીના ફૂલ)":"वर्षाडोडी के फूल",
+  "Vaseti greens (વાસેટીની ભાજી)":"वासेटी भाजी","Fig (અંજીર)":"अंजीर","Karonda (કરમદાં)":"करौंदा",
+  "Raw / Green Banana (કાચા કેળા)":"कच्चा केला","Raw Papaya (કાચા પપૈયા)":"कच्चा पपीता","Raw Mango (કાચી કેરી)":"कच्चा आम",
+  "Black Jamun (કાળા જાંબુ)":"जामुन","Kiwi (કીવી)":"कीवी","Dates (ખજૂર)":"खजूर",
+  "Fresh Red Dates (Kharek) (ખારેક લાલ)":"लाल खारक (ताजा खजूर)","Gundi (Cordia fruit) (ગુંદી)":"गुंदी फल","Manila tamarind (Gorus Amli) (ગોરસઆંબલી)":"गोरस इमली",
+  "Chikoo / Sapota (ચીકુ)":"चीकू","Tapioca (ટેપિઓકા)":"टैपिओका","Dragon fruit (ડ્રેગન-ફ્રૂટ)":"ड्रैगन फ्रूट",
+  "Watermelon (તળબૂચ)":"तरबूज","Pomegranate (દાડમ)":"अनार","Papaya (પપૈયા)":"पपीता",
+  "Pineapple (પાઈનેપલ)":"अनानास","Ripe Banana (પાકા કેળા)":"पका केला","Ripe Mango (પાકી કેરી)":"पका आम",
+  "Pomelo (પામેલો)":"चकोतरा","Fresh Yellow Dates (પીળી ખારેક)":"पीली खारक","Falsa (ફાલસા)":"फालसा",
+  "Prickly pear (ફીંડલા)":"नागफनी फल (फींडला)","Bael fruit (બીલીપત્રના ફળ)":"बेल फल","Sweet lime / Mosambi (મોસંબી)":"मौसंबी",
+  "Rayan (Khirni) (રાયણ)":"खिरनी","Green / Tender coconut (લીલું નારિયેળ)":"हरा नारियल (डाब)","Muskmelon (શક્કરટેટી)":"खरबूजा",
+  "Water chestnut (શિંગોડા)":"सिंघाड़ा","Orange (સંતરા (નારંગી))":"संतरा","Apple (સફરજન)":"सेब",
+  "Custard apple (સીતાફળ)":"सीताफल","Mulberry (સેતુર)":"शहतूत","Strawberry (સ્ટ્રોબેરી)":"स्ट्रॉबेरी",
+  "A2 Ghee Biscuit (A2 ઘી બીસ્કિટ)":"A2 घी बिस्कुट","A2 Cheese (A2 ચીઝ)":"A2 चीज़","A2 Milk (A2 દૂધ)":"A2 दूध",
+  "Kankrej Cow Ghee (કાકરેજ ગાય ઘી)":"कांकरेज गाय घी","Gir Cow Ghee (ગીર ગાય ઘી)":"गिर गाय घी","Chocolate Spread (ચોકલેટ સ્પ્રેડ)":"चॉकलेट स्प्रेड",
+  "Buttermilk (છાશ)":"छाछ","Natural Ice Cream (નેચરલ આઇસક્રીમ)":"नेचुरल आइसक्रीम","Paneer (પનીર)":"पनीर",
+  "Mango Shrikhand (મેંગો શ્રીખંડ)":"मैंगो श्रीखंड","Churned Butter (વલોણાનું માખણ)":"मथा हुआ मक्खन","Healthy Nutribar (હેલ્થી ન્યુટ્રીબાર)":"हेल्दी न्यूट्रीबार",
+  "Urad (whole) (અડદ)":"उड़द (साबुत)","Urad dal (અડદની દાળ)":"उड़द दाल","Urad Mogar dal (અડદની મોગર દાળ)":"उड़द मोगर दाल",
+  "Horse gram (કળથી)":"कुलथी","Kabuli Chana (કાબુલી ચણા (છોલે ચણા))":"काबुली चना (छोले)","Chana dal (ચણા દાળ)":"चना दाल",
+  "Cowpea, dried (Red, White) (ચોળી (લાલ, સફેદ))":"लोबिया (सूखा — लाल, सफेद)","Tur dal (તુવેર દાળ)":"तुअर दाल","Desi Chana (દેશી ચણા)":"देसी चना",
+  "Desi Val (Field bean) (દેશી વાલ)":"देसी वाल","Moong dal (મગ દાળ)":"मूंग दाल","Moong Mogar dal (મગની મોગર દાળ)":"मूंग मोगर दाल",
+  "Moth bean (મઠ)":"मोठ","Masoor dal (મસૂર દાળ)":"मसूर दाल","Rajma / Kidney beans (રાજમા)":"राजमा",
+  "Whole Barley (આખા જવ)":"साबुत जौ","Foxtail millet (Kang) (કાંગ)":"कांग (कंगनी)","Quinoa (કિનોવા)":"क्विनोआ",
+  "Kodo millet (કોદરી)":"कोदो","Wheat (Bansi) (ઘઉં (બંસી))":"गेहूं (बंसी)","Wheat (Sona Moti) (ઘઉં (સોના મોતી ))":"गेहूं (सोना मोती)",
+  "Rice (ચોખા)":"चावल","Barley (dehusked) (જવ (ફોતરા વગર))":"जौ (छिलका उतारा हुआ)","Poha (flattened rice) (પૌઆ)":"पोहा",
+  "Cracked grain mix (Dalia) (ફાડા (ઘઉં, જુવાર, બાજરી, જવ, મકાઈ))":"दलिया (मिश्रित अनाज)","Banti (grain variety) (બંટી)":"बंटी","Puffed rice (Mamra) (મમરા)":"मुरमुरा",
+  "Barnyard millet (Moraiyo) (મોરૈયો)":"सामक (मोरैयो)","Ragi / Finger millet (રાગી)":"रागी","Rajgira / Amaranth grain (રાજગરો)":"राजगिरा",
+  "Little millet (Samo) (સામો)":"सामा","Semolina (Suji) (સોજી)":"सूजी","Foxtail millet (Hari Kang) (હરિ કાંગ)":"हरी कांग",
+  "Long Brinjal (લાંબા રીંગણ)":"लंबा बैंगन","Green onion / Spring onion (લીલી ડુંગળી)":"हरा प्याज","Green corn / Fresh Maize (લીલી મકાઈ)":"हरी मक्का",
+  "Ripe Papaya (પાકા પપૈયા)":"पका पपीता","Coconut (નારિયેળ)":"नारियल","Fennel (વરિયાળી)":"सौंफ",
+  "Tobacco (તમાકુ)":"तंबाकू","Mustard greens (સરસવ ભાજી)":"सरसों का साग","Indian jujube (બોર)":"बेर",
+  "Ajwain (અજમો)":"अजवाइन","Linseed / Flaxseed (અળસી)":"अलसी","Grapes (દ્રાક્ષ)":"अंगूर",
+  "Other (અન્ય)":"अन्य",
+  "Vegetable - other (અન્ય શાકભાજી)":"अन्य सब्ज़ी","Fruit - other (અન્ય ફળ)":"अन्य फल",
+};
+function cropHiLabel(s){ return (window.CROPS_CATALOG_HI && window.CROPS_CATALOG_HI[s]) || s; }
 
 /* Search aliases — romanized transliterations of the Gujarati name (and a
    few common English synonyms) so typing e.g. "bataka" finds "Potato
@@ -9682,6 +9853,21 @@ const KRSF_CONCERNS = [
   'Pest & disease (જીવાત/રોગ)','Labour cost (મજૂરી ખર્ચ)',
   'Water scarcity (પાણીની અછત)','Input expenses (ઇનપુટ ખર્ચ)','Market access (બજાર પહોંચ)',
 ];
+// Hindi labels for the short bilingual option lists above (support/concerns/
+// fert/irrigation/water) — keyed by the exact source string, looked up by
+// guLabel() when state.lang==='hi'. Crop names reuse window.CROPS_CATALOG_HI
+// instead (already built for the enrolment form's crop picker).
+window.KRSF_LABELS_HI = {
+  'Training (તાલીમ)':'प्रशिक्षण','Bio-fertilizers / bio-pesticides (જૈવિક)':'जैविक खाद / जैविक कीटनाशक','Market linkage (બજાર)':'बाज़ार जुड़ाव',
+  'Technical guidance (ટેકનિકલ માર્ગદર્શન)':'तकनीकी मार्गदर्शन',
+  'Seeds / planting material (બીજ)':'बीज / रोपण सामग्री','Storage (સંગ્રહ)':'भंडारण','Transport (પરિવહન)':'परिवहन',
+  'Yield reduction (ઉપજમાં ઘટાડો)':'उपज में कमी','Price uncertainty (ભાવ અનિશ્ચિતતા)':'भाव की अनिश्चितता',
+  'Pest & disease (જીવાત/રોગ)':'कीट और रोग','Labour cost (મજૂરી ખર્ચ)':'मजदूरी खर्च',
+  'Water scarcity (પાણીની અછત)':'पानी की कमी','Input expenses (ઇનપુટ ખર્ચ)':'इनपुट खर्च','Market access (બજાર પહોંચ)':'बाज़ार तक पहुंच',
+  'Other':'अन्य',
+  'Borewell':'बोरवेल','Well':'कुआं','Canal':'नहर','River':'नदी','Pond':'तालाब','Rain-fed':'वर्षा-आधारित','Drip':'ड्रिप','Sprinkler':'स्प्रिंकलर',
+  'Year-round':'साल भर','Seasonal':'मौसमी','Scarce':'कम',
+};
 
 /* =============================================================
    Organic Conversion form — section + custom-question schema.
@@ -9694,15 +9880,15 @@ const KRSF_CONCERNS = [
    intake.customAnswers on the farmer record.
    ============================================================= */
 window.DEFAULT_CATEGORIES_CONV = [
-  {key:'personal',   en:'Personal details',    gu:'વ્યક્તિગત માહિતી',   core:true, renderer:'sectionPersonal'},
-  {key:'location',   en:'Location',            gu:'સ્થાન',              core:true, renderer:'sectionLocation'},
-  {key:'commitment', en:'Organic Commitment',  gu:'',                    core:true, renderer:'sectionCommitment'},
-  {key:'landIncome', en:'Land & Income',       gu:'જમીન અને આવક',       core:true, renderer:'sectionLandIncome', gated:true},
-  {key:'crops',      en:'Crops',               gu:'પાક',                 core:true, renderer:'sectionCrops',      gated:true},
-  {key:'inputs',     en:'Water & Chemicals',   gu:'',                    core:true, renderer:'sectionInputs',     gated:true},
-  {key:'livestock',  en:'Livestock',           gu:'',                    core:true, renderer:'sectionLivestock',  gated:true},
-  {key:'support',    en:'Support & Concerns',  gu:'',                    core:true, renderer:'sectionSupport',    gated:true},
-  {key:'admin',      en:'Administrative',      gu:'',                    core:true, renderer:'sectionAdmin'},
+  {key:'personal',   en:'Personal details',    gu:'વ્યક્તિગત માહિતી',   hi:'व्यक्तिगत जानकारी',    core:true, renderer:'sectionPersonal'},
+  {key:'location',   en:'Location',            gu:'સ્થાન',              hi:'स्थान',                 core:true, renderer:'sectionLocation'},
+  {key:'commitment', en:'Organic Commitment',  gu:'જૈવિક પ્રતિબદ્ધતા',   hi:'जैविक प्रतिबद्धता',     core:true, renderer:'sectionCommitment'},
+  {key:'landIncome', en:'Land & Income',       gu:'જમીન અને આવક',       hi:'जमीन और आय',            core:true, renderer:'sectionLandIncome', gated:true},
+  {key:'crops',      en:'Crops',               gu:'પાક',                 hi:'फसल',                   core:true, renderer:'sectionCrops',      gated:true},
+  {key:'inputs',     en:'Water & Chemicals',   gu:'પાણી અને રસાયણ',      hi:'पानी और रसायन',         core:true, renderer:'sectionInputs',     gated:true},
+  {key:'livestock',  en:'Livestock',           gu:'પશુધન',               hi:'पशुधन',                 core:true, renderer:'sectionLivestock',  gated:true},
+  {key:'support',    en:'Support & Concerns',  gu:'સહાય અને ચિંતા',      hi:'सहायता और चिंताएं',     core:true, renderer:'sectionSupport',    gated:true},
+  {key:'admin',      en:'Administrative',      gu:'વહીવટી',              hi:'प्रशासनिक',             core:true, renderer:'sectionAdmin'},
 ];
 window.DEFAULT_QUESTIONS_CONV = []; // custom (admin-added) questions only
 window.CATEGORIES_CONV = JSON.parse(JSON.stringify(window.DEFAULT_CATEGORIES_CONV));
@@ -9817,9 +10003,25 @@ function openConvEnrollmentForm(){
     custom: {},
   };
   // Language helpers
-  function L(en, gu){ return state.lang === 'gu' ? gu : en; }
-  // For bilingual "English (gu)" option strings: extract just the Gujarati part in gu mode
-  function guLabel(s){ const m = s && s.match(/\(([^)]+)\)$/); return (state.lang === 'gu' && m) ? m[1] : s; }
+  function L(en, gu, hi){ return state.lang === 'hi' ? (hi||gu) : state.lang === 'gu' ? gu : en; }
+  // For bilingual "English (gu)" option strings (districts/talukas, crops,
+  // support/concern checklists): extract just the Gujarati part in gu mode;
+  // in hi mode, look up a real Hindi translation if one exists (crop names
+  // via the shared CROPS_CATALOG_HI map, support/concern/fert items via
+  // KRSF_LABELS_HI), else fall back to the English part — there's no Hindi
+  // translation for the ~300 district/taluka place names in scope here, and
+  // showing the official English spelling is safer than an invented one.
+  function guLabel(s){
+    if(!s) return s;
+    if(state.lang === 'hi'){
+      const hi = (window.CROPS_CATALOG_HI && window.CROPS_CATALOG_HI[s]) || (window.KRSF_LABELS_HI && window.KRSF_LABELS_HI[s]);
+      if(hi) return hi;
+      const m = s.match(/^([^(]+)/);
+      return m ? m[1].trim() : s;
+    }
+    const m = s.match(/\(([^)]+)\)$/);
+    return (state.lang === 'gu' && m) ? m[1] : s;
+  }
   // ===== Inject one-time mobile-first CSS for this form's inputs =====
   if(!document.getElementById('krsfFormStyles')){
     const css = document.createElement('style');
@@ -9901,49 +10103,51 @@ function openConvEnrollmentForm(){
     }).join('');
   }
   function sectionPersonal(){
-    const gOpts = [['','—'],['Male',L('Male','પુરુષ')],['Female',L('Female','સ્ત્રી')],['Other',L('Other','અન્ય')]];
+    const gOpts = [['','—'],['Male',L('Male','પુરુષ','पुरुष')],['Female',L('Female','સ્ત્રી','महिला')],['Other',L('Other','અન્ય','अन्य')]];
     return '<div class="krsf-row">'
-      + fldHtml(L('Farmer name','ખેડૂતનું નામ'), '<input id="krName" value="'+esc(state.name)+'" placeholder="'+L('Full name','પૂરું નામ')+'">', true)
-      + fldHtml(L('Mobile (10-digit)','મોબાઈલ (10 અંક)'), '<input id="krMobile" maxlength="10" inputmode="numeric" value="'+esc(state.mobile)+'" placeholder="9876543210">', true)
+      + fldHtml(L('Farmer name','ખેડૂતનું નામ','किसान का नाम'), '<input id="krName" value="'+esc(state.name)+'" placeholder="'+L('Full name','પૂરું નામ','पूरा नाम')+'">', true)
+      + fldHtml(L('Mobile (10-digit)','મોબાઈલ (10 અંક)','मोबाइल (10 अंक)'), '<input id="krMobile" maxlength="10" inputmode="numeric" value="'+esc(state.mobile)+'" placeholder="9876543210">', true)
       + '</div><div class="krsf-row">'
-      + fldHtml(L('Age','ઉંમર'), '<input id="krAge" type="number" min="18" max="90" value="'+esc(state.age)+'">')
-      + fldHtml(L('Gender','લિંગ'), '<select id="krGender">'+selOpts(gOpts, state.gender)+'</select>')
+      + fldHtml(L('Age','ઉંમર','उम्र'), '<input id="krAge" type="number" min="18" max="90" value="'+esc(state.age)+'">')
+      + fldHtml(L('Gender','લિંગ','लिंग'), '<select id="krGender">'+selOpts(gOpts, state.gender)+'</select>')
       + '</div>';
   }
   function sectionLocation(){
     const districts = Object.keys(window.DISTRICT_TALUKAS||{}).sort();
-    const dPh = L('— Pick district —', '— જિલ્લો —');
-    const tPh = L('— Pick taluka —', '— તાલુકો —');
+    const dPh = L('— Pick district —', '— જિલ્લો —', '— जिला चुनें —');
+    const tPh = L('— Pick taluka —', '— તાલુકો —', '— तालुका चुनें —');
     const districtOpts = '<option value="">' + dPh + '</option>'
       + districts.map(d=>'<option value="'+esc(d)+'"'+(d===state.district?' selected':'')+'>'+esc(guLabel(d))+'</option>').join('');
     const talukas = state.district ? ((window.DISTRICT_TALUKAS||{})[state.district]||[]).slice().sort() : [];
     const talukaOpts = '<option value="">' + tPh + '</option>'
       + talukas.map(t=>'<option'+(t===state.taluka?' selected':'')+'>'+esc(t)+'</option>').join('');
     return '<div class="krsf-row">'
-      + fldHtml(L('District','જિલ્લો'), '<select id="krDistrict">'+districtOpts+'</select>', true)
-      + fldHtml(L('Taluka','તાલુકો'), '<select id="krTaluka"'+(!state.district?' disabled':'')+'>'+talukaOpts+'</select>', true)
+      + fldHtml(L('District','જિલ્લો','जिला'), '<select id="krDistrict">'+districtOpts+'</select>', true)
+      + fldHtml(L('Taluka','તાલુકો','तालुका'), '<select id="krTaluka"'+(!state.district?' disabled':'')+'>'+talukaOpts+'</select>', true)
       + '</div><div class="krsf-row single">'
-      + fldHtml(L('Village','ગામ'), '<input id="krVillage" value="'+esc(state.village)+'" placeholder="'+L('Village name','ગામનું નામ')+'">', true)
+      + fldHtml(L('Village','ગામ','गांव'), '<input id="krVillage" value="'+esc(state.village)+'" placeholder="'+L('Village name','ગામનું નામ','गांव का नाम')+'">', true)
       + '</div>';
   }
   function sectionLandIncome(){
-    const incRanges  = [['','—']].concat(KRSF_INCOME_RANGES.map((r,i)=>[r, L(r,['₹1 લાખ કરતા ઓછી','₹1 – 2 લાખ','₹2 – 5 લાખ','₹5 લાખ કરતા વધારે'][i])]));
-    const incSources = [['','—']].concat(KRSF_INCOME_SOURCES.map((s,i)=>[s, L(s,['ખેતી','મજૂરી','વ્યવસાય','પશુપાલન','નોકરી'][i])]));
+    const incRanges  = [['','—']].concat(KRSF_INCOME_RANGES.map((r,i)=>[r, L(r,['₹1 લાખ કરતા ઓછી','₹1 – 2 લાખ','₹2 – 5 લાખ','₹5 લાખ કરતા વધારે'][i],['₹1 लाख से कम','₹1 – 2 लाख','₹2 – 5 लाख','₹5 लाख से ज़्यादा'][i])]));
+    const incSources = [['','—']].concat(KRSF_INCOME_SOURCES.map((s,i)=>[s, L(s,['ખેતી','મજૂરી','વ્યવસાય','પશુપાલન','નોકરી'][i],['खेती','मजदूरी','व्यवसाय','पशुपालन','नौकरी'][i])]));
     return '<div class="krsf-row">'
-      + fldHtml(L('Total land (acre)','કુલ જમીન (એકર)'), '<input id="krLand" type="number" step="0.1" value="'+esc(state.landAcres)+'">', true)
-      + fldHtml(L('Annual income','વાર્ષિક આવક'), '<select id="krIncRange">'+selOpts(incRanges, state.incomeRange)+'</select>')
+      + fldHtml(L('Total land (acre)','કુલ જમીન (એકર)','कुल जमीन (एकड़)'), '<input id="krLand" type="number" step="0.1" value="'+esc(state.landAcres)+'">', true)
+      + fldHtml(L('Annual income','વાર્ષિક આવક','वार्षिक आय'), '<select id="krIncRange">'+selOpts(incRanges, state.incomeRange)+'</select>')
       + '</div><div class="krsf-row single">'
-      + fldHtml(L('Primary income source','આવકનો સ્ત્રોત'), '<select id="krIncSrc">'+selOpts(incSources, state.incomeSource)+'</select>')
+      + fldHtml(L('Primary income source','આવકનો સ્ત્રોત','आय का स्रोत'), '<select id="krIncSrc">'+selOpts(incSources, state.incomeSource)+'</select>')
       + '</div>';
   }
   function sectionCrops(){
-    let h = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px">'+L('Select up to 3 main crops and area in acre.','મુખ્ય ૩ પાક અને એકર ભરો.')+'</div>';
+    let h = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px">'+L('Select up to 3 main crops and area in acre.','મુખ્ય ૩ પાક અને એકર ભરો.','मुख्य 3 फसल और एकड़ भरें.')+'</div>';
+    const cropWord = L('Crop','પાક','फसल');
+    const acreWord = L('Acre','એકર','एकड़');
     state.crops.forEach((c,i)=>{
       const cropOpts = '<option value="">—</option>'
         + KRSF_CROPS.map(crop=>'<option value="'+esc(crop)+'"'+(crop===c.crop?' selected':'')+'>'+esc(guLabel(crop))+'</option>').join('');
       h += '<div style="display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:end;margin-bottom:10px">'
-        + '<div class="krsf-fld"><label>Crop '+(i+1)+'</label><select data-kc="'+i+':crop">'+cropOpts+'</select></div>'
-        + '<div class="krsf-fld"><label>Acre</label><input type="number" step="0.5" data-kc="'+i+':area" value="'+esc(c.area)+'" placeholder="0"></div>'
+        + '<div class="krsf-fld"><label>'+esc(cropWord)+' '+(i+1)+'</label><select data-kc="'+i+':crop">'+cropOpts+'</select></div>'
+        + '<div class="krsf-fld"><label>'+esc(acreWord)+'</label><input type="number" step="0.5" data-kc="'+i+':area" value="'+esc(c.area)+'" placeholder="0"></div>'
         + '</div>';
     });
     return h;
@@ -9952,52 +10156,53 @@ function openConvEnrollmentForm(){
     const fertChecks = KRSF_FERT_TYPES.map(t=>'<label class="krsf-check'+(state.fertTypes.includes(t)?' checked':'')+'">'
       + '<input type="checkbox" data-kf="'+esc(t)+'" '+(state.fertTypes.includes(t)?'checked':'')+'>'
       + esc(guLabel(t))+'</label>').join('');
+    const showPh = L('— select —','— બતાવો —','— चुनें —');
     return '<div class="krsf-row">'
-      + fldHtml(L('Irrigation source','પિયત'), '<select id="krIrr">'+selOpts([['','— બતાવો —']].concat(KRSF_IRRIGATION.map(x=>[x,x])), state.irrigation)+'</select>')
-      + fldHtml(L('Water availability','પાણીની ઉપલબ્ધતા'), '<select id="krWA">'+selOpts([['','— બતાવો —']].concat(KRSF_WATER_AVAIL.map(x=>[x,x])), state.waterAvail)+'</select>')
+      + fldHtml(L('Irrigation source','પિયત','सिंचाई का स्रोत'), '<select id="krIrr">'+selOpts([['',showPh]].concat(KRSF_IRRIGATION.map(x=>[x,guLabel(x)])), state.irrigation)+'</select>')
+      + fldHtml(L('Water availability','પાણીની ઉપલબ્ધતા','पानी की उपलब्धता'), '<select id="krWA">'+selOpts([['',showPh]].concat(KRSF_WATER_AVAIL.map(x=>[x,guLabel(x)])), state.waterAvail)+'</select>')
       + '</div><div class="krsf-row single">'
-      + fldHtml(L('Using chemical fertilizers / pesticides?','હાલમાં રાસાયણિક ખાતર/જંતુનાશક વાપરો છો?'),
+      + fldHtml(L('Using chemical fertilizers / pesticides?','હાલમાં રાસાયણિક ખાતર/જંતુનાશક વાપરો છો?','अभी रासायणिक खाद/कीटनाशक उपयोग करते हैं?'),
           '<div class="krsf-yn" id="krChemYn">'
-          + '<button type="button" class="chip'+(state.usesChem==="no"?' on green-on':'')+'" data-v="no">'+L('No','નથી')+'</button>'
-          + '<button type="button" class="chip'+(state.usesChem==="yes"?' on red-on':'')+'" data-v="yes">'+L('Yes','હા')+'</button>'
+          + '<button type="button" class="chip'+(state.usesChem==="no"?' on green-on':'')+'" data-v="no">'+L('No','નથી','नहीं')+'</button>'
+          + '<button type="button" class="chip'+(state.usesChem==="yes"?' on red-on':'')+'" data-v="yes">'+L('Yes','હા','हाँ')+'</button>'
           + '</div>')
       + '</div>'
       + '<div id="krChemDetails" style="'+(state.usesChem!=="yes"?'display:none':'')+'">'
       + '<div class="krsf-row">'
-      + fldHtml(L('Annual chemical input cost (₹)','વાર્ષિક રાસાયણિક ખર્ચ (₹)'), '<input id="krChemCost" type="number" value="'+esc(state.chemCost)+'">')
-      + fldHtml(L('Fertilizer types used','ખાતરના પ્રકાર'), '<div class="krsf-checks">'+fertChecks+'</div>')
+      + fldHtml(L('Annual chemical input cost (₹)','વાર્ષિક રાસાયણિક ખર્ચ (₹)','वार्षिक रासायणिक खर्च (₹)'), '<input id="krChemCost" type="number" value="'+esc(state.chemCost)+'">')
+      + fldHtml(L('Fertilizer types used','ખાતરના પ્રકાર','खाद के प्रकार'), '<div class="krsf-checks">'+fertChecks+'</div>')
       + '</div></div>';
   }
   function sectionLivestock(){
     return '<div class="krsf-row">'
-      + fldHtml(L('Cows','ગાય'), '<input id="krLsCow" type="number" min="0" value="'+esc(state.livestock.cow)+'">')
-      + fldHtml(L('Buffalo','ભેંસ'), '<input id="krLsBuf" type="number" min="0" value="'+esc(state.livestock.buffalo)+'">')
+      + fldHtml(L('Cows','ગાય','गाय'), '<input id="krLsCow" type="number" min="0" value="'+esc(state.livestock.cow)+'">')
+      + fldHtml(L('Buffalo','ભેંસ','भैंस'), '<input id="krLsBuf" type="number" min="0" value="'+esc(state.livestock.buffalo)+'">')
       + '</div><div class="krsf-row">'
-      + fldHtml(L('Goat / Sheep','બકરી / ઘેટું'), '<input id="krLsGoat" type="number" min="0" value="'+esc(state.livestock.goat)+'">')
-      + fldHtml(L('Other animals','અન્ય'), '<input id="krLsOther" value="'+esc(state.livestock.other)+'" placeholder="'+L('e.g. Poultry 25','દા.ત. મરઘી 25')+'">')
+      + fldHtml(L('Goat / Sheep','બકરી / ઘેટું','बकरी / भेड़'), '<input id="krLsGoat" type="number" min="0" value="'+esc(state.livestock.goat)+'">')
+      + fldHtml(L('Other animals','અન્ય','अन्य'), '<input id="krLsOther" value="'+esc(state.livestock.other)+'" placeholder="'+L('e.g. Poultry 25','દા.ત. મરઘી 25','जैसे मुर्गी 25')+'">')
       + '</div><div class="krsf-row single">'
-      + fldHtml(L('Use farmyard manure (FYM)?','ગોબર ખાતર વાપરો છો?'),
+      + fldHtml(L('Use farmyard manure (FYM)?','ગોબર ખાતર વાપરો છો?','गोबर खाद उपयोग करते हैं?'),
           '<div class="krsf-yn" id="krFymYn">'
-          + '<button type="button" class="chip'+(state.usesFYM==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes','હા')+'</button>'
-          + '<button type="button" class="chip'+(state.usesFYM==="no"?' on':'')+'" data-v="no">'+L('No','નહીં')+'</button>'
+          + '<button type="button" class="chip'+(state.usesFYM==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes','હા','हाँ')+'</button>'
+          + '<button type="button" class="chip'+(state.usesFYM==="no"?' on':'')+'" data-v="no">'+L('No','નહીં','नहीं')+'</button>'
           + '</div>')
       + '</div>';
   }
   function sectionCommitment(){
     return '<div class="krsf-row single">'
-      + fldHtml(L('Willing to adopt natural farming?','પ્રાકૃતિક ખેતી અપનાવવા તૈયાર છો?'),
+      + fldHtml(L('Willing to adopt natural farming?','પ્રાકૃતિક ખેતી અપનાવવા તૈયાર છો?','प्राकृतिक खेती अपनाने के लिए तैयार हैं?'),
           '<div class="krsf-yn" id="krWillYn">'
-          + '<button type="button" class="chip'+(state.willingChemFree==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes — committed','સંપૂર્ણ તૈયાર')+'</button>'
-          + '<button type="button" class="chip'+(state.willingChemFree==="maybe"?' on':'')+'" data-v="maybe">'+L('Maybe','કદાચ')+'</button>'
-          + '<button type="button" class="chip'+(state.willingChemFree==="no"?' on red-on':'')+'" data-v="no">'+L('Not yet','નહીં')+'</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="yes"?' on green-on':'')+'" data-v="yes">'+L('Yes — committed','સંપૂર્ણ તૈયાર','हाँ — पूरी तरह तैयार')+'</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="maybe"?' on':'')+'" data-v="maybe">'+L('Maybe','કદાચ','शायद')+'</button>'
+          + '<button type="button" class="chip'+(state.willingChemFree==="no"?' on red-on':'')+'" data-v="no">'+L('Not yet','નહીં','अभी नहीं')+'</button>'
           + '</div>', true)
       + '</div>'
       // Asking "how many acres to convert" doesn't make sense once the farmer
       // has said "Not yet" — hide it along with the rest of the gated form.
       + (state.willingChemFree !== 'no'
           ? '<div class="krsf-row single">'
-            + fldHtml(L('Land for organic conversion (acre)','પ્રાકૃતિક ખેતી માટેનો વિસ્તાર (એકર)'),
-                '<input id="krConvAcres" type="number" step="0.1" value="'+esc(state.convertAcres)+'" placeholder="'+L('Acre count','એકર')+'">', true)
+            + fldHtml(L('Land for organic conversion (acre)','પ્રાકૃતિક ખેતી માટેનો વિસ્તાર (એકર)','प्राकृतिक खेती के लिए क्षेत्र (एकड़)'),
+                '<input id="krConvAcres" type="number" step="0.1" value="'+esc(state.convertAcres)+'" placeholder="'+L('Acre count','એકર','एकड़')+'">', true)
             + '</div>'
           : '');
   }
@@ -10013,21 +10218,21 @@ function openConvEnrollmentForm(){
   }
   function sectionSupport(){
     return '<div class="krsf-row single">'
-      + fldHtml(L('Support needed','કેવી સહાય જોઈએ'), multiChecks(KRSF_SUPPORT_NEEDED, state.supportNeeded, 'ksp'))
+      + fldHtml(L('Support needed','કેવી સહાય જોઈએ','किस तरह की सहायता चाहिए'), multiChecks(KRSF_SUPPORT_NEEDED, state.supportNeeded, 'ksp'))
       + '</div><div class="krsf-row single">'
-      + fldHtml(L('Main concerns','મુખ્ય ચિંતા'), multiChecks(KRSF_CONCERNS, state.concerns, 'kcn'))
+      + fldHtml(L('Main concerns','મુખ્ય ચિંતા','मुख्य चिंताएं'), multiChecks(KRSF_CONCERNS, state.concerns, 'kcn'))
       + '</div>';
   }
   function sectionAdmin(){
     if(PUBLIC_MODE){
       return '<div class="krsf-row single">'
-        + '<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 2px">Sristi FC તમારી અરજી મળ્યા પછી તમને 7 દિવસમાં ફોન કરશે.</div>'
+        + '<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 2px">'+L('A Sristi FC will call you within 7 days of receiving your application.','Sristi FC તમારી અરજી મળ્યા પછી તમને 7 દિવસમાં ફોન કરશે.','Sristi FC आपकी अर्जी मिलने के बाद 7 दिनों में आपको फोन करेंगे.')+'</div>'
         + '</div>';
     }
     const fcOpts = '<option value="">— Other / typed below —</option>' + DB.fcs.map(x=>'<option '+(x.name===state.fcName?'selected':'')+'>'+esc(x.name)+'</option>').join('');
     return '<div class="krsf-row">'
       + fldHtml('Field Coordinator / FC', '<select id="krFc">'+fcOpts+'</select>', true)
-      + fldHtml(L('Survey date','સર્વે તારીખ'), '<input id="krDate" type="date" value="'+esc(state.surveyDate)+'">')
+      + fldHtml(L('Survey date','સર્વે તારીખ','सर्वे की तारीख'), '<input id="krDate" type="date" value="'+esc(state.surveyDate)+'">')
       + '</div><div class="krsf-row single">'
       + fldHtml('Other FC name (if not in list above)', '<input id="krFcOther" placeholder="Type name if FC is not in the dropdown">')
       + '</div>';
@@ -10038,7 +10243,7 @@ function openConvEnrollmentForm(){
       + body + '</div>';
   }
   function renderConvCustomField(q){
-    const label = (state.lang === 'gu' && q.gu) ? q.gu : q.en;
+    const label = state.lang === 'hi' ? (q.hi || q.gu || q.en) : (state.lang === 'gu' && q.gu) ? q.gu : q.en;
     const val = state.custom[q.id];
     const id = 'krCustom_' + q.id;
     if(q.type === 'textarea')
@@ -10067,9 +10272,10 @@ function openConvEnrollmentForm(){
   }
   function renderForm(){
     const langBar = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">'
-      + ['en','gu'].map(v=>{
+      + ['gu','hi','en'].map(v=>{
           const on=state.lang===v;
-          return '<label style="cursor:pointer;font-size:14px;font-weight:700;padding:7px 18px;border-radius:20px;border:1.5px solid '+(on?'var(--accent)':'var(--line-strong)')+';background:'+(on?'var(--accent)':'#fff')+';color:'+(on?'#fff':'var(--ink)')+'"><input type="radio" name="krLang" value="'+v+'" style="position:absolute;opacity:0;width:0"'+(on?' checked':'')+'>'+( v==='en'?'EN':'gu')+'</label>';
+          const vLabel = v==='en'?'English':v==='hi'?'हिंदी':'ગુજરાતી';
+          return '<label style="cursor:pointer;font-size:14px;font-weight:700;padding:7px 18px;border-radius:20px;border:1.5px solid '+(on?'var(--accent)':'var(--line-strong)')+';background:'+(on?'var(--accent)':'#fff')+';color:'+(on?'#fff':'var(--ink)')+'"><input type="radio" name="krLang" value="'+v+'" style="position:absolute;opacity:0;width:0"'+(on?' checked':'')+'>'+vLabel+'</label>';
         }).join('')
       + '</div>';
     // Organic Commitment sits early: the "willing to convert?" answer gates
@@ -10089,13 +10295,13 @@ function openConvEnrollmentForm(){
       const customQs = (window.QUESTIONS_CONV||[]).filter(q => q.cat === cat.key);
       const customHtml = customQs.map(q => renderConvCustomField(q)).join('');
       if(!coreHtml && !customHtml) return '';
-      const title = state.lang === 'gu' && cat.gu ? cat.gu : cat.en;
+      const title = state.lang === 'hi' ? (cat.hi || cat.gu || cat.en) : (state.lang === 'gu' && cat.gu) ? cat.gu : cat.en;
       return sectionCard(nextNum(), title, coreHtml + customHtml);
     }).join('');
     const modalTitle = PUBLIC_MODE
-      ? 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ'
+      ? L('Form to convert to organic farming','પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ','प्राकृतिक खेती में परिवर्तन के लिए फॉर्म')
       : 'Add new conversion farmer';
-    const saveLabel = PUBLIC_MODE ? 'અરજી મોકલો' : 'Save farmer';
+    const saveLabel = PUBLIC_MODE ? L('Send application','અરજી મોકલો','अर्जी भेजें') : 'Save farmer';
     modalShell(modalTitle, body,
       '<button class="btn btn-ghost" onclick="closeModal()">Cancel<</button>'
       + '<button class="btn btn-primary" id="krSave">'+svg(I.check)+saveLabel+'</button>');
@@ -15126,6 +15332,12 @@ function publicRouteFromHash(){
   const h = (location.hash || '').toLowerCase();
   if(h === '#haat' || h === '#apply' || h === '#public_haat_form') return 'public_haat_form';
   if(h === '#conv' || h === '#convert' || h === '#public_conv_form') return 'public_conv_form';
+  // '#choose' — a shareable direct link to the two-card "pick your form"
+  // screen (no Sristi Login card), for when a broadcast/WhatsApp link should
+  // let the farmer decide between Haat / Conversion rather than committing
+  // to one. Falls through to public_landing regardless (the default for any
+  // unrecognized hash), so this branch exists mainly to document the alias.
+  if(h === '#choose' || h === '#forms') return 'public_landing';
   return 'public_landing';
 }
 
@@ -15302,6 +15514,14 @@ function enterPublicMode(targetRoute){
       .public-cards.three .public-card .desc { font-size: 11.5px; line-height: 1.4; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
       .public-foot { padding: 12px 0 0; font-size: 11px; }
       .public-foot > div { margin-bottom: 8px !important; padding: 10px 14px !important; }
+      /* Two-card "choose a form" layout (no login card) — same phone-width
+         tightening as the three-card variant above, but keeps the vertical
+         icon-over-text card shape since there's no cramped row to fix here. */
+      .public-cards:not(.three) { gap: 12px; }
+      .public-cards:not(.three) .public-card { padding: 18px 16px; gap: 3px; }
+      .public-cards:not(.three) .public-card-emoji { font-size: 30px; margin-bottom: 2px; }
+      .public-cards:not(.three) .public-card h2 { font-size: 15.5px; }
+      .public-cards:not(.three) .public-card .desc { font-size: 12px; line-height: 1.5; margin-bottom: 10px; }
     }
     .public-card:hover { border-color: #8b5d4e; box-shadow: 0 6px 20px rgba(139,93,78,0.13); transform: translateY(-2px); }
     .public-card.login { background: linear-gradient(180deg,#fff 0%, #f5f7fb 100%); }
@@ -15397,7 +15617,7 @@ function renderPublicLanding(){
   // this session points back to a direct-link entry, i.e. real staff who
   // opened the bare site URL. The hash still holds the original #haat/#conv
   // (in-app back/home never changes it), so it's a reliable signal here.
-  const viaDirectLink = /^#(haat|apply|public_haat_form|conv|convert|public_conv_form)$/i.test(location.hash||'');
+  const viaDirectLink = /^#(haat|apply|public_haat_form|conv|convert|public_conv_form|choose|forms)$/i.test(location.hash||'');
   v.innerHTML = `
     <div class="public-wrap">
       <div class="public-hero">
@@ -15407,15 +15627,15 @@ function renderPublicLanding(){
           <img src="krsf-logo.png" alt="KRSF" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#fff;border:2px solid rgba(255,255,255,0.5)">
         </div>
         <div class="org">Sristi · KRSF</div>
-        <h1>સૃષ્ટિ ખેડૂત હાટ</h1>
-        <div class="sub">પ્રાકૃતિક ખેતી કરો, યોગ્ય ભાવે વેચો. ગુજરાતના ખેડૂતો માટે — સૃષ્ટિ KRSF નો કાર્યક્રમ.</div>
+        <h1>સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ</h1>
+        <div class="sub">નીચે આપેલા બે વિકલ્પોમાંથી તમારા માટે યોગ્ય ફોર્મ પસંદ કરો.</div>
       </div>
       <div class="public-cards${viaDirectLink?'':' three'}">
         <button class="public-card" data-action="haat">
           <div class="public-card-emoji">🛒</div>
           <div class="text-col">
-            <h2>ખેડૂત હાટ સાથે જોડાવા માટેનું ફોર્મ</h2>
-            <p class="desc">તમે પહેલેથી પ્રાકૃતિક ખેતી કરો છો? તમારી ઉપજ સૃષ્ટિ હાટમાં વેચો.</p>
+            <h2>સૃષ્ટિ ખેડૂત હાટ સાથે જોડાવા માટેનું ફોર્મ</h2>
+            <p class="desc">3 વર્ષ કે તેથી વધુ સમયથી ઝેરમુક્ત / રસાયણમુક્ત ખેતી કરતા ખેડૂતો માટે. ફાર્મ વેરિફિકેશન બાદ હાટમાં વેચાણ માટે જોડાઈ શકશો.</p>
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>
@@ -15423,7 +15643,7 @@ function renderPublicLanding(){
           <div class="public-card-emoji">🌱</div>
           <div class="text-col">
             <h2>પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ</h2>
-            <p class="desc">હાલમાં રસાયણ વાપરો છો પણ બંધ કરવા તૈયાર છો?</p>
+            <p class="desc">પ્રાકૃતિક ખેતી શરૂ કરવા ઇચ્છુક ખેડૂતો માટે. સૃષ્ટિની ટીમ તરફથી માર્ગદર્શન અને સહયોગ મળશે. 3 વર્ષ પૂર્ણ થયા બાદ હાટમાં વેચાણ માટે જોડાઈ શકશો.</p>
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>

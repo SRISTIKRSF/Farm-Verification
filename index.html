@@ -1167,6 +1167,7 @@ let LANG = 'gu';
     // ANSWERS[q.id] already has anything typed so far, so nothing is lost.
     if(typeof buildStatCards === 'function') buildStatCards();
     if(typeof refreshStatCardAddButtons === 'function') refreshStatCardAddButtons();
+    if(typeof refreshOptionLabels === 'function') refreshOptionLabels();
   });
 })();
 // Picks the right-language string off a {gu,en,hi} object (question, field,
@@ -1178,6 +1179,54 @@ function langText(obj){
   if(LANG==='hi') return obj.hi || obj.gu || obj.en || '';
   if(LANG==='en') return obj.en || obj.gu || '';
   return obj.gu || obj.en || '';
+}
+// select/multi/multi_count/protection_methods options are stored as their
+// canonical "English (ગુજરાતી)" string (that's the value saved to the
+// farmer's record) — this only swaps the DISPLAYED label to q.optionsHi[i]
+// in Hindi mode, index-aligned with q.options. Falls back to the canonical
+// string if no translation was authored for that option.
+function optLabel(q, o, i){
+  if(LANG==='hi' && q.optionsHi && q.optionsHi[i]) return q.optionsHi[i];
+  return o;
+}
+// select/multi/multi_count/protection_methods option labels are computed
+// from LANG at render time (like stat_cards headers), so a language switch
+// after a section is already open needs to refresh their visible text too.
+// Selection state lives entirely in the .on CSS class / <select> value, not
+// in textContent, so overwriting label text here never disturbs it.
+function refreshOptionLabels(){
+  if(typeof QUESTIONS === 'undefined') return;
+  QUESTIONS.forEach(q => {
+    if(!q.optionsHi || !q.options) return;
+    const field = document.querySelector('[data-q="'+q.id+'"]');
+    if(!field) return;
+    const sel = field.querySelector('select[data-val]');
+    if(sel){
+      [...sel.options].forEach(opt => {
+        const i = q.options.indexOf(opt.value);
+        if(i>=0) opt.textContent = optLabel(q, opt.value, i);
+      });
+      return;
+    }
+    field.querySelectorAll('.chip[data-v], .mc-toggle[data-v]').forEach(btn => {
+      const i = q.options.indexOf(btn.dataset.v);
+      if(i>=0) btn.textContent = optLabel(q, btn.dataset.v, i) + (btn.textContent.trim().endsWith('★') ? ' ★' : '');
+    });
+  });
+  // protection_methods' group headers ("Traps"/"Extracts"/...) are synthetic
+  // labels, not per-option text, so the loop above never touches them —
+  // same staleness class, needs its own refresh in the same fixed order
+  // buildSections() renders them in.
+  const pmField = document.querySelector('[data-q="protection_methods"]');
+  if(pmField){
+    const pmLabels = [
+      LANG==='en'?'Traps':LANG==='hi'?'जाल':'સાપળા (Traps)',
+      LANG==='en'?'Extracts':LANG==='hi'?'अर्क / नीम':'અર્ક / નીમ (Extracts)',
+      LANG==='en'?'Microbial':LANG==='hi'?'जैविक':'જૈવ (Microbial)',
+      LANG==='en'?'Cultural':LANG==='hi'?'खेत प्रबंधन':'ખેત વ્યવસ્થા (Cultural)',
+    ];
+    [...pmField.querySelectorAll('.option-group-label[data-gi]')].forEach(el => { const gi = +el.dataset.gi; if(pmLabels[gi]) el.textContent = pmLabels[gi]; });
+  }
 }
 
 /* Auto-scroll so whichever question the farmer is currently on sits at the
@@ -1357,7 +1406,7 @@ function renderField(q){
   if(q.type==='yn')
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="yn" data-yn="\${id}"><button type="button" data-v="yes"><span class="tgu">હા</span><span class="thi">हाँ</span><span class="ten">Yes</span></button><button type="button" data-v="no"><span class="tgu">ના</span><span class="thi">नहीं</span><span class="ten">No</span></button></div></div>\`;
   if(q.type==='select'){
-    const opts = (q.options||[]).map(o => \`<option>\${esc(o)}</option>\`).join('');
+    const opts = (q.options||[]).map((o,i) => \`<option value="\${esc(o)}">\${esc(optLabel(q,o,i))}</option>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<select data-val="\${id}"><option value="">— પસંદ કરો —</option>\${opts}</select></div>\`;
   }
   if(q.id==='protection_methods'){
@@ -1372,25 +1421,26 @@ function renderField(q){
     // an option via the Question Manager the array gets shorter but these
     // ranges don't shrink with it, so indices past the end used to render
     // as empty, unlabeled chip buttons. Skip anything past the real array.
-    const inner = groups.map(g => {
+    const inner = groups.map((g,gi) => {
       const validIdx = g.idx.filter(i => allOpts[i]);
       if(!validIdx.length) return '';
-      return '<div class="option-group-label">' + esc(g.label) + '</div>'
-        + validIdx.map(i => '<button type="button" class="chip" data-v="'+esc(allOpts[i])+'">'+esc(allOpts[i])+'</button>').join('');
+      return '<div class="option-group-label" data-gi="'+gi+'">' + esc(g.label) + '</div>'
+        + validIdx.map(i => '<button type="button" class="chip" data-v="'+esc(allOpts[i])+'">'+esc(optLabel(q,allOpts[i],i))+'</button>').join('');
     }).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips option-grid" data-multi="\${id}">\${inner}</div></div>\`;
   }
   if(q.type==='multi'){
-    const opts = (q.options||[]).map(o => \`<button type="button" class="chip" data-v="\${esc(o)}">\${esc(o)}</button>\`).join('');
+    const opts = (q.options||[]).map((o,i) => \`<button type="button" class="chip" data-v="\${esc(o)}">\${esc(optLabel(q,o,i))}</button>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="chips option-grid" data-multi="\${id}">\${opts}</div></div>\`;
   }
   if(q.type==='multi_count'){
     /* Tap a chip → numeric count input appears next to it. Answer shape:
        [{type:'Cow (ગાય)', count:'2'}, ...] — empty count is allowed. */
-    const opts = (q.options||[]).map(o => \`
+    const countPh = LANG==='en'?'How many?':LANG==='hi'?'कितने?':'કેટલા? (How many?)';
+    const opts = (q.options||[]).map((o,i) => \`
       <div class="mc-row mc-card" data-mc="\${esc(o)}">
-        <button type="button" class="chip mc-toggle" data-v="\${esc(o)}">\${esc(o)}</button>
-        <input type="number" min="0" placeholder="કેટલા? (How many?)" class="mc-count" data-mcc="\${esc(o)}"
+        <button type="button" class="chip mc-toggle" data-v="\${esc(o)}">\${esc(optLabel(q,o,i))}</button>
+        <input type="number" min="0" placeholder="\${esc(countPh)}" class="mc-count" data-mcc="\${esc(o)}"
           style="display:none">
       </div>\`).join('');
     return \`<div class="field" data-q="\${id}">\${lbl}<div class="multi-count" data-multicount="\${id}">\${opts}</div></div>\`;
@@ -2330,6 +2380,7 @@ let LANG = 'gu';
     // ANSWERS[q.id] already has anything typed so far, so nothing is lost.
     if(typeof buildStatCards === 'function') buildStatCards();
     if(typeof refreshStatCardAddButtons === 'function') refreshStatCardAddButtons();
+    if(typeof refreshOptionLabels === 'function') refreshOptionLabels();
   });
 })();
 // Picks the right-language string off a {gu,en,hi} object (question, field,
@@ -2341,6 +2392,54 @@ function langText(obj){
   if(LANG==='hi') return obj.hi || obj.gu || obj.en || '';
   if(LANG==='en') return obj.en || obj.gu || '';
   return obj.gu || obj.en || '';
+}
+// select/multi/multi_count/protection_methods options are stored as their
+// canonical "English (ગુજરાતી)" string (that's the value saved to the
+// farmer's record) — this only swaps the DISPLAYED label to q.optionsHi[i]
+// in Hindi mode, index-aligned with q.options. Falls back to the canonical
+// string if no translation was authored for that option.
+function optLabel(q, o, i){
+  if(LANG==='hi' && q.optionsHi && q.optionsHi[i]) return q.optionsHi[i];
+  return o;
+}
+// select/multi/multi_count/protection_methods option labels are computed
+// from LANG at render time (like stat_cards headers), so a language switch
+// after a section is already open needs to refresh their visible text too.
+// Selection state lives entirely in the .on CSS class / <select> value, not
+// in textContent, so overwriting label text here never disturbs it.
+function refreshOptionLabels(){
+  if(typeof QUESTIONS === 'undefined') return;
+  QUESTIONS.forEach(q => {
+    if(!q.optionsHi || !q.options) return;
+    const field = document.querySelector('[data-q="'+q.id+'"]');
+    if(!field) return;
+    const sel = field.querySelector('select[data-val]');
+    if(sel){
+      [...sel.options].forEach(opt => {
+        const i = q.options.indexOf(opt.value);
+        if(i>=0) opt.textContent = optLabel(q, opt.value, i);
+      });
+      return;
+    }
+    field.querySelectorAll('.chip[data-v], .mc-toggle[data-v]').forEach(btn => {
+      const i = q.options.indexOf(btn.dataset.v);
+      if(i>=0) btn.textContent = optLabel(q, btn.dataset.v, i) + (btn.textContent.trim().endsWith('★') ? ' ★' : '');
+    });
+  });
+  // protection_methods' group headers ("Traps"/"Extracts"/...) are synthetic
+  // labels, not per-option text, so the loop above never touches them —
+  // same staleness class, needs its own refresh in the same fixed order
+  // buildSections() renders them in.
+  const pmField = document.querySelector('[data-q="protection_methods"]');
+  if(pmField){
+    const pmLabels = [
+      LANG==='en'?'Traps':LANG==='hi'?'जाल':'સાપળા (Traps)',
+      LANG==='en'?'Extracts':LANG==='hi'?'अर्क / नीम':'અર્ક / નીમ (Extracts)',
+      LANG==='en'?'Microbial':LANG==='hi'?'जैविक':'જૈવ (Microbial)',
+      LANG==='en'?'Cultural':LANG==='hi'?'खेत प्रबंधन':'ખેત વ્યવસ્થા (Cultural)',
+    ];
+    [...pmField.querySelectorAll('.option-group-label[data-gi]')].forEach(el => { const gi = +el.dataset.gi; if(pmLabels[gi]) el.textContent = pmLabels[gi]; });
+  }
 }
 
 /* Auto-scroll so whichever question the FC is currently on sits at the top
@@ -2471,15 +2570,16 @@ function fmtFarmerClaim(q, c){
     }).join('') + '</div>';
   }
   if(q.type==='multi') return Array.isArray(a) && a.length
-    ? a.map(x=>'<span class="pill">'+esc(x)+'</span>').join('')
+    ? a.map(x=>'<span class="pill">'+esc(optLabel(q, x, (q.options||[]).indexOf(x)))+'</span>').join('')
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
   if(q.type==='multi_count') return Array.isArray(a) && a.length
     ? '<div style="display:flex;flex-wrap:wrap;gap:6px">' + a.map(x => {
-        if(x && typeof x==='object') return '<span class="pill">' + esc(x.type||'') + ' × <b>' + esc(String(x.count||'?')) + '</b></span>';
-        return '<span class="pill">' + esc(String(x)) + '</span>';
+        if(x && typeof x==='object') return '<span class="pill">' + esc(optLabel(q, x.type||'', (q.options||[]).indexOf(x.type||''))) + ' × <b>' + esc(String(x.count||'?')) + '</b></span>';
+        return '<span class="pill">' + esc(optLabel(q, String(x), (q.options||[]).indexOf(String(x)))) + '</span>';
       }).join('') + '</div>'
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
   if(q.type==='yn') return a==='yes' ? '<b style="color:var(--green)">Yes</b>' : a==='no' ? '<b style="color:var(--red)">No</b>' : '—';
+  if(q.type==='select' && a) return '<b>'+esc(optLabel(q, String(a), (q.options||[]).indexOf(String(a))))+'</b>';
   if(q.type==='crops_table') return Array.isArray(a) && a.length
     ? '<div style="display:flex;flex-direction:column;gap:4px">' + a.map(r => '<span class="pill" style="display:inline-block">' + esc(r.name||'') + ' · ' + esc(String(r.area||'0')) + ' એકર · ' + esc(String(r.yield||'?')) + ' · ₹' + esc(String(r.income||'0')) + '/yr</span>').join('') + '</div>'
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
@@ -2534,9 +2634,9 @@ function renderFcControls(q){
     const claim = CLAIMS_BY_ID[q.id];
     const farmerArr = Array.isArray(claim && claim.answer) ? claim.answer : [];
     h += '<div class="retick"><div class="l"><span class="tgu">FC એ જોયું (જે જોયું તે ફરી ટિક કરો)</span><span class="thi">FC ने देखा (जो देखा वह फिर टिक करें)</span><span class="ten">FC observed (re-tick what was seen)</span></div><div class="chips option-grid" data-retick="'+q.id+'">';
-    (q.options||[]).forEach(opt => {
+    (q.options||[]).forEach((opt,oi) => {
       const farmerHas = farmerArr.includes(opt);
-      h += '<button type="button" class="chip ' + (farmerHas?'farmer-said':'') + '" data-v="'+esc(opt)+'">' + esc(opt) + (farmerHas?' ★':'') + '</button>';
+      h += '<button type="button" class="chip ' + (farmerHas?'farmer-said':'') + '" data-v="'+esc(opt)+'">' + esc(optLabel(q,opt,oi)) + (farmerHas?' ★':'') + '</button>';
     });
     h += '</div></div>';
   }
@@ -2547,11 +2647,11 @@ function renderFcControls(q){
     const farmerMap = {};
     farmerArr.forEach(x => { if(x && typeof x==='object') farmerMap[x.type] = x.count||''; else if(typeof x==='string') farmerMap[x] = ''; });
     h += '<div class="retick"><div class="l"><span class="tgu">FC એ જોયેલ સંખ્યા (ટિક કરો + જોયેલ સંખ્યા લખો)</span><span class="thi">FC ने देखी संख्या (टिक करें + देखी गई संख्या लिखें)</span><span class="ten">FC observed counts (tick + enter what was seen)</span></div><div class="multi-count" data-retick-mc="'+q.id+'">';
-    (q.options||[]).forEach(opt => {
+    (q.options||[]).forEach((opt,oi) => {
       const farmerCount = farmerMap[opt];
       const farmerHas = opt in farmerMap;
       h += '<div class="mc-row mc-card" data-mc="'+esc(opt)+'">'
-        + '<button type="button" class="chip mc-toggle '+(farmerHas?'farmer-said':'')+'" data-v="'+esc(opt)+'">'+esc(opt)+(farmerHas?' ★':'')+'</button>'
+        + '<button type="button" class="chip mc-toggle '+(farmerHas?'farmer-said':'')+'" data-v="'+esc(opt)+'">'+esc(optLabel(q,opt,oi))+(farmerHas?' ★':'')+'</button>'
         + '<input type="number" min="0" placeholder="FC count" class="mc-count" data-mcc="'+esc(opt)+'" style="display:none">'
         + (farmerHas ? '<span style="font-size:11px;color:var(--ink-soft)"><span class="tgu">ખેડૂતે કહ્યું</span><span class="thi">किसान ने बताया</span><span class="ten">Farmer said</span>: <b>'+esc(String(farmerCount||'no count'))+'</b></span>' : '')
         + '</div>';
@@ -2991,7 +3091,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v93';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

@@ -1187,6 +1187,7 @@ function langText(obj){
 // string if no translation was authored for that option.
 function optLabel(q, o, i){
   if(LANG==='hi' && q.optionsHi && q.optionsHi[i]) return q.optionsHi[i];
+  if(LANG==='en'){ const m = o && o.match(/^([^(]+)/); return m ? m[1].trim() : o; }
   return o;
 }
 // select/multi/multi_count/protection_methods option labels are computed
@@ -1560,7 +1561,11 @@ function wireCropSearchInput(inp){
     const catalog = (window.parent && window.parent.CROPS_CATALOG) || [];
     const matches = catalog.filter(c => c !== 'Other (અન્ય)' && (!query || cropSearchBlobLocal(c).includes(query))).slice(0, 8);
     if(!matches.length){ dd.style.display = 'none'; return; }
-    const cropLabel = c => (LANG==='hi' && window.parent && window.parent.cropHiLabel) ? window.parent.cropHiLabel(c) : c;
+    const cropLabel = c => {
+      if(LANG==='hi' && window.parent && window.parent.cropHiLabel) return window.parent.cropHiLabel(c);
+      if(LANG==='en'){ const m = c.match(/^([^(]+)/); return m ? m[1].trim() : c; }
+      return c;
+    };
     dd.innerHTML = matches.map(c => '<div class="crop-dd-opt" data-cropval="'+esc(c)+'" style="padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line-soft)">'+esc(cropLabel(c))+'</div>').join('');
     dd.style.display = 'block';
     dd.querySelectorAll('[data-cropval]').forEach(opt => {
@@ -2400,6 +2405,7 @@ function langText(obj){
 // string if no translation was authored for that option.
 function optLabel(q, o, i){
   if(LANG==='hi' && q.optionsHi && q.optionsHi[i]) return q.optionsHi[i];
+  if(LANG==='en'){ const m = o && o.match(/^([^(]+)/); return m ? m[1].trim() : o; }
   return o;
 }
 // select/multi/multi_count/protection_methods option labels are computed
@@ -3091,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v93';
+const APP_VERSION = 'v94';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10116,6 +10122,10 @@ function openConvEnrollmentForm(){
     if(state.lang === 'hi'){
       const hi = (window.CROPS_CATALOG_HI && window.CROPS_CATALOG_HI[s]) || (window.KRSF_LABELS_HI && window.KRSF_LABELS_HI[s]);
       if(hi) return hi;
+      const m = s.match(/^([^(]+)/);
+      return m ? m[1].trim() : s;
+    }
+    if(state.lang === 'en'){
       const m = s.match(/^([^(]+)/);
       return m ? m[1].trim() : s;
     }

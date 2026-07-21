@@ -2991,7 +2991,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15332,12 +15332,12 @@ function publicRouteFromHash(){
   const h = (location.hash || '').toLowerCase();
   if(h === '#haat' || h === '#apply' || h === '#public_haat_form') return 'public_haat_form';
   if(h === '#conv' || h === '#convert' || h === '#public_conv_form') return 'public_conv_form';
-  // '#choose' — a shareable direct link to the two-card "pick your form"
+  // '#join' — a shareable direct link to the two-card "pick your form"
   // screen (no Sristi Login card), for when a broadcast/WhatsApp link should
   // let the farmer decide between Haat / Conversion rather than committing
   // to one. Falls through to public_landing regardless (the default for any
   // unrecognized hash), so this branch exists mainly to document the alias.
-  if(h === '#choose' || h === '#forms') return 'public_landing';
+  if(h === '#join' || h === '#forms') return 'public_landing';
   return 'public_landing';
 }
 
@@ -15610,14 +15610,11 @@ const SRISTI_OFFICE_WHATSAPP = '919510386635';  // SRISTI office WhatsApp — ev
 // === PUBLIC LANDING ===
 function renderPublicLanding(){
   const v = $('#view');
-  // v81 — a farmer who arrived via a direct share link (/haat/, /conv/ →
-  // #haat/#conv) and then taps "back" or "Home" lands here. Showing the
-  // "Sristi Login" card to a farmer is confusing at best (they were never
-  // meant to see an internal login screen) — only show it when nothing in
-  // this session points back to a direct-link entry, i.e. real staff who
-  // opened the bare site URL. The hash still holds the original #haat/#conv
-  // (in-app back/home never changes it), so it's a reliable signal here.
-  const viaDirectLink = /^#(haat|apply|public_haat_form|conv|convert|public_conv_form|choose|forms)$/i.test(location.hash||'');
+  // v91 — this landing is farmer-facing only now; the "Sristi Login" card
+  // was dropped entirely (it only ever confused farmers who reached this
+  // screen via a share link or "back"/"Home"). Staff still get in via
+  // #admin / #fc, which auto-opens the login modal with no session
+  // (see enterAdminMode()) — no on-screen entry point needed here.
   v.innerHTML = `
     <div class="public-wrap">
       <div class="public-hero">
@@ -15630,7 +15627,7 @@ function renderPublicLanding(){
         <h1>સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ</h1>
         <div class="sub">નીચે આપેલા બે વિકલ્પોમાંથી તમારા માટે યોગ્ય ફોર્મ પસંદ કરો.</div>
       </div>
-      <div class="public-cards${viaDirectLink?'':' three'}">
+      <div class="public-cards">
         <button class="public-card" data-action="haat">
           <div class="public-card-emoji">🛒</div>
           <div class="text-col">
@@ -15647,14 +15644,6 @@ function renderPublicLanding(){
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>
-        ${viaDirectLink?'':`<button class="public-card login" data-action="login">
-          <div class="public-card-emoji">🔐</div>
-          <div class="text-col">
-            <h2>Sristi Login</h2>
-            <p class="desc">તમારું ID અને Password નાખીને ડેશબોર્ડ ખોલો.</p>
-          </div>
-          <span class="cta">Sign in →</span>
-        </button>`}
       </div>
       <div class="public-foot">
         <div style="margin-bottom:18px;padding:14px 18px;background:#fff;border:1.5px solid #e7e9f0;border-radius:12px;display:inline-flex;align-items:center;gap:12px;font-family:'Hind Vadodara',sans-serif">
@@ -15672,12 +15661,9 @@ function renderPublicLanding(){
     b.onclick = () => {
       // v8.2 — Haat & Conv use the EXISTING detailed forms. PUBLIC_MODE
       // routes submissions to pendingEnrolments instead of the live collections.
-      // v9 — Login card now opens the ID + Password gate instead of jumping
-      // straight into admin mode.
       const a = b.dataset.action;
       if(a === 'haat') openEnrollmentForm();
       else if(a === 'conv') openConvEnrollmentForm();
-      else if(a === 'login') openLoginModal();
     };
   });
 }

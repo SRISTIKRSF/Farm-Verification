@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v96';
+const APP_VERSION = 'v97';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10759,7 +10759,7 @@ function openImportFormModal(){
     const rd=new FileReader();
     rd.onload=()=>{ $('#impText').value=rd.result||''; preview(); };
     rd.onerror=()=>{ $('#impPreview').innerHTML='<div class="hint" style="color:var(--red)">Could not read file: '+esc(rd.error&&rd.error.message||'unknown error')+'</div>'; };
-    rd.readAsText(file);
+    rd.readAsText(file, 'UTF-8');
   };
   let parsed=[];
   function preview(){
@@ -10782,7 +10782,18 @@ function openImportFormModal(){
       $('#impPreview').innerHTML='<div class="hint" style="color:var(--red)">No valid rows found (each row needs at least a name).</div>';
       return;
     }
-    let h=`<div class="hint" style="margin-bottom:6px">Detected <b>${parsed.length}</b> farmer${parsed.length===1?'':'s'}:</div>
+    // v97 — a run of 2+ literal "?" is the signature of encoding-loss corruption
+    // (Excel silently replaces unrepresentable Gujarati/Hindi characters with
+    // "?" if a CSV lacks a UTF-8 BOM and gets opened, edited, and re-saved
+    // there — see the incident note on toCSV()). Real data essentially never
+    // contains "??" naturally, so flag it loudly before 277 farmers get
+    // corrupted district/village/taluka names imported into production.
+    const CORRUPT_RE = /\?{2,}/;
+    const corruptRows = parsed.filter(p => CORRUPT_RE.test(p.name||'') || CORRUPT_RE.test(p.village||'') || CORRUPT_RE.test(p.taluka||'') || CORRUPT_RE.test(p.district||''));
+    let h = corruptRows.length ? `<div class="hint" style="margin-bottom:10px;background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b;border-radius:8px;padding:10px 12px">
+      ⚠ <b>${corruptRows.length} row${corruptRows.length===1?'':'s'}</b> ha${corruptRows.length===1?'s':'ve'} "??" in place of text — this is almost always Gujarati/Hindi script that got destroyed by Excel (opening/re-saving a CSV without a UTF-8 marker turns non-English characters into literal "?"). That text <b>cannot be recovered</b> from this file. Re-export the source spreadsheet as "CSV UTF-8" (not plain "CSV") and re-upload, or accept these rows will import with "?" in the affected field.
+    </div>` : '';
+    h+=`<div class="hint" style="margin-bottom:6px">Detected <b>${parsed.length}</b> farmer${parsed.length===1?'':'s'}:</div>
       <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px">
       <table style="width:100%;font-size:12px;border-collapse:collapse">
       <thead><tr style="background:var(--panel-2)">
@@ -10800,8 +10811,10 @@ function openImportFormModal(){
         : (p._unmatchedFcName
             ? `<span style="color:var(--red)">unmatched: ${esc(p._unmatchedFcName)}</span>`
             : `<span style="color:var(--ink-faint)">Unassigned</span>`);
+      const villageCell = CORRUPT_RE.test(p.village||'') ? `<span style="color:var(--red)">${esc(p.village)}</span>` : esc(p.village||'—');
+      const districtCell = CORRUPT_RE.test(p.district||'') ? `<span style="color:var(--red)">${esc(p.district)}</span>` : esc(p.district||'—');
       h+=`<tr><td style="padding:6px 10px;border-top:1px solid var(--line-soft)"><b>${esc(p.name)}</b></td>
-          <td style="padding:6px 10px;border-top:1px solid var(--line-soft)">${esc(p.village||'—')}, ${esc(p.district||'—')}</td>
+          <td style="padding:6px 10px;border-top:1px solid var(--line-soft)">${villageCell}, ${districtCell}</td>
           <td style="padding:6px 10px;border-top:1px solid var(--line-soft)">${fcCell}</td>
           <td style="padding:6px 10px;border-top:1px solid var(--line-soft)">${batteryHTML(p)}</td></tr>`;
     });
@@ -14000,7 +14013,16 @@ function toCSV(rows){
   if(!rows.length)return'';
   const keys=Object.keys(rows[0]);
   const esc=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  return keys.join(',')+'\n'+rows.map(r=>keys.map(k=>esc(r[k])).join(',')).join('\n');
+  // v97 — leading UTF-8 BOM. Without it, Excel (the near-universal way anyone
+  // opens a CSV) guesses the system ANSI codepage instead of UTF-8 on open —
+  // Gujarati/Hindi script can't be represented there, so it silently renders
+  // as "?" and, if the file is then re-saved from Excel, gets PERMANENTLY
+  // replaced with literal "?" bytes. This was a real incident: a farmer list
+  // exported from this app, opened/edited in Excel, and re-imported came back
+  // with every district's Gujarati name turned into "??????". The BOM makes
+  // Excel (and everything else) correctly detect UTF-8 on open, so round-
+  // tripping through Excel no longer destroys the script.
+  return '﻿' + keys.join(',')+'\n'+rows.map(r=>keys.map(k=>esc(r[k])).join(',')).join('\n');
 }
 function download(name,content){
   const blob=new Blob([content],{type:'text/plain'});

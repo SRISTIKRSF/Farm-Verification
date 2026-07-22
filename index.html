@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v95';
+const APP_VERSION = 'v96';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6023,6 +6023,43 @@ function talukaDisplayName(raw, district){
   _talukaNormCache.set(cacheKey, s); return s;
 }
 
+/* v96 — same problem as talukaDisplayName() above, one level up: a farmer's
+   district is free text on old records (typed before the structured
+   district dropdown existed) or missing its Gujarati suffix, so raw values
+   like "Narmada", "narmada", "Narmada (નર્મદા)" all end up as separate
+   entries in every district filter dropdown across the admin UI. This never
+   touches the stored f.district — display/filtering only — so it's safe to
+   apply everywhere without a data migration or any risk to existing records. */
+const _districtNormCache = new Map();
+function districtDisplayName(raw){
+  if(!raw) return '';
+  const s = String(raw).trim();
+  if(!s) return '';
+  if(_districtNormCache.has(s)) return _districtNormCache.get(s);
+  function roots(str){
+    const m = String(str).match(/^([^()]+?)\s*(?:\(([^)]+)\))?\s*$/);
+    let en = (m && m[1] ? m[1] : str).trim();
+    let gu = (m && m[2] ? m[2] : '').trim();
+    if(!gu && /[઀-૿]/.test(en)){ gu = en; en = ''; }
+    en = en.toLowerCase().replace(/\s*\/\s*/g,' ').replace(/\s+/g,' ');
+    return {en, gu};
+  }
+  const target = roots(s);
+  const pool = Object.keys(window.DISTRICT_TALUKAS || {});
+  for(const entry of pool){
+    const r = roots(entry);
+    if(target.en && r.en && r.en === target.en){ _districtNormCache.set(s, entry); return entry; }
+    if(target.gu && r.gu && r.gu === target.gu){ _districtNormCache.set(s, entry); return entry; }
+  }
+  // Looser pass: startsWith either direction (catches "Vav" for "Vav-Tharad", stray suffixes/typos)
+  for(const entry of pool){
+    const r = roots(entry);
+    if(target.en && r.en && (r.en.startsWith(target.en) || target.en.startsWith(r.en))){ _districtNormCache.set(s, entry); return entry; }
+  }
+  _districtNormCache.set(s, s);
+  return s;
+}
+
 /* v9 — crops_table (fixed 3-row current-crops list) was replaced by
    plot_crops_table (per-plot, season-wise free-text crops: monsoon/winter/
    summer main+secondary). That table has no `.name` field per row, so
@@ -7575,7 +7612,7 @@ function openFcRefModal(program, id){
   let h = `<div class="detail-grid">
     <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village||'—')}</div></div>
     <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(talukaDisplayName(f.taluka,f.district)||'—')}</div></div>
-    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district||'—')}</div></div>
+    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district)||'—')}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone||'—')}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||'—'} acres</div></div>
     <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic||'—'} yrs</div></div>
@@ -8028,7 +8065,7 @@ function viewFcPlanning(){
     .map(p=>({plan:p, farmer: p.farmerProgram==='conv' ? (DB.convFarmers||[]).find(x=>x.id===p.farmerId) : (DB.haatFarmers||[]).find(x=>x.id===p.farmerId)}))
     .filter(x=>x.farmer);
   let rows=plansWithFarmer;
-  if(F.district) rows=rows.filter(x=>x.farmer.district===F.district);
+  if(F.district) rows=rows.filter(x=>districtDisplayName(x.farmer.district)===F.district);
   if(F.taluka)   rows=rows.filter(x=>talukaDisplayName(x.farmer.taluka,x.farmer.district)===F.taluka);
   if(F.village)  rows=rows.filter(x=>x.farmer.village===F.village);
   if(F.status==='completed') rows=rows.filter(x=>x.plan.status==='completed');
@@ -8041,7 +8078,7 @@ function viewFcPlanning(){
   rows=rows.slice().sort((a,b)=>(a.plan.plannedDate||'').localeCompare(b.plan.plannedDate||''));
 
   const stats=fcMonthlyPlanStats(myFcId, F.month);
-  const districts=[...new Set(plansWithFarmer.map(x=>x.farmer.district).filter(Boolean))].sort();
+  const districts=[...new Set(plansWithFarmer.map(x=>districtDisplayName(x.farmer.district)).filter(Boolean))].sort();
   const talukas=[...new Set(plansWithFarmer.map(x=>talukaDisplayName(x.farmer.taluka,x.farmer.district)).filter(Boolean))].sort();
   const villages=[...new Set(plansWithFarmer.map(x=>x.farmer.village).filter(Boolean))].sort();
 
@@ -8322,7 +8359,7 @@ function viewDashboard(){
       body += `<tr style="border-bottom:1px solid var(--line-soft);cursor:pointer" data-go-farmer="${esc(f.id)}" data-program="${program}">
         <td style="padding:8px 8px;color:var(--ink-soft);font-size:11.5px">${esc(fmtDate(f.submittedAt||f.createdAt||''))}</td>
         <td style="padding:8px 8px"><b>${esc(f.name||'-')}</b></td>
-        <td style="padding:8px 8px;color:var(--ink-soft)">${esc([f.village,talukaDisplayName(f.taluka,f.district),f.district].filter(Boolean).join(' / ')||'—')}</td>
+        <td style="padding:8px 8px;color:var(--ink-soft)">${esc([f.village,talukaDisplayName(f.taluka,f.district),districtDisplayName(f.district)].filter(Boolean).join(' / ')||'—')}</td>
         <td style="padding:8px 8px">${fcLabel}</td>
         <td style="padding:8px 8px">${stageBadge}</td>
       </tr>`;
@@ -8801,7 +8838,7 @@ function viewHaat(){
   h+=dateRangePillsHtml(F.dateRange);
 
   /* ---- secondary filters (district added; facilitator dropped) ---- */
-  const haatDistricts=[...new Set(DB.haatFarmers.map(x=>x.district).filter(Boolean))].sort();
+  const haatDistricts=[...new Set(DB.haatFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="fHaat"><option value="">All haats</option>
       ${getHaatList().map(_h=>_h.name).map(x=>`<option ${F.haat===x?'selected':''}>${esc(x)}</option>`).join('')}
@@ -8834,7 +8871,7 @@ function viewHaat(){
     rows=rows.filter(r=>r.status===F.status);
   if(F.haat) rows=rows.filter(r=>r.haat===F.haat);
   if(F.state) rows=rows.filter(r=>r.state===F.state);
-  if(F.district) rows=rows.filter(r=>r.district===F.district);
+  if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
 
@@ -9114,8 +9151,8 @@ function viewVerification(){
       return;
     }
     let list=listFor(F.tab);
-    const districts=[...new Set(list.map(f=>f.district).filter(Boolean))].sort();
-    if(F.district) list = list.filter(f=>f.district===F.district);
+    const districts=[...new Set(list.map(f=>districtDisplayName(f.district)).filter(Boolean))].sort();
+    if(F.district) list = list.filter(f=>districtDisplayName(f.district)===F.district);
 
     const VQ_PAGE_SIZE = 50;
     const vqTotalPages = Math.ceil(list.length / VQ_PAGE_SIZE);
@@ -9665,7 +9702,7 @@ function viewConversion(){
   if(!F.dateRange) F.dateRange={preset:'all',from:'',to:''};
   let h=convFunnelHtml(cs,F.status,F.notInterested);
   h+=dateRangePillsHtml(F.dateRange);
-  const convDistricts=[...new Set(DB.convFarmers.map(x=>x.district).filter(Boolean))].sort();
+  const convDistricts=[...new Set(DB.convFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="cState"><option value="">All states</option>
       ${Object.keys(DB.states).map(x=>`<option ${F.state===x?'selected':''}>${x}</option>`).join('')}
@@ -9686,7 +9723,7 @@ function viewConversion(){
   if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
   if(F.state) rows=rows.filter(r=>r.state===F.state);
-  if(F.district) rows=rows.filter(r=>r.district===F.district);
+  if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.fc==='__none__') rows=rows.filter(r=>!r.fcId);
   else if(F.fc) rows=rows.filter(r=>r.fcId===F.fc);
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
@@ -11744,7 +11781,7 @@ function openHaatDrawer(id){
   h+=`<div class="detail-grid">
     <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village)}</div></div>
     <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(talukaDisplayName(f.taluka,f.district))}</div></div>
-    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district)}</div></div>
+    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district))}</div></div>
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres} acres</div></div>
@@ -11915,7 +11952,7 @@ function openConvDrawer(id){
   h+=convScoreHistoryCard(f);
   h+=`<div class="detail-grid">
     <div class="detail-cell"><div class="k">Village</div><div class="v">${esc(f.village)}</div></div>
-    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(f.district)}</div></div>
+    <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district))}</div></div>
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>

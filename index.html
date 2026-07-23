@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v99';
+const APP_VERSION = 'v100';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14826,12 +14826,19 @@ window.addEventListener('message',async ev=>{
     // included) — this exact form is also what quickAdd()/"New Farmer"
     // opens for logged-in users.
     {
-      const dup = findFarmerByPhone(f.phone);
+      // v100 — the enrollment form (KISAN_FORM_HTML) sends this field as
+      // `mobile`, not `phone` (matches its own ANSWERS.mobile question id).
+      // This receiver was reading f.phone, which the payload never sets —
+      // every Haat farmer enrolled through this form (public landing page
+      // AND the FC/Admin "+ New Farmer" button, which opens the same form)
+      // got a permanently blank phone, and this dedup check never actually
+      // matched against the number the farmer just typed.
+      const dup = findFarmerByPhone(f.mobile);
       if(dup){
         dup.record.duplicateAttempts = (dup.record.duplicateAttempts||0) + 1;
         dup.record.lastDuplicateAt   = new Date().toISOString();
         dup.record.lastDuplicateName = name;
-        logActivity('alert', `⚠ Duplicate ${PUBLIC_MODE?'public':'FC/admin'} submission for phone <b>${esc(f.phone)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
+        logActivity('alert', `⚠ Duplicate ${PUBLIC_MODE?'public':'FC/admin'} submission for phone <b>${esc(f.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
         try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))); } catch(e) {}
         cacheLocal();
         window._lastPublicAppId = dup.record.id;
@@ -14839,7 +14846,7 @@ window.addEventListener('message',async ev=>{
         if(!PUBLIC_MODE){
           // Admin/FC needs a visible error, not the public "thanks" redirect.
           closeEnrollmentForm();
-          toast('⚠ Phone '+f.phone+' is already registered — '+dup.record.name+' ('+dup.record.id+', '+dup.program+'). No new farmer created.', 'error');
+          toast('⚠ Phone '+f.mobile+' is already registered — '+dup.record.name+' ('+dup.record.id+', '+dup.program+'). No new farmer created.', 'error');
           render();
         }
         return;
@@ -14851,7 +14858,7 @@ window.addEventListener('message',async ev=>{
       program:'haat', name,
       village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
       district:f.district||'', state:guessState(f.district),
-      phone:f.phone||'', landAcres:f.land||0,
+      phone:f.mobile||'', landAcres:f.land||0,
       vertical:'Livelihood', yearsOrganic:0, certification:'Registration pending',
       crops:[], fcId:'', haat:'',
       enrolledMonth:m, stage:'verification_pending', status:'pending',

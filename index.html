@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v97';
+const APP_VERSION = 'v98';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3202,6 +3202,7 @@ async function loadDB(){
       });
       window.addEventListener('offline',()=>{FB.online=false;setSyncPill('offline');});
       setSyncPill(navigator.onLine?'syncing':'offline');
+      attachBackgroundThrottle();
       return;
     }catch(e){
       console.error('[Sristi] Firebase init failed:',e);
@@ -3213,6 +3214,38 @@ async function loadDB(){
   DB = normaliseDB(local || seedDB());
   cacheLocal();
   setSyncPill('local');
+}
+
+/* v98 — bandwidth: RTDB redelivers the FULL current value of every attached
+   .on('value') listener on every reconnect, not just a diff (that's how the
+   protocol works — it's not something the app can opt out of per-listener).
+   FCs' phones spend most of the day backgrounded/screen-locked while still
+   holding a live connection open; every mobile-radio blip during that dead
+   time silently re-syncs the whole dataset for a screen nobody is looking
+   at. That reconnect churn, multiplied across a flaky-signal field day, is
+   what actually inflates RTDB egress far past what the stored data size
+   would suggest — not the boot download itself (see SCALE-AUDIT-REPORT.md).
+   Fix: explicitly suspend the RTDB connection while backgrounded (after a
+   grace period, so quick alt-tabs don't thrash it) and resume the instant
+   the app is foregrounded again. This doesn't touch listener registration
+   (`.on()` stays attached throughout) or the app's own offline-write queue
+   — goOffline()/goOnline() is the SDK's own designed-for-this mechanism;
+   writes attempted while suspended queue exactly like a real disconnect and
+   flush automatically on resume. */
+let _bgSuspendTimer=null;
+function attachBackgroundThrottle(){
+  if(!FB.ready || typeof firebase==='undefined' || typeof document==='undefined') return;
+  const BG_GRACE_MS=60000;
+  document.addEventListener('visibilitychange', ()=>{
+    clearTimeout(_bgSuspendTimer);
+    if(document.hidden){
+      _bgSuspendTimer=setTimeout(()=>{
+        if(document.hidden){ try{ firebase.database().goOffline(); }catch(e){} }
+      }, BG_GRACE_MS);
+    }else{
+      try{ firebase.database().goOnline(); }catch(e){}
+    }
+  });
 }
 
 function seedDB(){

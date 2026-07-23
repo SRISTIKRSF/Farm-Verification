@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v98';
+const APP_VERSION = 'v99';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4228,20 +4228,76 @@ async function preCleanBlobsFromRTDB(){
 const LIVE_SYNC_KEYS = ['haatFarmers','convFarmers','fcs','fieldCoordinators','meta','activity','incomeRecords','pendingEnrolments','verificationPlans'];
 let _liveSnapshot = {};
 const _liveSnapshotSeen = new Set();
+/* v99 — district-scoped FC sync. haatFarmers/convFarmers are ~95% of every
+   boot download (see the forms/ finding above), and every device — FC or
+   admin — was syncing the full collection regardless of role. This reuses
+   the per-FC district assignment that ALREADY EXISTS on the user account
+   (config/users.districts, edited in Settings -> Users, the same multi-
+   select _fcCanSeeFarmer already uses to decide what shows in an FC's My
+   Work / Verification Queue screens today) as a SERVER-SIDE query instead
+   of a client-side filter over the full dataset.
+   Preserves the exact same guarantees _fcCanSeeFarmer already makes, so
+   nothing visible today becomes invisible:
+     - FC with no districts assigned -> unscoped, full sync (opt-in scoping;
+       matches "leave blank to see everyone" in the Edit User screen).
+     - a farmer with no district set (blank OR the field entirely missing)
+       -> synced to every FC, same as _fcCanSeeFarmer's "no district = visible
+       to all" rule.
+     - a farmer explicitly assigned to this FC (fcId match) always syncs even
+       if their district string is malformed or doesn't match any of the
+       FC's assigned districts — a safety net so a data-quality slip (like
+       the historical "Narmada (??????)" corruption) can never hide a
+       farmer from the one FC who actually owns them.
+   Admin and any other role keep the full, unscoped listener. */
+function _scopedFcQueries(key){
+  if(key!=='haatFarmers' && key!=='convFarmers') return null;
+  if(!SESSION || SESSION.role!=='fc' || !SESSION.userId) return null;
+  const districts=fcAssignedDistricts();
+  if(!districts.length) return null;
+  const myFcCode=SESSION.userId;
+  const queries=districts.map(d=>({tag:'d:'+d, ref:fbRef(key).orderByChild('district').equalTo(d)}));
+  queries.push({tag:'blank',  ref:fbRef(key).orderByChild('district').equalTo('')});
+  queries.push({tag:'absent', ref:fbRef(key).orderByChild('district').equalTo(null)});
+  queries.push({tag:'own',    ref:fbRef(key).orderByChild('fcId').equalTo(myFcCode)});
+  return queries;
+}
+const _scopedParts={};   // key -> {queryTag -> {id:record}}, merged into _liveSnapshot[key]
 function attachLiveListener(){
   if(!FB.ready)return;
   LIVE_SYNC_KEYS.forEach(key => {
-    fbRef(key).on('value', snap => {
-      _liveSnapshot[key] = snap.exists() ? snap.val() : null;
-      _liveSnapshotSeen.add(key);
-      // Wait for every subscribed collection to report in at least once
-      // before the first diff/swap — otherwise a collection whose listener
-      // hasn't fired yet reads as empty and briefly flashes "0 records" on
-      // boot (e.g. Conversion Farmers showing empty for a moment while its
-      // listener is still mid-flight). Once all have reported, every
-      // subsequent individual fire processes immediately as normal.
-      if(_liveSnapshotSeen.size < LIVE_SYNC_KEYS.length) return;
-      _processLiveSnapshot();
+    const queries=_scopedFcQueries(key);
+    if(!queries){
+      fbRef(key).on('value', snap => {
+        _liveSnapshot[key] = snap.exists() ? snap.val() : null;
+        _liveSnapshotSeen.add(key);
+        // Wait for every subscribed collection to report in at least once
+        // before the first diff/swap — otherwise a collection whose listener
+        // hasn't fired yet reads as empty and briefly flashes "0 records" on
+        // boot (e.g. Conversion Farmers showing empty for a moment while its
+        // listener is still mid-flight). Once all have reported, every
+        // subsequent individual fire processes immediately as normal.
+        if(_liveSnapshotSeen.size < LIVE_SYNC_KEYS.length) return;
+        _processLiveSnapshot();
+      });
+      return;
+    }
+    // Scoped: several queries feed ONE collection. Merge every query's
+    // last-known result into a single id->record map so cloudToDB() and
+    // the rest of the sync pipeline never need to know scoping happened.
+    _scopedParts[key]={};
+    const partsSeen=new Set();
+    queries.forEach(q => {
+      q.ref.on('value', snap => {
+        _scopedParts[key][q.tag] = snap.exists() ? snap.val() : {};
+        partsSeen.add(q.tag);
+        const merged={};
+        Object.keys(_scopedParts[key]).forEach(tag => Object.assign(merged, _scopedParts[key][tag]));
+        _liveSnapshot[key]=merged;
+        if(partsSeen.size < queries.length) return;
+        _liveSnapshotSeen.add(key);
+        if(_liveSnapshotSeen.size < LIVE_SYNC_KEYS.length) return;
+        _processLiveSnapshot();
+      });
     });
   });
 }

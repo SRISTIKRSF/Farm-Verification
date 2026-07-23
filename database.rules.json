@@ -1,6 +1,10 @@
 {
   "rules": {
     ".read": "auth != null",
-    ".write": "auth != null"
+    ".write": "auth != null",
+    "prakrutik_kheti": {
+      "haatFarmers": { ".indexOn": ["district", "fcId"] },
+      "convFarmers": { ".indexOn": ["district", "fcId"] }
+    }
   }
 }

@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v104';
+const APP_VERSION = 'v105';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4333,6 +4333,22 @@ function _processLiveSnapshot(){
         });
       });
       DB=cloud;
+      // v105 — CRITICAL FIX: _lastSnap used to be set ONLY at boot and after
+      // this device's OWN saveDB() calls, never when the live listener (here)
+      // brought in records created by OTHER devices/public submissions. That
+      // let saveDB()'s diff-based delete logic — `if(!cur[id]) set null` for
+      // every id in the stale _lastSnap-but-missing-from-current-DB — treat
+      // "this device just hasn't been told about that farmer yet" the same
+      // as "this farmer was intentionally removed", and PERMANENTLY DELETE
+      // real farmer records the very next time this device saved anything at
+      // all. This is the confirmed root cause of ~110 real Haat farmers (all
+      // legitimate public applications) silently vanishing from haatFarmers
+      // between 2026-07-20 and 2026-07-22 while their forms/ data survived —
+      // recovered 2026-07-24, see _recoveredNote on the rebuilt records.
+      // Keeping _lastSnap in sync with every state this device has actually
+      // seen (own saves AND live updates) closes the vulnerability: the diff
+      // then only fires for a record THIS device's own UI genuinely removed.
+      _lastSnap=_excludePendingFromSnap(snapAll());
       // v11 — re-attach any on-demand forms this session already loaded, so
       // an open drawer doesn't lose them when the snapshot replaces records.
       try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
@@ -4468,6 +4484,16 @@ async function saveDB(silent){
   const updates={};
   const snap={};
   const dirty=[];
+  // v105 — safety net alongside the _lastSnap live-sync fix above: even with
+  // that root cause closed, a diff-based delete is a blunt instrument — ANY
+  // future bug that leaves DB[col] smaller than _lastSnap thinks it should be
+  // (a bad merge, a race, code nobody's written yet) will happily push `null`
+  // for every "missing" id with zero human involved. A real admin action
+  // (multi-select archive/delete) is bounded by what fits on one page of
+  // checkboxes; a sync bug is not. Cap it — this is the difference between
+  // "one bad page reload loses nothing" and "one bad page reload loses 110
+  // real farmers again", so it stays even though the root cause is fixed.
+  const MAX_AUTO_DELETE = 15;
   SYNC_COLS.forEach(col=>{
     const cur=arrToMap(DB[col]||[]);
     const prev=(_lastSnap&&_lastSnap[col])||{};
@@ -4482,7 +4508,13 @@ async function saveDB(silent){
       }
     });
     // deleted records
-    Object.keys(prev).forEach(id=>{ if(!cur[id]) updates[col+'/'+id]=null; });
+    const missingIds = Object.keys(prev).filter(id=>!cur[id]);
+    if(missingIds.length > MAX_AUTO_DELETE){
+      console.error('[Sristi] saveDB() BLOCKED an anomalous bulk delete — '+missingIds.length+' '+col+' records would have been removed in one save (cap: '+MAX_AUTO_DELETE+'). This almost certainly means this device\'s local data is stale, not that '+missingIds.length+' records were genuinely deleted. Nothing was deleted; reload this device before making further changes. IDs:', missingIds);
+      toast('⚠ Blocked an unusually large delete ('+missingIds.length+' '+col+' records) to protect your data — please reload this tab before continuing, and tell an admin.', 'error');
+    } else {
+      missingIds.forEach(id=>{ updates[col+'/'+id]=null; });
+    }
     snap[col]=sc;
   });
   // #35 — write activity entries PER-ID rather than replacing the whole `activity`

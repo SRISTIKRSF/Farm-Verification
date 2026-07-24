@@ -2571,8 +2571,25 @@ function fmtFarmerClaim(q, c){
     const photos = (FARMER_PHOTOS && FARMER_PHOTOS[q.id]) || [];
     if(!photos.length) return '<span style="color:var(--ink-faint);font-style:italic">No photo uploaded</span>';
     return '<div style="display:flex;gap:6px;flex-wrap:wrap">' + photos.map(p => {
-      const url = (p && p.data) ? p.data : p;
-      return '<a href="'+url+'" target="_blank" style="display:block;width:78px;height:78px;border-radius:8px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+      // v109 SECURITY — same fix as the main app's photoSrc allowlist: these
+      // photos are farmer-submitted and land in href/src attributes shown to
+      // the FC. Scheme allowlist + esc() (see _safePhotoUrl in the main app).
+      // NB: this block lives INSIDE the VERIF_FORM_HTML template literal, so it
+      // must contain no backtick characters and no backslash escapes anywhere,
+      // INCLUDING IN COMMENTS - a backtick ends the literal and backslash
+      // escapes get eaten by it. That is why the checks below are plain string
+      // comparisons rather than a regular expression.
+      const raw = (p && p.data) ? p.data : ((p && p.url) ? p.url : p);
+      const s = (typeof raw === 'string') ? raw.trim() : '';
+      const lower = s.toLowerCase();
+      // SVG excluded on purpose - it can carry a script that runs when opened
+      // via the href. See _safePhotoUrl in the main app for the full rationale.
+      const isSvg = lower.indexOf('data:image/svg') === 0;
+      const okScheme = !isSvg && (lower.indexOf('https://') === 0 || lower.indexOf('data:image/') === 0 || lower.indexOf('blob:') === 0);
+      const clean = s.indexOf('"') < 0 && s.indexOf("'") < 0 && s.indexOf('<') < 0 && s.indexOf('>') < 0 && s.indexOf(' ') < 0;
+      const url = (okScheme && clean) ? s : '';
+      if(!url) return '';
+      return '<a href="'+esc(url)+'" target="_blank" style="display:block;width:78px;height:78px;border-radius:8px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+esc(url)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
     }).join('') + '</div>';
   }
   if(q.type==='multi') return Array.isArray(a) && a.length
@@ -3097,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v108';
+const APP_VERSION = 'v109';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4671,12 +4688,44 @@ function idbDel(store, key){ return idbOpen().then(db => new Promise((res,rej)=>
    Legacy: plain dataURL string, or {name, type, data: dataURL}.
    v11:    {photoId, url, w, h} after upload; {photoId, pending:true} while queued. */
 const _photoSession = {};   // photoId -> dataURL, this session only (instant local thumbs)
+/* v109 SECURITY — photo values come from farmer-submitted form payloads
+   (forms/{id}.enrol.photos), which any visitor can write until the RTDB rules
+   are tightened. photoSrc()'s return value is interpolated straight into
+   href="…" / src="…" in the admin drawer, the compare-forms modal and the
+   visit timeline, so a crafted value like   x" onerror="…   breaks out of the
+   attribute and executes with admin privileges. Two defences, both needed:
+     1. this allowlist — blocks javascript: and other hostile schemes;
+     2. esc() at every interpolation site — blocks quote-breakout.
+   Measured against a full production snapshot (2026-07-25), all 140 stored
+   photo entries are: Cloudinary https URLs (95), still-uploading photoId
+   placeholders (34), and inline data:image/svg+xml (11). Those 11 SVGs are
+   ALL synthetic demo graphics on the two demo records HF_MODI_001 and
+   HF_VANSHITA_001 — coloured rectangles with text, not farmer photographs.
+   So no real photo is affected by anything below. */
+function _safePhotoUrl(u){
+  if(typeof u !== 'string') return '';
+  const s = u.trim();
+  // No character that can break out of an HTML attribute legitimately appears
+  // unencoded in a Cloudinary URL or a base64/percent-encoded data: URL.
+  if(/["'<>`\s]/.test(s)) return '';
+  // SVG is deliberately NOT allowed. An <svg> can carry <script>, which runs
+  // when the image is opened via the href (navigation), unlike a raster image.
+  // Since farmer-submitted values land here, allowing SVG would reopen the very
+  // hole this function exists to close. Costs us nothing: the only stored SVGs
+  // are the demo placeholders noted above. Their DB records are untouched —
+  // this only suppresses rendering.
+  if(/^data:image\/svg/i.test(s)) return '';
+  if(/^https:\/\//i.test(s))   return s;   // Cloudinary (and any future https host)
+  if(/^data:image\//i.test(s)) return s;   // legacy inline raster base64
+  if(/^blob:/i.test(s))        return s;   // in-session object URLs
+  return '';
+}
 function photoSrc(p){
   if(!p) return '';
-  if(typeof p === 'string') return p;
-  if(p.url) return p.url;
-  if(p.data) return p.data;
-  if(p.photoId && _photoSession[p.photoId]) return _photoSession[p.photoId];
+  if(typeof p === 'string') return _safePhotoUrl(p);
+  if(p.url) return _safePhotoUrl(p.url);
+  if(p.data) return _safePhotoUrl(p.data);
+  if(p.photoId && _photoSession[p.photoId]) return _safePhotoUrl(_photoSession[p.photoId]);
   return '';
 }
 function photoThumb(p, w){
@@ -11456,7 +11505,9 @@ function renderV5EnrollmentSummary(f){
         const url = photoSrc(p) || photoPendingPlaceholder();
         const turl = photoThumb(p, 200);
         const cap = (q.gu||q.en||qid) + ' #' + (i+1);
-        h += '<a href="' + url + '" data-photo data-photo-caption="' + esc(cap) + '" style="display:block;width:78px;height:78px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9;cursor:zoom-in"><img src="' + turl + '" alt="' + esc(cap) + '" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+        // v109 — esc() on the URLs too (the caption alongside was already
+        // escaped); farmer-supplied photo values reach these attributes.
+        h += '<a href="' + esc(url) + '" data-photo data-photo-caption="' + esc(cap) + '" style="display:block;width:78px;height:78px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9;cursor:zoom-in"><img src="' + esc(turl) + '" alt="' + esc(cap) + '" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
       });
       h += '</div></div>';
     });
@@ -12224,7 +12275,7 @@ function openConvDrawer(id){
          + o.photos.map(p => {
              const url = photoSrc(p) || photoPendingPlaceholder();
              const turl = photoThumb(p, 160);
-             return `<a href="${url}" data-photo style="display:block;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="${turl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>`;
+             return `<a href="${esc(url)}" data-photo style="display:block;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="${esc(turl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>`;
            }).join('')
          + `</div>`;
       }
@@ -13151,7 +13202,7 @@ function openCompareFormsModal(id){
     return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">' + arr.map(p => {
       const url = photoSrc(p) || photoPendingPlaceholder();
       const turl = photoThumb(p, 200);
-      return '<a href="'+url+'" data-photo style="display:block;width:72px;height:72px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+turl+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+      return '<a href="'+esc(url)+'" data-photo style="display:block;width:72px;height:72px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+esc(turl)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
     }).join('') + '</div>';
   }
 
@@ -16134,24 +16185,30 @@ function renderPublicLanding(){
 }
 
 // === v9 LOGIN: ID + Password gate ===
-// Hardcoded credentials for the launch. Edit these values to set new passwords.
-// Stored client-side (same trust model as the rest of the app — anyone with
-// the URL effectively has access; the password is a thin extra layer to keep
-// random visitors from poking around the admin UI).
-const SRISTI_CREDS = [
-  { id: 'admin',      password: 'sristi@2026', role: 'admin', userId: '',      userName: 'Admin' },
-  { id: '9081553202', password: '3202',        role: 'fc',    userId: 'FC001', userName: 'Ayush' },
-  { id: '9875288782', password: '8782',        role: 'fc',    userId: 'FC004', userName: 'Jaydip' },
-  { id: '9924289598', password: '9598',        role: 'fc',    userId: 'FC003', userName: 'Mayur' },
-  { id: '9979187853', password: '7853',        role: 'fc',    userId: 'FC002', userName: 'Harsh' },
-  { id: '1234567890', password: '7890',        role: 'fc',    userId: 'FC000', userName: 'Demo FC' },
-];
+// v109 SECURITY — the hardcoded SRISTI_CREDS array that used to live here has
+// been REMOVED. It listed every admin/FC login and password in plaintext, in a
+// PUBLIC GitHub repo, served on the live site. Three separate problems:
+//   1. the passwords were world-readable;
+//   2. it was wired in as a LIVE fallback at sign-in, not just a first-run
+//      seed — so changing a password in Settings → Users did NOT revoke the
+//      hardcoded one. The backdoor could not be closed from inside the app;
+//   3. it had already drifted out of date (FC005 and FC006 existed as real
+//      accounts but were never in the list).
+// Accounts now live ONLY at config/users/{uid} as salt + SHA-256 hashes,
+// managed in Settings → Users. Verified before removal: all 8 accounts are
+// present there with valid salt+hash and no plaintext, so no one is locked
+// out and no field password changed as a result of this edit.
+// BREAK-GLASS: if config/users is ever lost, restore that node from the
+// nightly snapshot in _backups/ (gitignored). The app deliberately no longer
+// re-seeds itself — see migrateDefaultUsers() below for why.
 
 // === USER MANAGEMENT (v11) =============================================
 // Users are stored in RTDB at config/users/{uid}, with SHA-256 + random
 // salt password hashing (crypto.subtle, no external deps). Admin can
-// add / edit / delete users from Settings → Users. SRISTI_CREDS stays as
-// a bootstrap fallback for cold-start and offline scenarios.
+// add / edit / delete users from Settings → Users. As of v109 this is the
+// ONLY source of credentials — the hardcoded bootstrap list was removed.
+// Cold start / offline is handled by the localStorage cache below plus
+// ensureUsersLoaded(), not by a fallback password list.
 const USERS_CACHE_KEY = 'sristi_users_v1';
 let USERS_LIST = null; // populated from RTDB; null = not loaded yet
 
@@ -16163,6 +16220,28 @@ function saveUsersCache(u) {
 }
 function getUsersList() {
   return USERS_LIST || loadUsersCache() || [];
+}
+
+/* v109 — make sure the account list is actually available before judging a
+   password. Replaces the old "race verifyCredentials against a 3s timer and
+   fall back to hardcoded credentials" logic.
+   Order matters: the in-memory list and the localStorage cache are both
+   instant and work offline, so the common case (any device that has signed
+   in before, incl. every FC phone in the field) costs nothing and adds no
+   delay to login. Only a genuinely cold device hits the network, and it does
+   a single one-shot read rather than waiting on the live listener. */
+async function ensureUsersLoaded() {
+  if (getUsersList().length) return true;
+  if (FB && FB.ready && navigator.onLine) {
+    try {
+      const snap = await fbRef('config/users').get();
+      if (snap.exists()) {
+        USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
+        saveUsersCache(USERS_LIST);
+      }
+    } catch(e) { console.warn('[Auth] could not load config/users:', e); }
+  }
+  return getUsersList().length > 0;
 }
 
 function generateSalt() {
@@ -16199,24 +16278,19 @@ function subscribeUsers() {
   }, err => { console.warn('[Users] Firebase sync error:', err); });
 }
 
-async function migrateDefaultUsers() {
-  // One-time seed: write SRISTI_CREDS into RTDB with hashed passwords.
-  const updates = {};
-  for (const c of SRISTI_CREDS) {
-    const salt = generateSalt();
-    const hash = await hashPassword(salt, c.password);
-    updates['u_' + c.id] = {
-      id: c.id, name: c.userName, role: c.role,
-      fcCode: c.userId || '', salt, passwordHash: hash,
-      active: true, createdAt: Date.now(), migratedFrom: 'defaults',
-    };
+/* v109 SECURITY — this used to auto-seed config/users from the hardcoded
+   SRISTI_CREDS list whenever that node was missing. That made it a SECOND
+   backdoor on top of the plaintext list itself: the database is world-writable
+   today, so anyone could delete config/users and the app would obligingly
+   recreate every account using the publicly-known default passwords.
+   It now refuses to self-seed and asks for a deliberate restore instead.
+   Recovery: re-upload the config/users node from the newest snapshot in
+   _backups/ (gitignored — it holds real farmer and account data). */
+function migrateDefaultUsers() {
+  console.error('[Sristi] config/users is missing - refusing to auto-create accounts with default passwords. Restore that node from the newest _backups/ snapshot.');
+  if (typeof toast === 'function') {
+    toast('⚠ Login accounts are missing from the database. They must be restored from a backup - the app will not recreate them automatically.', 'error');
   }
-  try {
-    await fbRef('config/users').set(updates);
-    USERS_LIST = Object.values(updates);
-    saveUsersCache(USERS_LIST);
-    toast('User accounts created. Default password: sristi@2026 — change in Settings \u2192 Users');
-  } catch(e) { console.warn('[Users] migration failed:', e); }
 }
 
 // Rebuilds DB.fcs (= DB.fieldCoordinators alias) from config/users FC accounts.
@@ -16439,20 +16513,28 @@ function openLoginModal(){
     const submitBtn = $('#lmSubmit');
     submitBtn.disabled = true; submitBtn.textContent = 'Signing in...';
     let authUser = null;
+    /* v109 SECURITY + reliability. Two problems fixed here:
+       1. the hardcoded-credential fallback is GONE (see the note where
+          SRISTI_CREDS used to be defined). It made password changes
+          unrevokable, because the old password kept working forever.
+       2. the 3-second Promise.race is GONE. verifyCredentials() does no
+          network I/O — it hashes against the already-synced user list — so
+          the timeout was really guarding the case where config/users had
+          not arrived yet. Racing it against a hardcoded list meant a slow
+          rural connection silently downgraded to the weaker credentials.
+          Now we explicitly wait for the account list once, and if it truly
+          cannot be loaded we say so instead of blaming the password. */
     try {
-      authUser = await Promise.race([
-        verifyCredentials(idVal, pwVal),
-        new Promise(r => setTimeout(() => r(null), 3000))
-      ]);
+      await ensureUsersLoaded();
+      authUser = await verifyCredentials(idVal, pwVal);
     } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
-    if (!authUser) {
-      const fallback = SRISTI_CREDS.find(c => c.id === idVal && c.password === pwVal);
-      if (fallback) authUser = { id: fallback.id, name: fallback.userName, role: fallback.role, fcCode: fallback.userId || '' };
-    }
     if(!authUser){
       submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';
-
-      errEl.innerHTML = '<div class="lm-err">⚠️ ખોટું ID કે Password. Invalid ID or password. કૃપા કરી ફરી પ્રયત્ન કરો.</div>';
+      // Distinguish "no accounts reachable" from "wrong password" — otherwise a
+      // first sign-in on a new device with no connection reads as a bad password.
+      errEl.innerHTML = getUsersList().length
+        ? '<div class="lm-err">⚠️ ખોટું ID કે Password. Invalid ID or password. કૃપા કરી ફરી પ્રયત્ન કરો.</div>'
+        : '<div class="lm-err">⚠️ એકાઉન્ટ લોડ થઈ શક્યા નથી. Could not load accounts — connect to the internet once to sign in on this device.</div>';
       $('#lmPw').value = '';
       $('#lmPw').focus();
       return;
@@ -17038,7 +17120,11 @@ function viewPendingEnrolments(){
       const landTxt = isHaat ? (r.landAcres||0)+' acres' : ((r.landAcres||0)+' acres · '+(r.organicAcres!=null?r.organicAcres:(r.organicBigha||0))+' acre convert');
       const phone = r.phone || r.mobile || '—';
       const appId = r.publicAppId || r.id;
-      const fcAssigned = r.fcId ? (fcById(r.fcId)||{}).name || r.fcId : '<span style="color:var(--ink-faint)">— unassigned —</span>';
+      // v109 SECURITY — esc() the dynamic part. r is a pendingEnrolments row,
+      // written unauthenticated by the public form, so a submitter controls
+      // r.fcId; every other cell in this row was already escaped. The literal
+      // "unassigned" span stays raw on purpose (app-authored markup).
+      const fcAssigned = r.fcId ? esc((fcById(r.fcId)||{}).name || r.fcId) : '<span style="color:var(--ink-faint)">— unassigned —</span>';
       const newRow = isNew(r);
       const bucketTag = newRow
         ? `<span class="tag yellow" style="font-size:10.5px;padding:2px 8px;white-space:nowrap"><span class="d"></span>🟡 New</span>`

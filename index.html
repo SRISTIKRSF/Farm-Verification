@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v105';
+const APP_VERSION = 'v106';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4984,6 +4984,25 @@ async function flushFormWrites(){
       }catch(e){ console.warn('[Sristi] forms write failed (will retry):', e); }
     }
   } finally { _formFlushBusy = false; }
+}
+
+/* v106 — independent backup for Conversion Program records. Unlike Haat
+   enrolment (whose full "patrak" is saved separately at forms/{id}, which is
+   exactly what let us reconstruct farmers deleted by the 2026-07 saveDB()
+   sync bug), the Conversion form saves only the lean convFarmers record —
+   there was never a second copy anywhere, so a deleted conversion farmer had
+   no recovery path at all. This snapshots the FULL record (identity fields
+   + intake survey) to convForms/{id}, mirroring forms/{id}. It's deliberately
+   routed through the offlineWrites durable queue rather than saveDB()'s own
+   sync, so a future bug in that sync path can't wipe this backup too. */
+function backupConvRecord(rec){
+  idbPut('offlineWrites', {
+    key: 'convForms/'+rec.id,
+    col: 'convForms',
+    id: rec.id,
+    rec: sanitizeForFB({...rec, _backupSavedAt: new Date().toISOString()}),
+  }).catch(()=>{});
+  flushOfflineWrites();
 }
 
 /* ---------- v11 auto-migration sweep (runs once per load, background) ----------
@@ -10828,6 +10847,7 @@ function openConvEnrollmentForm(){
         publicSubmittedAt: submittedAt,
         submittedAt: submittedAt,
       };
+      backupConvRecord(rec);
       DB.convFarmers.push(rec);
       window._pfLastApp = rec;
       logActivity('enroll', `📥 New Conversion application submitted via public form — <b>${esc(rec.name)}</b>, ${esc(rec.village)} <span style="color:var(--ink-faint)">(awaiting FC visit)</span>`);
@@ -10859,6 +10879,7 @@ function openConvEnrollmentForm(){
       }
     }
     const rec = { id: uid('CF'), ...baseRec };
+    backupConvRecord(rec);
     DB.convFarmers.push(rec);
     // #39 — when offline, durably queue the record so it survives a tab close before
     // reconnect (the Firebase SDK's in-memory write queue is lost on close);
@@ -10990,6 +11011,7 @@ function openImportFormModal(){
         ? [...(DB.haatFarmers||[]), ...(DB.convFarmers||[])].find(x => !x._archived && normName(x.name)===nm && normName(x.village)===normName(rec.village))
         : null;
       if(phoneDup || nameDup){ skipped++; return; }
+      backupConvRecord(rec);
       DB.convFarmers.push(rec);
       added++;
     });

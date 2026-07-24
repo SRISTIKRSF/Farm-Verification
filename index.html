@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v100';
+const APP_VERSION = 'v101';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5328,7 +5328,9 @@ window.QUESTIONS_V5 = [
   {id:'farm_gps',     cat:'farm', gu:'ખેતરનું GPS લોકેશન',             en:'Farm GPS (Google link or lat/long)', hi:'खेत का GPS लोकेशन (Google लिंक या lat/long)', type:'text', askedOf:'both'},
   {id:'farm_photo',   cat:'farm', gu:'ખેતરનો ફોટો',                    en:'Farm photo',           hi:'खेत की फोटो', type:'photo',  askedOf:'both'},
   {id:'plot_crops_table', cat:'farm', gu:'ખેતર/પ્લોટની વિગત (સર્વે નંબર પ્રમાણે)', en:'Farm/plot details (by survey number)', hi:'खेत/प्लॉट का विवरण (सर्वे नंबर अनुसार)', type:'stat_cards',
-    addable:true, maxRows:5, itemLabel:{gu:'સર્વે નંબર', en:'Survey number', hi:'सर्वे नंबर'},
+    // v101 — no maxRows: a farmer can have more than 5 survey numbers. Same
+    // "omit the field = unlimited" convention as major_crops_table (v87).
+    addable:true, itemLabel:{gu:'સર્વે નંબર', en:'Survey number', hi:'सर्वे नंबर'},
     fields:[
       {key:'acres', gu:'એકર', en:'Area (acre)', hi:'क्षेत्रफल (एकड़)', type:'number'},
     ], askedOf:'both'},
@@ -5429,7 +5431,9 @@ window.QUESTIONS_V5 = [
   {id:'dung_product_sale',   cat:'livestock', gu:'ગોબર-ગૌમૂત્રમાંથી કોઈ વિશેષ સેન્દ્રિય ખાતર બનાવી વેચાણ કરો છો?', en:'Sell any special organic manure made from dung/urine?', hi:'गोबर-गौमूत्र से कोई विशेष जैविक खाद बनाकर बेचते हैं?', type:'yn', askedOf:'both'},
   {id:'dung_other_product',  cat:'livestock', gu:'ગોબરમાંથી અન્ય કોઈ ઉત્પાદન બનાવો છો? વિગત લખો', en:'Any other product made from dung? Describe', hi:'गोबर से कोई अन्य उत्पाद बनाते हैं? विवरण लिखें', type:'textarea', askedOf:'both'},
   {id:'product_pricing', cat:'livestock', gu:'ગોપાલન આધારિત ઉત્પાદનોની કિંમત અને પેકિંગ સાઈઝ', en:'Dairy-product pricing & pack size', hi:'गोपालन आधारित उत्पादों की कीमत और पैकिंग साइज', type:'stat_cards',
-    addable:true, maxRows:3, itemLabel:{gu:'પેદાશનું નામ', en:'Product name', hi:'उत्पाद का नाम'},
+    // v101 — no maxRows: a farmer can list more than 4 dairy products. Same
+    // "omit the field = unlimited" convention as major_crops_table (v87).
+    addable:true, itemLabel:{gu:'પેદાશનું નામ', en:'Product name', hi:'उत्पाद का नाम'},
     fields:[
       {key:'packSize', gu:'પેકિંગ સાઈઝ', en:'Pack size', hi:'पैकिंग साइज', type:'text'},
       {key:'price',    gu:'કિંમત (₹)',   en:'Price (₹)', hi:'कीमत (₹)', type:'number'},
@@ -5508,7 +5512,7 @@ window.QUESTIONS_V5 = [
    dedup, etc.) — the Question Manager lets you edit their text/options/
    required flag/section but not delete them or change their id.
    ============================================================= */
-window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table','major_crops_table','farming_total_income'];
+window.CORE_QUESTION_IDS_V5 = ['farmer_name','mobile','aadhaar','farm_gps','village_taluka_district','plot_crops_table','major_crops_table','farming_total_income','product_pricing'];
 window.DEFAULT_CATEGORIES_V5 = JSON.parse(JSON.stringify(window.CATEGORIES_V5));
 window.DEFAULT_QUESTIONS_V5  = JSON.parse(JSON.stringify(window.QUESTIONS_V5));
 const QSCHEMA_KEY_V5 = 'krsf_question_schema_v5';

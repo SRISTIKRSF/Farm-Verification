@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v106';
+const APP_VERSION = 'v107';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4995,8 +4995,14 @@ async function flushFormWrites(){
    + intake survey) to convForms/{id}, mirroring forms/{id}. It's deliberately
    routed through the offlineWrites durable queue rather than saveDB()'s own
    sync, so a future bug in that sync path can't wipe this backup too. */
-function backupConvRecord(rec){
-  idbPut('offlineWrites', {
+async function backupConvRecord(rec){
+  // v107 — await the durable-queue write before triggering a flush attempt.
+  // idbPut()'s promise only resolves once the IndexedDB transaction commits
+  // (tx.oncomplete); firing flushOfflineWrites() without waiting for that
+  // meant the very first flush attempt would usually run its idbAll() query
+  // before this item was actually written, missing it by one cycle and
+  // silently falling back to the ~30-40s periodic pump instead.
+  await idbPut('offlineWrites', {
     key: 'convForms/'+rec.id,
     col: 'convForms',
     id: rec.id,
@@ -12872,11 +12878,13 @@ function openFarmerModal(program,id){
         });
         logActivity('enroll',`New Haat farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }else{
-        DB.convFarmers.push({
+        const _newConvRec = {
           id:uid('CF'),program:'conversion',...base,
           enrolledMonth:m,transitionStatus:'red',
           nextVisitDue:$('#ffNext')?.value||'',observations:[],lat:null,lng:null,
-        });
+        };
+        backupConvRecord(_newConvRec);
+        DB.convFarmers.push(_newConvRec);
         logActivity('enroll',`New conversion farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }
       toast('Farmer added');
@@ -17174,6 +17182,11 @@ async function acceptPendingEnrolment(id){
   if(isHaat){
     DB.haatFarmers.push(accepted);
   } else {
+    // v107 — this path bypassed every convForms backup call site added in
+    // v106 (it doesn't go through openConvEnrollmentForm or the CSV import,
+    // it promotes a pendingEnrolments row straight into convFarmers), so a
+    // farmer accepted this way had no recovery copy at all. Same fix.
+    backupConvRecord(accepted);
     DB.convFarmers.push(accepted);
   }
   // Remove from pending

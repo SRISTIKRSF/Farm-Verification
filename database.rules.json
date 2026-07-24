@@ -4,7 +4,13 @@
     ".write": "auth != null",
     "prakrutik_kheti": {
       "haatFarmers": { ".indexOn": ["district", "fcId"] },
-      "convFarmers": { ".indexOn": ["district", "fcId"] }
+      "convFarmers": { ".indexOn": ["district", "fcId"] },
+
+      "phoneIndex": {
+        "$phone": {
+          ".validate": "!data.exists() && newData.isString() && newData.val().length <= 64"
+        }
+      }
     }
   }
 }

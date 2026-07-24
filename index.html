@@ -3114,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v109';
+const APP_VERSION = 'v110';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8932,14 +8932,19 @@ async function archiveFarmers(p, ids){
   const who = (actor()||{}).name || 'admin';
   const at = new Date().toISOString();
   let n=0;
-  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && !f._archived){ f._archived=true; f.archivedAt=at; f.archivedBy=who; markLocalTouch(_archCol(p), f.id); n++; } });
+  // v110 — release the farmer's phoneIndex entry when archiving. Today's dedup
+  // deliberately ignores archived records (so a cleaned-up farmer can re-enrol);
+  // if the index kept their number claimed, that would silently stop working.
+  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && !f._archived){ f._archived=true; f.archivedAt=at; f.archivedBy=who; markLocalTouch(_archCol(p), f.id); releasePhoneIndex(f.phone); n++; } });
   ARCH_SEL[p].clear();
   await saveDB(); render(); toast(n+' farmer'+(n===1?'':'s')+' archived');
 }
 async function restoreFarmers(p, ids){
   if(!ids || !ids.length) return;
   let n=0;
-  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && f._archived){ delete f._archived; delete f.archivedAt; delete f.archivedBy; markLocalTouch(_archCol(p), f.id); n++; } });
+  // v110 — re-claim the phoneIndex entry on restore, so a restored farmer is
+  // protected against a duplicate submission again (mirror of archiveFarmers).
+  (_archStore(p)||[]).forEach(f=>{ if(ids.includes(f.id) && f._archived){ delete f._archived; delete f.archivedAt; delete f.archivedBy; markLocalTouch(_archCol(p), f.id); claimPhoneIndex(f.phone, p, f.id); n++; } });
   ARCH_SEL[p].clear();
   await saveDB(); render(); toast(n+' farmer'+(n===1?'':'s')+' restored');
 }
@@ -8951,6 +8956,10 @@ async function deleteFarmersPermanently(p, ids){
   const store = _archStore(p) || [];
   const removable = new Set(store.filter(f => ids.includes(f.id) && f._archived).map(f => f.id));
   if(!removable.size) return;
+  // v110 — free their phone numbers too. Archiving already released the index
+  // entry, but re-claim/restore cycles mean this is not guaranteed, and leaving
+  // an orphan entry pointing at a deleted id would block a genuine re-enrolment.
+  store.filter(f => removable.has(f.id)).forEach(f => releasePhoneIndex(f.phone));
   const kept = store.filter(f => !removable.has(f.id));
   if(p==='haat') DB.haatFarmers = kept; else DB.convFarmers = kept;
   removable.forEach(id => markLocalTouch(_archCol(p), id));   // shield the deletion from the live listener
@@ -10112,6 +10121,53 @@ function findFarmerByPhone(phone){
   if(conv) return { record: conv, program: 'conv' };
   return null;
 }
+
+/* ---------- phone index (Phase 3) --------------------------------------
+   phoneIndex/{10-digit phone} -> "<program>:<farmerId>"
+
+   WHY THIS EXISTS. findFarmerByPhone() above scans the whole farmer list to
+   reject duplicate submissions. That scan is the ONLY reason an anonymous
+   visitor to the public enrolment form has to sync the entire farmer database
+   (~600 records with names, phones, villages, GPS) into their browser on every
+   page load. Once every active farmer's phone is registered here, the public
+   form can instead try to CLAIM a number and read a rejected claim as "already
+   registered" — needing no read access to farmer data at all. That is what
+   later lets the public listener be switched off, which is simultaneously the
+   security fix, the bandwidth saving and the page-load win.
+
+   Uniqueness is enforced by a .validate rule (see database.rules.json), NOT by
+   .write. RTDB read/write rules cascade permissively — a child .write rule
+   cannot revoke the blanket grant at the root — whereas every .validate from
+   root to leaf must pass for a write to succeed. Deletes are not validated,
+   which is exactly what lets staff release an entry when a farmer is archived.
+
+   v110 only WRITES the index (shadow/dual-write). Nothing reads it yet, so
+   this release is behaviour-neutral: a failed claim must never block an
+   enrolment. The dedup switch and the listener removal follow in v111, once
+   the index has been backfilled and observed to be correct in production. */
+function _phoneKey(phone){
+  const p = _normPhone(phone);
+  return (p && p.length === 10) ? p : '';
+}
+function claimPhoneIndex(phone, program, farmerId){
+  const key = _phoneKey(phone);
+  if(!key || !farmerId || !(FB && FB.ready)) return Promise.resolve(false);
+  return fbRef('phoneIndex/' + key)
+    .set(String(program || '') + ':' + String(farmerId))
+    .then(() => true)
+    .catch(() => false);   // already claimed, offline, or denied — never fatal in v110
+}
+function releasePhoneIndex(phone){
+  const key = _phoneKey(phone);
+  if(!key || !(FB && FB.ready)) return Promise.resolve(false);
+  return fbRef('phoneIndex/' + key).remove().then(() => true).catch(() => false);
+}
+/* Convenience for the creation sites: takes the record that was just pushed. */
+function indexFarmerPhone(rec, program){
+  if(!rec) return;
+  claimPhoneIndex(rec.phone, program || rec.program || '', rec.id);
+}
+
 function mapFormRow(row){
   const name = pick(row,'name','farmername','farmer name','ખેડૂતનું નામ');
   if(!name) return null;
@@ -10903,6 +10959,7 @@ function openConvEnrollmentForm(){
         submittedAt: submittedAt,
       };
       backupConvRecord(rec);
+      indexFarmerPhone(rec, 'conv');       // v110 phone index (shadow write)
       DB.convFarmers.push(rec);
       window._pfLastApp = rec;
       logActivity('enroll', `📥 New Conversion application submitted via public form — <b>${esc(rec.name)}</b>, ${esc(rec.village)} <span style="color:var(--ink-faint)">(awaiting FC visit)</span>`);
@@ -10935,6 +10992,7 @@ function openConvEnrollmentForm(){
     }
     const rec = { id: uid('CF'), ...baseRec };
     backupConvRecord(rec);
+    indexFarmerPhone(rec, 'conv');         // v110 phone index (shadow write)
     DB.convFarmers.push(rec);
     // #39 — when offline, durably queue the record so it survives a tab close before
     // reconnect (the Firebase SDK's in-memory write queue is lost on close);
@@ -11067,6 +11125,7 @@ function openImportFormModal(){
         : null;
       if(phoneDup || nameDup){ skipped++; return; }
       backupConvRecord(rec);
+      indexFarmerPhone(rec, 'conv');       // v110 phone index (shadow write)
       DB.convFarmers.push(rec);
       added++;
     });
@@ -12919,14 +12978,16 @@ function openFarmerModal(program,id){
       const m=DB.months[DB.months.length-1];
       if(program==='haat'){
         const _assocYear=$('#ffAssocYear')?.value.trim();
-        DB.haatFarmers.push({
+        const _newHaatRec = {
           id:uid('HF'),program:'haat',...base,
           vertical:'Livelihood',yearsOrganic:+($('#ffYears')?.value)||0,
           certification:($('#ffCert')?.value)||'Registration pending',
           ...(_assocYear?{associationYear:_assocYear}:{}),
           haat:'',enrolledMonth:m,stage:'verification_pending',status:'pending',
           active:false,visits:[],lat:null,lng:null,
-        });
+        };
+        indexFarmerPhone(_newHaatRec, 'haat');   // v110 phone index (shadow write)
+        DB.haatFarmers.push(_newHaatRec);
         logActivity('enroll',`New Haat farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }else{
         const _newConvRec = {
@@ -12935,6 +12996,7 @@ function openFarmerModal(program,id){
           nextVisitDue:$('#ffNext')?.value||'',observations:[],lat:null,lng:null,
         };
         backupConvRecord(_newConvRec);
+        indexFarmerPhone(_newConvRec, 'conv');   // v110 phone index (shadow write)
         DB.convFarmers.push(_newConvRec);
         logActivity('enroll',`New conversion farmer enrolled — <b>${esc(base.name)}</b>, ${esc(base.village)}`);
       }
@@ -15121,6 +15183,7 @@ window.addEventListener('message',async ev=>{
         submittedAt: submittedAt,
       } : {}),
     };
+    indexFarmerPhone(rec, 'haat');         // v110 phone index (shadow write)
     DB.haatFarmers.push(rec);
     // v9 audit-fix #8 + #25 — track who/when the kisan-haat-enrollment
     // message just created so kisan-haat-full can attach to the SAME record
@@ -17275,6 +17338,7 @@ async function acceptPendingEnrolment(id){
   };
   delete accepted.reviewStatus;
   if(isHaat){
+    indexFarmerPhone(accepted, 'haat');    // v110 phone index (shadow write)
     DB.haatFarmers.push(accepted);
     // v108 — same class of gap as the v106/v107 convForms fix: this path
     // bypasses the QUESTIONS_V5 iframe enrollment form entirely (it promotes
@@ -17300,6 +17364,7 @@ async function acceptPendingEnrolment(id){
     // it promotes a pendingEnrolments row straight into convFarmers), so a
     // farmer accepted this way had no recovery copy at all. Same fix.
     backupConvRecord(accepted);
+    indexFarmerPhone(accepted, 'conv');    // v110 phone index (shadow write)
     DB.convFarmers.push(accepted);
   }
   // Remove from pending

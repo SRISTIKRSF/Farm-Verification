@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v107';
+const APP_VERSION = 'v108';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -17175,12 +17175,39 @@ async function acceptPendingEnrolment(id){
     id: newId,
     publicAppId: r.id,
     publicSubmittedAt: r.submittedAt,
+    // v108 — found by testing, not by inspection: the comment above claims
+    // pending records "already use the same shape as real haat/conv
+    // records", but submissions from the lightweight public quick-apply form
+    // (submitPublicForm) never set visits/observations — every OTHER
+    // creation path for both programs does. Without this, the very first
+    // dashboard render after accepting crashes on f.visits.filter(...) /
+    // f.observations.filter(...) for this farmer.
+    visits: r.visits || [],
+    observations: r.observations || [],
     // Strip review-only fields
     reviewStatus: undefined,
   };
   delete accepted.reviewStatus;
   if(isHaat){
     DB.haatFarmers.push(accepted);
+    // v108 — same class of gap as the v106/v107 convForms fix: this path
+    // bypasses the QUESTIONS_V5 iframe enrollment form entirely (it promotes
+    // a lightweight public "quick apply" pendingEnrolments submission
+    // straight into haatFarmers, then DELETES the pendingEnrolments copy
+    // below), so a farmer accepted this way had no forms/{id} backup at all
+    // — unlike every other Haat enrollment path. Reuses the app's own
+    // existing forms/{id} mechanism (setForms/persistForms — independent of
+    // saveDB()'s sync path, same safety property as backupConvRecord) rather
+    // than inventing a parallel one.
+    //
+    // MUST be a shallow copy, not `accepted` itself: setForms() ->
+    // _attachFormsToRecord() does `rec.enrollmentFormFull = fc.enrol`, and
+    // `rec` here IS `accepted` (the same pushed object). Passing `accepted`
+    // directly makes accepted.enrollmentFormFull point at accepted itself —
+    // a circular reference that throws inside persistForms()'s
+    // JSON.stringify the moment this runs. Caught by testing this before
+    // shipping, not by inspection.
+    setForms(newId, 'enrol', {...accepted});
   } else {
     // v107 — this path bypassed every convForms backup call site added in
     // v106 (it doesn't go through openConvEnrollmentForm or the CSV import,

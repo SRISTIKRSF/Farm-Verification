@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v102';
+const APP_VERSION = 'v103';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13245,7 +13245,7 @@ function viewSettings(){
       <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Facilitators</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
-      <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">📵 Duplicate Phones</div>
+      <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">🔁 Duplicates</div>
       <div class="tab ${cur==='crops'?'on':''}" data-st="crops">🌾 Manage Crops</div>
     </div>`;
   }
@@ -13297,42 +13297,104 @@ function viewSettings(){
   }
   if(STab==='duplicates'){
     let h=tabBar();
-    // Phone is the farmer's unique identifier (either program) — this is
-    // the review surface for the existing duplicates going-forward
-    // enforcement can't retroactively fix, since merging two farmers'
-    // history/visits needs a human decision, not an automated guess.
-    const groups={};
-    [...(DB.haatFarmers||[]).map(f=>({f,program:'haat'})), ...(DB.convFarmers||[]).map(f=>({f,program:'conv'}))].forEach(({f,program})=>{
+    // Two independent detection passes, both cross-program (haat + conv),
+    // both active-records-only (archived ones are already resolved, don't
+    // keep flagging them). "Same phone" is the hard signal — phone is each
+    // farmer's unique ID and new duplicates are now blocked at every entry
+    // point, so what's left here predates that enforcement. "Same name +
+    // village" is the soft signal that CSV import dedup already uses
+    // (see normName() at the import-confirm handler) — it catches the
+    // opposite failure mode: a bulk-import batch where every row was typed
+    // (or auto-generated) with a DIFFERENT phone number, so the phone check
+    // finds nothing even though it's clearly the same person/import event.
+    // Neither pass is auto-resolved — merging farmer history needs a human
+    // call — but each row gets an inline Archive so that call doesn't
+    // require leaving this screen.
+    const normName = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+    const allActive = [...(DB.haatFarmers||[]).map(f=>({f,program:'haat'})), ...(DB.convFarmers||[]).map(f=>({f,program:'conv'}))].filter(({f})=>!f._archived);
+
+    const phoneGroups={};
+    allActive.forEach(({f,program})=>{
       const ph=_normPhone(f.phone);
-      if(!ph||ph.length!==10||f._archived) return;
-      (groups[ph]=groups[ph]||[]).push({f,program});
+      if(!ph||ph.length!==10) return;
+      (phoneGroups[ph]=phoneGroups[ph]||[]).push({f,program});
     });
-    const dupGroups=Object.keys(groups).filter(k=>groups[k].length>1).sort((a,b)=>groups[b].length-groups[a].length);
-    h+=`<div class="card" style="padding:18px 20px;max-width:980px">
-      <div class="ct" style="font-size:14px;font-weight:700">📵 Duplicate Phone Numbers</div>
+    const phoneDupKeys=Object.keys(phoneGroups).filter(k=>phoneGroups[k].length>1).sort((a,b)=>phoneGroups[b].length-phoneGroups[a].length);
+
+    // Name+village groups, excluding anyone already shown in a phone group
+    // above (a record can only usefully be reviewed once) and rows with no
+    // name or no village (too weak a signal — every blank-village record
+    // would otherwise cluster into one giant false-positive group).
+    const inPhoneGroup = new Set(phoneDupKeys.flatMap(k=>phoneGroups[k].map(r=>r.program+':'+r.f.id)));
+    const nameGroups={};
+    allActive.forEach(({f,program})=>{
+      if(inPhoneGroup.has(program+':'+f.id)) return;
+      const nm=normName(f.name), vl=normName(f.village);
+      if(!nm||!vl) return;
+      const key=nm+'|'+vl;
+      (nameGroups[key]=nameGroups[key]||[]).push({f,program});
+    });
+    const nameDupKeys=Object.keys(nameGroups).filter(k=>nameGroups[k].length>1).sort((a,b)=>nameGroups[b].length-nameGroups[a].length);
+
+    const dupRowHtml=({f,program})=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line-soft);font-size:12.5px">
+      <span><b>${esc(f.name||'—')}</b> <span style="color:var(--ink-faint)">${esc(f.id)} · ${program==='haat'?'Haat':'Conversion'} · ${esc(f.village||'—')}${f.phone?' · '+esc(f.phone):''}</span></span>
+      <span style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" data-dupopen="${esc(program)}:${esc(f.id)}" style="font-size:11px">Open →</button>
+        <button class="btn btn-danger btn-sm" data-duparchive="${esc(program)}:${esc(f.id)}" style="font-size:11px">Archive</button>
+      </span>
+    </div>`;
+
+    h+=`<div class="card" style="padding:18px 20px;max-width:980px;margin-bottom:14px">
+      <div class="ct" style="font-size:14px;font-weight:700">📵 Same phone number</div>
       <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
-        Phone is each farmer's unique ID — new duplicates are now blocked at every entry point (enrollment forms, Add/Edit Farmer, CSV import). These <b>${dupGroups.length}</b> phone number${dupGroups.length===1?'':'s'} were already duplicated before that; review each and either fix a mistyped number or archive the extra record. Not auto-resolved — merging farmer history needs a human call.
+        These <b>${phoneDupKeys.length}</b> phone number${phoneDupKeys.length===1?'':'s'} are shared by more than one active farmer. Review each and either fix a mistyped number or archive the extra record.
       </div>
-      ${dupGroups.length?dupGroups.map(ph=>{
-        const rows=groups[ph];
-        const sameName = new Set(rows.map(r=>(r.f.name||'').trim().toLowerCase())).size===1;
+      ${phoneDupKeys.length?phoneDupKeys.map(ph=>{
+        const rows=phoneGroups[ph];
+        const sameName = new Set(rows.map(r=>normName(r.f.name))).size===1;
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:${sameName?'#fef2f2':'var(--panel-2)'}">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <b style="font-family:monospace;font-size:13px">${esc(ph)}</b>
             ${sameName?'<span class="tag red" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>same name — likely a true duplicate</span>':'<span class="tag yellow" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>different names — likely a mistyped number</span>'}
           </div>
-          ${rows.map(({f,program})=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line-soft);font-size:12.5px">
-            <span><b>${esc(f.name||'—')}</b> <span style="color:var(--ink-faint)">${esc(f.id)} · ${program==='haat'?'Haat':'Conversion'} · ${esc(f.village||'—')}</span></span>
-            <button class="btn btn-ghost btn-sm" data-dupopen="${esc(program)}:${esc(f.id)}" style="font-size:11px">Open →</button>
-          </div>`).join('')}
+          ${rows.map(dupRowHtml).join('')}
         </div>`;
       }).join(''):'<div class="hint" style="text-align:center;padding:20px;color:var(--ink-soft)">✓ No duplicate phone numbers found.</div>'}
     </div>`;
+
+    h+=`<div class="card" style="padding:18px 20px;max-width:980px">
+      <div class="ct" style="font-size:14px;font-weight:700">👤 Same name + village, different phone</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
+        These <b>${nameDupKeys.length}</b> group${nameDupKeys.length===1?'':'s'} share a name and village but were NOT caught above — usually a bulk-import batch where every row got a different (often blank or placeholder) phone number. Excludes anyone already listed in a phone group above.
+      </div>
+      ${nameDupKeys.length?nameDupKeys.map(key=>{
+        const rows=nameGroups[key];
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fffbeb">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <b style="font-size:13px">${esc(rows[0].f.name||'—')}</b>
+            <span class="tag yellow" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>${rows.length} matching records</span>
+          </div>
+          ${rows.map(dupRowHtml).join('')}
+        </div>`;
+      }).join(''):'<div class="hint" style="text-align:center;padding:20px;color:var(--ink-soft)">✓ No same-name/village groups found.</div>'}
+    </div>`;
+
     v.innerHTML=h;
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     v.querySelectorAll('[data-dupopen]').forEach(b=>b.onclick=()=>{
       const [program,fid]=b.dataset.dupopen.split(':');
       if(program==='haat') openHaatDrawer(fid); else openConvDrawer(fid);
+    });
+    v.querySelectorAll('[data-duparchive]').forEach(b=>b.onclick=async()=>{
+      const [program,fid]=b.dataset.duparchive.split(':');
+      const store = program==='haat' ? DB.haatFarmers : DB.convFarmers;
+      const f = (store||[]).find(x=>x.id===fid);
+      const ok = await confirmModal({ title:'Archive this farmer?',
+        message:`"${(f&&f.name)||fid}" will be hidden from all lists and dashboard counts. You can restore it anytime from "Show archived" on the ${program==='haat'?'Haat':'Conversion'} Farmers list.`,
+        confirmLabel:'Archive', danger:true });
+      if(!ok) return;
+      await archiveFarmers(program, [fid]);
+      render();
     });
     return;
   }

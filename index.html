@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v103';
+const APP_VERSION = 'v104';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9172,6 +9172,17 @@ function exportHaatCSV(rows){
   download('haat-farmers.csv',toCSV(data));
   toast('Downloaded: haat-farmers.csv');
 }
+function exportConvCSV(rows){
+  const data=rows.map(f=>({
+    id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
+    land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
+    facilitator:(fcById(f.fcId)||{}).name||'',category:convCategory(f),
+    last_visit:f.lastVisitAt||'',next_visit_due:f.nextVisitDue||'',
+    joined_month_year:farmerJoinedLabel(f),
+  }));
+  download('conversion-farmers.csv',toCSV(data));
+  toast('Downloaded: conversion-farmers.csv');
+}
 /* ============ VIEW: VERIFICATION QUEUE ============
    Three tabs:
      1) NEW farmers     — first-time verification (stage='verification_pending')
@@ -9835,6 +9846,7 @@ function viewConversion(){
     <span class="meta">${rows.length} of ${DB.convFarmers.length} records</span>
     <div class="spacer"></div>
     ${archToggleHtml('conv')}
+    <button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>
     ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
@@ -9917,6 +9929,7 @@ function viewConversion(){
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
   const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
+  $('#exportConv').onclick=()=>exportConvCSV(rows);
   wireArch(v, 'conv', pagedConvRows.map(r=>r.id));
   wireDateRangePills(v, F.dateRange);
 }
@@ -13247,7 +13260,37 @@ function viewSettings(){
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
       <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">🔁 Duplicates</div>
       <div class="tab ${cur==='crops'?'on':''}" data-st="crops">🌾 Manage Crops</div>
+      <div class="tab ${cur==='backup'?'on':''}" data-st="backup">💾 Backup</div>
     </div>`;
+  }
+  if(STab==='backup'){
+    let h=tabBar();
+    const haatArchived = (DB.haatFarmers||[]).filter(f=>f._archived).length;
+    const convArchived = (DB.convFarmers||[]).filter(f=>f._archived).length;
+    h+=`<div class="card" style="padding:18px 20px;max-width:680px">
+      <div class="ct" style="font-size:14px;font-weight:700">💾 Download a full backup</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
+        One JSON file with every Haat and Conversion farmer record exactly as stored — including archived ones, and every field (not just what the CSV exports show). Keep it somewhere safe (email it to yourself, save to Drive) as a manual recovery point. This reads whatever is currently synced to this device, so do this after confirming you're online and the "Synced" pill at the top is showing.
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div><div style="font-size:20px;font-weight:700">${(DB.haatFarmers||[]).length}</div><div style="font-size:11px;color:var(--ink-faint)">Haat records (${haatArchived} archived)</div></div>
+        <div><div style="font-size:20px;font-weight:700">${(DB.convFarmers||[]).length}</div><div style="font-size:11px;color:var(--ink-faint)">Conversion records (${convArchived} archived)</div></div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="downloadFullBackup">${svg(I.download,2.2)}Download full backup (JSON)</button>
+    </div>`;
+    v.innerHTML=h;
+    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
+    $('#downloadFullBackup').onclick=()=>{
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        exportedBy: (actor()||{}).name || '',
+        haatFarmers: DB.haatFarmers||[],
+        convFarmers: DB.convFarmers||[],
+      };
+      download('farm-verification-backup-'+todayISO()+'.json', JSON.stringify(payload,null,1));
+      logActivity('edit','Downloaded a full farmer-data backup ('+(DB.haatFarmers||[]).length+' haat + '+(DB.convFarmers||[]).length+' conversion records)');
+    };
+    return;
   }
   if(STab==='crops'){
     let h=tabBar();

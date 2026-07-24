@@ -7,3 +7,6 @@ _*.js
 
 # Local version backups (keep on disk, don't push to GitHub)
 index-V*.html
+
+# Firebase data snapshots — real farmer PII, this repo is public. Never push.
+_backups/

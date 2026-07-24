@@ -10,3 +10,7 @@ index-V*.html
 
 # Firebase data snapshots — real farmer PII, this repo is public. Never push.
 _backups/
+
+# Security plan — documents live, unfixed vulnerabilities. This repo is
+# public, so publishing it would hand an attacker the roadmap. Never push.
+SECURITY-PLAN.md

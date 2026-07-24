@@ -3097,7 +3097,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v101';
+const APP_VERSION = 'v102';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14503,6 +14503,9 @@ function qmOpenQuestionEditor(qid, newInCat){
       <div class="krsf-fld"><label>Question text (English)${isCore?' <span class="req">*</span>':''}</label><input id="qmQEn" value="${esc(q.en)}"></div>
       <div class="krsf-fld"><label>Question text (Gujarati)</label><input id="qmQGu" value="${esc(q.gu||'')}"></div>
     </div>
+    <div class="krsf-row single">
+      <div class="krsf-fld"><label>Question text (Hindi) — shown when a farmer/FC picks Hindi. Leave blank to fall back to the Gujarati text above.</label><input id="qmQHi" value="${esc(q.hi||'')}"></div>
+    </div>
     <div class="krsf-row">
       <div class="krsf-fld"><label>Section</label><select id="qmQCat" ${isCore?'disabled':''}>${catOpts}</select></div>
       <div class="krsf-fld"><label>Answer type</label><select id="qmQType" ${isCore?'disabled':''}>${typeOpts}</select></div>
@@ -14512,6 +14515,7 @@ function qmOpenQuestionEditor(qid, newInCat){
     </div>
     <div id="qmOptionsWrap" style="${showOptions?'':'display:none'}">
       <div class="krsf-fld"><label>Choices (one per line)</label><textarea id="qmQOptions" style="min-height:90px">${esc((q.options||[]).join('\n'))}</textarea></div>
+      <div class="krsf-fld"><label>Choices in Hindi — same order, one per line. Leave a line blank to fall back to the choice text above for that one.</label><textarea id="qmQOptionsHi" style="min-height:90px">${esc((q.optionsHi||[]).join('\n'))}</textarea></div>
     </div>
     <div id="qmStatFieldsWrap" style="${showStatFields?'':'display:none'}">
       <div class="krsf-fld"><label>Table columns — one per line, as "key English (ગુજરાતી)" (e.g. "yield Yield (ઉત્પાદન)"). The Gujarati part in parentheses is optional.</label>
@@ -14535,11 +14539,21 @@ function qmOpenQuestionEditor(qid, newInCat){
     const en = document.getElementById('qmQEn').value.trim();
     if(!en){ toast('Question text is required', 'error'); return; }
     const gu = document.getElementById('qmQGu').value.trim();
+    const hi = document.getElementById('qmQHi').value.trim();
     const cat = isCore ? q.cat : document.getElementById('qmQCat').value;
     const type = isCore ? q.type : document.getElementById('qmQType').value;
     const req = document.getElementById('qmQReq').checked;
     const optionsRaw = document.getElementById('qmQOptions');
     const options = optionsRaw ? optionsRaw.value.split('\n').map(s=>s.trim()).filter(Boolean) : undefined;
+    // optionsHi is intentionally NOT filter(Boolean)'d like options above —
+    // it must stay index-aligned with options (a blank line = "no Hindi
+    // translation for choice i yet", not "delete this line"), else choice 3's
+    // Hindi label could silently render under choice 2 after a partial
+    // translation. Whole-textarea-empty still means "no Hindi choices at all".
+    const optionsHiRaw = document.getElementById('qmQOptionsHi');
+    const optionsHi = (optionsHiRaw && optionsHiRaw.value.trim())
+      ? optionsHiRaw.value.split('\n').map(s=>s.trim())
+      : undefined;
     const statRaw = document.getElementById('qmQStatFields');
     const fields = statRaw ? statRaw.value.split('\n').map(s=>s.trim()).filter(Boolean).map(line => {
       const sp = line.indexOf(' ');
@@ -14559,15 +14573,19 @@ function qmOpenQuestionEditor(qid, newInCat){
     }) : undefined;
     if(editing){
       editing.en = en; editing.gu = gu; editing.req = req;
+      if(hi) editing.hi = hi; else delete editing.hi;
       if(!isCore){ editing.cat = cat; editing.type = type; }
       if(options !== undefined) editing.options = options; else delete editing.options;
+      if(optionsHi !== undefined) editing.optionsHi = optionsHi; else delete editing.optionsHi;
       if(fields !== undefined) editing.fields = fields; else delete editing.fields;
     } else {
       const baseId = en.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'q';
       let newId = baseId, n = 1;
       while(questions.some(x => x.id === newId)) newId = baseId + '_' + (++n);
       const nq = { id:newId, cat, en, gu, type, req, askedOf: _qmState.form==='v5' ? 'both' : 'farmer-only', core:false };
+      if(hi) nq.hi = hi;
       if(options !== undefined) nq.options = options;
+      if(optionsHi !== undefined) nq.optionsHi = optionsHi;
       if(fields !== undefined) nq.fields = fields;
       questions.push(nq);
     }

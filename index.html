@@ -182,6 +182,15 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
    .btn-danger, sized for an icon-only control. */
 .btn-icon-danger{background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--red);cursor:pointer;transition:.13s;display:inline-flex;align-items:center}
 .btn-icon-danger:hover{background:var(--red);color:#fff;border-color:var(--red)}
+/* v115 — .btn-icon had NO rule at all, and neither icon-button class ever sized
+   its <svg>. svg() emits no width/height (it relies on CSS, e.g. `.btn svg`), so
+   inside these buttons the icon computed to 0x0: the edit/delete controls on the
+   Team, Field Coordinators and Haats screens rendered as empty boxes and the
+   delete button collapsed to a ~16x12px target that was effectively unclickable.
+   That is why haats could not be deleted from the UI. */
+.btn-icon{background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--ink-soft);cursor:pointer;transition:.13s;display:inline-flex;align-items:center}
+.btn-icon:hover{background:var(--panel-2);color:var(--ink);border-color:var(--line-strong)}
+.btn-icon svg,.btn-icon-danger svg{width:14px;height:14px;flex-shrink:0}
 .btn-excel{background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)}
 .btn-excel:hover{background:var(--panel-2)}
 
@@ -3114,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v114';
+const APP_VERSION = 'v115';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

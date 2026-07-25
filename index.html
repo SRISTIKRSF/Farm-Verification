@@ -3114,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v112';
+const APP_VERSION = 'v113';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4279,9 +4279,32 @@ function _scopedFcQueries(key){
   return queries;
 }
 const _scopedParts={};   // key -> {queryTag -> {id:record}}, merged into _liveSnapshot[key]
+
+/* v113 — THE POINT OF PHASE 3. Until now every visitor to the public enrolment
+   link — an anonymous member of the public, not a logged-in user — downloaded
+   the ENTIRE farmer database into their browser: ~1,100 records with names,
+   phone numbers, villages and GPS coordinates. Not through any exploit; it was
+   simply how the form checked "is this phone already registered?".
+
+   With phoneIndex in place (v110-v112) that check no longer needs to read
+   farmer data, so public mode now subscribes to almost nothing:
+     - meta                     : the month list used to stamp enrolledMonth
+     - fcs / fieldCoordinators  : the thank-you screen tells the farmer which
+                                  field coordinator will contact them
+                                  (fcByDistrict) — a handful of small records
+   haatFarmers, convFarmers, activity, pendingEnrolments, verificationPlans and
+   incomeRecords are never read in public mode, so they are never subscribed.
+   That is the security fix, the bandwidth saving and the page-load win at once. */
+function _activeSyncKeys(){
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
+    return LIVE_SYNC_KEYS.filter(k => k==='meta' || k==='fcs' || k==='fieldCoordinators');
+  }
+  return LIVE_SYNC_KEYS;
+}
 function attachLiveListener(){
   if(!FB.ready)return;
-  LIVE_SYNC_KEYS.forEach(key => {
+  const activeKeys = _activeSyncKeys();
+  activeKeys.forEach(key => {
     const queries=_scopedFcQueries(key);
     if(!queries){
       fbRef(key).on('value', snap => {
@@ -4293,7 +4316,11 @@ function attachLiveListener(){
         // boot (e.g. Conversion Farmers showing empty for a moment while its
         // listener is still mid-flight). Once all have reported, every
         // subsequent individual fire processes immediately as normal.
-        if(_liveSnapshotSeen.size < LIVE_SYNC_KEYS.length) return;
+        // v113 — gate on the keys actually SUBSCRIBED, not the full list.
+        // Public mode subscribes to a subset, so comparing against
+        // LIVE_SYNC_KEYS.length would never be satisfied and the first
+        // diff/swap would never run.
+        if(_liveSnapshotSeen.size < activeKeys.length) return;
         _processLiveSnapshot();
       });
       return;
@@ -4312,7 +4339,11 @@ function attachLiveListener(){
         _liveSnapshot[key]=merged;
         if(partsSeen.size < queries.length) return;
         _liveSnapshotSeen.add(key);
-        if(_liveSnapshotSeen.size < LIVE_SYNC_KEYS.length) return;
+        // v113 — gate on the keys actually SUBSCRIBED, not the full list.
+        // Public mode subscribes to a subset, so comparing against
+        // LIVE_SYNC_KEYS.length would never be satisfied and the first
+        // diff/swap would never run.
+        if(_liveSnapshotSeen.size < activeKeys.length) return;
         _processLiveSnapshot();
       });
     });
@@ -4491,6 +4522,19 @@ let _lastSnap=null;
 let _saveRetryCount=0;
 async function saveDB(silent){
   cacheLocal();
+  /* v113 SAFETY — public mode must never run the whole-database sync.
+     It deliberately does not subscribe to haatFarmers/convFarmers (see
+     _activeSyncKeys), so its in-memory copy of those collections is empty BY
+     DESIGN. saveDB() is diff-based: running it here would compare "no farmers"
+     against the last known snapshot and compute a mass deletion. The public
+     enrolment paths never call this — they write only the single record just
+     submitted, via targeted fbRef().set() — so this is a guard against a future
+     edit wiring one up by mistake, not a live bug. Belt and braces alongside
+     the v105 MAX_AUTO_DELETE cap. */
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
+    console.warn('[Sristi] saveDB() suppressed in public mode — public submissions write their own record directly.');
+    return true;
+  }
   if(!FB.ready){setSyncPill('local');if(!silent)toast('Saved');return true;}
   setSyncPill('pending');
   // v10 — the diff now compares JSON strings (see snapCol above), the
@@ -10168,6 +10212,36 @@ function indexFarmerPhone(rec, program){
   claimPhoneIndex(rec.phone, program || rec.program || '', rec.id);
 }
 
+/* v113 — duplicate detection for the PUBLIC form, without reading farmer data.
+   Returns 'claimed' | 'duplicate' | 'unknown' | 'invalid'.
+
+   Only 'duplicate' rejects a submission. Everything else lets it through: it is
+   far worse to turn away a real farmer than to accept an occasional duplicate
+   that admins can merge later.
+
+   The fail-safe matters. A rejected write normally means the number is already
+   taken (the .validate rule forbids overwriting an existing entry) — but it
+   could also mean the rule is missing or misconfigured, in which case EVERY
+   submission would be denied and nobody could enrol at all. So a denial is not
+   trusted on its own: we look the number up, and only an entry that genuinely
+   exists is treated as a duplicate. */
+async function claimPhoneForPublic(phone, program, farmerId){
+  const key = _phoneKey(phone);
+  if(!key) return 'invalid';
+  if(!(FB && FB.ready && navigator.onLine)) return 'unknown';   // can't check — let them through
+  try{
+    await fbRef('phoneIndex/' + key).set(String(program || '') + ':' + String(farmerId));
+    return 'claimed';
+  }catch(e){
+    try{
+      const s = await fbRef('phoneIndex/' + key).get();
+      if(s && s.exists()) return 'duplicate';       // confirmed: really already registered
+    }catch(_){ /* fall through */ }
+    console.warn('[Sristi] phone claim failed for a reason other than a duplicate:', e);
+    return 'unknown';
+  }
+}
+
 function mapFormRow(row){
   const name = pick(row,'name','farmername','farmer name','ખેડૂતનું નામ');
   if(!name) return null;
@@ -10829,7 +10903,8 @@ function openConvEnrollmentForm(){
       cb.closest('.krsf-check').classList.toggle('checked', cb.checked);
     });
   }
-  function saveFarmer(){
+  // v113 — async: the public path now awaits the phoneIndex claim for dedup.
+  async function saveFarmer(){
     // v8.2 — in public mode, the farmer cannot pick their own FC, so skip
     // the fcName requirement. Everything else stays validated.
     const isPublic = !!PUBLIC_MODE;
@@ -10931,23 +11006,6 @@ function openConvEnrollmentForm(){
       },
     };
     if(isPublic){
-      // v9 process-fix #37 — phone dedup. If this phone already exists in
-      // either program, flag it as a duplicate attempt on the existing record
-      // and abort the new push.
-      const dup = findFarmerByPhone(state.mobile);
-      if(dup){
-        dup.record.duplicateAttempts = (dup.record.duplicateAttempts||0) + 1;
-        dup.record.lastDuplicateAt   = new Date().toISOString();
-        dup.record.lastDuplicateName = state.name.trim();
-        logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(state.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
-        if(FB && FB.ready){
-          fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))).catch(()=>{});
-        }
-        cacheLocal();
-        window._pfLastApp = dup.record;
-        closeModal(); enterPublicMode('public_thanks');
-        return;
-      }
       // v9 Batch 1 — auto-promote to convFarmers (no pendingEnrolments queue)
       const submittedAt = new Date().toISOString();
       const rec = {
@@ -10958,8 +11016,30 @@ function openConvEnrollmentForm(){
         publicSubmittedAt: submittedAt,
         submittedAt: submittedAt,
       };
+      /* v113 — phone dedup WITHOUT reading the farmer database. This used to
+         call findFarmerByPhone(), which scans every farmer in memory and was
+         therefore the sole reason a public visitor had to download all ~1,100
+         records. Claiming the number in phoneIndex does the same job with one
+         tiny write. Claiming also replaces the old indexFarmerPhone() call —
+         the number is registered by the claim itself. */
+      const claim = await claimPhoneForPublic(state.mobile, 'conv', rec.id);
+      if(claim === 'duplicate'){
+        logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(state.mobile)}</b> — this number is already registered. Ignored.`);
+        if(FB && FB.ready){
+          const dupAct = DB.activity[0];
+          if(dupAct && dupAct.id) fbRef('activity/'+dupAct.id).set(sanitizeForFB(dupAct)).catch(()=>{});
+        }
+        cacheLocal();
+        // Show the farmer THEIR OWN submitted details. The old code put the
+        // existing farmer's full record on the thank-you screen, which showed
+        // one stranger another farmer's name and village.
+        window._pfLastApp = { name: state.name.trim(), village: state.village.trim(),
+                              district: state.district, taluka: state.taluka,
+                              phone: state.mobile, _duplicate: true };
+        closeModal(); enterPublicMode('public_thanks');
+        return;
+      }
       backupConvRecord(rec);
-      indexFarmerPhone(rec, 'conv');       // v110 phone index (shadow write)
       DB.convFarmers.push(rec);
       window._pfLastApp = rec;
       logActivity('enroll', `📥 New Conversion application submitted via public form — <b>${esc(rec.name)}</b>, ${esc(rec.village)} <span style="color:var(--ink-faint)">(awaiting FC visit)</span>`);
@@ -15133,6 +15213,7 @@ window.addEventListener('message',async ev=>{
     const f=d.farmer;
     const name=(f.name||'').trim();
     if(!name)return;                       // ignore empty submissions
+    let _pubPresetHaatId = null;           // v113 — id reserved by the phone claim below
     // v9 process-fix #37 (extended) — phone-based dedup. Phone is the
     // farmer's unique identifier, per explicit product rule: no duplicate
     // farmers by phone, in either program. Previously only enforced for
@@ -15147,23 +15228,52 @@ window.addEventListener('message',async ev=>{
       // AND the FC/Admin "+ New Farmer" button, which opens the same form)
       // got a permanently blank phone, and this dedup check never actually
       // matched against the number the farmer just typed.
-      const dup = findFarmerByPhone(f.mobile);
-      if(dup){
-        dup.record.duplicateAttempts = (dup.record.duplicateAttempts||0) + 1;
-        dup.record.lastDuplicateAt   = new Date().toISOString();
-        dup.record.lastDuplicateName = name;
-        logActivity('alert', `⚠ Duplicate ${PUBLIC_MODE?'public':'FC/admin'} submission for phone <b>${esc(f.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
-        try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))); } catch(e) {}
-        cacheLocal();
-        window._lastPublicAppId = dup.record.id;
-        window._pfLastApp = dup.record;
-        if(!PUBLIC_MODE){
-          // Admin/FC needs a visible error, not the public "thanks" redirect.
+      /* v113 — PUBLIC mode dedups via the phone index instead of scanning the
+         farmer list, because public mode no longer downloads farmer data at all
+         (see _activeSyncKeys). Logged-in FC/admin users still have the full list
+         in memory, so they keep the original scan — it is free for them and
+         gives a far more useful error naming the existing farmer. */
+      if(PUBLIC_MODE){
+        // The id must exist BEFORE the claim: the .validate rule forbids
+        // overwriting an entry, so we cannot claim under a placeholder and
+        // correct it afterwards. Generate it here and reuse it for the record.
+        _pubPresetHaatId = 'HF_PUB_' + Date.now().toString().slice(-7);
+        const pubClaim = await claimPhoneForPublic(f.mobile, 'haat', _pubPresetHaatId);
+        if(pubClaim === 'duplicate'){
+          logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(f.mobile)}</b> — this number is already registered. Ignored.`);
+          try {
+            if(FB && FB.ready){
+              const dupAct = DB.activity[0];
+              if(dupAct && dupAct.id) await fbRef('activity/'+dupAct.id).set(sanitizeForFB(dupAct));
+            }
+          } catch(e) {}
+          cacheLocal();
+          // Their own details, not the existing farmer's — see the matching
+          // note in the conversion form.
+          window._pfLastApp = { name, village: f.village||'', district: f.district||'',
+                                taluka: talukaDisplayName(f.taluka,f.district)||'',
+                                phone: f.mobile, _duplicate: true };
+          return;
+        }
+        window._pubPhoneClaimed = (pubClaim === 'claimed');
+      } else {
+        // v100 — the enrollment form (KISAN_FORM_HTML) sends this field as
+        // `mobile`, not `phone` (matches its own ANSWERS.mobile question id).
+        const dup = findFarmerByPhone(f.mobile);
+        if(dup){
+          dup.record.duplicateAttempts = (dup.record.duplicateAttempts||0) + 1;
+          dup.record.lastDuplicateAt   = new Date().toISOString();
+          dup.record.lastDuplicateName = name;
+          logActivity('alert', `⚠ Duplicate FC/admin submission for phone <b>${esc(f.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
+          try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))); } catch(e) {}
+          cacheLocal();
+          window._lastPublicAppId = dup.record.id;
+          window._pfLastApp = dup.record;
           closeEnrollmentForm();
           toast('⚠ Phone '+f.mobile+' is already registered — '+dup.record.name+' ('+dup.record.id+', '+dup.program+'). No new farmer created.', 'error');
           render();
+          return;
         }
-        return;
       }
     }
     // v9 audit-fix #29 — defensive default if DB.months is empty.
@@ -15184,7 +15294,9 @@ window.addEventListener('message',async ev=>{
     // them immediately and they show up in the Verification Queue for any
     // FC to pick up.
     const submittedAt = new Date().toISOString();
-    const newId = PUBLIC_MODE ? ('HF_PUB_' + Date.now().toString().slice(-7)) : uid('HF');
+    // v113 — in public mode reuse the id the phone claim already registered in
+    // phoneIndex, so the index points at the record that actually gets created.
+    const newId = PUBLIC_MODE ? (_pubPresetHaatId || ('HF_PUB_' + Date.now().toString().slice(-7))) : uid('HF');
     const rec = {
       id: newId,
       ...baseRec,
@@ -15195,7 +15307,12 @@ window.addEventListener('message',async ev=>{
         submittedAt: submittedAt,
       } : {}),
     };
-    indexFarmerPhone(rec, 'haat');         // v110 phone index (shadow write)
+    // v113 — in public mode the number was already registered by the claim
+    // above (under this same id), so don't write it twice. If that claim came
+    // back 'unknown' (offline or a transient error) nothing was registered, so
+    // fall through and try here.
+    if(!PUBLIC_MODE || !window._pubPhoneClaimed) indexFarmerPhone(rec, 'haat');
+    window._pubPhoneClaimed = false;
     DB.haatFarmers.push(rec);
     // v9 audit-fix #8 + #25 — track who/when the kisan-haat-enrollment
     // message just created so kisan-haat-full can attach to the SAME record

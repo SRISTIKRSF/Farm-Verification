@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v117';
+const APP_VERSION = 'v118';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7811,7 +7811,8 @@ function renderNav(){
     {sec:'Organic Haat Program'},
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
-    {id:'haats',label:'Haats & Markets',ico:I.basket},
+    // v118 — "Haats & Markets" removed from the sidebar. Haats are created,
+    // edited and deleted in ONE place now: Settings → Manage Haats.
     {sec:'Conversion Program'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
     {sec:'Farm Locations'},
@@ -13943,44 +13944,14 @@ function viewSettings(){
     return;
   }
   if(STab==='haats'){
-    let h=tabBar();
-    h+=`<div class="card" style="padding:18px 20px;max-width:820px">
-      <div class="ct" style="font-size:14px;font-weight:700">Haats &amp; Markets</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">Add or remove the haats your onboarded farmers can be assigned to.</div>
-      <div class="hint" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">💡 For the full table view with parent/child haats and GPS coordinates, go to <b>Haats &amp; Markets</b> in the sidebar.</div>
-      <div id="haatList">${getHaatList().map((haatObj,i)=>`<div class="row-line" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line-soft)">
-        <span style="flex:1;font-weight:600">${esc(haatObj.name)}</span>
-        <span style="font-size:11px;color:var(--ink-faint)">${DB.haatFarmers.filter(f=>f.haat===haatObj.name&&f.status==='green').length} farmer(s) assigned</span>
-        <button class="btn-icon-danger" data-haat-del="${i}" aria-label="Delete haat entry">${svg(I.trash,2)}</button>
-      </div>`).join('')||'<div style="padding:16px;color:var(--ink-faint);text-align:center">No haats yet</div>'}</div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <input id="newHaatName" placeholder="New haat name" style="flex:1;padding:8px 12px;border:1px solid var(--line-strong);border-radius:7px">
-        <button class="btn btn-primary btn-sm" id="addHaatBtn">${svg(I.plus,2.2)}Add haat</button>
-      </div>
-    </div>`;
-    v.innerHTML=h;
+    /* v118 — Settings is now the ONE place haats are managed. This tab used to
+       be a weaker duplicate (name-only add, delete by row index, no GPS,
+       weekdays, parent/sub or city) that even told people to go to the sidebar
+       for the real thing. It now hosts the full manager instead, and the
+       sidebar entry has been removed. Same DB.haats data either way. */
+    v.innerHTML = tabBar() + '<div id="haatMgrHost"></div>';
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    $('#addHaatBtn').onclick=async()=>{
-      const name=$('#newHaatName').value.trim();
-      if(!name){toast('Haat name required');return;}
-      if(getHaatList().some(h=>h.name===name)){toast('That haat already exists');return;}
-      DB.haats=(DB.haats||[]).map(h=>normHaat(h));
-      DB.haats.push({id:name,name:name,parent:'',lat:null,lng:null,weekday:'',type:''});
-      logActivity('edit',`Added haat <b>${esc(name)}</b>`);
-      await saveDB();render();toast('Haat added');
-    };
-    v.querySelectorAll('[data-haat-del]').forEach(b=>b.onclick=async()=>{
-      const i=+b.dataset.haatDel;
-      const haats=getHaatList();
-      const name=haats[i] && haats[i].name;
-      if(!name) return;
-      const farmers=DB.haatFarmers.filter(f=>f.haat===name).length;
-      if(!confirm(`Delete haat "${name}"?${farmers?'\n\n'+farmers+' farmer(s) are currently assigned and will become unassigned.':''}`)) return;
-      DB.haats=(DB.haats||[]).map(h=>normHaat(h)).filter(h=>h.name!==name);
-      DB.haatFarmers.forEach(f=>{if(f.haat===name)f.haat='';});
-      logActivity('edit',`Deleted haat <b>${esc(name)}</b>`);
-      await saveDB();render();toast('Haat deleted');
-    });
+    renderHaatManager(document.getElementById('haatMgrHost'));
     return;
   }
   if(STab==='facs'){
@@ -14203,8 +14174,25 @@ function haversineKm(lat1, lng1, lat2, lng2){
 /* ============ VIEW: HAATS & MARKETS (v7 redesign) ============
    Table with parent/child collapse, GPS coordinates, distance metrics.
    ============================================================ */
-function viewHaats(){
-  const v=$('#view');
+/* v118 — ONE haat manager, and it lives in Settings.
+
+   Haats used to be editable from two places: this full screen in the sidebar
+   (parent/sub haats, GPS, weekdays, city filter, farmer counts, farm-to-haat
+   distances) and a second, much weaker copy in Settings that could only add a
+   name and delete a row. Two screens editing one list is how they drift apart,
+   and the Settings copy literally carried a note telling people to go to the
+   sidebar for the real thing.
+
+   The sidebar entry is gone and this full manager now renders inside
+   Settings -> Manage Haats. Nothing was dropped: GPS and weekdays in
+   particular MUST stay editable because the Farm Map plots haats from them, so
+   removing the rich editor (rather than moving it) would have quietly left new
+   haats unplottable.
+
+   Renders into whatever container it is given, so Settings can host it below
+   its tab bar. No data is read or written differently — same DB.haats. */
+function renderHaatManager(v){
+  if(!v) return;
   if(!FILTERS.haatsView) FILTERS.haatsView = { expanded:{} };
   const expanded = FILTERS.haatsView.expanded;
   const haats = getHaatList();
@@ -14618,7 +14606,11 @@ function render(){
   if(count){pc.textContent=count;pc.style.display='inline-block';}
   else pc.style.display='none';
   ({dashboard:viewDashboard,haat:viewHaat,verification:viewVerification,
-    haats:viewHaats,conversion:viewConversion,
+    // v118 — the standalone Haats screen is gone (haats are managed in
+    // Settings → Manage Haats). Any saved link or stale hash still lands
+    // somewhere useful instead of dead-ending.
+    haats:()=>{ ROUTE='settings'; FILTERS.settings=FILTERS.settings||{}; FILTERS.settings.tab='haats'; viewSettings(); },
+    conversion:viewConversion,
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
     farmMap:viewFarmMap,

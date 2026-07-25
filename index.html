@@ -3114,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v113';
+const APP_VERSION = 'v114';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10212,6 +10212,35 @@ function indexFarmerPhone(rec, program){
   claimPhoneIndex(rec.phone, program || rec.program || '', rec.id);
 }
 
+/* v114 — "Years of organic farming" from the enrolment form.
+
+   THE BUG: the kisan-haat-enrollment receiver built its farmer record with
+   `yearsOrganic: 0` HARDCODED, so the Haat Farmers list and the admin summary
+   showed "0 yrs" no matter what the farmer entered. The Compare-Forms view read
+   the raw submission instead, so it showed the right number — which is exactly
+   why the two disagreed. Farmers who looked correct had either been edited by
+   hand, come through the short public quick-apply form, or were demo records.
+
+   THE INPUT IS NOT UNIFORM. Measured across every stored Haat enrolment form:
+   120 farmers answered with a duration ("11"), but 24 answered with the YEAR
+   they started ("2016"). Taking those at face value would print "2016 yrs".
+   A 4-digit value in 1900..this-year is therefore read as a start year and
+   converted to a duration; anything above 90 years is not a credible duration
+   and is discarded rather than displayed as nonsense. */
+function _parseYearsOrganic(raw){
+  const n = parseFloat(String(raw == null ? '' : raw).replace(/[^\d.]/g, ''));
+  if(!Number.isFinite(n) || n <= 0) return 0;
+  const nowY = new Date().getFullYear();
+  if(n >= 1900 && n <= nowY) return Math.max(0, nowY - Math.round(n));  // they typed a start year
+  if(n > 90) return 0;                                                  // not a plausible duration
+  return n;
+}
+/* Pull a single answer out of the claims array the enrolment form posts. */
+function _claimAnswer(claims, id){
+  const c = (claims || []).find(x => x && x.id === id);
+  return c ? c.answer : undefined;
+}
+
 /* v113 — duplicate detection for the PUBLIC form, without reading farmer data.
    Returns 'claimed' | 'duplicate' | 'unknown' | 'invalid'.
 
@@ -15283,7 +15312,13 @@ window.addEventListener('message',async ev=>{
       village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
       district:f.district||'', state:guessState(f.district),
       phone:f.mobile||'', landAcres:f.land||0,
-      vertical:'Livelihood', yearsOrganic:0, certification:'Registration pending',
+      // v114 — was hardcoded to 0, so every farmer enrolled through this form
+      // showed "0 yrs" in the list and summary while Compare Forms (which reads
+      // the raw claims) showed the real answer. The value is not a top-level
+      // field on the payload — it lives in claims under id 'years_organic'.
+      vertical:'Livelihood',
+      yearsOrganic:_parseYearsOrganic(_claimAnswer(f.claims, 'years_organic')),
+      certification:'Registration pending',
       crops:[], fcId:'', haat:'',
       enrolledMonth:m, stage:'verification_pending', status:'pending',
       active:false, visits:[], lat:null, lng:null,

@@ -3114,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v111';
+const APP_VERSION = 'v112';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12960,7 +12960,19 @@ function openFarmerModal(program,id){
           logActivity('status', `<b>${esc(f.name)}</b> (${esc(f.id)}) FC changed from ${esc(oldName)} to ${esc(newName)}`);
         }
       }
+      // v112 — keep the phone index in step when an admin EDITS a phone number.
+      // v110 wired the index into every farmer-CREATION path but not this one,
+      // so correcting a mistyped number left the old number claimed forever —
+      // which would silently block whoever really owns it from enrolling.
+      // Found by reconciling the index against live data after a 907-farmer
+      // import: 4 numbers were still claimed by farmers who had since been
+      // edited to a different number.
+      const _oldPhoneForIndex = f.phone;
       Object.assign(f,base);
+      if(_phoneKey(_oldPhoneForIndex) !== _phoneKey(f.phone)){
+        if(_phoneKey(_oldPhoneForIndex)) releasePhoneIndex(_oldPhoneForIndex);
+        if(_phoneKey(f.phone) && !f._archived) claimPhoneIndex(f.phone, program==='haat'?'haat':'conv', f.id);
+      }
       if(program==='haat'){
         f.yearsOrganic=+$('#ffYears').value||0;
         f.certification=$('#ffCert').value;

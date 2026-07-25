@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v119';
+const APP_VERSION = 'v120';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5331,6 +5331,45 @@ const uid=p=>p+Date.now().toString(36).slice(-5)+Math.floor(Math.random()*900+10
 const monthLabel=m=>{const[y,mo]=m.split('-');return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
 const fcById=id=>DB.fcs.find(f=>f.id===id)||(DB.fieldCoordinators||[]).find(f=>f.id===id);
 
+/* v120 — the roster deliberately KEEPS people who have left (see
+   reconcileFcsFromUsers) so their name still resolves on the visits and
+   decisions they made. Anything that offers a CHOICE of coordinator — assign,
+   bulk-assign, plan a visit, the farmer edit form — must use this instead of
+   DB.fcs, or you can hand a farmer to someone who no longer works here.
+   Read-only surfaces (history, filters, exports) should keep using DB.fcs so
+   past records stay readable. */
+const activeFcs=()=>(DB.fcs||[]).filter(f=>f && !f.deleted && !f.inactive);
+
+/* v120 — options for a "who owns this farmer / who will visit" picker.
+   Active coordinators, PLUS whoever is currently selected even if they have
+   since been deactivated. Without that second part the <select> would not
+   contain the stored value, the browser would fall back to the first option,
+   and simply opening the edit box and pressing Save would silently move the
+   farmer to a different coordinator. */
+function fcChoices(currentId){
+  const list=activeFcs().slice();
+  if(currentId && !list.some(f=>f.id===currentId)){
+    const cur=fcById(currentId);
+    if(cur) list.push(Object.assign({},cur,{name:(cur.name||currentId)+' (inactive)'}));
+  }
+  return list;
+}
+
+/* v120 — suggest the next unused FCnnn. Scans BOTH the accounts and the roster,
+   and never reuses a code belonging to someone who left: an old code still
+   stamps their past visits, so handing it to a new joiner would silently
+   re-attribute that history to the wrong person. */
+function nextFreeFcCode(){
+  const taken = new Set();
+  (typeof getUsersList==='function' ? getUsersList() : []).forEach(u=>{ if(u && u.fcCode) taken.add(String(u.fcCode).toUpperCase()); });
+  (DB.fcs||[]).forEach(f=>{ if(f && f.id) taken.add(String(f.id).toUpperCase()); });
+  for(let n=1;n<1000;n++){
+    const code='FC'+String(n).padStart(3,'0');
+    if(!taken.has(code)) return code;
+  }
+  return '';
+}
+
 /* ============================================================
    v8 — USER SESSION + ROLE-BASED VIEWS
    3 FC user accounts (Maheshbhai, Ayush, Harsh) + Admin.
@@ -7014,7 +7053,7 @@ function openConvScoreModal(id){
   // v9 Batch 4 — auto-select the logged-in FC by default. Falls back to the
   // farmer's existing fcId, then nothing.
   const defaultFc = currentFcId() || f.fcId || '';
-  const fcOpts  = DB.fcs.map(x => '<option value="' + esc(x.id) + '"' + (x.id===defaultFc ? ' selected':'') + '>' + esc(x.name) + '</option>').join('')
+  const fcOpts  = fcChoices(defaultFc).map(x => '<option value="' + esc(x.id) + '"' + (x.id===defaultFc ? ' selected':'') + '>' + esc(x.name) + '</option>').join('')
                 + '<option value="__other__">— Other (type name) —</option>';
   const visitSection =
     '<div style="background:#eff6ff;border:1px solid var(--accent);border-radius:10px;padding:11px 13px;margin-bottom:14px">'
@@ -10170,7 +10209,13 @@ function yesish(v){return /^(y|yes|true|1|હા)$/i.test(String(v||'').trim());
 function findFcLoose(name){
   if(!name) return null;
   const n=normKey(name);
-  return DB.fcs.find(f=>normKey(f.name)===n)
+  // v120 — prefer an active coordinator so an import cannot hand new farmers to
+  // someone who has left; still falls back to the full roster so historical
+  // back-fills naming a departed coordinator continue to match.
+  const act=activeFcs();
+  return act.find(f=>normKey(f.name)===n)
+      || DB.fcs.find(f=>normKey(f.name)===n)
+      || act.find(f=>normKey(f.name).includes(n)||n.includes(normKey(f.name)))
       || DB.fcs.find(f=>normKey(f.name).includes(n)||n.includes(normKey(f.name)));
 }
 // v9 process-fix #37 — phone-based duplicate detection on public submissions.
@@ -11348,74 +11393,9 @@ function viewFcInbox(){
   v.querySelectorAll('[data-act="visit"], [data-act="score"]').forEach(b=>b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);});
 }
 
-/* ============ VIEW: FIELD COORDINATORS ============ */
-function viewFCs(){
-  const v=$('#view');
-  if(!FILTERS.fcs) FILTERS.fcs={district:''};
-  const allDistricts=[...new Set(DB.fcs.map(x=>x.district).filter(Boolean))].sort();
-  let rows=DB.fcs.slice();
-  if(FILTERS.fcs.district) rows=rows.filter(x=>x.district===FILTERS.fcs.district);
-  let h=`<div class="toolbar" style="margin-bottom:14px">
-    <select id="fcDistrictF"><option value="">All districts (${DB.fcs.length})</option>
-      ${allDistricts.map(d=>`<option ${FILTERS.fcs.district===d?'selected':''}>${esc(d)}</option>`).join('')}
-    </select>
-    <span style="font-size:11.5px;color:var(--ink-faint)">Showing ${rows.length} of ${DB.fcs.length} field coordinators</span>
-    <div style="flex:1"></div>
-    <button class="btn btn-primary btn-sm" id="addFc">${svg(I.plus,2.2)}Add field coordinator</button>
-  </div>
-  <div class="split c2">`;
-  if(!rows.length){
-    h+=`<div class="card" style="padding:30px;text-align:center;color:var(--ink-faint);grid-column:1/-1">
-      No field coordinators in ${esc(FILTERS.fcs.district||'this view')}. ${FILTERS.fcs.district?'Try clearing the district filter.':''}
-    </div>`;
-  }
-  rows.forEach(fc=>{
-    const ac=accentFor(fc.id);
-    const hv=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).length,0);   // v116 — excludes migration placeholders
-    const cv=DB.convFarmers.reduce((a,f)=>a+f.observations.filter(x=>x.fc===fc.id).length,0);
-    const onb=DB.haatFarmers.filter(f=>f.fcId===fc.id&&f.status==='green').length;
-    const assigned=DB.haatFarmers.filter(f=>f.fcId===fc.id).length+DB.convFarmers.filter(f=>f.fcId===fc.id).length;
-    // monthly visit heatmap
-    const heat=DB.months.map(m=>{
-      const n=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).filter(x=>x.date&&x.date.startsWith(m)).length,0)
-             +DB.convFarmers.reduce((a,f)=>a+f.observations.filter(x=>x.fc===fc.id&&x.date.startsWith(m)).length,0);
-      return{m,n};
-    });
-    const mx=Math.max(1,...heat.map(x=>x.n));
-    h+=`<div class="card" style="padding:16px 18px;position:relative">
-      <div style="position:absolute;top:11px;right:11px;display:flex;gap:4px">
-        <button class="btn-icon" data-edit-fc="${fc.id}" title="Edit field coordinator" aria-label="Edit field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);transition:.13s">${svg(I.edit,2)}</button>
-        <button class="btn-icon-danger" data-del-fc="${fc.id}" title="Delete field coordinator" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-right:74px">
-        <div class="fc-avatar" style="--accent:${ac}">${initials(fc.name)}</div>
-        <div style="flex:1;min-width:0">
-          <div class="fc-name" style="font-size:15px">${esc(fc.name)}</div>
-          <div class="fc-sub">${esc(fc.id)} · ${fc.phone?`<a href="tel:${esc(fc.phone)}" style="color:var(--accent);text-decoration:none;font-weight:600">📞 ${esc(fc.phone)}</a>`:'<span style="color:var(--ink-faint)">no phone</span>'}</div>
-        </div>
-      </div>
-      <div class="detail-grid" style="margin-bottom:14px">
-        <div class="detail-cell"><div class="k">Region</div><div class="v">${esc(fc.district)}, ${esc(fc.state)}</div></div>
-        <div class="detail-cell"><div class="k">Partner</div><div class="v">${esc(fc.partner)}</div></div>
-        <div class="detail-cell" data-go-haat="${fc.id}" style="cursor:pointer" title="See the Haat farmers in this field coordinator's territory"><div class="k">Farmers in territory</div><div class="v" style="color:var(--accent)">${assigned} <span style="font-size:10px">→</span></div></div>
-        <div class="detail-cell"><div class="k">Onboarded</div><div class="v">${onb}</div></div>
-      </div>
-      <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Visits per month — ${hv+cv} total</div>
-      <div class="heatrow">${heat.map(x=>{
-        const op=x.n?(0.25+0.75*x.n/mx):0.08;
-        return `<div class="heatcell" title="${monthLabel(x.m)}: ${x.n}" style="background:rgba(59,130,246,${op})">${x.n||''}</div>`;
-      }).join('')}</div>
-    </div>`;
-  });
-  v.innerHTML=h+'</div>';
-  $('#addFc').onclick=()=>openFcModal();
-  $('#fcDistrictF').onchange=e=>{FILTERS.fcs.district=e.target.value;render();};
-  v.querySelectorAll('[data-edit-fc]').forEach(b=>b.onclick=()=>openFcModal(b.dataset.editFc));
-  v.querySelectorAll('[data-del-fc]').forEach(b=>b.onclick=()=>deleteFacilitator(b.dataset.delFc));
-  v.querySelectorAll('[data-go-haat]').forEach(el=>{
-    el.onclick=()=>{ROUTE='haat';FILTERS.haat={fc:el.dataset.goHaat};render();};
-  });
-}
+/* v120 — viewFCs() deleted. It was a THIRD rendering of the same roster, on a
+   route with no sidebar entry and no TITLES entry, i.e. unreachable. Its job
+   belongs to viewFieldCoordinators(). */
 /* ============ DRAWER: HAAT FARMER ============ */
 function openDrawer(){$('#overlay').classList.add('show');$('#drawer').classList.add('show');}
 function closeDrawer(){$('#overlay').classList.remove('show');$('#drawer').classList.remove('show');}
@@ -12833,7 +12813,7 @@ function openAssignHaatModal(id){
 function openAssignFcModal(id){
   const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
   const body=`<div class="hint" style="margin-bottom:12px"><b>${esc(f.name)}</b> · ${esc(f.village)}, ${esc(talukaDisplayName(f.taluka,f.district)||'')}${f.taluka?', ':''}${esc(f.district)}</div>`
-    +fld('Assign field coordinator',sel('afFc',[['','— select field coordinator —'],...DB.fcs.map(x=>[x.id,x.name+' ('+x.district+')'])],f.fcId||currentFcId()||''),true);
+    +fld('Assign field coordinator',sel('afFc',[['','— select field coordinator —'],...fcChoices(f.fcId||currentFcId()).map(x=>[x.id,x.name+(x.district?' ('+x.district+')':'')])],f.fcId||currentFcId()||''),true);
   modalShell('Assign field coordinator — '+esc(f.name),body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="afSave">${svg(I.check)}Assign</button>`);
@@ -12875,7 +12855,7 @@ function openBulkAssignModal(){
     </div>`
     +`<div class="field-row">
       ${fld('Taluka',sel('baTaluka',opts.map(t=>[t,t+' ('+byTaluka[t]+')']),opts[0]),true)}
-      ${fld('Assign field coordinator',sel('baFc',[['','— select field coordinator —'],...DB.fcs.map(x=>[x.id,x.name])]),true)}
+      ${fld('Assign field coordinator',sel('baFc',[['','— select field coordinator —'],...activeFcs().map(x=>[x.id,x.name])]),true)}
     </div>`
     +`<div class="hint" id="baPreview" style="margin-top:4px"></div>`;
   modalShell('Bulk assign field coordinator by taluka',body,
@@ -12994,7 +12974,7 @@ function openFarmerModal(program,id){
   </div>
   <div class="field-row">
     ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
-    }${program==='haat'?fld('Field Coordinator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId),true):''}
+    }${program==='haat'?fld('Field Coordinator',sel('ffFc',fcChoices(f.fcId).map(x=>[x.id,x.name]),f.fcId),true):''}
   </div>`;
   if(program==='haat'){
     body+=`<div class="field-row">
@@ -13012,7 +12992,7 @@ function openFarmerModal(program,id){
   if(program==='conv'){
     body+=`<div class="field-row">
       ${fld('Next visit due',`<input type="date" id="ffNext" value="${esc(f.nextVisitDue||'')}">`)}
-      ${fld('Field Coordinator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId))}
+      ${fld('Field Coordinator',sel('ffFc',fcChoices(f.fcId).map(x=>[x.id,x.name]),f.fcId))}
     </div>`;
   }
 
@@ -13159,85 +13139,21 @@ function openFarmerModal(program,id){
   };
 }
 
-/* ============ MODAL: ADD / EDIT FIELD COORDINATOR ============ */
-function openFcModal(id){
-  const editing = !!id;
-  const f = editing ? DB.fcs.find(x=>x.id===id) : null;
-  if(editing && !f) return;
-  const stateOpts=Object.keys(DB.states);
-  const partnerOpts=['KRSF Direct','Sristi Saathi NGO','GreenRoots NGO','Khedut Mandal NGO'];
-  const cur = editing ? f : {state:stateOpts[0]};
-  const distOpts = DB.states[cur.state||stateOpts[0]];
-  const body=`<div class="field-row">
-    ${fld('Field Coordinator name',`<input id="fcName" placeholder="Full name" value="${esc(cur.name||'')}">`,true)}
-    ${fld('Phone',`<input id="fcPhone" type="tel" inputmode="numeric" placeholder="10-digit mobile" value="${esc(cur.phone||'')}">`,true)}
-  </div>
-  <div class="field-row">
-    ${fld('State',sel('fcState',stateOpts,cur.state),true)}
-    ${fld('District',sel('fcDist',distOpts,cur.district),true)}
-  </div>
-  ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}`;
-  modalShell(editing?'Edit field coordinator — '+esc(f.name):'Add field coordinator',body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="saveFc">${svg(I.check)}${editing?'Save changes':'Add field coordinator'}</button>`);
-  $('#fcState').onchange=()=>{$('#fcDist').innerHTML=DB.states[$('#fcState').value].map(d=>`<option>${esc(d)}</option>`).join('');};
-  $('#saveFc').onclick=async()=>{
-    const name=$('#fcName').value.trim();
-    if(!name){toast('Name is required');return;}
-    const data={
-      name, phone:$('#fcPhone').value.trim(),
-      state:$('#fcState').value, district:$('#fcDist').value,
-      partner:$('#fcPartner').value,
-    };
-    if(editing){
-      Object.assign(f,data);
-      logActivity('edit',`Field Coordinator updated — <b>${esc(name)}</b>`);
-    } else {
-      DB.fcs.push({id:uid('FC'),...data});
-      logActivity('enroll',`New field coordinator added — <b>${esc(name)}</b>`);
-    }
-    await saveDB();closeModal();render();
-    toast(editing?'Field Coordinator updated':'Field Coordinator added');
-  };
-}
-async function deleteFacilitator(id){
-  const f=DB.fcs.find(x=>x.id===id); if(!f) return;
-  const haatLinked=DB.haatFarmers.filter(x=>x.fcId===id).length;
-  const convLinked=DB.convFarmers.filter(x=>x.fcId===id).length;
-  const planLinked=(DB.verificationPlans||[]).filter(p => p.fcId===id && (!p.status||p.status==='planned')).length;
-  const total=haatLinked+convLinked;
-  let msg=`Remove field coordinator "${f.name}"?`;
-  if(total) msg+=`\n\n${total} farmer${total===1?'':'s'} (${haatLinked} Haat, ${convLinked} Conversion) currently report to this field coordinator. They will become unassigned.`;
-  if(planLinked) msg+=`\n\n${planLinked} active plan${planLinked===1?'':'s'} owned by ${f.name} will be auto-cancelled.`;
-  msg += `\n\nNote: ${f.name}'s name will still appear on past visits and decisions for the audit trail.`;
-  if(!confirm(msg)) return;
-  // unassign farmers (current ownership) but keep historical visit attribution intact
-  DB.haatFarmers.forEach(x=>{ if(x.fcId===id) x.fcId=''; });
-  DB.convFarmers.forEach(x=>{ if(x.fcId===id){ x.fcId=''; if(x.stage==='assigned') x.stage='enrolled'; }});
-  // v9 process-fix #51 — auto-cancel active plans owned by this FC.
-  (DB.verificationPlans||[]).forEach(p => {
-    if(p.fcId === id && (!p.status || p.status === 'planned')){
-      p.status = 'cancelled';
-      p.statusChangedAt = new Date().toISOString();
-      p.statusChangedBy = 'auto: FC removed';
-      p.noShowReason = 'auto: field coordinator removed';
-    }
-  });
-  // v9 process-fix #51 — SOFT delete the FC: mark deleted instead of dropping
-  // from the array. Visit history (f.visits[].fc='FC001') still resolves to
-  // the name. paintPlanning shows "(removed)" suffix on their old plans.
-  f.deleted = true;
-  f.deletedAt = new Date().toISOString();
-  f.deletedBy = actor().name;
-  logActivity('edit',`Field Coordinator removed — <b>${esc(f.name)}</b>${total?' · '+total+' farmer'+(total===1?'':'s')+' unassigned':''}${planLinked?' · '+planLinked+' plan'+(planLinked===1?'':'s')+' auto-cancelled':''}`);
-  await saveDB(); render();
-  toast('Field Coordinator removed');
-}
+/* v120 — openFcModal() and deleteFacilitator() deleted. They edited DB.fcs
+   directly, with no login account behind the record, so anything created
+   there was wiped by reconcileFcsFromUsers() on its next run. Adding,
+   editing and deactivating a coordinator now go through openUserModal() and
+   setCoordinatorActive(). */
 
 /* ============ VIEW: FIELD COORDINATORS ============ */
 function viewFieldCoordinators(){
   const v=$('#view');
-  const fcs=(DB.fieldCoordinators||[]).filter(x=>!x.deleted);
+  // v120 — inactive coordinators STAY listed (greyed, tagged) so their name
+  // still resolves on past visits; only genuinely deleted rows are dropped.
+  const all=(DB.fieldCoordinators||[]).filter(x=>!x.deleted);
+  const fcs=all;
+  const activeCount=all.filter(x=>!x.inactive).length;
+  const canEditPeople = navigator.onLine && FB && FB.ready && isAdminUser();
   const today=todayISO();
   const cutoff90=new Date(); cutoff90.setDate(cutoff90.getDate()-90);
 
@@ -13268,7 +13184,7 @@ function viewFieldCoordinators(){
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <div class="metric" style="background:var(--panel-2);padding:8px 14px;border-radius:8px">
         <div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Team size</div>
-        <div style="font-size:18px;font-weight:800;margin-top:2px">${fcs.length}</div>
+        <div style="font-size:18px;font-weight:800;margin-top:2px">${activeCount}${all.length>activeCount?`<span style="font-size:11px;font-weight:600;color:var(--ink-faint)"> +${all.length-activeCount} inactive</span>`:''}</div>
       </div>
       <div class="metric" style="background:var(--panel-2);padding:8px 14px;border-radius:8px">
         <div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Visits (last 90 days)</div>
@@ -13280,95 +13196,120 @@ function viewFieldCoordinators(){
       </div>
     </div>
     <div style="flex:1"></div>
-    <button class="btn btn-primary btn-sm" id="addFieldFc">${svg(I.plus,2.2)}Add team member</button>
+    ${canEditPeople
+      ? `<button class="btn btn-primary btn-sm" id="addFieldFc">${svg(I.plus,2.2)}Add field coordinator</button>`
+      : `<span style="font-size:11.5px;color:var(--ink-faint)">${isAdminUser()?'Offline \u2014 connect to add or edit people.':''}</span>`}
   </div>`;
 
   if(!fcs.length){
     h+=`<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">
-      No team members yet. Click <b>Add team member</b> above to start.
+      No field coordinators yet. Click <b>Add field coordinator</b> above to start.
     </div>`;
   } else {
     h+=`<div class="table-wrap"><table><thead><tr>
-      <th>Member</th><th>Phone</th><th class="num">Visits (90d)</th>
-      <th class="num">Planned</th><th class="num">Total visits</th>
-      <th>Last visit</th><th style="width:90px">Actions</th>
+      <th>Name</th><th>Phone</th><th>Districts</th><th>Partner</th>
+      <th class="num">Farmers</th><th class="num">Visits (90d)</th>
+      <th class="num">Total visits</th><th>Last visit</th><th style="width:100px">Actions</th>
     </tr></thead><tbody>`;
     rows.forEach(r=>{
       const fc=r.fc;
       const ac=accentFor(fc.id);
-      h+=`<tr data-id="${fc.id}">
+      const farmerCount=(DB.haatFarmers||[]).filter(f=>f.fcId===fc.id).length
+                       +(DB.convFarmers||[]).filter(f=>f.fcId===fc.id).length;
+      const dCount=fc.districtCount!=null?fc.districtCount:0;
+      h+=`<tr data-id="${fc.id}" style="${fc.inactive?'opacity:.55':''}">
         <td>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="fc-avatar" style="--accent:${ac};width:32px;height:32px;font-size:11px">${initials(fc.name)}</div>
-            <div><div style="font-weight:600">${esc(fc.name)}</div>
+            <div><div style="font-weight:600">${esc(fc.name)}${fc.inactive?' <span class="tag" style="font-size:9.5px;background:var(--panel-2);color:var(--ink-faint)">Inactive</span>':''}</div>
               <div style="font-size:10.5px;color:var(--ink-faint)">${esc(fc.id)}</div></div>
           </div>
         </td>
-        <td>${fc.phone?`<a href="tel:${esc(fc.phone)}" style="color:var(--accent);text-decoration:none">📞 ${esc(fc.phone)}</a>`:'<span style="color:var(--ink-faint)">—</span>'}</td>
+        <td>${fc.phone?`<a href="tel:${esc(fc.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(fc.phone)}</a>`:'<span style="color:var(--ink-faint)">\u2014</span>'}</td>
+        <td style="font-size:11.5px">${dCount?`${dCount} district${dCount===1?'':'s'}`:'<span style="color:var(--ink-faint)">All districts</span>'}</td>
+        <td style="font-size:11.5px">${esc(fc.partner||'')}</td>
+        <td class="num">${farmerCount||'<span style="color:var(--ink-faint)">\u2014</span>'}</td>
         <td class="num"><b>${r.visitsLast3M}</b></td>
-        <td class="num">${r.plannedUpcoming||'<span style="color:var(--ink-faint)">—</span>'}</td>
         <td class="num">${r.visitsTotal}</td>
         <td style="font-size:11.5px">${r.lastVisitAt?fmtDate(r.lastVisitAt):'<span style="color:var(--ink-faint);font-size:11px">No visits yet</span>'}</td>
-        <td>
-          <button class="btn-icon" data-edit-ffc="${fc.id}" title="Rename" aria-label="Rename field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);margin-right:3px">${svg(I.edit,2)}</button>
-          <button class="btn-icon-danger" data-del-ffc="${fc.id}" title="Delete" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
-        </td>
+        <td>${canEditPeople?`
+          <button class="btn-icon" data-edit-ffc="${fc.id}" title="Edit" aria-label="Edit field coordinator" style="margin-right:3px">${svg(I.edit,2)}</button>
+          ${fc.inactive
+            ? `<button class="btn-icon" data-react-ffc="${fc.id}" title="Reactivate" aria-label="Reactivate field coordinator">${svg(I.check,2)}</button>`
+            : `<button class="btn-icon-danger" data-off-ffc="${fc.id}" title="Deactivate" aria-label="Deactivate field coordinator">${svg(I.trash,2)}</button>`}
+        `:'<span style="color:var(--ink-faint);font-size:11px">\u2014</span>'}</td>
       </tr>`;
     });
     h+='</tbody></table></div>';
   }
   v.innerHTML=h;
-  $('#addFieldFc').onclick=()=>openFieldCoordinatorModal();
-  v.querySelectorAll('[data-edit-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();openFieldCoordinatorModal(b.dataset.editFfc);});
-  v.querySelectorAll('[data-del-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteFieldCoordinator(b.dataset.delFfc);});
+  // v120 — every button here now edits the ACCOUNT (config/users) through the
+  // one shared modal. The old name-and-phone-only editor wrote straight to
+  // DB.fcs with no account behind it, so reconcileFcsFromUsers() deleted those
+  // people again on its next run.
+  const addB=$('#addFieldFc');
+  if(addB) addB.onclick=()=>openUserModal(null,{lockRole:'fc'});
+  v.querySelectorAll('[data-edit-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();editCoordinatorByFcCode(b.dataset.editFfc);});
+  v.querySelectorAll('[data-off-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();setCoordinatorActive(b.dataset.offFfc,false);});
+  v.querySelectorAll('[data-react-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();setCoordinatorActive(b.dataset.reactFfc,true);});
 }
-function openFieldCoordinatorModal(id){
-  const editing=!!id;
-  const fc = editing ? (DB.fieldCoordinators||[]).find(x=>x.id===id) : null;
-  if(editing && !fc) return;
-  const body=`<div class="field-row">
-    ${fld('Name',`<input id="ffcName" placeholder="e.g. Maheshbhai" value="${esc(fc?.name||'')}">`,true)}
-    ${fld('Phone (optional)',`<input id="ffcPhone" type="tel" inputmode="numeric" placeholder="10-digit mobile" value="${esc(fc?.phone||'')}">`)}
-  </div>`;
-  modalShell(editing?'Edit Field Coordinator':'Add Field Coordinator',body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="saveFfc">${svg(I.check)}${editing?'Save':'Add'}</button>`);
-  $('#saveFfc').onclick=async()=>{
-    const name=$('#ffcName').value.trim();
-    if(!name){toast('Name is required');return;}
-    if(!DB.fieldCoordinators) DB.fieldCoordinators=[];
-    if(editing){
-      fc.name=name; fc.phone=$('#ffcPhone').value.trim();
-      logActivity('edit',`Field Coordinator updated — <b>${esc(name)}</b>`);
-    } else {
-      DB.fieldCoordinators.push({id:uid('FFC'),name,phone:$('#ffcPhone').value.trim()});
-      logActivity('enroll',`New Field Coordinator added — <b>${esc(name)}</b>`);
-    }
-    await saveDB(); closeModal(); render();
-    toast(editing?'Field Coordinator updated':'Field Coordinator added');
-  };
+
+/* v120 — the roster is keyed by FC code, the account by username; bridge them. */
+function userForFcCode(code){
+  return (typeof getUsersList==='function'?getUsersList():[]).find(u=>u&&u.role==='fc'&&u.fcCode===code)||null;
 }
-async function deleteFieldCoordinator(id){
-  const fc=(DB.fieldCoordinators||[]).find(x=>x.id===id); if(!fc) return;
-  const convLinked=(DB.convFarmers||[]).filter(x=>x.fcId===id).length;
-  const planLinked=(DB.verificationPlans||[]).filter(p=>p.fcId===id&&(!p.status||p.status==='planned')).length;
-  let msg=`Remove team member "${fc.name}"?\n\nVisit history is preserved for the audit trail.`;
-  if(convLinked) msg+=`\n\n${convLinked} conversion farmer${convLinked===1?'':'s'} will become unassigned.`;
-  if(planLinked) msg+=`\n${planLinked} active plan${planLinked===1?'':'s'} will be auto-cancelled.`;
+function editCoordinatorByFcCode(code){
+  const u=userForFcCode(code);
+  if(!u){ toast('No login account found for '+code+'. Add them from + Add field coordinator.','error'); return; }
+  openUserModal(u.id,{lockRole:'fc'});
+}
+
+/* v120 — replaces the three delete paths. Deactivating is REVERSIBLE and
+   destroys nothing: the account stays, the roster row stays, every past visit
+   still resolves to their name. Farmers are deliberately NOT auto-unassigned
+   \u2014 that would erase who was responsible. We report the number instead so
+   the admin can reassign on purpose. */
+async function setCoordinatorActive(code, makeActive){
+  const u=userForFcCode(code);
+  if(!u){ toast('No login account found for '+code,'error'); return; }
+  if(!(navigator.onLine && FB && FB.ready)){ toast('Offline \u2014 connect to change accounts.','error'); return; }
+  if(SESSION && SESSION.role==='fc' && SESSION.userId===code && !makeActive){
+    toast('You cannot deactivate your own account.','error'); return;
+  }
+  const haatLinked=(DB.haatFarmers||[]).filter(x=>x.fcId===code).length;
+  const convLinked=(DB.convFarmers||[]).filter(x=>x.fcId===code).length;
+  const planLinked=(DB.verificationPlans||[]).filter(p=>p.fcId===code&&(!p.status||p.status==='planned')).length;
+  const total=haatLinked+convLinked;
+  let msg;
+  if(makeActive){
+    msg=`Reactivate "${u.name}"?\n\nThey will be able to sign in again and can be assigned farmers.`;
+  } else {
+    msg=`Deactivate "${u.name}"?\n\nThey will no longer be able to sign in, and will not appear when assigning farmers.`;
+    msg+=`\n\nNothing is deleted \u2014 their name stays on every past visit, and you can reactivate them any time.`;
+    if(total) msg+=`\n\n${total} farmer${total===1?'':'s'} (${haatLinked} Haat, ${convLinked} Conversion) still report to them. They stay assigned \u2014 reassign them when you are ready.`;
+    if(planLinked) msg+=`\n${planLinked} planned visit${planLinked===1?'':'s'} still open.`;
+  }
   if(!confirm(msg)) return;
-  (DB.convFarmers||[]).forEach(x=>{ if(x.fcId===id){ x.fcId=''; if(x.stage==='assigned') x.stage='enrolled'; }});
-  (DB.verificationPlans||[]).forEach(p=>{
-    if(p.fcId===id&&(!p.status||p.status==='planned')){
-      p.status='cancelled';p.statusChangedAt=new Date().toISOString();p.statusChangedBy='auto: FC removed';
+  try{
+    await fbRef('config/users/u_'+u.id+'/active').set(!!makeActive);
+    await fbRef('config/users/u_'+u.id+'/updatedAt').set(Date.now());
+    if(Array.isArray(USERS_LIST)){
+      const cached=USERS_LIST.find(x=>x.id===u.id);
+      if(cached) cached.active=!!makeActive;
+      saveUsersCache(USERS_LIST);
     }
-  });
-  fc.deleted=true; fc.deletedAt=new Date().toISOString();
-  logActivity('edit',`Field Coordinator removed — <b>${esc(fc.name)}</b>`
-    +(convLinked?` · ${convLinked} farmer${convLinked===1?'':'s'} unassigned`:'')
-    +(planLinked?` · ${planLinked} plan${planLinked===1?'':'s'} auto-cancelled`:''));
-  await saveDB(); render();
-  toast('Team member removed');
+    if(reconcileFcsFromUsers()) await saveDB(true);
+    logActivity('edit',`Field Coordinator ${makeActive?'reactivated':'deactivated'} \u2014 <b>${esc(u.name)}</b>`);
+    render();
+    toast(makeActive?'Field Coordinator reactivated':'Field Coordinator deactivated');
+  }catch(e){
+    toast('Could not update the account: '+(e&&e.message?e.message:'Error'),'error');
+  }
 }
+/* v120 — openFieldCoordinatorModal() and deleteFieldCoordinator() deleted:
+   the name-and-phone-only editor behind the old "Add team member" button.
+   Same defect as openFcModal — no account, so the person disappeared on the
+   next reconcile. */
 
 /* ============ MODAL: v5 — SIDE-BY-SIDE FORM COMPARISON ============
    Reads the v5 schema + farmer's claims + FC's verification to render a per-question
@@ -13583,7 +13524,6 @@ function viewSettings(){
       <div class="tab ${cur==='scoring'?'on':''}" data-st="scoring">🌱 Organic practices &amp; scoring</div>
       <div class="tab ${cur==='questions'?'on':''}" data-st="questions">📋 Question Manager</div>
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
-      <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Field Coordinators</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
       <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">🔁 Duplicates</div>
@@ -13954,40 +13894,14 @@ function viewSettings(){
     renderHaatManager(document.getElementById('haatMgrHost'));
     return;
   }
+  // v120 — the "Manage Field Coordinators" tab is gone. It was a second,
+  // weaker editor for the same people (no login, no password, no district
+  // assignment) whose records reconcileFcsFromUsers() then deleted. Anyone
+  // arriving from a stale link lands on the one real screen.
   if(STab==='facs'){
-    let h=tabBar();
-    h+=`<div class="card" style="padding:18px 20px;max-width:1000px">
-      <div class="ct" style="font-size:14px;font-weight:700">Field Coordinators</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">The Sristi Field Coordinators (FCs) who visit farms, run verifications and manage day-to-day field work. Same list as the Field Coordinators page, simplified.</div>
-      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>District</th><th>Partner</th><th>Farmers</th><th style="width:90px">Actions</th></tr></thead><tbody>`;
-    DB.fcs.forEach(fc=>{
-      const assigned=DB.haatFarmers.filter(f=>f.fcId===fc.id).length+DB.convFarmers.filter(f=>f.fcId===fc.id).length;
-      h+=`<tr>
-        <td><b>${esc(fc.name)}</b></td>
-        <td>${fc.phone?esc(fc.phone):'<span style="color:var(--ink-faint)">—</span>'}</td>
-        <td>${esc(fc.district||'')}</td>
-        <td>${esc(fc.partner||'')}</td>
-        <td>${assigned}</td>
-        <td>
-          <button class="btn-icon" data-edit-fc="${fc.id}" aria-label="Edit field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;color:var(--ink-soft);margin-right:3px">${svg(I.edit,2)}</button>
-          <button class="btn-icon-danger" data-del-fc="${fc.id}" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
-        </td></tr>`;
-    });
-    h+=`</tbody></table></div>
-      <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="addFcSet">${svg(I.plus,2.2)}Add field coordinator</button></div>
-    </div>`;
-    v.innerHTML=h;
-    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    $('#addFcSet').onclick=()=>openFcModal();
-    v.querySelectorAll('[data-edit-fc]').forEach(b=>b.onclick=()=>openFcModal(b.dataset.editFc));
-    // v117 — this used to HARD-delete the record (DB.fcs.filter(...)) with only
-    // a bare "Delete field coordinator?" prompt: it did not unassign the farmers who
-    // reported to them, did not cancel their planned visits, and destroyed the
-    // record that past visits attribute to — leaving farmers pointing at a
-    // coordinator who no longer existed. The other two screens that delete the
-    // SAME list (Team, Field Coordinators) both do this properly, so route this
-    // one through the same function instead of keeping a third, unsafe copy.
-    v.querySelectorAll('[data-del-fc]').forEach(b=>b.onclick=()=>deleteFacilitator(b.dataset.delFc));
+    ROUTE='fieldCoordinators';
+    FILTERS.settings.tab='roles';
+    viewFieldCoordinators();
     return;
   }
   if(STab==='photos'){
@@ -14077,7 +13991,12 @@ function viewSettings(){
     return;
   }
   if(STab==='roles'){
-    const uList = getUsersList();
+    // v120 — Field Coordinators have their own page now (sidebar -> Field
+    // Coordinators), where their login, password and districts are edited
+    // together with their work profile. This tab keeps admin logins only, so
+    // one person never appears in two lists again.
+    const uList = getUsersList().filter(u => u && u.role !== 'fc');
+    const fcCount = getUsersList().filter(u => u && u.role === 'fc').length;
     const canEdit = isAdminUser();
     const isConnected = navigator.onLine && FB && FB.ready;
     const FC_UC = ['#16a34a','#d97706','#3b82f6','#8b5cf6','#dc2626','#06b6d4'];
@@ -14085,13 +14004,14 @@ function viewSettings(){
     h += '<div style="max-width:700px">';
     h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
-        <div style="font-size:14px;font-weight:700">App Users</div>
-        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Login accounts, passwords &amp; roles</div>
+        <div style="font-size:14px;font-weight:700">Admin accounts</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Logins with full access to every screen</div>
       </div>
-      ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add user</button>' : ''}
+      ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add admin</button>' : ''}
     </div>`;
+    h += `<div class="hint" style="margin-bottom:14px"><b>${fcCount} Field Coordinator${fcCount===1?'':'s'}</b> \u2014 their logins, passwords and district assignments all live on the <a href="#fieldCoordinators" id="uFcLink" style="color:var(--accent);font-weight:600">Field Coordinators</a> page.</div>`;
     if (!uList.length) {
-      h += `<div class="card" style="padding:24px;text-align:center;color:var(--ink-faint)">${isConnected ? 'No users found. Add the first user above.' : 'Offline — connect to load user list.'}</div>`;
+      h += `<div class="card" style="padding:24px;text-align:center;color:var(--ink-faint)">${isConnected ? 'No admin accounts found.' : 'Offline — connect to load the account list.'}</div>`;
     } else {
       h += '<div class="card" style="padding:0;overflow:hidden">';
       uList.forEach(function(u, i) {
@@ -14106,10 +14026,13 @@ function viewSettings(){
             <div style="font-size:13.5px;font-weight:600">${esc(u.name)}</div>
             <div style="font-size:11.5px;color:var(--ink-faint)">@${esc(u.id)}${u.fcCode?' &middot; '+esc(u.fcCode):''}</div>
           </div>
+          ${u.active===false ? '<span class="tag" style="font-size:10.5px;flex-shrink:0;background:var(--panel-2);color:var(--ink-faint)">Inactive</span>' : ''}
           <span class="tag ${u.role==='admin'?'blue':'green'}" style="font-size:10.5px;flex-shrink:0">${u.role==='admin'?'Admin':'FC'}</span>
           ${canEdit ? `
             <button class="btn btn-ghost btn-sm" data-uedit="${esc(u.id)}" style="padding:4px 10px;flex-shrink:0">Edit</button>
-            ${SESSION && u.id !== SESSION.userId ? `<button class="btn btn-ghost btn-sm" data-udel="${esc(u.id)}" style="padding:4px 10px;color:var(--red);flex-shrink:0">Delete</button>` : ''}
+            ${SESSION && u.id !== SESSION.userId ? (u.active===false
+              ? `<button class="btn btn-ghost btn-sm" data-uon="${esc(u.id)}" style="padding:4px 10px;flex-shrink:0">Reactivate</button>`
+              : `<button class="btn btn-ghost btn-sm" data-uoff="${esc(u.id)}" style="padding:4px 10px;color:var(--red);flex-shrink:0">Deactivate</button>`) : ''}
           ` : ''}
         </div>`;
       });
@@ -14120,10 +14043,13 @@ function viewSettings(){
     v.innerHTML = h;
     v.querySelectorAll('.tab').forEach(t => t.onclick = () => { FILTERS.settings.tab = t.dataset.st; render(); });
     if (reconcileFcsFromUsers()) saveDB(true);
+    const fcLink = $('#uFcLink');
+    if (fcLink) fcLink.onclick = e => { e.preventDefault(); ROUTE='fieldCoordinators'; render(); };
     const addBtn = $('#uAddBtn');
     if (addBtn) addBtn.onclick = () => openUserModal();
     v.querySelectorAll('[data-uedit]').forEach(b => b.onclick = () => openUserModal(b.dataset.uedit));
-    v.querySelectorAll('[data-udel]').forEach(b => b.onclick = () => confirmDeleteUser(b.dataset.udel));
+    v.querySelectorAll('[data-uoff]').forEach(b => b.onclick = () => setUserActive(b.dataset.uoff, false));
+    v.querySelectorAll('[data-uon]').forEach(b => b.onclick = () => setUserActive(b.dataset.uon, true));
     return;
   }
   // Safety fallback: should never reach here (scoring/haats/facs/roles tabs
@@ -14600,7 +14526,7 @@ function render(){
   let count='';
   if(ROUTE==='haat') count=filterByCurrentFc(DB.haatFarmers).length+' farmers';
   else if(ROUTE==='conversion') count=filterByCurrentFc(DB.convFarmers).length+' farmers';
-  else if(ROUTE==='fieldCoordinators') count=DB.fcs.length+' team members';
+  else if(ROUTE==='fieldCoordinators') count=(DB.fcs||[]).filter(x=>!x.deleted).length+' field coordinators';
   const pc=$('#pageCount');
   $('#pageTitle').childNodes[0].nodeValue=title+' ';
   if(count){pc.textContent=count;pc.style.display='inline-block';}
@@ -16613,18 +16539,39 @@ function migrateDefaultUsers() {
 }
 
 // Rebuilds DB.fcs (= DB.fieldCoordinators alias) from config/users FC accounts.
-// config/users is the single source of truth — the Team roster follows it.
+// config/users is the single source of truth — the roster follows it.
 // Returns true if DB changed and caller should saveDB().
+//
+// v120 — two changes, both about not losing people:
+//
+// 1) INACTIVE FCs ARE KEPT. This used to filter `u.active !== false`, so
+//    deactivating an account dropped the roster row entirely — and every past
+//    visit stamped with that fcCode stopped resolving to a name ("—" on the
+//    audit trail). Now they stay, flagged `inactive`, and callers that must not
+//    offer them (assignment dropdowns) use activeFcs() instead.
+// 2) state/partner/phone now RIDE ON THE USER RECORD. They used to exist only
+//    on the roster row, which meant the two lists held different facts about
+//    the same person and could silently disagree. `prev` is still merged
+//    underneath so anything set before this version survives the upgrade.
 function reconcileFcsFromUsers() {
-  const fcUsers = getUsersList().filter(u => u.role === 'fc' && u.active !== false && u.fcCode);
+  const fcUsers = getUsersList().filter(u => u.role === 'fc' && u.fcCode);
   if (!fcUsers.length) return false;
   const existing = DB.fcs || [];
   const newFcs = fcUsers.map(u => {
     const prev = existing.find(x => x.id === u.fcCode) || existing.find(x => x.name === u.name);
+    const districts = Array.isArray(u.districts) ? u.districts : [];
     return Object.assign({}, prev || {}, {
       id:    u.fcCode,
       name:  u.name,
-      phone: /^\d{10}$/.test(u.id) ? u.id : (prev && prev.phone) || '',
+      phone: u.phone || (/^\d{10}$/.test(u.id) ? u.id : (prev && prev.phone) || ''),
+      state:   u.state   || (prev && prev.state)   || 'Gujarat',
+      partner: u.partner || (prev && prev.partner) || 'KRSF / SRISTI',
+      // Display-only. The real field-visibility scope is u.districts (plural)
+      // — see fcAssignedDistricts(). Derived here so a card can never show a
+      // district the FC does not actually cover.
+      district: districts.length ? districts[0] : ((prev && prev.district) || ''),
+      districtCount: districts.length,
+      inactive: u.active === false,
     });
   });
   if (JSON.stringify(newFcs) === JSON.stringify(existing)) return false;
@@ -16640,10 +16587,21 @@ function reconcileFcsFromUsers() {
   return true;
 }
 
-function openUserModal(userId) {
+/* v120 — this is now the ONE editor for a person, admin or field coordinator.
+   Before, an FC was spread across three screens with three different "Add"
+   buttons: this modal held the login + districts, Settings → Manage Field
+   Coordinators held state/partner, and the Field Coordinators page had a
+   name-and-phone-only box. The latter two wrote to DB.fcs with no account
+   behind them, so reconcileFcsFromUsers() deleted those people on its next
+   run. Everything is written here, to config/users, and the roster is derived.
+   opts.lockRole — opened from the Field Coordinators page: role is fixed to
+   'fc' and the role picker is hidden, so that page can only ever make FCs. */
+function openUserModal(userId, opts) {
+  opts = opts || {};
   const users   = getUsersList();
   const editing = userId ? users.find(u => u.id === userId) : null;
   const isNew   = !editing;
+  const lockFc  = opts.lockRole === 'fc';
   const body = `
     <div style="display:flex;flex-direction:column;gap:13px;padding:4px 0">
       <div>
@@ -16667,27 +16625,45 @@ function openUserModal(userId) {
           <button type="button" id="umPwToggle" onclick="(function(){const i=document.getElementById('umPw');const b=document.getElementById('umPwToggle');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'Show':'Hide';})()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:12px;color:var(--ink-soft);cursor:pointer;padding:4px">Show</button>
         </div>
       </div>
-      <div>
+      <div style="${lockFc ? 'display:none' : ''}">
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Role *</label>
         <select id="umRole" style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;background:#fff">
-          <option value="admin" ${editing && editing.role==='admin' ? 'selected' : ''}>Admin \u2014 full access</option>
-          <option value="fc"    ${!editing || editing.role==='fc'    ? 'selected' : ''}>Field Coordinator</option>
+          <option value="admin" ${!lockFc && (!editing || editing.role==='admin') ? 'selected' : ''}>Admin \u2014 full access</option>
+          <option value="fc"    ${lockFc || (editing && editing.role==='fc')    ? 'selected' : ''}>Field Coordinator</option>
         </select>
       </div>
-      <div id="umFcRow" style="${(!editing || editing.role==='fc') ? '' : 'display:none'}">
+      <div id="umFcRow" style="${(lockFc || (editing && editing.role==='fc')) ? '' : 'display:none'}">
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">FC Code <span style="font-weight:400;color:var(--ink-faint)">(e.g. FC004)</span></label>
-        <input id="umFcCode" value="${editing ? esc(editing.fcCode||'') : ''}" placeholder="FC001"
+        <input id="umFcCode" value="${editing ? esc(editing.fcCode||'') : esc(nextFreeFcCode())}" placeholder="FC001"
           style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
         <label style="display:block;font-size:12px;font-weight:600;margin:14px 0 5px">Assigned districts <span style="font-weight:400;color:var(--ink-faint)">(field visibility)</span></label>
         <div style="font-size:11px;color:var(--ink-faint);margin-bottom:8px">Tick the districts this FC covers — they'll only see farmers in these districts. Leave blank to see everyone (default, unrestricted).</div>
         <div class="checkgrid" id="umDistricts">${GUJARAT_DISTRICTS.map(d=>
           `<label><input type="checkbox" value="${esc(d)}" ${((editing && editing.districts)||[]).includes(d)?'checked':''}>${esc(d)}</label>`).join('')}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px">
+          <div style="flex:1;min-width:150px">
+            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Contact phone <span style="font-weight:400;color:var(--ink-faint)">(blank = same as username)</span></label>
+            <input id="umPhone" type="tel" inputmode="numeric" value="${editing ? esc(editing.phone||'') : ''}" placeholder="10-digit mobile"
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:150px">
+            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">State</label>
+            <input id="umState" value="${editing ? esc(editing.state||'Gujarat') : 'Gujarat'}" placeholder="Gujarat"
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:150px">
+            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Partner organisation</label>
+            <input id="umPartner" value="${editing ? esc(editing.partner||'KRSF / SRISTI') : 'KRSF / SRISTI'}" placeholder="KRSF / SRISTI"
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;box-sizing:border-box">
+          </div>
+        </div>
       </div>
       <div id="umErr"></div>
     </div>`;
-  modalShell((isNew ? 'Add' : 'Edit') + ' User', body,
+  const noun = lockFc ? 'Field Coordinator' : 'User';
+  modalShell((isNew ? 'Add ' : 'Edit ') + noun + (editing ? ' \u2014 ' + esc(editing.name) : ''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="umSave">${isNew ? 'Create user' : 'Save changes'}</button>`);
+     <button class="btn btn-primary" id="umSave">${isNew ? 'Create ' + noun.toLowerCase() : 'Save changes'}</button>`);
   const roleEl = $('#umRole'), fcRow = $('#umFcRow');
   roleEl.onchange = () => { fcRow.style.display = roleEl.value === 'fc' ? '' : 'none'; };
   if(editing){ const umIdEl=$('#umId'); umIdEl.oninput=()=>{ const w=$('#umIdWarn'); if(w) w.style.display=umIdEl.value.trim().toLowerCase()!==(umIdEl.dataset.orig||'')?'block':'none'; }; }
@@ -16699,6 +16675,9 @@ function openUserModal(userId) {
     const role    = $('#umRole').value;
     const fcCode  = ($('#umFcCode').value||'').trim().toUpperCase();
     const districts = [...$('#umDistricts').querySelectorAll('input:checked')].map(c=>c.value);
+    const phone   = (($('#umPhone')   || {}).value || '').trim();
+    const state   = (($('#umState')   || {}).value || '').trim();
+    const partner = (($('#umPartner') || {}).value || '').trim();
     const errEl   = $('#umErr');
     const showErr = msg => { errEl.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:4px">${msg}</div>`; };
     if (!name) return showErr('Display name is required.');
@@ -16714,10 +16693,26 @@ function openUserModal(userId) {
       const newKey  = 'config/users/u_' + uid;
       const existSnap = await fbRef(oldKey).get();
       const existing  = existSnap.exists() ? existSnap.val() : null;
+      // v120 — the write below is a .set(), which REPLACES the whole account
+      // node. A blank password field means "keep the current one", and the
+      // current one can only be carried over from `existing`. If that read came
+      // back empty (dropped connection, rules hiccup) we would write an account
+      // with no salt and no passwordHash — locking the person out for good with
+      // no way back except a manual database edit. Refuse instead.
+      if (!isNew && !existing && !pw) {
+        saveBtn.disabled = false; saveBtn.textContent = 'Save changes';
+        return showErr('Could not read the existing account, so saving now would erase its password. Check your connection and try again \u2014 or type a new password to save anyway.');
+      }
       const record = {
         id: uid, name, role, fcCode: role === 'fc' ? fcCode : '',
         districts: role === 'fc' ? districts : [],
-        active: true,
+        // v120 — roster display fields now live on the account too, so the
+        // Field Coordinators list is purely derived and cannot disagree with it.
+        phone:   role === 'fc' ? phone   : '',
+        state:   role === 'fc' ? state   : '',
+        partner: role === 'fc' ? partner : '',
+        // Editing must never silently reactivate someone who was stood down.
+        active: existing ? (existing.active !== false) : true,
         createdAt: (existing && existing.createdAt) || Date.now(),
         updatedAt: Date.now(),
       };
@@ -16748,25 +16743,42 @@ function openUserModal(userId) {
   };
 }
 
-async function confirmDeleteUser(userId) {
+/* v120 — was confirmDeleteUser(), which called .remove() and destroyed the
+   account outright. Deactivating instead is reversible and keeps the audit
+   trail: the person can no longer sign in, but their name still resolves on
+   everything they did. Nothing is erased. */
+async function setUserActive(userId, makeActive) {
   const users = getUsersList();
   const user  = users.find(u => u.id === userId);
   if (!user) return;
   if (SESSION && user.id === SESSION.userId) {
-    toast('You cannot delete your own account.', 'error'); return;
+    toast('You cannot deactivate your own account.', 'error'); return;
   }
-  const admins = users.filter(u => u.role === 'admin' && u.active !== false);
-  if (user.role === 'admin' && admins.length <= 1) {
-    toast('Cannot delete the only admin account.', 'error'); return;
+  const liveAdmins = users.filter(u => u.role === 'admin' && u.active !== false);
+  if (!makeActive && user.role === 'admin' && liveAdmins.length <= 1) {
+    toast('Cannot deactivate the only active admin account.', 'error'); return;
   }
-  if (!confirm('Delete user "' + user.name + '" (@' + userId + ')?\n\nThis cannot be undone.')) return;
+  if (!(navigator.onLine && FB && FB.ready)) {
+    toast('Offline \u2014 connect to change accounts.', 'error'); return;
+  }
+  const msg = makeActive
+    ? 'Reactivate "' + user.name + '" (@' + userId + ')?\n\nThey will be able to sign in again.'
+    : 'Deactivate "' + user.name + '" (@' + userId + ')?\n\nThey will no longer be able to sign in.\n\nNothing is deleted \u2014 you can reactivate them any time.';
+  if (!confirm(msg)) return;
   try {
-    await fbRef('config/users/u_' + userId).remove();
+    await fbRef('config/users/u_' + userId + '/active').set(!!makeActive);
+    await fbRef('config/users/u_' + userId + '/updatedAt').set(Date.now());
+    if (Array.isArray(USERS_LIST)) {
+      const cached = USERS_LIST.find(x => x.id === userId);
+      if (cached) cached.active = !!makeActive;
+      saveUsersCache(USERS_LIST);
+    }
     if (reconcileFcsFromUsers()) await saveDB(true);
+    logActivity('edit', (makeActive ? 'Account reactivated' : 'Account deactivated') + ' \u2014 <b>' + esc(user.name) + '</b>');
     render();
-    toast('User deleted.');
+    toast(makeActive ? 'Account reactivated.' : 'Account deactivated.');
   } catch(e) {
-    toast('Delete failed: ' + (e && e.message ? e.message : 'Error'), 'error');
+    toast('Update failed: ' + (e && e.message ? e.message : 'Error'), 'error');
   }
 }
 // === END USER MANAGEMENT ===============================================

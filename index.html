@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v116';
+const APP_VERSION = 'v117';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14009,14 +14009,14 @@ function viewSettings(){
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     $('#addFcSet').onclick=()=>openFcModal();
     v.querySelectorAll('[data-edit-fc]').forEach(b=>b.onclick=()=>openFcModal(b.dataset.editFc));
-    v.querySelectorAll('[data-del-fc]').forEach(b=>b.onclick=async()=>{
-      const id=b.dataset.delFc;
-      const fc=DB.fcs.find(x=>x.id===id); if(!fc) return;
-      if(!confirm(`Delete facilitator "${fc.name}"?`)) return;
-      DB.fcs=DB.fcs.filter(x=>x.id!==id);
-      logActivity('edit',`Deleted facilitator <b>${esc(fc.name)}</b>`);
-      await saveDB();render();toast('Facilitator deleted');
-    });
+    // v117 — this used to HARD-delete the record (DB.fcs.filter(...)) with only
+    // a bare "Delete facilitator?" prompt: it did not unassign the farmers who
+    // reported to them, did not cancel their planned visits, and destroyed the
+    // record that past visits attribute to — leaving farmers pointing at a
+    // coordinator who no longer existed. The other two screens that delete the
+    // SAME list (Team, Field Coordinators) both do this properly, so route this
+    // one through the same function instead of keeping a third, unsafe copy.
+    v.querySelectorAll('[data-del-fc]').forEach(b=>b.onclick=()=>deleteFacilitator(b.dataset.delFc));
     return;
   }
   if(STab==='photos'){
@@ -16637,6 +16637,14 @@ function reconcileFcsFromUsers() {
   });
   if (JSON.stringify(newFcs) === JSON.stringify(existing)) return false;
   DB.fcs = newFcs;
+  // v117 — DB.fieldCoordinators is an ALIAS of DB.fcs (see normaliseDB:
+  // `d.fieldCoordinators = d.fcs`), but assigning a NEW array above silently
+  // broke that link: DB.fcs became the rebuilt list while DB.fieldCoordinators
+  // still pointed at the OLD one. The Team screen reads fieldCoordinators and
+  // the Facilitators screen reads fcs, so the two screens showed DIFFERENT
+  // people until the next page load — e.g. a coordinator removed in Settings
+  // disappeared from one screen but stayed on the other. Re-point the alias.
+  DB.fieldCoordinators = DB.fcs;
   return true;
 }
 

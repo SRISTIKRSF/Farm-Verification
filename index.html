@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v115';
+const APP_VERSION = 'v116';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7531,6 +7531,27 @@ function convStats(){
     notInterested:f.filter(x=>x.intake && x.intake.willingChemFree==='no').length,
   };
 }
+/* v116 — a visit row created by the SRISTI data migration is a historical
+   record, NOT a farm verification carried out through this app. 80 of the 84
+   visit rows in the database are these placeholders (note: "Imported from
+   SRISTI farmer database — verified by <name>"), which is why the team screen
+   credited coordinators with dozens of verifications they never performed —
+   made worse by the FC codes having been reassigned to different people since,
+   so the imports were being shown against the wrong names entirely.
+
+   These are excluded from PER-FC CREDIT only (Team screen, the dashboard
+   Farm-Verifications table, the FC list). Nothing is deleted, and the
+   programme-level history charts deliberately still include them, because the
+   imports do represent genuine verification work done before this app existed. */
+function isImportedVisit(v){
+  return !!(v && /imported from sristi/i.test(String(v.notes || '')));
+}
+/* Visits genuinely carried out by this FC through the app. */
+function fcRealVisits(farmer, fcId){
+  const arr = (farmer && Array.isArray(farmer.visits)) ? farmer.visits : [];
+  return arr.filter(v => v && v.fc === fcId && !isImportedVisit(v));
+}
+
 /* monthly form counts (haat) */
 function monthlyForms(){
   return DB.months.map(m=>({
@@ -8678,9 +8699,10 @@ function viewDashboard(){
   // Verifications are done by the Field Coordinators (Ayush / Harsh / Maheshbhai
   // and any others added in Settings) — not by every facilitator in DB.fcs.
   const fcRows=(DB.fieldCoordinators||[]).map(fc=>{
+    // v116 — migration placeholders excluded (see isImportedVisit).
     const perMonth=recent3.map(m=>
-      DB.haatFarmers.reduce((a,f)=>a+f.visits.filter(v=>v.fc===fc.id&&v.date.startsWith(m)).length,0));
-    const total=DB.haatFarmers.reduce((a,f)=>a+f.visits.filter(v=>v.fc===fc.id).length,0);
+      DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).filter(v=>v.date&&v.date.startsWith(m)).length,0));
+    const total=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).length,0);
     return {fc, perMonth, total};
   }).sort((a,b)=>b.total-a.total);
 
@@ -11348,13 +11370,13 @@ function viewFCs(){
   }
   rows.forEach(fc=>{
     const ac=accentFor(fc.id);
-    const hv=DB.haatFarmers.reduce((a,f)=>a+f.visits.filter(x=>x.fc===fc.id).length,0);
+    const hv=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).length,0);   // v116 — excludes migration placeholders
     const cv=DB.convFarmers.reduce((a,f)=>a+f.observations.filter(x=>x.fc===fc.id).length,0);
     const onb=DB.haatFarmers.filter(f=>f.fcId===fc.id&&f.status==='green').length;
     const assigned=DB.haatFarmers.filter(f=>f.fcId===fc.id).length+DB.convFarmers.filter(f=>f.fcId===fc.id).length;
     // monthly visit heatmap
     const heat=DB.months.map(m=>{
-      const n=DB.haatFarmers.reduce((a,f)=>a+f.visits.filter(x=>x.fc===fc.id&&x.date.startsWith(m)).length,0)
+      const n=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).filter(x=>x.date&&x.date.startsWith(m)).length,0)
              +DB.convFarmers.reduce((a,f)=>a+f.observations.filter(x=>x.fc===fc.id&&x.date.startsWith(m)).length,0);
       return{m,n};
     });
@@ -13222,13 +13244,13 @@ function viewFieldCoordinators(){
   const rows=fcs.map(fc=>{
     let visitsTotal=0, visitsLast3M=0, plannedUpcoming=0, lastVisitAt='';
     DB.haatFarmers.forEach(f=>{
-      (f.visits||[]).forEach(v=>{
-        if(v.fc===fc.id){
-          visitsTotal++;
-          if(v.date){
-            if(new Date(v.date)>=cutoff90) visitsLast3M++;
-            if(!lastVisitAt || v.date>lastVisitAt) lastVisitAt=v.date;
-          }
+      // v116 — count only verifications actually carried out through the app;
+      // SRISTI-migration placeholders are excluded (see isImportedVisit).
+      fcRealVisits(f, fc.id).forEach(v=>{
+        visitsTotal++;
+        if(v.date){
+          if(new Date(v.date)>=cutoff90) visitsLast3M++;
+          if(!lastVisitAt || v.date>lastVisitAt) lastVisitAt=v.date;
         }
       });
       (f.plannedVisits||[]).forEach(p=>{

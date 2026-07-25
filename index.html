@@ -176,7 +176,7 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
 .btn-danger:hover{background:#fde0e0}
 /* v79 — icon-only delete buttons across the app (Haats & Markets row
-   delete, facilitator delete, photo delete, ...) used background:none +
+   delete, field coordinator delete, photo delete, ...) used background:none +
    a neutral border + just a red icon — invisible at rest, only readable
    once you happened to hover. Same visible-at-rest treatment as
    .btn-danger, sized for an icon-only control. */
@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v118';
+const APP_VERSION = 'v119';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4025,7 +4025,7 @@ function normaliseDB(d){
     delete d.settings.batteryWeights;
   }
   d.convParams=d.convParams||["vermicompost","jivamRoot","biopesticide"];
-  // v8 — unify FC stores. Previously DB.fcs (Settings → Facilitators) and
+  // v8 — unify FC stores. Previously DB.fcs (Settings → Field Coordinators) and
   // DB.fieldCoordinators (Team page) were two separate arrays — adding an FC
   // in one place wouldn't show up in the other. Now we migrate legacy
   // fieldCoordinators rows into DB.fcs and ALIAS the two so any push affects
@@ -5389,7 +5389,7 @@ function filterByCurrentFc(farmers){
   // v9 — hard filtering removed. In a 3-FC team the FCs need to see ALL
   // farmers (forms received, other FCs' assignments, pending applications)
   // to coordinate and back each other up. Users can still narrow the view
-  // by FC via the toolbar dropdown ("All facilitators" → pick a name).
+  // by FC via the toolbar dropdown ("All field coordinators" → pick a name).
   return Array.isArray(farmers) ? farmers : [];
 }
 function paintUserPill(){
@@ -5812,7 +5812,7 @@ window.DISTRICT_TALUKAS = {
 
 const CONV_STATUS={
   enrolled:{label:'Enrolled',cls:'grey'},
-  assigned:{label:'Facilitator Assigned',cls:'blue'},
+  assigned:{label:'FC Assigned',cls:'blue'},
   inProgress:{label:'In progress',cls:'yellow'},
   adopted:{label:'Adopted',cls:'green'},
   red:{label:'Not yet adopting',cls:'red'},
@@ -7021,13 +7021,13 @@ function openConvScoreModal(id){
     + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📅 Visit details</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
     +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Visit date</label><input type="date" id="vsDate" value="' + today + '" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px"></div>'
-    +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Facilitator</label><select id="vsFc" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">' + fcOpts + '</select></div>'
+    +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Field Coordinator</label><select id="vsFc" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">' + fcOpts + '</select></div>'
     +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Next visit (auto +3 months)</label><input type="date" id="vsNext" value="' + nextDef + '" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px"></div>'
     + '</div>'
     // Other-FC name input — hidden by default, revealed when "Other" picked
     + '<div id="vsFcOtherWrap" style="display:none;margin-bottom:8px">'
-    +   '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Other facilitator name</label>'
-    +   '<input type="text" id="vsFcOther" placeholder="Type the facilitator\'s name" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">'
+    +   '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Other field coordinator name</label>'
+    +   '<input type="text" id="vsFcOther" placeholder="Type the field coordinator\'s name" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">'
     + '</div>'
     + '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Observation (optional)</label>'
     + '<textarea id="vsNotes" placeholder="ખેડૂતે શું શરૂ કર્યું, શું જોવા મળ્યું…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;min-height:48px;resize:vertical"></textarea>'
@@ -7817,8 +7817,8 @@ function renderNav(){
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
     {sec:'Farm Locations'},
     {id:'farmMap',label:'Farm locations',ico:I.eye},
-    {sec:'Team'},
-    {id:'fieldCoordinators',label:'Team',ico:I.fc,badge:(DB.fieldCoordinators||[]).length},
+    {sec:'Field Coordinators'},
+    {id:'fieldCoordinators',label:'Field Coordinators',ico:I.fc,badge:(DB.fieldCoordinators||[]).length},
     {sec:'System'},
     {id:'settings',label:'Settings',ico:I.gear},
     {id:'data',label:'Data & Backup',ico:I.download},
@@ -8547,8 +8547,8 @@ const TITLES={
   // v9 audit-fix #21/#22 — fcInbox & fcs are dead routes (no sidebar entry).
   // Kept commented for archaeology; remove if no one objects in a release.
   // fcInbox:['Conversion Program','FC Inbox'],
-  // fcs:['Team','Facilitators'],
-  fieldCoordinators:['Team','Team'],
+  // fcs:['Team','Field Coordinators'],
+  fieldCoordinators:['Field Coordinators','Field Coordinators'],
   settings:['System','Settings'],
   data:['System','Data & Backup'],
   // v8.2 — public + pending queue routes
@@ -8698,7 +8698,7 @@ function viewDashboard(){
 
   const recent3=DB.months.slice(-3);  // 3 most recent months
   // Verifications are done by the Field Coordinators (Ayush / Harsh / Maheshbhai
-  // and any others added in Settings) — not by every facilitator in DB.fcs.
+  // and any others added in Settings) — not by every field coordinator in DB.fcs.
   const fcRows=(DB.fieldCoordinators||[]).map(fc=>{
     // v116 — migration placeholders excluded (see isImportedVisit).
     const perMonth=recent3.map(m=>
@@ -8872,7 +8872,7 @@ function viewDashboard(){
   v.querySelectorAll('tr[data-haat]').forEach(tr=>{
     tr.onclick=()=>{ROUTE='haat';FILTERS.haat={haat:tr.dataset.haat};render();};
   });
-  // FC table rows -> filter Haat Farmers by facilitator
+  // FC table rows -> filter Haat Farmers by field coordinator
   v.querySelectorAll('tr[data-fc]').forEach(tr=>{
     tr.onclick=()=>{ROUTE='haat';FILTERS.haat={fc:tr.dataset.fc};render();};
   });
@@ -8888,7 +8888,7 @@ function viewDashboard(){
 function journeyBoxesHtml(hs, mode, activeStatus){
   const seasonalNote = hs.seasonal
     ? `+ ${hs.seasonal} seasonal re-check${hs.seasonal===1?'':'s'} due`
-    : 'Facilitator has not visited yet';
+    : 'Field Coordinator has not visited yet';
   const steps = [
     {key:'', who:'done', whoLbl:'All', label:'Farmers applied', num:hs.total,
      sub:'Total applications received',
@@ -9121,7 +9121,7 @@ function viewHaat(){
   let h=journeyBoxesHtml(hs,'filter',F.status);
   h+=dateRangePillsHtml(F.dateRange);
 
-  /* ---- secondary filters (district added; facilitator dropped) ---- */
+  /* ---- secondary filters (district added; field coordinator dropped) ---- */
   const haatDistricts=[...new Set(DB.haatFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="fHaat"><option value="">All haats</option>
@@ -9355,7 +9355,7 @@ function exportHaatCSV(rows){
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,
-    certification:f.certification||'',facilitator:(fcById(f.fcId)||{}).name||'',
+    certification:f.certification||'',field_coordinator:(fcById(f.fcId)||{}).name||'',
     haat:f.haat||'',status:(HAAT_STATUS[f.status]||{label:''}).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
@@ -9367,7 +9367,7 @@ function exportConvCSV(rows){
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
-    facilitator:(fcById(f.fcId)||{}).name||'',category:convCategory(f),
+    field_coordinator:(fcById(f.fcId)||{}).name||'',category:convCategory(f),
     last_visit:f.lastVisitAt||'',next_visit_due:f.nextVisitDue||'',
     joined_month_year:farmerJoinedLabel(f),
   }));
@@ -10005,7 +10005,7 @@ function viewConversion(){
     <select id="cDistrict"><option value="">All districts</option>
       ${convDistricts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}
     </select>
-    <select id="cFc"><option value="">All facilitators</option>
+    <select id="cFc"><option value="">All field coordinators</option>
       <option value="__none__" ${F.fc==='__none__'?'selected':''}>— Unassigned —</option>
       ${DB.fcs.map(x=>`<option value="${x.id}" ${F.fc===x.id?'selected':''}>${x.name}</option>`).join('')}
     </select>
@@ -10047,7 +10047,7 @@ function viewConversion(){
     <th style="width:34px"><input type="checkbox" id="archSelAll_conv" ${_convAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>
-    ${th('fcId','Facilitator')}<th>Organic progress</th>
+    ${th('fcId','FC')}<th>Organic progress</th>
     ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}${th('_sortTs','Joined')}<th>Action</th>
     ${ARCH_SHOW.conv?'<th></th>':''}
   </tr></thead><tbody>`;
@@ -11212,7 +11212,7 @@ function openImportFormModal(){
       <thead><tr style="background:var(--panel-2)">
         <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--ink-faint)">Name</th>
         <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--ink-faint)">Village</th>
-        <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--ink-faint)">Facilitator</th>
+        <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--ink-faint)">FC</th>
         <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--ink-faint)">Organic progress</th>
       </tr></thead><tbody>`;
     parsed.forEach(p=>{
@@ -11320,7 +11320,7 @@ function viewFcInbox(){
   h+=`<div class="table-head"><h3>${esc(tileLabel)}</h3>
        <span class="meta">${list.length} farmer${list.length===1?'':'s'}</span></div>`;
   h+=`<div class="table-wrap"><table><thead><tr>
-    <th>Farmer</th><th>Location</th><th>Facilitator</th><th>Last visit</th><th>Next visit</th>
+    <th>Farmer</th><th>Location</th><th>FC</th><th>Last visit</th><th>Next visit</th>
     <th>Organic progress</th><th>Action</th>
   </tr></thead><tbody>`;
   if(!list.length) h+=`<tr><td colspan="7"><div class="empty">${svg(I.check)}<div>Nothing here. Pick another tile.</div></div></td></tr>`;
@@ -11348,7 +11348,7 @@ function viewFcInbox(){
   v.querySelectorAll('[data-act="visit"], [data-act="score"]').forEach(b=>b.onclick=e=>{e.stopPropagation();openConvScoreModal(b.dataset.id);});
 }
 
-/* ============ VIEW: FACILITATORS ============ */
+/* ============ VIEW: FIELD COORDINATORS ============ */
 function viewFCs(){
   const v=$('#view');
   if(!FILTERS.fcs) FILTERS.fcs={district:''};
@@ -11359,14 +11359,14 @@ function viewFCs(){
     <select id="fcDistrictF"><option value="">All districts (${DB.fcs.length})</option>
       ${allDistricts.map(d=>`<option ${FILTERS.fcs.district===d?'selected':''}>${esc(d)}</option>`).join('')}
     </select>
-    <span style="font-size:11.5px;color:var(--ink-faint)">Showing ${rows.length} of ${DB.fcs.length} facilitators</span>
+    <span style="font-size:11.5px;color:var(--ink-faint)">Showing ${rows.length} of ${DB.fcs.length} field coordinators</span>
     <div style="flex:1"></div>
-    <button class="btn btn-primary btn-sm" id="addFc">${svg(I.plus,2.2)}Add facilitator</button>
+    <button class="btn btn-primary btn-sm" id="addFc">${svg(I.plus,2.2)}Add field coordinator</button>
   </div>
   <div class="split c2">`;
   if(!rows.length){
     h+=`<div class="card" style="padding:30px;text-align:center;color:var(--ink-faint);grid-column:1/-1">
-      No facilitators in ${esc(FILTERS.fcs.district||'this view')}. ${FILTERS.fcs.district?'Try clearing the district filter.':''}
+      No field coordinators in ${esc(FILTERS.fcs.district||'this view')}. ${FILTERS.fcs.district?'Try clearing the district filter.':''}
     </div>`;
   }
   rows.forEach(fc=>{
@@ -11384,8 +11384,8 @@ function viewFCs(){
     const mx=Math.max(1,...heat.map(x=>x.n));
     h+=`<div class="card" style="padding:16px 18px;position:relative">
       <div style="position:absolute;top:11px;right:11px;display:flex;gap:4px">
-        <button class="btn-icon" data-edit-fc="${fc.id}" title="Edit facilitator" aria-label="Edit facilitator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);transition:.13s">${svg(I.edit,2)}</button>
-        <button class="btn-icon-danger" data-del-fc="${fc.id}" title="Delete facilitator" aria-label="Delete facilitator">${svg(I.trash,2)}</button>
+        <button class="btn-icon" data-edit-fc="${fc.id}" title="Edit field coordinator" aria-label="Edit field coordinator" style="background:none;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-soft);transition:.13s">${svg(I.edit,2)}</button>
+        <button class="btn-icon-danger" data-del-fc="${fc.id}" title="Delete field coordinator" aria-label="Delete field coordinator">${svg(I.trash,2)}</button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-right:74px">
         <div class="fc-avatar" style="--accent:${ac}">${initials(fc.name)}</div>
@@ -11397,7 +11397,7 @@ function viewFCs(){
       <div class="detail-grid" style="margin-bottom:14px">
         <div class="detail-cell"><div class="k">Region</div><div class="v">${esc(fc.district)}, ${esc(fc.state)}</div></div>
         <div class="detail-cell"><div class="k">Partner</div><div class="v">${esc(fc.partner)}</div></div>
-        <div class="detail-cell" data-go-haat="${fc.id}" style="cursor:pointer" title="See the Haat farmers in this facilitator's territory"><div class="k">Farmers in territory</div><div class="v" style="color:var(--accent)">${assigned} <span style="font-size:10px">→</span></div></div>
+        <div class="detail-cell" data-go-haat="${fc.id}" style="cursor:pointer" title="See the Haat farmers in this field coordinator's territory"><div class="k">Farmers in territory</div><div class="v" style="color:var(--accent)">${assigned} <span style="font-size:10px">→</span></div></div>
         <div class="detail-cell"><div class="k">Onboarded</div><div class="v">${onb}</div></div>
       </div>
       <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Visits per month — ${hv+cv} total</div>
@@ -12217,7 +12217,7 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres} acres</div></div>
     <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic} yrs</div></div>
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
-    <div class="detail-cell"><div class="k">Facilitator</div><div class="v">${fc?esc(fc.name):'—'}</div></div>
+    <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'—'}</div></div>
     <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
@@ -12244,7 +12244,7 @@ function openHaatDrawer(id){
   // visit timeline
   h+=`<div class="subhead">Farm verification history (${f.visits.length})</div>`;
   if(!f.visits.length){
-    h+=`<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No farm visits recorded yet. The facilitator should verify this farm before onboarding.</div>`;
+    h+=`<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No farm visits recorded yet. The field coordinator should verify this farm before onboarding.</div>`;
   }else{
     h+='<div class="timeline">';
     const VERIF_STATE={verified:{label:'✓ Verified',cls:'green'},partial:{label:'◐ Partial',cls:'yellow'},not_verified:{label:'✗ Not verified',cls:'red'},na:{label:'— N/A',cls:'grey'},not_specified:{label:'—',cls:'grey'}};
@@ -12386,7 +12386,7 @@ function openConvDrawer(id){
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>
-    <div class="detail-cell"><div class="k">Facilitator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
+    <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell"><div class="k">Last visit</div><div class="v">${f.lastVisitAt?fmtDate(f.lastVisitAt):'—'}</div></div>
     <div class="detail-cell"><div class="k">Next visit due</div><div class="v">${f.nextVisitDue?fmtDate(f.nextVisitDue):'—'}</div></div>
@@ -12404,7 +12404,7 @@ function openConvDrawer(id){
   // removed — the 100-mark framework above is the canonical scoring view now.
   h+=`<div class="subhead">FC visit log (${visits.length})</div>`;
   if(!visits.length){
-    h+=`<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No facilitator visits yet.</div>`;
+    h+=`<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No field coordinator visits yet.</div>`;
   }else{
     h+='<div class="timeline">';
     visits.slice().reverse().forEach(o=>{
@@ -12549,7 +12549,7 @@ function openDecisionModal(id){
   // at least one verification visit.
   if(!Array.isArray(f.visits) || !f.visits.length){
     const body=`<div class="hint" style="margin-bottom:4px">
-      <b>${esc(f.name)}</b> has not been verified yet. A facilitator must complete
+      <b>${esc(f.name)}</b> has not been verified yet. A field coordinator must complete
       the farm verification form before this farmer can be onboarded, put on hold, or rejected.</div>`;
     modalShell('Verification required',body,
       `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
@@ -12833,13 +12833,13 @@ function openAssignHaatModal(id){
 function openAssignFcModal(id){
   const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
   const body=`<div class="hint" style="margin-bottom:12px"><b>${esc(f.name)}</b> · ${esc(f.village)}, ${esc(talukaDisplayName(f.taluka,f.district)||'')}${f.taluka?', ':''}${esc(f.district)}</div>`
-    +fld('Assign facilitator',sel('afFc',[['','— select facilitator —'],...DB.fcs.map(x=>[x.id,x.name+' ('+x.district+')'])],f.fcId||currentFcId()||''),true);
-  modalShell('Assign facilitator — '+esc(f.name),body,
+    +fld('Assign field coordinator',sel('afFc',[['','— select field coordinator —'],...DB.fcs.map(x=>[x.id,x.name+' ('+x.district+')'])],f.fcId||currentFcId()||''),true);
+  modalShell('Assign field coordinator — '+esc(f.name),body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="afSave">${svg(I.check)}Assign</button>`);
   $('#afSave').onclick=async()=>{
     const fcId=$('#afFc').value;
-    if(!fcId){toast('Pick a facilitator first');return;}
+    if(!fcId){toast('Pick a field coordinator first');return;}
     f.fcId=fcId; f.assignedAt=todayISO();
     if(!f.stage || f.stage==='enrolled') f.stage='assigned';
     if(!f.nextVisitDue) f.nextVisitDue=addDaysISO(todayISO(),30);
@@ -12851,7 +12851,7 @@ function openAssignFcModal(id){
     logActivity('status',`<b>${esc(f.name)}</b> (${esc(f.id)}) assigned to ${esc((fcById(fcId)||{}).name||'FC')}`);
     await saveDB();closeModal();render();
     if($('#drawer').classList.contains('show'))openConvDrawer(id);
-    toast('Facilitator assigned');
+    toast('Field Coordinator assigned');
   };
 }
 
@@ -12860,7 +12860,7 @@ function openBulkAssignModal(){
   const unassigned=DB.convFarmers.filter(f=>!f.fcId);
   if(!unassigned.length){
     modalShell('Bulk assign FC',
-      `<div class="hint">All conversion farmers already have a facilitator assigned.</div>`,
+      `<div class="hint">All conversion farmers already have a field coordinator assigned.</div>`,
       `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
     return;
   }
@@ -12871,14 +12871,14 @@ function openBulkAssignModal(){
   });
   const opts=Object.keys(byTaluka).sort();
   const body=`<div class="hint" style="margin-bottom:12px">
-      <b>${unassigned.length}</b> conversion farmers have no facilitator. Pick a taluka and the facilitator who covers it — every unassigned farmer in that taluka will be assigned to that facilitator.
+      <b>${unassigned.length}</b> conversion farmers have no field coordinator. Pick a taluka and the field coordinator who covers it — every unassigned farmer in that taluka will be assigned to that field coordinator.
     </div>`
     +`<div class="field-row">
       ${fld('Taluka',sel('baTaluka',opts.map(t=>[t,t+' ('+byTaluka[t]+')']),opts[0]),true)}
-      ${fld('Assign facilitator',sel('baFc',[['','— select facilitator —'],...DB.fcs.map(x=>[x.id,x.name])]),true)}
+      ${fld('Assign field coordinator',sel('baFc',[['','— select field coordinator —'],...DB.fcs.map(x=>[x.id,x.name])]),true)}
     </div>`
     +`<div class="hint" id="baPreview" style="margin-top:4px"></div>`;
-  modalShell('Bulk assign facilitator by taluka',body,
+  modalShell('Bulk assign field coordinator by taluka',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="baGo">${svg(I.check)}Assign all in taluka</button>`);
   function refreshPreview(){
@@ -12920,15 +12920,15 @@ function openConvStatusModal(id){
   migrateConvFarmer(f);
   const sug=suggestConvStage(f);
   const opts=[
-    {v:'enrolled',  label:'⚪ Enrolled',       desc:'Form filled, no facilitator assigned yet.'},
-    {v:'assigned',  label:'🔵 Facilitator Assigned',    desc:'Facilitator owns farmer, first visit due.'},
-    {v:'inProgress',label:'🟡 In progress',    desc:'Facilitator visiting, practices being adopted.'},
+    {v:'enrolled',  label:'⚪ Enrolled',       desc:'Form filled, no field coordinator assigned yet.'},
+    {v:'assigned',  label:'🔵 FC Assigned',    desc:'Field Coordinator owns farmer, first visit due.'},
+    {v:'inProgress',label:'🟡 In progress',    desc:'Field Coordinator visiting, practices being adopted.'},
     {v:'adopted',   label:'🟢 Adopted',        desc:'Chemical-free + ≥4 practices adopted. Eligible for Haat.'},
   ];
   const visits=(f.visits&&f.visits.length)?f.visits:(f.observations||[]);
   const body=`<div class="hint" style="margin-bottom:14px">
       Suggested by the system: <b>${esc(CONV_STATUS[sug].label)}</b>.
-      ${visits.length?visits.length+' facilitator visit'+(visits.length===1?'':'s')+' on record.':'No facilitator visits on record yet.'}
+      ${visits.length?visits.length+' field coordinator visit'+(visits.length===1?'':'s')+' on record.':'No field coordinator visits on record yet.'}
     </div>
     <div class="status-picker" id="statusPick">
       ${opts.map(o=>`<button class="status-opt ${f.stage===o.v?'on':''}" data-v="${o.v}">
@@ -12994,7 +12994,7 @@ function openFarmerModal(program,id){
   </div>
   <div class="field-row">
     ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
-    }${program==='haat'?fld('Facilitator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId),true):''}
+    }${program==='haat'?fld('Field Coordinator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId),true):''}
   </div>`;
   if(program==='haat'){
     body+=`<div class="field-row">
@@ -13012,7 +13012,7 @@ function openFarmerModal(program,id){
   if(program==='conv'){
     body+=`<div class="field-row">
       ${fld('Next visit due',`<input type="date" id="ffNext" value="${esc(f.nextVisitDue||'')}">`)}
-      ${fld('Facilitator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId))}
+      ${fld('Field Coordinator',sel('ffFc',DB.fcs.map(x=>[x.id,x.name]),f.fcId))}
     </div>`;
   }
 
@@ -13084,7 +13084,7 @@ function openFarmerModal(program,id){
         const newName = newFcId ? (((DB.fcs||[]).find(x=>x.id===newFcId)||{}).name || newFcId) : 'no FC';
         const visitCount = (f.visits||[]).length;
         const planCount  = (DB.verificationPlans||[]).filter(p => p.farmerId===f.id && (!p.status||p.status==='planned')).length;
-        const msg = `Change Facilitator from ${oldName} to ${newName}?\n\n` +
+        const msg = `Change Field Coordinator from ${oldName} to ${newName}?\n\n` +
           (visitCount?`• ${visitCount} visit${visitCount===1?'':'s'} stay attributed to ${oldName}\n`:'') +
           (planCount?`• ${planCount} active plan${planCount===1?'':'s'} owned by ${oldName} will become orphan\n`:'') +
           `\nProceed?`;
@@ -13159,7 +13159,7 @@ function openFarmerModal(program,id){
   };
 }
 
-/* ============ MODAL: ADD / EDIT FACILITATOR ============ */
+/* ============ MODAL: ADD / EDIT FIELD COORDINATOR ============ */
 function openFcModal(id){
   const editing = !!id;
   const f = editing ? DB.fcs.find(x=>x.id===id) : null;
@@ -13169,7 +13169,7 @@ function openFcModal(id){
   const cur = editing ? f : {state:stateOpts[0]};
   const distOpts = DB.states[cur.state||stateOpts[0]];
   const body=`<div class="field-row">
-    ${fld('Facilitator name',`<input id="fcName" placeholder="Full name" value="${esc(cur.name||'')}">`,true)}
+    ${fld('Field Coordinator name',`<input id="fcName" placeholder="Full name" value="${esc(cur.name||'')}">`,true)}
     ${fld('Phone',`<input id="fcPhone" type="tel" inputmode="numeric" placeholder="10-digit mobile" value="${esc(cur.phone||'')}">`,true)}
   </div>
   <div class="field-row">
@@ -13177,9 +13177,9 @@ function openFcModal(id){
     ${fld('District',sel('fcDist',distOpts,cur.district),true)}
   </div>
   ${fld('Partner organisation',sel('fcPartner',partnerOpts,cur.partner))}`;
-  modalShell(editing?'Edit facilitator — '+esc(f.name):'Add facilitator',body,
+  modalShell(editing?'Edit field coordinator — '+esc(f.name):'Add field coordinator',body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-primary" id="saveFc">${svg(I.check)}${editing?'Save changes':'Add facilitator'}</button>`);
+     <button class="btn btn-primary" id="saveFc">${svg(I.check)}${editing?'Save changes':'Add field coordinator'}</button>`);
   $('#fcState').onchange=()=>{$('#fcDist').innerHTML=DB.states[$('#fcState').value].map(d=>`<option>${esc(d)}</option>`).join('');};
   $('#saveFc').onclick=async()=>{
     const name=$('#fcName').value.trim();
@@ -13191,13 +13191,13 @@ function openFcModal(id){
     };
     if(editing){
       Object.assign(f,data);
-      logActivity('edit',`Facilitator updated — <b>${esc(name)}</b>`);
+      logActivity('edit',`Field Coordinator updated — <b>${esc(name)}</b>`);
     } else {
       DB.fcs.push({id:uid('FC'),...data});
-      logActivity('enroll',`New facilitator added — <b>${esc(name)}</b>`);
+      logActivity('enroll',`New field coordinator added — <b>${esc(name)}</b>`);
     }
     await saveDB();closeModal();render();
-    toast(editing?'Facilitator updated':'Facilitator added');
+    toast(editing?'Field Coordinator updated':'Field Coordinator added');
   };
 }
 async function deleteFacilitator(id){
@@ -13206,8 +13206,8 @@ async function deleteFacilitator(id){
   const convLinked=DB.convFarmers.filter(x=>x.fcId===id).length;
   const planLinked=(DB.verificationPlans||[]).filter(p => p.fcId===id && (!p.status||p.status==='planned')).length;
   const total=haatLinked+convLinked;
-  let msg=`Remove facilitator "${f.name}"?`;
-  if(total) msg+=`\n\n${total} farmer${total===1?'':'s'} (${haatLinked} Haat, ${convLinked} Conversion) currently report to this facilitator. They will become unassigned.`;
+  let msg=`Remove field coordinator "${f.name}"?`;
+  if(total) msg+=`\n\n${total} farmer${total===1?'':'s'} (${haatLinked} Haat, ${convLinked} Conversion) currently report to this field coordinator. They will become unassigned.`;
   if(planLinked) msg+=`\n\n${planLinked} active plan${planLinked===1?'':'s'} owned by ${f.name} will be auto-cancelled.`;
   msg += `\n\nNote: ${f.name}'s name will still appear on past visits and decisions for the audit trail.`;
   if(!confirm(msg)) return;
@@ -13220,7 +13220,7 @@ async function deleteFacilitator(id){
       p.status = 'cancelled';
       p.statusChangedAt = new Date().toISOString();
       p.statusChangedBy = 'auto: FC removed';
-      p.noShowReason = 'auto: facilitator removed';
+      p.noShowReason = 'auto: field coordinator removed';
     }
   });
   // v9 process-fix #51 — SOFT delete the FC: mark deleted instead of dropping
@@ -13229,9 +13229,9 @@ async function deleteFacilitator(id){
   f.deleted = true;
   f.deletedAt = new Date().toISOString();
   f.deletedBy = actor().name;
-  logActivity('edit',`Facilitator removed — <b>${esc(f.name)}</b>${total?' · '+total+' farmer'+(total===1?'':'s')+' unassigned':''}${planLinked?' · '+planLinked+' plan'+(planLinked===1?'':'s')+' auto-cancelled':''}`);
+  logActivity('edit',`Field Coordinator removed — <b>${esc(f.name)}</b>${total?' · '+total+' farmer'+(total===1?'':'s')+' unassigned':''}${planLinked?' · '+planLinked+' plan'+(planLinked===1?'':'s')+' auto-cancelled':''}`);
   await saveDB(); render();
-  toast('Facilitator removed');
+  toast('Field Coordinator removed');
 }
 
 /* ============ VIEW: FIELD COORDINATORS ============ */
@@ -13565,7 +13565,7 @@ function openCompareFormsModal(id){
    Sections (small in-page tabs):
      1) Organic practices — re-weight the conversion battery
      2) Manage Haats — add / remove markets
-     3) Manage Facilitators — same data, table-style editor
+     3) Manage Field Coordinators — same data, table-style editor
      4) Roles — basic role-picker (Admin / Manager / FC / Read-only) */
 function viewSettings(){
   const v=$('#view');
@@ -13583,7 +13583,7 @@ function viewSettings(){
       <div class="tab ${cur==='scoring'?'on':''}" data-st="scoring">🌱 Organic practices &amp; scoring</div>
       <div class="tab ${cur==='questions'?'on':''}" data-st="questions">📋 Question Manager</div>
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
-      <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Facilitators</div>
+      <div class="tab ${cur==='facs'?'on':''}" data-st="facs">👥 Manage Field Coordinators</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
       <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">🔁 Duplicates</div>
@@ -13957,8 +13957,8 @@ function viewSettings(){
   if(STab==='facs'){
     let h=tabBar();
     h+=`<div class="card" style="padding:18px 20px;max-width:1000px">
-      <div class="ct" style="font-size:14px;font-weight:700">Facilitators</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">The field-level facilitators who help farmers enrol and run day-to-day work. Same data as the Team page, simplified.</div>
+      <div class="ct" style="font-size:14px;font-weight:700">Field Coordinators</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">The Sristi Field Coordinators (FCs) who visit farms, run verifications and manage day-to-day field work. Same list as the Field Coordinators page, simplified.</div>
       <div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>District</th><th>Partner</th><th>Farmers</th><th style="width:90px">Actions</th></tr></thead><tbody>`;
     DB.fcs.forEach(fc=>{
       const assigned=DB.haatFarmers.filter(f=>f.fcId===fc.id).length+DB.convFarmers.filter(f=>f.fcId===fc.id).length;
@@ -13974,14 +13974,14 @@ function viewSettings(){
         </td></tr>`;
     });
     h+=`</tbody></table></div>
-      <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="addFcSet">${svg(I.plus,2.2)}Add facilitator</button></div>
+      <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="addFcSet">${svg(I.plus,2.2)}Add field coordinator</button></div>
     </div>`;
     v.innerHTML=h;
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     $('#addFcSet').onclick=()=>openFcModal();
     v.querySelectorAll('[data-edit-fc]').forEach(b=>b.onclick=()=>openFcModal(b.dataset.editFc));
     // v117 — this used to HARD-delete the record (DB.fcs.filter(...)) with only
-    // a bare "Delete facilitator?" prompt: it did not unassign the farmers who
+    // a bare "Delete field coordinator?" prompt: it did not unassign the farmers who
     // reported to them, did not cancel their planned visits, and destroyed the
     // record that past visits attribute to — leaving farmers pointing at a
     // coordinator who no longer existed. The other two screens that delete the
@@ -14444,7 +14444,7 @@ function viewData(){
       <div class="detail-grid">
         <div class="detail-cell"><div class="k">Haat farmers</div><div class="v">${DB.haatFarmers.length}</div></div>
         <div class="detail-cell"><div class="k">Conversion farmers</div><div class="v">${DB.convFarmers.length}</div></div>
-        <div class="detail-cell"><div class="k">Facilitators</div><div class="v">${DB.fcs.length}</div></div>
+        <div class="detail-cell"><div class="k">Field Coordinators</div><div class="v">${DB.fcs.length}</div></div>
         <div class="detail-cell"><div class="k">Total records</div><div class="v">${total}</div></div>
       </div>
     </div>
@@ -14474,7 +14474,7 @@ function viewData(){
   $('#expHaat').onclick=()=>download('haat-farmers.csv',toCSV(DB.haatFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,certification:f.certification||'',
-    facilitator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',
+    field_coordinator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
     status:(HAAT_STATUS[f.status]||{label:''}).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
@@ -14482,7 +14482,7 @@ function viewData(){
   }))));
   $('#expConv').onclick=()=>download('conversion-farmers.csv',toCSV(DB.convFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
-    crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,facilitator:(fcById(f.fcId)||{}).name||'',
+    crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,field_coordinator:(fcById(f.fcId)||{}).name||'',
     // v8 bug fix: transitionStatus may be undefined for never-scored farmers
     status:(CONV_STATUS[f.transitionStatus]||{label:''}).label,
     observations:(f.observations||[]).length,
@@ -14559,7 +14559,7 @@ function render(){
       try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
       SESSION = null;
       location.hash = '';
-      if(typeof toast === 'function') toast('Your facilitator profile was removed. Please sign in again.');
+      if(typeof toast === 'function') toast('Your field coordinator profile was removed. Please sign in again.');
       enterPublicMode('public_landing');
       return;
     }
@@ -16633,7 +16633,7 @@ function reconcileFcsFromUsers() {
   // `d.fieldCoordinators = d.fcs`), but assigning a NEW array above silently
   // broke that link: DB.fcs became the rebuilt list while DB.fieldCoordinators
   // still pointed at the OLD one. The Team screen reads fieldCoordinators and
-  // the Facilitators screen reads fcs, so the two screens showed DIFFERENT
+  // the Field Coordinators screen reads fcs, so the two screens showed DIFFERENT
   // people until the next page load — e.g. a coordinator removed in Settings
   // disappeared from one screen but stayed on the other. Re-point the alias.
   DB.fieldCoordinators = DB.fcs;
@@ -17359,7 +17359,7 @@ function viewPendingEnrolments(){
   //   🟡 NEW  = no FC assigned AND no visits yet AND no score
   //   🟢 ACTION TAKEN = FC assigned, OR visits exist, OR conversion score saved,
   //                     OR haat decision recorded
-  // v9 process-fix M5 — Action Taken = something a FACILITATOR did. Admin
+  // v9 process-fix M5 — Action Taken = something a FIELD COORDINATOR did. Admin
   // edits, status flips without visits, etc. should NOT flip the bucket.
   // The only real signals: FC assigned, visit logged, score saved, or
   // conversion-score breakdown filled. Status alone (which can be touched by

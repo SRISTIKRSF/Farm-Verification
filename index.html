@@ -3114,7 +3114,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v110';
+const APP_VERSION = 'v111';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16332,6 +16332,75 @@ async function verifyCredentials(id, password) {
   return null;
 }
 
+/* v111 — mandatory password change on next sign-in.
+   Set mustChangePassword:true on a config/users record and the next successful
+   sign-in is intercepted: the account gets NO session until a new password has
+   actually been written. Used for admin password recovery, and for the coming
+   FC password rotation (set the flag, hand out a one-time password, each FC
+   picks their own on next login — no need to collect or distribute finals).
+   Returns true only when the change was persisted. */
+async function forcePasswordChangeModal(user){
+  return new Promise(resolve => {
+    const body = `
+      <div class="login-modal-wrap">
+        <div class="lm-hint">
+          <b>પાસવર્ડ બદલવો જરૂરી છે / Password change required</b><br>
+          <span style="font-size:11.5px;color:#929fb5">This is a one-time password. Choose your own to continue.</span>
+        </div>
+        <div id="pcErr"></div>
+        <div class="lm-fld">
+          <label>New password</label>
+          <input id="pcNew" type="password" autocomplete="new-password" placeholder="At least 10 characters">
+        </div>
+        <div class="lm-fld">
+          <label>Confirm new password</label>
+          <input id="pcNew2" type="password" autocomplete="new-password" placeholder="Type it again">
+        </div>
+        <button class="lm-submit" id="pcSave">Save new password</button>
+      </div>`;
+    modalShell('Set a new password', body,
+      '<button class="btn btn-ghost" id="pcCancel">Cancel</button>');
+    const fail = m => { const e=$('#pcErr'); if(e) e.innerHTML = '<div class="lm-err">'+esc(m)+'</div>'; };
+    const cancelBtn = $('#pcCancel');
+    if(cancelBtn) cancelBtn.onclick = () => { closeModal(); resolve(false); };
+    $('#pcSave').onclick = async () => {
+      const a = $('#pcNew').value || '', b = $('#pcNew2').value || '';
+      if(a.length < 10) return fail('Please use at least 10 characters. Stored password hashes are readable until the database rules are tightened, so short passwords can be cracked offline.');
+      if(a !== b)       return fail('The two passwords do not match.');
+      if(!(FB && FB.ready && navigator.onLine)) return fail('You must be online to change the password. Reconnect and try again.');
+      const btn = $('#pcSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      try{
+        // Resolve this account's key defensively instead of assuming 'u_'+id.
+        const snap = await fbRef('config/users').get();
+        const all  = snap.exists() ? snap.val() : {};
+        const key  = Object.keys(all).find(k => all[k] && all[k].id === user.id);
+        if(!key) throw new Error('account not found in config/users');
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(salt, a);
+        await fbRef('config/users/'+key).update({
+          salt, passwordHash,
+          mustChangePassword: null,          // null deletes the flag
+          passwordChangedAt: new Date().toISOString(),
+        });
+        // Keep the in-memory list in step so the session continues cleanly.
+        const local = getUsersList().find(u => u.id === user.id);
+        if(local){ local.salt = salt; local.passwordHash = passwordHash; delete local.mustChangePassword; }
+        saveUsersCache(getUsersList());
+        closeModal();
+        resolve(true);
+      }catch(e){
+        btn.disabled = false; btn.textContent = 'Save new password';
+        fail('Could not save the new password: ' + (e && e.message ? e.message : e));
+      }
+    };
+    ['pcNew','pcNew2'].forEach(id => {
+      const el = $('#'+id);
+      if(el) el.addEventListener('keypress', e => { if(e.key === 'Enter'){ e.preventDefault(); $('#pcSave').click(); } });
+    });
+    setTimeout(() => { const el = $('#pcNew'); if(el) el.focus(); }, 60);
+  });
+}
+
 function subscribeUsers() {
   if (!FB || !FB.ready) return;
   fbRef('config/users').on('value', snap => {
@@ -16601,6 +16670,17 @@ function openLoginModal(){
       $('#lmPw').value = '';
       $('#lmPw').focus();
       return;
+    }
+    // v111 — if this account is flagged for a mandatory password change, no
+    // session is granted until a new password has actually been persisted.
+    // Deliberately BEFORE SESSION is set, so a cancelled change leaves the
+    // user fully signed out rather than half-authenticated.
+    if(authUser.mustChangePassword){
+      const changed = await forcePasswordChangeModal(authUser);
+      if(!changed){
+        toast('Password was not changed — you are not signed in.', 'error');
+        return;
+      }
     }
     // Success — set session and flip to admin mode.
     SESSION = { role: authUser.role, userId: authUser.fcCode || '', userName: authUser.name };

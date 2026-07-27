@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v121';
+const APP_VERSION = 'v122';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4310,10 +4310,21 @@ function _activeSyncKeys(){
   }
   return LIVE_SYNC_KEYS;
 }
+/* v122 — which collections this page has actually subscribed to.
+   attachLiveListener() used to run ONCE, at boot. On the public landing page
+   _activeSyncKeys() deliberately narrows the subscription to meta/fcs/
+   fieldCoordinators (the v113 leak fix), so a visitor who then SIGNED IN got
+   PUBLIC_MODE=false but no farmer listeners — the dashboard sat at 0/0/0 until
+   a full reload happened to boot straight into admin mode. Tracking what is
+   attached lets enterAdminMode() call this again to pick up only the
+   collections it still needs, without double-subscribing the ones it has. */
+const _attachedKeys = new Set();
 function attachLiveListener(){
   if(!FB.ready)return;
-  const activeKeys = _activeSyncKeys();
+  const activeKeys = _activeSyncKeys().filter(k => !_attachedKeys.has(k));
+  if(!activeKeys.length) return;
   activeKeys.forEach(key => {
+    _attachedKeys.add(key);
     const queries=_scopedFcQueries(key);
     if(!queries){
       fbRef(key).on('value', snap => {
@@ -4329,7 +4340,7 @@ function attachLiveListener(){
         // Public mode subscribes to a subset, so comparing against
         // LIVE_SYNC_KEYS.length would never be satisfied and the first
         // diff/swap would never run.
-        if(_liveSnapshotSeen.size < activeKeys.length) return;
+        if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
         _processLiveSnapshot();
       });
       return;
@@ -4352,7 +4363,7 @@ function attachLiveListener(){
         // Public mode subscribes to a subset, so comparing against
         // LIVE_SYNC_KEYS.length would never be satisfied and the first
         // diff/swap would never run.
-        if(_liveSnapshotSeen.size < activeKeys.length) return;
+        if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
         _processLiveSnapshot();
       });
     });
@@ -8590,7 +8601,7 @@ function viewFcProfile(){
         </div>
       </div>
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
-        <button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';toast('Signed out');">Sign out</button>
+        <button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';location.reload();">Sign out</button>
       </div>
     </div>`;
 }
@@ -16013,8 +16024,13 @@ $('#quickAdd').onclick=quickAdd;
 const _userPill = document.getElementById('userPill');
 if(_userPill) _userPill.onclick = function(){
   if(!confirm('Sign out and return to the login page?')) return;
-  try { sessionStorage.removeItem('sristi_session'); } catch(e){}
-  try { localStorage.removeItem('sristi_session'); } catch(e){}
+  // v122 — this cleared 'sristi_session', which is not the key the session is
+  // stored under (USER_SESSION_KEY = 'sristi_user_session_v1'). So the main
+  // Sign out button removed nothing, reloaded, found the session still there
+  // and signed the user straight back in — you could not log out of a shared
+  // phone at all. Clear the real key.
+  try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e){}
+  try { localStorage.removeItem(USER_SESSION_KEY); } catch(e){}
   SESSION = null;
   location.hash = '#login';
   location.reload();
@@ -16078,6 +16094,14 @@ function enterAdminMode(){
     return;
   }
   PUBLIC_MODE = false;
+  // v122 — now that this is a signed-in session, subscribe to everything the
+  // public page was deliberately not allowed to see. Without this the farmer
+  // collections were never requested and every dashboard tile read 0 until
+  // the user hard-refreshed. Safe to call repeatedly: already-attached
+  // collections are skipped. It also has to happen AFTER PUBLIC_MODE=false,
+  // because _activeSyncKeys() reads that flag, and after SESSION is set, so
+  // an FC gets their district-scoped queries rather than unscoped ones.
+  attachLiveListener();
   if(location.hash !== '#admin') location.hash = '#admin';
   document.body.classList.remove('public-mode');
   // v9 Batch 4 — FC users land on the Verification Queue (their primary work

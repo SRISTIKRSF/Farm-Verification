@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v124';
+const APP_VERSION = 'v125';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4025,6 +4025,7 @@ function normaliseDB(d){
     delete d.settings.batteryWeights;
   }
   d.convParams=d.convParams||["vermicompost","jivamRoot","biopesticide"];
+  d.verifIndex=(d.verifIndex && typeof d.verifIndex==='object')?d.verifIndex:{};   // v125
   // v8 — unify FC stores. Previously DB.fcs (Settings → Field Coordinators) and
   // DB.fieldCoordinators (Team page) were two separate arrays — adding an FC
   // in one place wouldn't show up in the other. Now we migrate legacy
@@ -4161,6 +4162,8 @@ function cloudToDB(c){
     pendingEnrolments:mapToArr(c.pendingEnrolments),
     // v9 Batch 5: shared verification plans (cross-FC visibility).
     verificationPlans:mapToArr(c.verificationPlans),
+    // v125 — kept as a plain id->timestamp map, not an array.
+    verifIndex:(c.verifIndex && typeof c.verifIndex==='object') ? c.verifIndex : {},
   });
 }
 let _quotaWarned=false;
@@ -4251,7 +4254,16 @@ async function preCleanBlobsFromRTDB(){
    in saveDB(). A record that changes only refires ITS OWN collection's
    listener; the others keep their
    last-known value, so no other collection is redundantly re-fetched either. */
-const LIVE_SYNC_KEYS = ['haatFarmers','convFarmers','fcs','fieldCoordinators','meta','activity','incomeRecords','pendingEnrolments','verificationPlans'];
+/* v125 — verifIndex: farmerId -> ISO timestamp of the FC's submitted
+   verification. Deliberately OUTSIDE SYNC_COLS so saveDB()'s diff can never
+   delete an entry; it is written and removed by targeted writes only.
+   WHY IT EXISTS: "Waiting for approval" counted farmers whose own record said
+   stage='verified'. On 24 July a farmer record was overwritten, that field
+   reverted, and a completed verification silently vanished from the queue —
+   the form was safe the whole time, the rollup was not. This index survives a
+   record overwrite, so finished work can no longer disappear from the queue.
+   It stays small by design: an entry is removed the moment an admin decides. */
+const LIVE_SYNC_KEYS = ['haatFarmers','convFarmers','fcs','fieldCoordinators','meta','activity','incomeRecords','pendingEnrolments','verificationPlans','verifIndex'];
 let _liveSnapshot = {};
 const _liveSnapshotSeen = new Set();
 /* v99 — district-scoped FC sync. haatFarmers/convFarmers are ~95% of every
@@ -4376,8 +4388,8 @@ function _processLiveSnapshot(){
     // the UI on remote devices.
     // v11 — both sides stringified with _stripReplacer so locally-attached
     // on-demand forms don't make the comparison permanently unequal.
-    const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[]);
-    const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[]);
+    const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[])+JSON.stringify(cloud.verifIndex||{});
+    const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[])+JSON.stringify(DB.verifIndex||{});
     if(incoming!==current){
       // For each record this session JUST touched, keep the local copy until
       // the protection expires (5 s). All other records take the cloud value.
@@ -6732,6 +6744,29 @@ function _excludeSeeds(arr){
   if(DB.settings && DB.settings.showSeededInStats) return arr;
   return (arr||[]).filter(x => !_isSeededRecord(x));
 }
+/* v125 — is this farmer waiting for an admin decision?
+   TWO signals, OR'd on purpose: the durable index AND the farmer's own stage.
+   Either alone can go missing — an overwrite wipes the stage, and records
+   verified before v125 have no index entry — but this combination can only
+   ever restore something that was lost, never hide something real. */
+const POST_DECISION_STAGES = ['onboarded','decided','verified-cleared'];
+function isAwaitingApproval(f){
+  if(!f || f._archived) return false;
+  if(POST_DECISION_STAGES.includes(f.stage)) return false;
+  return !!((DB.verifIndex||{})[f.id]) || f.stage === 'verified';
+}
+/* Written the moment an FC submits, removed the moment an admin decides. */
+function markVerificationSubmitted(farmerId, whenISO){
+  if(!farmerId) return;
+  DB.verifIndex = DB.verifIndex || {};
+  DB.verifIndex[farmerId] = whenISO || new Date().toISOString();
+  if(FB && FB.ready){ fbRef('verifIndex/'+farmerId).set(DB.verifIndex[farmerId]).catch(()=>{}); }
+}
+function clearVerificationSubmitted(farmerId){
+  if(!farmerId) return;
+  if(DB.verifIndex) delete DB.verifIndex[farmerId];
+  if(FB && FB.ready){ fbRef('verifIndex/'+farmerId).remove().catch(()=>{}); }
+}
 function haatStats(){
   // v8 — FC users see only their own farmers in the dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
@@ -6739,7 +6774,8 @@ function haatStats(){
   return{
     total:f.length,
     pending:f.filter(x=>x.stage==='verification_pending').length,
-    verified:f.filter(x=>x.stage==='verified').length,
+    // v125 — was x.stage==='verified', which a record overwrite silently reset.
+    verified:f.filter(isAwaitingApproval).length,
     green:f.filter(x=>x.status==='green').length,
     yellow:f.filter(x=>x.status==='yellow').length,
     red:f.filter(x=>x.status==='red').length,
@@ -9180,7 +9216,7 @@ async function deleteFarmersPermanently(p, ids){
   // v110 — free their phone numbers too. Archiving already released the index
   // entry, but re-claim/restore cycles mean this is not guaranteed, and leaving
   // an orphan entry pointing at a deleted id would block a genuine re-enrolment.
-  store.filter(f => removable.has(f.id)).forEach(f => releasePhoneIndex(f.phone));
+  store.filter(f => removable.has(f.id)).forEach(f => { releasePhoneIndex(f.phone); clearVerificationSubmitted(f.id); });
   const kept = store.filter(f => !removable.has(f.id));
   if(p==='haat') DB.haatFarmers = kept; else DB.convFarmers = kept;
   removable.forEach(id => markLocalTouch(_archCol(p), id));   // shield the deletion from the live listener
@@ -12741,6 +12777,7 @@ function _openDecisionInner(id){
       f.decisionNote=note;
       f.lastSeasonalReviewAt=today;
       f.stage='verified-cleared';   // marker so the queue moves it out
+      clearVerificationSubmitted(f.id);   // v125 — decided, so leave the queue
       // v9 Batch 3 — record who made the seasonal decision.
       const aS = actor();
       f.seasonalDecisionBy   = aS.name;
@@ -12863,6 +12900,7 @@ function _openDecisionInner(id){
       });
     }
     f.status=pick; f.stage='decided';
+    clearVerificationSubmitted(f.id);   // v125 — decided, so leave the queue
     if(pick==='green'){f.haat=chosenHaat;if(f.active==null)f.active=true;}
     else{f.haat='';f.active=false;}
     f.decisionNote=$('#dNote').value.trim();
@@ -15361,6 +15399,9 @@ window.addEventListener('message',async ev=>{
       // are post-decision and must NOT be reverted.
       const POST_DECISION = ['onboarded','decided','verified-cleared'];
       if(enoughEvidence && !POST_DECISION.includes(f.stage)) f.stage='verified';
+      // v125 — durable record that this verification exists, independent of
+      // anything on the farmer's own row.
+      if(enoughEvidence) markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
       delete f.verificationLock;
       // v(fc-redesign) — retire the matching plan (see farm-verification-done handler below).
       _fcAutoCompletePlan(f.id, 'haat', (d.data.summary&&d.data.summary.date)||todayISO(), currentFcId()||f.fcId||'');

@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v122';
+const APP_VERSION = 'v123';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13577,7 +13577,10 @@ function viewSettings(){
     h+=`<div class="card" style="padding:18px 20px;max-width:680px">
       <div class="ct" style="font-size:14px;font-weight:700">💾 Download a full backup</div>
       <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
-        One JSON file with every Haat and Conversion farmer record exactly as stored — including archived ones, and every field (not just what the CSV exports show). Keep it somewhere safe (email it to yourself, save to Drive) as a manual recovery point. This reads whatever is currently synced to this device, so do this after confirming you're online and the "Synced" pill at the top is showing.
+        One JSON file holding <b>everything</b>: every Haat and Conversion farmer (archived included), <b>the enrolment and verification forms</b>, haats, field coordinators, verification plans, income records and the activity log. Keep it somewhere safe — email it to yourself or save it to Drive — as a manual recovery point.<br><br>
+        Until now this file held only the farmer records. That was the gap that mattered: when a farmer record was overwritten on 24 July and lost its completed verification, the <b>form</b> was the only surviving copy. Forms are now included.<br><br>
+        Login accounts are listed by name and role so you know who existed, but <b>passwords are never written to this file</b> — it is safe to email. Restoring an account means setting a new password for it.<br><br>
+        Go online first and wait for the “Synced” pill at the top: the forms are fetched fresh from the server when you press the button.
       </div>
       <div style="display:flex;gap:16px;margin-bottom:16px">
         <div><div style="font-size:20px;font-weight:700">${(DB.haatFarmers||[]).length}</div><div style="font-size:11px;color:var(--ink-faint)">Haat records (${haatArchived} archived)</div></div>
@@ -13587,15 +13590,81 @@ function viewSettings(){
     </div>`;
     v.innerHTML=h;
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    $('#downloadFullBackup').onclick=()=>{
-      const payload = {
-        exportedAt: new Date().toISOString(),
-        exportedBy: (actor()||{}).name || '',
-        haatFarmers: DB.haatFarmers||[],
-        convFarmers: DB.convFarmers||[],
-      };
-      download('farm-verification-backup-'+todayISO()+'.json', JSON.stringify(payload,null,1));
-      logActivity('edit','Downloaded a full farmer-data backup ('+(DB.haatFarmers||[]).length+' haat + '+(DB.convFarmers||[]).length+' conversion records)');
+    $('#downloadFullBackup').onclick=async()=>{
+      const btn=$('#downloadFullBackup');
+      const orig=btn.innerHTML;
+      btn.disabled=true; btn.textContent='Preparing…';
+      try{
+        // The forms live in their own RTDB nodes and are loaded on demand, so
+        // they are NOT in memory — they have to be fetched. This is the whole
+        // point of the change: a backup without forms could not have recovered
+        // the verification that was lost on 24 July.
+        let forms=null, convForms=null, fetchedForms=false;
+        if(FB && FB.ready && navigator.onLine){
+          try{
+            const [fSnap,cSnap]=await Promise.all([fbRef('forms').get(), fbRef('convForms').get()]);
+            forms     = fSnap.exists() ? fSnap.val() : {};
+            convForms = cSnap.exists() ? cSnap.val() : {};
+            fetchedForms=true;
+          }catch(e){ console.error('[Sristi] backup: could not fetch forms',e); }
+        }
+
+        // Accounts WITHOUT credentials. Knowing who existed is what you need to
+        // rebuild access; the password hash and salt are deliberately dropped so
+        // this file stays safe to email or drop in Drive.
+        const users=(typeof getUsersList==='function'?getUsersList():[]).map(u=>({
+          id:u.id, name:u.name, role:u.role, fcCode:u.fcCode||'',
+          districts:Array.isArray(u.districts)?u.districts:[],
+          phone:u.phone||'', state:u.state||'', partner:u.partner||'',
+          active:u.active!==false,
+        }));
+
+        const payload={
+          _about:'Sristi Farm Verification — full backup. Passwords are NOT included.',
+          _appVersion:APP_VERSION,
+          exportedAt:new Date().toISOString(),
+          exportedBy:(actor()||{}).name||'',
+          complete:fetchedForms,
+          haatFarmers:DB.haatFarmers||[],
+          convFarmers:DB.convFarmers||[],
+          forms:forms, convForms:convForms,
+          haats:DB.haats||[], fcs:DB.fcs||[],
+          verificationPlans:DB.verificationPlans||[],
+          incomeRecords:DB.incomeRecords||[],
+          pendingEnrolments:DB.pendingEnrolments||[],
+          activity:DB.activity||[],
+          crops:DB.crops||[], settings:DB.settings||{},
+          users:users,
+        };
+        payload.counts={
+          haatFarmers:payload.haatFarmers.length,
+          convFarmers:payload.convFarmers.length,
+          enrolmentForms:forms?Object.keys(forms).length:0,
+          verificationForms:forms?Object.values(forms).filter(x=>x&&x.verif).length:0,
+          convForms:convForms?Object.keys(convForms).length:0,
+          haats:payload.haats.length, fcs:payload.fcs.length,
+          verificationPlans:payload.verificationPlans.length,
+          accounts:users.length,
+        };
+
+        download('farm-verification-backup-'+todayISO()+'.json',
+                 JSON.stringify(payload,null,1),
+                 'application/json;charset=utf-8');
+
+        const c=payload.counts;
+        if(!fetchedForms){
+          toast('⚠ Saved WITHOUT forms — you were offline or the server could not be reached. Reconnect and download again.','error');
+        } else {
+          toast('Backup saved — '+(c.haatFarmers+c.convFarmers)+' farmers and '+c.verificationForms+' verification forms');
+        }
+        logActivity('edit','Downloaded a full backup — '+c.haatFarmers+' haat + '+c.convFarmers+' conversion farmers, '
+          +c.enrolmentForms+' forms ('+c.verificationForms+' verifications)'+(fetchedForms?'':' — FORMS MISSING, was offline'));
+      }catch(e){
+        console.error('[Sristi] backup failed',e);
+        toast('Backup failed: '+(e&&e.message?e.message:'Unknown error'),'error');
+      }finally{
+        btn.disabled=false; btn.innerHTML=orig;
+      }
     };
     return;
   }
@@ -14502,8 +14571,11 @@ function toCSV(rows){
   // tripping through Excel no longer destroys the script.
   return '﻿' + keys.join(',')+'\n'+rows.map(r=>keys.map(k=>esc(r[k])).join(',')).join('\n');
 }
-function download(name,content){
-  const blob=new Blob([content],{type:'text/plain'});
+function download(name,content,mime){
+  // A JS string in a Blob is always encoded as UTF-8, so downloads from the app
+  // have never suffered the mojibake that the command-line backups did. Passing
+  // an explicit type just makes sure whatever opens the file agrees.
+  const blob=new Blob([content],{type:mime||'text/plain;charset=utf-8'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

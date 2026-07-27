@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v120';
+const APP_VERSION = 'v121';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4528,6 +4528,17 @@ async function saveRecord(collection,record){
    it now writes per-record (collision-proof) rather than the whole DB.
    It diffs against a snapshot to find which records changed. */
 let _lastSnap=null;
+/* v121 — ids a HUMAN explicitly deleted, as "col/id".
+   saveDB() infers deletions by diffing against _lastSnap, and caps them at
+   MAX_AUTO_DELETE so a sync bug can never mass-delete (that cap exists because
+   a real one wiped 110 farmers in July). But the cap could not tell a
+   deliberate "Delete permanently" on 40 archived farmers from a runaway diff,
+   so it blocked those too: the rows vanished from the screen (the local array
+   had already been updated) while NOTHING was sent to Firebase, and they came
+   back on the next reload. Anything in this set is a delete the admin actually
+   asked for, so it is always written; the cap now applies only to deletions
+   nobody asked for. Entries are cleared once the write succeeds. */
+const _explicitDeletes = new Set();
 let _saveRetryCount=0;
 async function saveDB(silent){
   cacheLocal();
@@ -4578,7 +4589,11 @@ async function saveDB(silent){
       }
     });
     // deleted records
-    const missingIds = Object.keys(prev).filter(id=>!cur[id]);
+    const allMissing = Object.keys(prev).filter(id=>!cur[id]);
+    // v121 — an explicitly-authorised delete is never capped (see _explicitDeletes).
+    const authorised = allMissing.filter(id => _explicitDeletes.has(col+'/'+id));
+    authorised.forEach(id=>{ updates[col+'/'+id]=null; });
+    const missingIds = allMissing.filter(id => !_explicitDeletes.has(col+'/'+id));
     if(missingIds.length > MAX_AUTO_DELETE){
       console.error('[Sristi] saveDB() BLOCKED an anomalous bulk delete — '+missingIds.length+' '+col+' records would have been removed in one save (cap: '+MAX_AUTO_DELETE+'). This almost certainly means this device\'s local data is stale, not that '+missingIds.length+' records were genuinely deleted. Nothing was deleted; reload this device before making further changes. IDs:', missingIds);
       toast('⚠ Blocked an unusually large delete ('+missingIds.length+' '+col+' records) to protect your data — please reload this tab before continuing, and tell an admin.', 'error');
@@ -4623,6 +4638,10 @@ async function saveDB(silent){
   dirty.forEach(([col,id])=>markPendingSync(col,id));
   try{
     await fbRef('').update(updates);     // atomic multi-path update
+    // v121 — the authorised deletions are on the server now; stop tracking them.
+    // Cleared ONLY on success: if the write threw, they stay registered so the
+    // retry still bypasses the cap instead of silently falling back under it.
+    Object.keys(updates).forEach(k=>{ if(updates[k]===null) _explicitDeletes.delete(k); });
     _lastSnap=snap;
     _saveRetryCount=0;
     setSyncPill(navigator.onLine?'synced':'offline');
@@ -9078,8 +9097,17 @@ async function deleteFarmersPermanently(p, ids){
   const kept = store.filter(f => !removable.has(f.id));
   if(p==='haat') DB.haatFarmers = kept; else DB.convFarmers = kept;
   removable.forEach(id => markLocalTouch(_archCol(p), id));   // shield the deletion from the live listener
+  // v121 — authorise these exact ids so saveDB's anti-mass-delete cap does not
+  // swallow the write. Without this, deleting more than MAX_AUTO_DELETE records
+  // removed them from the screen and sent nothing to Firebase.
+  removable.forEach(id => _explicitDeletes.add(_archCol(p)+'/'+id));
   ARCH_SEL[p].clear();
-  await saveDB(); render(); toast(removable.size+' farmer'+(removable.size===1?'':'s')+' permanently deleted');
+  const okDel = await saveDB();
+  render();
+  toast(okDel
+    ? removable.size+' farmer'+(removable.size===1?'':'s')+' permanently deleted'
+    : 'Could not reach the server \u2014 nothing was deleted. Check your connection and try again.',
+    okDel ? undefined : 'error');
 }
 async function _confirmAndDelete(p, ids){
   if(!ids || !ids.length) return;

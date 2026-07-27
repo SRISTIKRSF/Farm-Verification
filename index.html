@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v123';
+const APP_VERSION = 'v124';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4433,6 +4433,77 @@ function _processLiveSnapshot(){
    block a record (this was half of the "verification never reaches the
    cloud" bug). */
 function sanitizeForFB(v){ return v==null ? v : JSON.parse(JSON.stringify(v)); }
+
+/* v124 — drop inline image blobs before storing a captured form. A public
+   submission can carry several base64 photos; keeping them would turn a small
+   review record into megabytes and blow up the sync for every device. Photos
+   already go to Cloudinary on the normal path. */
+function _stripBlobs(v){
+  if(typeof v === 'string') return /^data:/i.test(v) ? '[image removed]' : v;
+  if(Array.isArray(v)) return v.map(_stripBlobs);
+  if(v && typeof v === 'object'){
+    const o={}; Object.keys(v).forEach(k=>{ o[k]=_stripBlobs(v[k]); }); return o;
+  }
+  return v;
+}
+
+/* v124 — a public submission we refused to file, kept in full for review.
+   Before this, a duplicate-phone submission was thrown away entirely: the
+   farmer had filled in the whole form, was shown a "we'll call you in 7 days"
+   screen, and the only trace was one line in the activity log that nobody
+   actions. These are parked in pendingEnrolments (already synced, already
+   outside every farmer count) flagged _attention, so they cannot inflate any
+   number until an admin deliberately moves one across. */
+function buildAttentionRecord(program, fields, formPayload, existingRef){
+  const at = new Date().toISOString();
+  const ex = String(existingRef||'');           // "haat:HF_123" from phoneIndex
+  const cut = ex.indexOf(':');
+  return {
+    id: 'ATT_' + Date.now().toString().slice(-9) + Math.floor(Math.random()*100),
+    _attention: true,
+    _reason: 'duplicate_phone',
+    _existingProgram: cut > 0 ? ex.slice(0, cut) : '',
+    _existingId:      cut > 0 ? ex.slice(cut + 1) : '',
+    program: program === 'haat' ? 'haat' : 'conv',
+    name: fields.name || '', village: fields.village || '',
+    taluka: fields.taluka || '', district: fields.district || '',
+    state: fields.state || 'Gujarat', phone: fields.phone || '',
+    source: 'self-enrolled-public',
+    submittedAt: at, publicSubmittedAt: at,
+    // Farmer-shaped defaults. If this record is ever moved across it is cloned
+    // directly into haatFarmers/convFarmers, and several screens read these
+    // without guarding (viewHaat does f.crops.length). Missing them turned a
+    // successful "Move across" into a crash on the Haat list.
+    crops: [], landAcres: 0, yearsOrganic: 0, certification: '', vertical: '',
+    fcId: '', haat: '', enrolledMonth: at.slice(0, 7),
+    stage: 'verification_pending', status: 'pending', active: false,
+    visits: [], observations: [],
+    form: _stripBlobs(sanitizeForFB(formPayload || {})),
+  };
+}
+
+/* Writes straight to its own path. saveDB() is deliberately dead in public
+   mode (it is diff-based and public mode holds no farmer data), so the whole
+   point is a single targeted write. Falls back to the offline queue that
+   already exists for pendingEnrolments. */
+async function saveAttentionSubmission(rec){
+  try{
+    if(FB && FB.ready && navigator.onLine){
+      await fbRef('pendingEnrolments/'+rec.id).set(sanitizeForFB(rec));
+    } else {
+      await idbPut('pendingEnrolments', rec).catch(()=>{});
+    }
+  }catch(e){
+    console.error('[Sristi] could not store the flagged submission', e);
+    try{ await idbPut('pendingEnrolments', rec); }catch(_){}
+  }
+  if(!PUBLIC_MODE){
+    DB.pendingEnrolments = DB.pendingEnrolments || [];
+    if(!DB.pendingEnrolments.some(x=>x&&x.id===rec.id)) DB.pendingEnrolments.push(rec);
+  }
+}
+const attentionList = () => (DB.pendingEnrolments||[]).filter(x => x && x._attention);
+const isAttention   = x => !!(x && x._attention);
 /* v10 — value snapshot of a collection: id -> JSON string. _lastSnap used
    to hold REFERENCES to the live DB record objects, so any in-place edit
    (stage change, lock, visit push) mutated the snapshot too — the diff
@@ -7870,13 +7941,17 @@ function renderNav(){
   const hs=haatStats(),cs=convStats();
   // v8 — FC users see a reduced nav (no Settings, no Data & Backup, no Team).
   const adminMode = isAdminUser();
-  const pendingCount = (DB.pendingEnrolments||[]).length;
+  const pendingCount   = (DB.pendingEnrolments||[]).filter(x => !isAttention(x)).length;
+  const attentionCount = attentionList().length;
   // v9 Batch 4 — FC sidebar is action-focused: Verification Queue first, then
   // task surfaces. No Dashboard analytics, no Farm Locations map, no Income
   // Tracking, no Haats config — FC's job is verifying farmers, not analytics.
   const items = adminMode ? [
     {sec:'Overview'},
     {id:'dashboard',label:'Manager Dashboard',ico:I.dash},
+    // v124 — only appears when something is actually waiting, so it is a
+    // signal rather than another permanent item to ignore.
+    ...(attentionCount ? [{id:'attention',label:'Needs attention',ico:I.clock,badge:attentionCount}] : []),
     {sec:'Organic Haat Program'},
     {id:'haat',label:'Haat Farmers',ico:I.haat,badge:hs.total},
     {id:'verification',label:'Verification Queue',ico:I.clock,badge:hs.pending+hs.verified},
@@ -8618,6 +8693,7 @@ const TITLES={
   // fcInbox:['Conversion Program','FC Inbox'],
   // fcs:['Team','Field Coordinators'],
   fieldCoordinators:['Field Coordinators','Field Coordinators'],
+  attention:['Overview','Needs attention'],
   settings:['System','Settings'],
   data:['System','Data & Backup'],
   // v8.2 — public + pending queue routes
@@ -11169,7 +11245,15 @@ function openConvEnrollmentForm(){
          the number is registered by the claim itself. */
       const claim = await claimPhoneForPublic(state.mobile, 'conv', rec.id);
       if(claim === 'duplicate'){
-        logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(state.mobile)}</b> — this number is already registered. Ignored.`);
+        // v124 — keep the whole submission instead of discarding it. They filled
+        // the form; someone should be able to ring them back.
+        let _exRef = '';
+        try{ const sx = await fbRef('phoneIndex/'+_phoneKey(state.mobile)).get(); if(sx && sx.exists()) _exRef = sx.val(); }catch(e){}
+        await saveAttentionSubmission(buildAttentionRecord('conv',
+          {name:state.name.trim(), village:state.village.trim(), taluka:state.taluka,
+           district:state.district, phone:state.mobile},
+          {answers:state, record:baseRec}, _exRef));
+        logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(state.mobile)}</b> — already registered. Saved to Needs attention for review.`);
         if(FB && FB.ready){
           const dupAct = DB.activity[0];
           if(dupAct && dupAct.id) fbRef('activity/'+dupAct.id).set(sanitizeForFB(dupAct)).catch(()=>{});
@@ -14648,6 +14732,7 @@ function render(){
     // somewhere useful instead of dead-ending.
     haats:()=>{ ROUTE='settings'; FILTERS.settings=FILTERS.settings||{}; FILTERS.settings.tab='haats'; viewSettings(); },
     conversion:viewConversion,
+    attention:viewAttention,
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
     farmMap:viewFarmMap,
@@ -15329,7 +15414,14 @@ window.addEventListener('message',async ev=>{
         _pubPresetHaatId = 'HF_PUB_' + Date.now().toString().slice(-7);
         const pubClaim = await claimPhoneForPublic(f.mobile, 'haat', _pubPresetHaatId);
         if(pubClaim === 'duplicate'){
-          logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(f.mobile)}</b> — this number is already registered. Ignored.`);
+          // v124 — see the matching note in the conversion form.
+          let _exRef = '';
+          try{ const sx = await fbRef('phoneIndex/'+_phoneKey(f.mobile)).get(); if(sx && sx.exists()) _exRef = sx.val(); }catch(e){}
+          await saveAttentionSubmission(buildAttentionRecord('haat',
+            {name:name, village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
+             district:f.district||'', phone:f.mobile},
+            d, _exRef));
+          logActivity('alert', `⚠ Duplicate public submission for phone <b>${esc(f.mobile)}</b> — already registered. Saved to Needs attention for review.`);
           try {
             if(FB && FB.ready){
               const dupAct = DB.activity[0];
@@ -17423,6 +17515,43 @@ function viewPublicThanks(){
   const waMsg = encodeURIComponent(`નમસ્કાર, મેં સૃષ્ટિ ${isHaat?'ખેડૂત હાટ':'કન્વર્ઝન'} માટે અરજી કરી છે. અરજી નં: ${app.id||'-'}. કૃપા કરી સંપર્ક કરો.`);
   const waUrl = `https://wa.me/${waPhone}?text=${waMsg}`;
 
+  /* v124 — a submission rejected for a duplicate phone used to land on this
+     same screen: a green tick, "Application received", and a promise that
+     SRISTI would call within 7 days. Nothing had been saved, so nobody ever
+     did — the farmer kept their phone free and waited. The code already set
+     _duplicate here; this screen simply never read it. It does now. */
+  if(app._duplicate){
+    const officeDisplay = '+91 95103 86635';
+    v.innerHTML = `
+      <div class="pf-thanks">
+        <div class="check" style="background:#fef3c7;color:#92400e">!</div>
+        <h1>આ નંબર પહેલેથી નોંધાયેલ છે</h1>
+        <p style="font-size:13px;color:#929fb5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-top:0">This number is already registered</p>
+        <p style="margin-top:14px">
+          <b>${esc(app.name||'')}</b>${app.village?', '+esc(app.village):''}<br>
+          <span style="font-size:13px;color:#515f78">${esc(app.phone||'')}</span>
+        </p>
+        <p style="margin-top:14px;line-height:1.7">
+          તમારો મોબાઈલ નંબર અમારી પાસે પહેલેથી નોંધાયેલ છે, તેથી આ ફોર્મ ફરી નોંધાયું નથી.<br>
+          <b>કૃપા કરી સૃષ્ટિ ઓફિસનો સંપર્ક કરો:</b>
+        </p>
+        <p style="font-size:13px;color:#515f78;margin-top:4px">
+          Your number is already on our records, so this form was not registered again.
+          Please call the SRISTI office \u2014 your details have been kept and someone can help you.
+        </p>
+        <a class="wa-btn" href="tel:+919510386635" style="text-decoration:none">
+          <span style="font-size:22px">\u{1F4DE}</span>
+          <span>${officeDisplay}</span>
+        </a>
+        <a class="wa-btn" href="${waUrl}" target="_blank" rel="noopener">
+          <span style="font-size:22px">\u{1F4AC}</span>
+          <span>WhatsApp પર સૃષ્ટિ ઓફિસને Message કરો</span>
+        </a>
+        <p style="font-size:12px;color:#929fb5;margin-top:16px">Sristi · KRSF · Gujarat</p>
+      </div>`;
+    return;
+  }
+
   v.innerHTML = `
     <div class="pf-thanks">
       <div class="check">✓</div>
@@ -17480,13 +17609,140 @@ function _fmtTime(iso){
   if(isNaN(d.getTime())) return iso;
   return d.toLocaleDateString() + ' · ' + d.toTimeString().slice(0,5);
 }
+/* v124 — submissions we refused to file, kept in full so a human can act.
+   Deliberately NOT counted anywhere: these are people who are already in the
+   database under this phone number, so counting them would double-count real
+   farmers. An admin decides, one at a time, whether each is a genuine second
+   membership (a conversion farmer graduating to the haat) or just a repeat. */
+function viewAttention(){
+  const v = $('#view');
+  FILTERS.attention = FILTERS.attention || { program:'all' };
+  const F = FILTERS.attention;
+  const all = attentionList().sort((a,b) =>
+    String(b.submittedAt||'').localeCompare(String(a.submittedAt||'')));
+  const rows = all.filter(r => F.program==='all' ? true
+                             : (F.program==='haat' ? r.program==='haat' : r.program!=='haat'));
+  const nHaat = all.filter(r=>r.program==='haat').length;
+  const nConv = all.length - nHaat;
+
+  let h = `<div class="card" style="padding:14px 18px;margin-bottom:14px;background:var(--yellow-bg,#fffbeb);border:1px solid var(--yellow-line,#fcd34d)">
+    <div style="font-size:13px;font-weight:700;margin-bottom:4px">These farmers filled in the whole form, but their phone number is already registered</div>
+    <div style="font-size:12px;color:var(--ink-soft);line-height:1.55">
+      Nothing here is counted anywhere \u2014 not in Haat Farmers, not on the dashboard. They were told to call the SRISTI office, so expect calls.<br>
+      Ring them, open their form, and either move them across as a real farmer or dismiss the submission.
+    </div>
+  </div>`;
+
+  h += `<div class="toolbar" style="margin-bottom:14px">
+    <button class="btn btn-sm ${F.program==='all'?'btn-primary':'btn-ghost'}" data-af="all">All (${all.length})</button>
+    <button class="btn btn-sm ${F.program==='haat'?'btn-primary':'btn-ghost'}" data-af="haat">Haat (${nHaat})</button>
+    <button class="btn btn-sm ${F.program==='conv'?'btn-primary':'btn-ghost'}" data-af="conv">Conversion (${nConv})</button>
+  </div>`;
+
+  if(!rows.length){
+    h += `<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">Nothing needs attention${F.program==='all'?'':' in this programme'}.</div>`;
+  } else {
+    h += `<div class="table-wrap"><table><thead><tr>
+      <th>Farmer</th><th>Location</th><th>Phone</th><th>Applied for</th>
+      <th>Already on file as</th><th>Submitted</th><th style="width:230px">Action</th>
+    </tr></thead><tbody>`;
+    rows.forEach(r=>{
+      const exProg = r._existingProgram==='haat' ? 'Haat' : (r._existingProgram==='conv' ? 'Conversion' : '');
+      const ex = fcById ? null : null;
+      const exRec = r._existingId
+        ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+        : null;
+      h += `<tr>
+        <td><b>${esc(r.name||'\u2014')}</b></td>
+        <td style="font-size:12px">${esc(r.village||'')}${r.district?'<div style="font-size:10.5px;color:var(--ink-faint)">'+esc(String(r.district).split(' (')[0])+'</div>':''}</td>
+        <td style="font-size:12px">${r.phone?`<a href="tel:${esc(r.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(r.phone)}</a>`:'\u2014'}</td>
+        <td><span class="tag ${r.program==='haat'?'green':'blue'}" style="font-size:10.5px">${r.program==='haat'?'Haat':'Conversion'}</span></td>
+        <td style="font-size:12px">${exRec?esc(exRec.name):'<span style="color:var(--ink-faint)">unknown</span>'}${exProg?'<div style="font-size:10.5px;color:var(--ink-faint)">'+exProg+'</div>':''}</td>
+        <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
+          <button class="btn btn-primary btn-sm" data-att-move="${esc(r.id)}" style="padding:4px 9px">Move across</button>
+          <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;color:var(--red)">Dismiss</button>
+        </td>
+      </tr>`;
+    });
+    h += '</tbody></table></div>';
+  }
+  v.innerHTML = h;
+  v.querySelectorAll('[data-af]').forEach(b=>b.onclick=()=>{ F.program=b.dataset.af; render(); });
+  v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
+  v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
+  v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));
+}
+
+/* The whole submitted form, exactly as they filled it. */
+function openAttentionForm(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const flat = [];
+  const walk = (obj, prefix) => {
+    if(!obj || typeof obj !== 'object') return;
+    Object.keys(obj).forEach(k=>{
+      const val = obj[k];
+      if(val && typeof val === 'object' && !Array.isArray(val)){ walk(val, prefix?prefix+' \u203a '+k:k); return; }
+      const shown = Array.isArray(val) ? val.join(', ') : String(val==null?'':val);
+      if(shown === '' || shown === 'undefined') return;
+      flat.push([prefix?prefix+' \u203a '+k:k, shown]);
+    });
+  };
+  walk(r.form, '');
+  const body = `<div class="hint" style="margin-bottom:12px">
+      <b>${esc(r.name||'')}</b>${r.village?' \u00b7 '+esc(r.village):''}${r.phone?' \u00b7 '+esc(r.phone):''}<br>
+      Applied for <b>${r.program==='haat'?'Haat':'Conversion'}</b> on ${esc(String(r.submittedAt||'').slice(0,10))}. This phone is already registered${r._existingId?' as '+esc(r._existingId):''}.
+    </div>
+    <div style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        ${flat.length ? flat.map(([k,val])=>`<tr><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft);width:42%;vertical-align:top">${esc(k)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600">${esc(val)}</td></tr>`).join('')
+                      : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
+      </table>
+    </div>`;
+  modalShell('Submitted form \u2014 '+esc(r.name||''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
+     <button class="btn btn-primary" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">Move across</button>`);
+}
+
+/* Admin decides this really is a separate membership. The phone stays claimed
+   by the ORIGINAL record — the index exists to stop strangers self-registering
+   twice, and an admin override is a conscious act, so we do not fight it. */
+async function moveAttentionToFarmers(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const exRec = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  const msg = 'Add "'+(r.name||'')+'" as a real '+(r.program==='haat'?'Haat':'Conversion')+' farmer?\n\n'
+    + (exRec ? 'Phone '+(r.phone||'')+' already belongs to '+exRec.name+' ('+exRec.id+').\n\n' : '')
+    + 'Both records will keep this number, and a phone search will show both. Do this only if it really is a second membership \u2014 for example a conversion farmer joining the haat.';
+  if(!confirm(msg)) return;
+  await acceptPendingEnrolment(id, {force:true});
+}
+
+async function dismissAttention(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  if(!confirm('Dismiss the submission from "'+(r.name||'')+'"?\n\nIt is removed from this list. No farmer record is created and nothing else changes.')) return;
+  DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>x.id!==id);
+  if(FB && FB.ready){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} }
+  logActivity('edit', `Dismissed a flagged duplicate submission \u2014 <b>${esc(r.name||'')}</b> (${esc(r.phone||'')})`);
+  await saveDB(); render();
+  toast('Dismissed');
+}
+
 function viewPendingEnrolments(){
   const v = $('#view');
   // Combine: auto-promoted public farmers (source = 'self-enrolled-public')
   // from haatFarmers + convFarmers + any legacy pendingEnrolments.
   const publicHaat = (DB.haatFarmers||[]).filter(f => f && f.source === 'self-enrolled-public').map(f => ({...f, _kind:'haat'}));
   const publicConv = (DB.convFarmers||[]).filter(f => f && f.source === 'self-enrolled-public').map(f => ({...f, _kind:'conv'}));
-  const legacy    = (DB.pendingEnrolments||[]).map(f => ({...f, _kind: f.program === 'haat' ? 'haat' : 'conv', _legacy:true}));
+  // v124 — flagged duplicate submissions live in the same collection but must
+  // never appear here or in any count; they have their own screen.
+  const legacy    = (DB.pendingEnrolments||[]).filter(f => !isAttention(f))
+                      .map(f => ({...f, _kind: f.program === 'haat' ? 'haat' : 'conv', _legacy:true}));
   const all = [...publicHaat, ...publicConv, ...legacy].sort((a,b) =>
     String(b.publicSubmittedAt || b.submittedAt || '').localeCompare(String(a.publicSubmittedAt || a.submittedAt || ''))
   );
@@ -17714,13 +17970,16 @@ function openPendingDetailModal(id){
   $('#pdReject').onclick = () => { if(confirm('Reject this application?')){ closeModal(); rejectPendingEnrolment(id); } };
 }
 
-async function acceptPendingEnrolment(id){
+async function acceptPendingEnrolment(id, opts){
+  opts = opts || {};
   const r = (DB.pendingEnrolments||[]).find(x => x.id === id);
   if(!r) return;
   // Phone is the farmer's unique identifier — don't create a duplicate by
   // accepting a legacy pending application for someone already on file.
+  // v124 — opts.force is the admin saying "I know, and this is a second
+  // membership" from the Needs-attention screen. Only that path may pass it.
   const dup = r.phone ? findFarmerByPhone(r.phone) : null;
-  if(dup){
+  if(dup && !opts.force){
     toast('⚠ Phone '+r.phone+' is already registered — '+dup.record.name+' ('+dup.record.id+', '+dup.program+'). Not accepted; reject or resolve manually.', 'error');
     return;
   }
@@ -17735,6 +17994,11 @@ async function acceptPendingEnrolment(id){
     id: newId,
     publicAppId: r.id,
     publicSubmittedAt: r.submittedAt,
+    // v124 — provenance for an admin-authorised duplicate phone.
+    _movedFromAttention: opts.force ? true : undefined,
+    _sharesPhoneWith: (opts.force && dup) ? dup.record.id : undefined,
+    _movedBy: opts.force ? ((actor()||{}).name||'admin') : undefined,
+    _movedAt: opts.force ? new Date().toISOString() : undefined,
     // v108 — found by testing, not by inspection: the comment above claims
     // pending records "already use the same shape as real haat/conv
     // records", but submissions from the lightweight public quick-apply form
@@ -17748,8 +18012,15 @@ async function acceptPendingEnrolment(id){
     reviewStatus: undefined,
   };
   delete accepted.reviewStatus;
+  // v124 — these are review-queue markers; a real farmer must not carry them,
+  // and attentionList() keys off _attention.
+  delete accepted._attention; delete accepted._reason;
+  delete accepted._existingId; delete accepted._existingProgram;
   if(isHaat){
-    indexFarmerPhone(accepted, 'haat');    // v110 phone index (shadow write)
+    // v124 — do NOT claim the index when the number is knowingly shared: the
+    // .validate rule forbids overwriting an entry, so the write would fail,
+    // and the original owner should keep the claim anyway.
+    if(!dup) indexFarmerPhone(accepted, 'haat');    // v110 phone index (shadow write)
     DB.haatFarmers.push(accepted);
     // v108 — same class of gap as the v106/v107 convForms fix: this path
     // bypasses the QUESTIONS_V5 iframe enrollment form entirely (it promotes
@@ -17775,7 +18046,7 @@ async function acceptPendingEnrolment(id){
     // it promotes a pendingEnrolments row straight into convFarmers), so a
     // farmer accepted this way had no recovery copy at all. Same fix.
     backupConvRecord(accepted);
-    indexFarmerPhone(accepted, 'conv');    // v110 phone index (shadow write)
+    if(!dup) indexFarmerPhone(accepted, 'conv');    // v124 — see the haat branch
     DB.convFarmers.push(accepted);
   }
   // Remove from pending

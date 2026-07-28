@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v127';
+const APP_VERSION = 'v128';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4495,14 +4495,18 @@ function _stripBlobs(v){
    actions. These are parked in pendingEnrolments (already synced, already
    outside every farmer count) flagged _attention, so they cannot inflate any
    number until an admin deliberately moves one across. */
-function buildAttentionRecord(program, fields, formPayload, existingRef){
+function buildAttentionRecord(program, fields, formPayload, existingRef, reason){
   const at = new Date().toISOString();
   // v127 — the value may be "haat:HF_123" or "haat:HF_123:<fp>:<ts>".
   const _ref = _parsePhoneRef(existingRef);
   return {
     id: 'ATT_' + Date.now().toString().slice(-9) + Math.floor(Math.random()*100),
     _attention: true,
-    _reason: 'duplicate_phone',
+    // v128 — 'identical_resend' means every answer matched a submission
+    // minutes earlier, i.e. the same completed form arrived twice. Kept and
+    // shown rather than dropped: the admin asked to see them and decide, not
+    // to have the app quietly decide for them.
+    _reason: reason || 'duplicate_phone',
     _existingProgram: _ref.program,
     _existingId:      _ref.id,
     program: program === 'haat' ? 'haat' : 'conv',
@@ -11401,8 +11405,14 @@ function openConvEnrollmentForm(){
          the number is registered by the claim itself. */
       const claim = await claimPhoneForPublic(state.mobile, 'conv', rec.id, _subFingerprint({answers:state}));
       if(claim === 'same-submission'){
-        // v127 — see the note in the haat form.
-        console.warn('[Sristi] identical repeat submission ignored for', state.mobile);
+        // v128 — see the note in the haat form.
+        let _exRef2 = '';
+        try{ const sx = await fbRef('phoneIndex/'+_phoneKey(state.mobile)).get(); if(sx && sx.exists()) _exRef2 = sx.val(); }catch(e){}
+        await saveAttentionSubmission(buildAttentionRecord('conv',
+          {name:state.name.trim(), village:state.village.trim(), taluka:state.taluka,
+           district:state.district, phone:state.mobile},
+          {answers:state, record:baseRec}, _exRef2, 'identical_resend'));
+        logActivity('alert', `Identical repeat submission from <b>${esc(state.name.trim())}</b> (${esc(state.mobile)}) — same form sent twice. Kept in Needs attention.`);
         window._pfLastApp = { name: state.name.trim(), village: state.village.trim(),
                               district: state.district, taluka: state.taluka,
                               phone: state.mobile, id: '' };
@@ -15584,9 +15594,17 @@ window.addEventListener('message',async ev=>{
         _pubPresetHaatId = 'HF_PUB_' + Date.now().toString().slice(-7);
         const pubClaim = await claimPhoneForPublic(f.mobile, 'haat', _pubPresetHaatId, _subFingerprint(f));
         if(pubClaim === 'same-submission'){
-          // v127 — identical form, minutes apart. Their application went through
-          // the first time, so show the normal thank-you and store nothing.
-          console.warn('[Sristi] identical repeat submission ignored for', f.mobile);
+          // v128 — identical form, minutes apart. The farmer still sees the
+          // normal thank-you (their application DID go through the first
+          // time), but the copy is kept and flagged so the admin can see it
+          // happened and clear it in one click.
+          let _exRef2 = '';
+          try{ const sx = await fbRef('phoneIndex/'+_phoneKey(f.mobile)).get(); if(sx && sx.exists()) _exRef2 = sx.val(); }catch(e){}
+          await saveAttentionSubmission(buildAttentionRecord('haat',
+            {name:name, village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
+             district:f.district||'', phone:f.mobile},
+            d, _exRef2, 'identical_resend'));
+          logActivity('alert', `Identical repeat submission from <b>${esc(name)}</b> (${esc(f.mobile)}) — same form sent twice. Kept in Needs attention.`);
           window._pfLastApp = { name, village: f.village||'', district: f.district||'',
                                 taluka: talukaDisplayName(f.taluka,f.district)||'',
                                 phone: f.mobile, id: '' };
@@ -17803,6 +17821,10 @@ function viewAttention(){
                              : (F.program==='haat' ? r.program==='haat' : r.program!=='haat'));
   const nHaat = all.filter(r=>r.program==='haat').length;
   const nConv = all.length - nHaat;
+  // v128 — an identical resend is noise the admin wants to SEE and dismiss,
+  // not something the app should decide about on its own.
+  const isResend = r => r && r._reason === 'identical_resend';
+  const nResend = all.filter(isResend).length;
 
   let h = `<div class="card" style="padding:14px 18px;margin-bottom:14px;background:var(--yellow-bg,#fffbeb);border:1px solid var(--yellow-line,#fcd34d)">
     <div style="font-size:13px;font-weight:700;margin-bottom:4px">These farmers filled in the whole form, but their phone number is already registered</div>
@@ -17812,11 +17834,15 @@ function viewAttention(){
     </div>
   </div>`;
 
-  h += `<div class="toolbar" style="margin-bottom:14px">
+  h += `<div class="toolbar" style="margin-bottom:14px;flex-wrap:wrap">
     <button class="btn btn-sm ${F.program==='all'?'btn-primary':'btn-ghost'}" data-af="all">All (${all.length})</button>
     <button class="btn btn-sm ${F.program==='haat'?'btn-primary':'btn-ghost'}" data-af="haat">Haat (${nHaat})</button>
     <button class="btn btn-sm ${F.program==='conv'?'btn-primary':'btn-ghost'}" data-af="conv">Conversion (${nConv})</button>
+    ${nResend ? `<span style="flex:1"></span><button class="btn btn-ghost btn-sm" id="attDropResends" style="color:var(--red)">Dismiss all ${nResend} identical cop${nResend===1?'y':'ies'}</button>` : ''}
   </div>`;
+  if(nResend){
+    h += `<div class="hint" style="margin-bottom:12px">${nResend} of these ${nResend===1?'is an':'are'} <b>identical cop${nResend===1?'y':'ies'}</b> of a form already accepted \u2014 every answer matched, minutes apart. Those farmers ARE registered and were shown the normal confirmation. Nothing to do but clear them.</div>`;
+  }
 
   if(!rows.length){
     h += `<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">Nothing needs attention${F.program==='all'?'':' in this programme'}.</div>`;
@@ -17831,8 +17857,9 @@ function viewAttention(){
       const exRec = r._existingId
         ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
         : null;
-      h += `<tr>
-        <td><b>${esc(r.name||'\u2014')}</b></td>
+      const resend = isResend(r);
+      h += `<tr style="${resend?'background:var(--panel-2,#f1f5f9);opacity:.72':''}">
+        <td><b>${esc(r.name||'\u2014')}</b>${resend?'<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Identical copy \u2014 safe to dismiss</div>':'<div style="font-size:10px;font-weight:700;color:var(--orange,#c2410c);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Different answers \u2014 needs a call</div>'}</td>
         <td style="font-size:12px">${esc(r.village||'')}${r.district?'<div style="font-size:10.5px;color:var(--ink-faint)">'+esc(String(r.district).split(' (')[0])+'</div>':''}</td>
         <td style="font-size:12px">${r.phone?`<a href="tel:${esc(r.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(r.phone)}</a>`:'\u2014'}</td>
         <td><span class="tag ${r.program==='haat'?'green':'blue'}" style="font-size:10.5px">${r.program==='haat'?'Haat':'Conversion'}</span></td>
@@ -17849,6 +17876,17 @@ function viewAttention(){
   }
   v.innerHTML = h;
   v.querySelectorAll('[data-af]').forEach(b=>b.onclick=()=>{ F.program=b.dataset.af; render(); });
+  const dropAll = document.getElementById('attDropResends');
+  if(dropAll) dropAll.onclick = async () => {
+    const ids = attentionList().filter(isResend).map(r=>r.id);
+    if(!ids.length) return;
+    if(!confirm('Dismiss '+ids.length+' identical cop'+(ids.length===1?'y':'ies')+'?\n\nThese farmers are already registered and were shown the normal confirmation. No farmer record is created and nothing else changes.')) return;
+    DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>ids.indexOf(x.id)===-1);
+    if(FB && FB.ready){ for(const id of ids){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} } }
+    logActivity('edit','Dismissed '+ids.length+' identical repeat submission'+(ids.length===1?'':'s'));
+    await saveDB(); render();
+    toast('Dismissed '+ids.length+' identical cop'+(ids.length===1?'y':'ies'));
+  };
   v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
   v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));

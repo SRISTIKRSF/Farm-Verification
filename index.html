@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v125';
+const APP_VERSION = 'v126';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3221,10 +3221,26 @@ async function loadDB(){
       // to an already-synced record on every future boot, and silently
       // never gets written to the cloud.
       _lastSnap=_excludePendingFromSnap(snapAll());
-      if(pendingSyncCount() > 0 && navigator.onLine) saveDB(true);
+      /* v126 — ROOT CAUSE of farmer records losing a completed verification.
+         This used to be `if(pendingSyncCount() > 0) saveDB(true)` right here,
+         which runs BEFORE the listener attached two lines above has delivered
+         anything. DB at this moment is the localStorage copy, which can be days
+         old. _excludePendingFromSnap() has just removed every pending id from
+         the baseline, so those records diff as changed and get PUSHED — the
+         stale local copy lands on top of whatever the server now holds. If an
+         FC had submitted a verification in the meantime, that push silently
+         wiped the visit and reverted the stage, while forms/{id}/verif (written
+         on its own path, not through this diff) survived untouched. That is
+         exactly the damage seen on 24 July, and the reason a device merely
+         being opened could cause it.
+         The catch-up now waits for the first real snapshot — see
+         _runPendingCatchUp(), called from _processLiveSnapshot(). */
+      _pendingCatchUpArmed = true;
       window.addEventListener('online', ()=>{
         FB.online=true;setSyncPill('synced');
-        if(pendingSyncCount() > 0) saveDB(true);   // retry anything still unconfirmed
+        // Same reasoning: only safe once this session has seen server state.
+        if(pendingSyncCount() > 0 && _firstSnapshotMerged) saveDB(true);
+        else if(pendingSyncCount() > 0) _pendingCatchUpArmed = true;
       });
       window.addEventListener('offline',()=>{FB.online=false;setSyncPill('offline');});
       setSyncPill(navigator.onLine?'syncing':'offline');
@@ -4265,6 +4281,16 @@ async function preCleanBlobsFromRTDB(){
    It stays small by design: an entry is removed the moment an admin decides. */
 const LIVE_SYNC_KEYS = ['haatFarmers','convFarmers','fcs','fieldCoordinators','meta','activity','incomeRecords','pendingEnrolments','verificationPlans','verifIndex'];
 let _liveSnapshot = {};
+/* v126 — the catch-up save for records that never confirmed sync must not run
+   until this device has merged at least one live snapshot, or it pushes stale
+   localStorage over newer server data. See the boot sequence. */
+let _firstSnapshotMerged = false;
+let _pendingCatchUpArmed  = false;
+function _runPendingCatchUp(){
+  if(!_pendingCatchUpArmed) return;
+  _pendingCatchUpArmed = false;
+  if(pendingSyncCount() > 0 && navigator.onLine && FB.ready) saveDB(true);
+}
 const _liveSnapshotSeen = new Set();
 /* v99 — district-scoped FC sync. haatFarmers/convFarmers are ~95% of every
    boot download (see the forms/ finding above), and every device — FC or
@@ -4435,6 +4461,9 @@ function _processLiveSnapshot(){
       cacheLocal();
       if(typeof render==='function') render();   // refresh the UI
     }
+    // v126 — we now know what the server holds, so a catch-up push is safe.
+    _firstSnapshotMerged = true;
+    _runPendingCatchUp();
 }
 
 /* ---------- SAVE ---------- */
@@ -4669,6 +4698,42 @@ async function saveDB(silent){
   // "one bad page reload loses nothing" and "one bad page reload loses 110
   // real farmers again", so it stays even though the root cause is fixed.
   const MAX_AUTO_DELETE = 15;
+  /* v126 — the guarantee, independent of any single root cause: a write must
+     never remove farm visits the server already has. Whatever the reason this
+     device's copy is behind — a stale boot, a bad merge, a race nobody has
+     found yet — the outgoing record is topped back up from the last snapshot
+     the server sent us before it goes out. Visits are only ever added by an FC
+     completing a verification; nothing in the app deletes one, so a union is
+     always the correct resolution and can never discard real work. */
+  const _repaired = [];
+  ['haatFarmers','convFarmers'].forEach(col=>{
+    const serverMap = _liveSnapshot && _liveSnapshot[col];
+    if(!serverMap || typeof serverMap !== 'object') return;
+    (DB[col]||[]).forEach(rec=>{
+      if(!rec || !rec.id) return;
+      const srv = serverMap[rec.id];
+      if(!srv) return;
+      const srvVisits = Array.isArray(srv.visits) ? srv.visits : [];
+      if(!srvVisits.length) return;
+      const mine = Array.isArray(rec.visits) ? rec.visits : [];
+      const sig = v => [v&&v.date, v&&v.fc, v&&v.score, v&&v.notes].join('|');
+      const have = new Set(mine.map(sig));
+      const missing = srvVisits.filter(v => !have.has(sig(v)));
+      if(!missing.length) return;
+      rec.visits = mine.concat(missing).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+      if(!rec.verificationFormSubmittedAt && srv.verificationFormSubmittedAt){
+        rec.verificationFormSubmittedAt = srv.verificationFormSubmittedAt;
+      }
+      // A restored verification must also restore the queue state, unless an
+      // admin has since decided — a decision outranks it.
+      if(srv.stage === 'verified' && !POST_DECISION_STAGES.includes(rec.stage)) rec.stage = 'verified';
+      _repaired.push(col+'/'+rec.id+' (+'+missing.length+')');
+    });
+  });
+  if(_repaired.length){
+    console.warn('[Sristi] v126 — refused to push a record with missing farm visits; restored from the server copy:', _repaired);
+    try{ logActivity('alert','⚠ Restored '+_repaired.length+' farm visit record'+(_repaired.length===1?'':'s')+' that this device was about to overwrite. Nothing was lost.'); }catch(e){}
+  }
   SYNC_COLS.forEach(col=>{
     const cur=arrToMap(DB[col]||[]);
     const prev=(_lastSnap&&_lastSnap[col])||{};

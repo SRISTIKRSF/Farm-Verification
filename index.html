@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v126';
+const APP_VERSION = 'v127';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4497,14 +4497,14 @@ function _stripBlobs(v){
    number until an admin deliberately moves one across. */
 function buildAttentionRecord(program, fields, formPayload, existingRef){
   const at = new Date().toISOString();
-  const ex = String(existingRef||'');           // "haat:HF_123" from phoneIndex
-  const cut = ex.indexOf(':');
+  // v127 — the value may be "haat:HF_123" or "haat:HF_123:<fp>:<ts>".
+  const _ref = _parsePhoneRef(existingRef);
   return {
     id: 'ATT_' + Date.now().toString().slice(-9) + Math.floor(Math.random()*100),
     _attention: true,
     _reason: 'duplicate_phone',
-    _existingProgram: cut > 0 ? ex.slice(0, cut) : '',
-    _existingId:      cut > 0 ? ex.slice(cut + 1) : '',
+    _existingProgram: _ref.program,
+    _existingId:      _ref.id,
     program: program === 'haat' ? 'haat' : 'conv',
     name: fields.name || '', village: fields.village || '',
     taluka: fields.taluka || '', district: fields.district || '',
@@ -10547,17 +10547,72 @@ function _claimAnswer(claims, id){
    submission would be denied and nobody could enrol at all. So a denial is not
    trusted on its own: we look the number up, and only an entry that genuinely
    exists is treated as a duplicate. */
-async function claimPhoneForPublic(phone, program, farmerId){
+/* v127 — a short, stable code for "this exact set of answers".
+   Same answers always produce the same code; change one field and it changes.
+   Used to tell "the identical form arrived twice" (drop it) apart from "they
+   filled it in differently" (a real second application — Kalpesh Nanjibhai
+   Patel submitted two genuinely different farms on one phone, 21 of 35 answers
+   apart, and that MUST still reach the admin). */
+function _subFingerprint(payload){
+  const p = payload || {};
+  const claims = Array.isArray(p.claims) ? p.claims
+               : (Array.isArray((p.farmer||{}).claims) ? p.farmer.claims : null);
+  let basis;
+  if(claims){
+    basis = claims.slice()
+      .filter(c => c && c.id)
+      .sort((a,b) => String(a.id).localeCompare(String(b.id)))
+      .map(c => c.id + '=' + JSON.stringify(c.answer == null ? '' : c.answer))
+      .join('|');
+  } else {
+    // conversion form / anything else: hash the answer object by sorted key
+    const o = p.answers || p;
+    basis = Object.keys(o).filter(k => k[0] !== '_').sort()
+      .map(k => k + '=' + JSON.stringify(o[k] == null ? '' : o[k])).join('|');
+  }
+  // FNV-1a, 32-bit. Not security — just a stable short id for a body of text.
+  let h = 0x811c9dc5;
+  for(let i=0;i<basis.length;i++){ h ^= basis.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+/* phoneIndex values are "program:farmerId" (pre-v127) or
+   "program:farmerId:fingerprint:timestamp" (v127+). Both must parse. */
+function _parsePhoneRef(v){
+  const parts = String(v || '').split(':');
+  return { program: parts[0] || '', id: parts[1] || '',
+           fp: parts[2] || '', at: parts[3] ? parseInt(parts[3], 10) : 0 };
+}
+/* How long an identical resend still counts as "the same application". */
+const SAME_SUBMISSION_WINDOW_MS = 10 * 60 * 1000;
+
+async function claimPhoneForPublic(phone, program, farmerId, fingerprint){
   const key = _phoneKey(phone);
   if(!key) return 'invalid';
   if(!(FB && FB.ready && navigator.onLine)) return 'unknown';   // can't check — let them through
   try{
-    await fbRef('phoneIndex/' + key).set(String(program || '') + ':' + String(farmerId));
+    // v127 — the value now carries the fingerprint and the time, so a later
+    // submission can be compared without reading any farmer data (public mode
+    // is deliberately blind to the farmer database — see _activeSyncKeys).
+    // Kept well inside the 64-character cap in the .validate rule.
+    const val = String(program || '') + ':' + String(farmerId)
+              + (fingerprint ? ':' + fingerprint + ':' + Date.now() : '');
+    await fbRef('phoneIndex/' + key).set(val);
     return 'claimed';
   }catch(e){
     try{
       const s = await fbRef('phoneIndex/' + key).get();
-      if(s && s.exists()) return 'duplicate';       // confirmed: really already registered
+      if(s && s.exists()){
+        // v127 — is this the SAME completed form arriving a second time?
+        // If so the farmer's application already succeeded; telling them it
+        // failed (and parking a copy for the admin) is wrong on both counts.
+        const ref = _parsePhoneRef(s.val());
+        if(fingerprint && ref.fp && ref.fp === fingerprint &&
+           ref.at && (Date.now() - ref.at) <= SAME_SUBMISSION_WINDOW_MS){
+          return 'same-submission';
+        }
+        return 'duplicate';       // confirmed: really already registered
+      }
     }catch(_){ /* fall through */ }
     console.warn('[Sristi] phone claim failed for a reason other than a duplicate:', e);
     return 'unknown';
@@ -11344,7 +11399,16 @@ function openConvEnrollmentForm(){
          records. Claiming the number in phoneIndex does the same job with one
          tiny write. Claiming also replaces the old indexFarmerPhone() call —
          the number is registered by the claim itself. */
-      const claim = await claimPhoneForPublic(state.mobile, 'conv', rec.id);
+      const claim = await claimPhoneForPublic(state.mobile, 'conv', rec.id, _subFingerprint({answers:state}));
+      if(claim === 'same-submission'){
+        // v127 — see the note in the haat form.
+        console.warn('[Sristi] identical repeat submission ignored for', state.mobile);
+        window._pfLastApp = { name: state.name.trim(), village: state.village.trim(),
+                              district: state.district, taluka: state.taluka,
+                              phone: state.mobile, id: '' };
+        closeModal(); enterPublicMode('public_thanks');
+        return;
+      }
       if(claim === 'duplicate'){
         // v124 — keep the whole submission instead of discarding it. They filled
         // the form; someone should be able to ring them back.
@@ -15518,7 +15582,16 @@ window.addEventListener('message',async ev=>{
         // overwriting an entry, so we cannot claim under a placeholder and
         // correct it afterwards. Generate it here and reuse it for the record.
         _pubPresetHaatId = 'HF_PUB_' + Date.now().toString().slice(-7);
-        const pubClaim = await claimPhoneForPublic(f.mobile, 'haat', _pubPresetHaatId);
+        const pubClaim = await claimPhoneForPublic(f.mobile, 'haat', _pubPresetHaatId, _subFingerprint(f));
+        if(pubClaim === 'same-submission'){
+          // v127 — identical form, minutes apart. Their application went through
+          // the first time, so show the normal thank-you and store nothing.
+          console.warn('[Sristi] identical repeat submission ignored for', f.mobile);
+          window._pfLastApp = { name, village: f.village||'', district: f.district||'',
+                                taluka: talukaDisplayName(f.taluka,f.district)||'',
+                                phone: f.mobile, id: '' };
+          return;
+        }
         if(pubClaim === 'duplicate'){
           // v124 — see the matching note in the conversion form.
           let _exRef = '';

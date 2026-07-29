@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v132';
+const APP_VERSION = 'v133';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14965,6 +14965,33 @@ function dupDiff(a, b){
   });
 }
 
+/* v133 — every question either record answered, paired up. The enrolment
+   forms are NOT merged: both survive on the farmer as Form 1 and Form 2. This
+   exists so the admin can see which record is the fuller one BEFORE choosing
+   which survives — the summary fields alone were not enough to judge on. */
+function dupFormRows(a, b){
+  const ma = _dupClaimMap(a), mb = _dupClaimMap(b);
+  const ids = [...new Set([...Object.keys(ma), ...Object.keys(mb)])];
+  const val = c => {
+    if(!c) return '';
+    const v = c.answer;
+    if(v == null) return '';
+    if(Array.isArray(v)) return v.map(x => (x && typeof x === 'object')
+      ? Object.keys(x).map(k => x[k]).filter(Boolean).join(' · ')
+      : String(x)).filter(Boolean).join(', ');
+    if(typeof v === 'object') return Object.keys(v).map(k => k + ': ' + v[k]).join(', ');
+    return String(v);
+  };
+  const label = id => {
+    const q = (window.QUESTIONS_V5 || []).find(x => x.id === id);
+    return (q && q.en) || (ma[id] || mb[id] || {}).en || id;
+  };
+  return ids.map(id => {
+    const av = val(ma[id]).trim(), bv = val(mb[id]).trim();
+    return { id: id, label: label(id), a: av, b: bv, same: av === bv, empty: (!av && !bv) };
+  }).filter(r => !r.empty);
+}
+
 function viewDuplicateRecords(){
   const v = $('#view');
   if(!FILTERS.dup) FILTERS.dup = { open:null, picks:{}, keep:null };
@@ -15033,10 +15060,18 @@ function viewDuplicateRecords(){
   const rows = dupDiff(keep, drop);
   const conflicts = rows.filter(r => !r.same && r.a && r.b);
   const fills     = rows.filter(r => !r.same && (!r.a || !r.b));
+  /* v133 — 0, blank and a bare dash mean "not filled in" far more often than
+     they mean a real answer. Before this, "years organic: 0" on the surviving
+     record beat a real "8" on the other, purely because 0 is technically a
+     value. A weak value now loses to a real one by default; the admin can
+     still override either way. */
+  const _weak = v => { const t=String(v==null?'':v).trim(); return t==='' || t==='0' || t==='\u2014' || t==='-'; };
   const pickOf = k => {
     if(F.picks[k]) return F.picks[k];
     const r = rows.find(x=>x.key===k);
-    return (r && r.a) ? 'keep' : 'drop';
+    if(!r) return 'keep';
+    if(_weak(r.a) && !_weak(r.b)) return 'drop';
+    return _weak(r.a) ? 'drop' : 'keep';
   };
 
   let h = `<button class="btn btn-sm btn-ghost" id="dupBack" style="margin-bottom:14px">← All duplicates</button>`;
@@ -15099,6 +15134,44 @@ function viewDuplicateRecords(){
     h += `</tbody></table></div>`;
   }
 
+  /* v133 — the full enrolment form from each record. This is what actually
+     tells you which record is the better one to keep. The forms themselves are
+     NOT merged: both are kept, so this table is evidence, not a set of choices. */
+  const fRows = dupFormRows(keep, drop);
+  const fDiff = fRows.filter(r=>!r.same);
+  const fSame = fRows.filter(r=>r.same);
+  const showAll = !!F.showAllForm;
+  if(fRows.length){
+    h += `<div class="card chart-card" style="margin-bottom:14px">
+      <div class="ct">The two enrolment forms, side by side</div>
+      <div class="cs">${fDiff.length} of ${fRows.length} answered questions differ. Nothing here has to be chosen —
+        <b>both forms are kept in full</b> and stay on the surviving farmer as Form 1 and Form 2.
+        This is here so you can see which record is the fuller one before you decide.</div>
+      <div class="table-wrap"><table><thead><tr>
+        <th style="width:30%">Question</th>
+        <th>${esc(keep.id)} <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">keeping</div></th>
+        <th>${esc(drop.id)} <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">archiving</div></th>
+      </tr></thead><tbody>`;
+    const cellFor = (txt, other) => {
+      const blank = !txt;
+      const only = !blank && !other;      // this side answered and the other did not
+      return `<td style="font-size:12.5px;${blank?'color:var(--ink-faint);font-style:italic':''}${only?';background:var(--panel-2)':''}">${blank?'not answered':esc(txt)}</td>`;
+    };
+    if(fDiff.length){
+      h += `<tr><td colspan="3" style="background:var(--panel-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)">Where they differ (${fDiff.length})</td></tr>`;
+      fDiff.forEach(r => { h += `<tr><td style="font-size:12px;color:var(--ink-soft)">${esc(r.label)}</td>${cellFor(r.a,r.b)}${cellFor(r.b,r.a)}</tr>`; });
+    }
+    if(fSame.length){
+      h += `<tr><td colspan="3" style="background:var(--panel-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)">Identical in both (${fSame.length})${showAll?'':' — hidden'}</td></tr>`;
+      if(showAll) fSame.forEach(r => { h += `<tr><td style="font-size:12px;color:var(--ink-soft)">${esc(r.label)}</td><td style="font-size:12.5px" colspan="2">${esc(r.a)}</td></tr>`; });
+    }
+    h += `</tbody></table></div>
+      ${fSame.length?`<button class="btn btn-ghost btn-sm" id="dupToggleAll" style="margin-top:9px">${showAll?'Hide the matching answers':'Show all '+fSame.length+' matching answers'}</button>`:''}
+    </div>`;
+  }else{
+    h += `<div class="hint" style="margin-bottom:14px">No enrolment form is stored for either record, so there is nothing more to compare.</div>`;
+  }
+
   h += `<div class="card chart-card">
     <div class="ct">Result</div>
     <div class="cs" id="dupPreview"></div>
@@ -15113,6 +15186,8 @@ function viewDuplicateRecords(){
   v.innerHTML = h;
   $('#dupBack').onclick = () => { F.open=null; F.picks={}; F.keep=null; render(); };
   v.querySelectorAll('[data-dupkeep]').forEach(b => b.onclick = () => { F.keep=b.dataset.dupkeep; F.picks={}; render(); });
+  const _tgl = document.getElementById('dupToggleAll');
+  if(_tgl) _tgl.onclick = () => { F.showAllForm = !F.showAllForm; render(); };
   const preview = () => {
     const el = document.getElementById('dupPreview'); if(!el) return;
     const nm = rows.find(r=>r.key==='name');

@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v133';
+const APP_VERSION = 'v134';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15004,8 +15004,13 @@ function viewDuplicateRecords(){
     const nRec = groups.reduce((n,x)=>n+x.items.length, 0);
     let h = `<div class="card chart-card" style="margin-bottom:16px">
       <div class="ct">Farmers on file more than once</div>
-      <div class="cs">A phone number should belong to one farmer. These records share one.
-        Combining them keeps every form and archives nothing but the spare record.</div>
+      <div class="cs"><b>What puts a record here:</b> two farmer records that both already exist, are both active, and carry the
+        same 10-digit phone number. That is the only test — names and villages are not used, because the same farmer is often
+        written differently on each.<br><br>
+        <b>How this differs from Needs attention:</b> that screen holds <i>submissions</i> that have not become farmers yet.
+        This screen holds <i>farmer records</i> that already exist and are being counted twice.<br><br>
+        <b>Combining keeps everything.</b> One record survives and keeps its ID; the other is archived, never deleted, and can be
+        restored. Both enrolment forms, all farm visits and any second farms move to the surviving farmer.</div>
       <div class="detail-grid">
         <div class="detail-cell"><div class="k">To review</div><div class="v">${groups.length}</div></div>
         <div class="detail-cell"><div class="k">Records involved</div><div class="v">${nRec}</div></div>
@@ -15179,8 +15184,13 @@ function viewDuplicateRecords(){
       <button class="btn btn-primary" id="dupMerge">Combine into one farmer</button>
       <button class="btn btn-ghost" id="dupNot">These are two different people</button>
     </div>
-    <div class="hint" style="margin-top:10px">Nothing is deleted. The archived record stays in the archive and can be restored,
-      and both enrolment forms remain exactly as the farmers submitted them.</div>
+    <div style="background:var(--panel-2);border-radius:8px;padding:10px 12px;margin-top:11px;font-size:12.5px;color:var(--ink-soft);line-height:1.6">
+      <b style="color:var(--ink)">Exactly what happens</b><br>
+      <b>Kept as the primary record:</b> ${esc(keep.id)} — it keeps its ID, and anything already recorded against it stays.<br>
+      <b>Overwritten on it:</b> only the summary fields you chose above. Nothing else is touched.<br>
+      <b>Moved across from ${esc(drop.id)}:</b> its enrolment form (becomes Form 2), every farm visit it has recorded, and any second farms.<br>
+      <b>Archived, not deleted:</b> ${esc(drop.id)} goes to the archive with its own copy of everything, and can be restored at any time.<br>
+      <b>Also updated:</b> the phone number is re-pointed at ${esc(keep.id)}, so a future duplicate is still caught.</div>
   </div>`;
 
   v.innerHTML = h;
@@ -15213,7 +15223,16 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks){
   const keep = kItem.rec, drop = dItem.rec;
 
   if(!grp.sameArea && !confirm('These records are in DIFFERENT talukas.\n\nIf this is one farmer with land in two places, merging will lose one of the farms. Continue anyway?')) return;
-  if(!confirm('Combine into one farmer?\n\nKeeps '+keep.id+'. '+drop.id+' is archived — not deleted — and both forms are kept.')) return;
+  const _nv = (drop.visits||[]).length, _nf = (drop.farms||[]).length;
+  if(!confirm('Combine into one farmer?\n\n'
+    + 'KEEPS: '+keep.id+' (stays the primary record, keeps its ID)\n'
+    + 'ARCHIVES: '+drop.id+' — not deleted, restorable at any time\n\n'
+    + 'Moved to '+keep.id+':\n'
+    + '  • its enrolment form, as Form 2\n'
+    + (_nv ? '  • '+_nv+' farm visit'+(_nv===1?'':'s')+'\n' : '')
+    + (_nf ? '  • '+_nf+' second farm'+(_nf===1?'':'s')+'\n' : '')
+    + '  • the summary fields you chose\n\n'
+    + 'Your farmer count drops by one.')) return;
 
   // 1. settle the summary fields
   const rows = dupDiff(keep, drop);
@@ -15232,6 +15251,26 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks){
         { at: drop.submittedAt || drop.publicSubmittedAt, name: drop.name||'', from: 'merged from '+drop.id });
     }
   }catch(e){ console.warn('[Sristi] could not carry the form across:', e); }
+
+  // 3a. v134 — carry the verification history across. Visits are only ever
+  //     added by an FC completing a farm visit and nothing in the app removes
+  //     one, so a union can never discard real work. Without this the visits
+  //     stayed behind on the archived record and looked lost.
+  const _sig = v => [v&&v.date, v&&v.fc, v&&v.score, v&&v.notes].join('|');
+  const _have = new Set((keep.visits||[]).map(_sig));
+  const _moved = (drop.visits||[]).filter(v => !_have.has(_sig(v)));
+  if(_moved.length){
+    keep.visits = (keep.visits||[]).concat(_moved)
+      .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  }
+  // any second farms move too, so no piece of land is orphaned
+  const _farms = (drop.farms||[]).filter(x => x && x.fid);
+  if(_farms.length){
+    keep.farms = (keep.farms||[]).concat(_farms.filter(x => !(keep.farms||[]).some(y=>y.fid===x.fid)));
+  }
+  if(!keep.verificationFormSubmittedAt && drop.verificationFormSubmittedAt){
+    keep.verificationFormSubmittedAt = drop.verificationFormSubmittedAt;
+  }
 
   // 3. archive the loser — never delete
   drop._archived   = true;
@@ -18605,6 +18644,8 @@ function viewAttention(){
     h += `<div class="hint" style="margin-bottom:12px">${nResend} of these ${nResend===1?'is an':'are'} <b>identical cop${nResend===1?'y':'ies'}</b> of a form already accepted \u2014 every answer matched, minutes apart. Those farmers ARE registered and were shown the normal confirmation. Nothing to do but clear them.</div>`;
   }
 
+  h += attnActionGuide();   // v134 — say what each button does, on the screen
+
   if(!rows.length){
     h += `<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">Nothing needs attention${F.program==='all'?'':' in this programme'}.</div>`;
   } else {
@@ -18620,7 +18661,13 @@ function viewAttention(){
         : null;
       const resend = isResend(r);
       h += `<tr style="${resend?'background:var(--panel-2,#f1f5f9);opacity:.72':''}">
-        <td><b>${esc(r.name||'\u2014')}</b>${resend?'<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Identical copy \u2014 safe to dismiss</div>':'<div style="font-size:10px;font-weight:700;color:var(--orange,#c2410c);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Different answers \u2014 needs a call</div>'}</td>
+        <td><b>${esc(r.name||'\u2014')}</b>${(function(){
+          // v134 — say how many answers actually differ, not just that they do.
+          if(resend) return '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Identical copy \u2014 safe to dismiss</div>';
+          var n = 0; try{ n = attnDiff(r, exRec).filter(function(d){return !d.same;}).length; }catch(e){}
+          return '<div style="font-size:10px;font-weight:700;color:var(--orange,#c2410c);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">'
+            + (n ? n+' answer'+(n===1?'':'s')+' differ \u2014 open to see which' : 'Same phone as a farmer on file') + '</div>';
+        })()}</td>
         <td style="font-size:12px">${esc(r.village||'')}${r.district?'<div style="font-size:10.5px;color:var(--ink-faint)">'+esc(String(r.district).split(' (')[0])+'</div>':''}</td>
         <td style="font-size:12px">${r.phone?`<a href="tel:${esc(r.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(r.phone)}</a>`:'\u2014'}</td>
         <td><span class="tag ${r.program==='haat'?'green':'blue'}" style="font-size:10.5px">${r.program==='haat'?'Haat':'Conversion'}</span></td>
@@ -18659,34 +18706,177 @@ function viewAttention(){
 }
 
 /* The whole submitted form, exactly as they filled it. */
+/* ============ WHY IS THIS HERE, AND WHAT HAPPENS IF I CLICK (v134) ============
+   Both review screens said WHAT a record was without saying WHY it was flagged
+   or WHAT a button would do. These helpers answer both, in words, in the UI.
+   ========================================================================== */
+
+/* The fields worth comparing between an incoming submission and the farmer
+   already holding that phone number. */
+const ATTN_FIELDS = [
+  ['name','Farmer name'], ['village','Village'], ['taluka','Taluka'], ['district','District'],
+  ['landAcres','Land (acres)'], ['yearsOrganic','Years organic'],
+];
+
+function _attnVal(v){
+  if(v == null) return '';
+  if(Array.isArray(v)) return v.map(x => (x && typeof x==='object')
+    ? Object.keys(x).map(k=>x[k]).filter(Boolean).join(' · ') : String(x)).filter(Boolean).join(', ');
+  if(typeof v === 'object') return Object.keys(v).map(k=>k+': '+v[k]).join(', ');
+  return String(v).trim();
+}
+function _attnClaims(rec){
+  if(!rec) return {};
+  const f = rec.form || (FORMS_CACHE[rec.id]||{}).enrol || rec.enrollmentFormFull;
+  const claims = f ? (((f.form||{}).farmer||{}).claims || (f.farmer||{}).claims || f.claims || []) : [];
+  const m = {}; (claims||[]).forEach(c => { if(c && c.id) m[c.id] = c; }); return m;
+}
+
+/* Everything that differs between the incoming submission and the record on
+   file. Returns record-level rows and form-level rows together, tagged. */
+function attnDiff(sub, existing){
+  const out = [];
+  ATTN_FIELDS.forEach(([k,label]) => {
+    const a = _attnVal(sub && sub[k]), b = _attnVal(existing && existing[k]);
+    if(!a && !b) return;
+    out.push({ label:label, incoming:a, onFile:b, same:a===b, src:'record' });
+  });
+  const ms = _attnClaims(sub), me = _attnClaims(existing);
+  const ids = [...new Set([...Object.keys(ms), ...Object.keys(me)])];
+  const qLabel = id => {
+    const q = (window.QUESTIONS_V5||[]).find(x=>x.id===id);
+    return (q && q.en) || (ms[id]||me[id]||{}).en || id;
+  };
+  ids.forEach(id => {
+    const a = _attnVal(ms[id] && ms[id].answer), b = _attnVal(me[id] && me[id].answer);
+    if(!a && !b) return;
+    out.push({ label:qLabel(id), incoming:a, onFile:b, same:a===b, src:'form' });
+  });
+  return out;
+}
+
+/* Why this submission is sitting in Needs attention, in one sentence. */
+function attnReason(r, existing, diffs){
+  const nDiff = (diffs||[]).filter(d => !d.same).length;
+  if(r._reason === 'identical_resend'){
+    return { kind:'identical',
+      title:'The very same form arrived twice',
+      text:'Every answer matched a submission minutes earlier, so this is the same application sent again — a double tap or a retry on a weak signal. '
+         + (existing ? esc(existing.name||'The farmer') : 'The farmer') + ' is already registered and was shown the normal confirmation. Nothing is missing.' };
+  }
+  return { kind:'different',
+    title:'This phone number already belongs to a farmer on file',
+    text:'The number was already registered'
+       + (existing ? ' to <b>'+esc(existing.name||'')+'</b> ('+esc(existing.id)+')' : '')
+       + ', so the app held this submission here instead of creating a second farmer on its own. '
+       + (nDiff ? '<b>'+nDiff+' answer'+(nDiff===1?'':'s')+' differ</b> from what is on file — those are listed below.'
+                : 'Nothing in it differs from the record on file.')
+       + ' Someone has to decide whether it is the same person, the same person with another piece of land, or a different person sharing the handset.' };
+}
+
+/* A side-by-side of incoming vs on file. Differences first. */
+function attnDiffTable(diffs, existing){
+  const d = (diffs||[]).filter(x=>!x.same);
+  const same = (diffs||[]).length - d.length;
+  if(!d.length){
+    return '<div class="hint" style="margin-bottom:12px">Nothing differs from the record on file — every answer matches.</div>';
+  }
+  let h = `<div class="subhead" style="margin-top:4px">What is different (${d.length})</div>
+    <div class="table-wrap" style="margin-bottom:12px"><table><thead><tr>
+      <th style="width:34%">Question</th>
+      <th>This submission</th>
+      <th>Already on file${existing?' — '+esc(existing.id):''}</th>
+    </tr></thead><tbody>`;
+  d.forEach(x => {
+    const cell = (t, other) => `<td style="font-size:12.5px;${!t?'color:var(--ink-faint);font-style:italic':''}${(t&&!other)?';background:var(--panel-2)':''}">${t?esc(t):'not answered'}</td>`;
+    h += `<tr><td style="font-size:12px;color:var(--ink-soft)">${esc(x.label)}${x.src==='form'?'<div style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em">from the form</div>':''}</td>${cell(x.incoming,x.onFile)}${cell(x.onFile,x.incoming)}</tr>`;
+  });
+  h += `</tbody></table></div>`;
+  if(same) h += `<div class="hint" style="margin-bottom:12px">${same} other answer${same===1?'':'s'} match exactly.</div>`;
+  return h;
+}
+
+/* What each button will actually do — shown on the screen, not just in a
+   confirm box nobody reads. */
+function attnActionGuide(){
+  return `<div class="card chart-card" style="margin-bottom:16px">
+    <div class="ct">What each choice does</div>
+    <div class="cs">Nothing here is deleted, and no farmer is created without you choosing it.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:4px">
+      <div style="background:var(--panel-2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">Add as another form</div>
+        <div style="font-size:12px;color:var(--ink-soft)">Same person, same farm. The form is attached to the farmer already on file and shows as Form 2.
+          <b>No new farmer.</b> Your count does not change.</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">Second farm</div>
+        <div style="font-size:12px;color:var(--ink-soft)">Same person, a different piece of land. A farm is added under the farmer on file, with its own coordinator, visit and result.
+          <b>No new farmer</b> — farmer count unchanged, farm count goes up by one.</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">New farmer</div>
+        <div style="font-size:12px;color:var(--ink-soft)">A genuinely different person who shares the handset. <b>Creates a second farmer record</b> on the same number.
+          Your count goes up by one. Use this rarely.</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">Dismiss</div>
+        <div style="font-size:12px;color:var(--ink-soft)">Removes it from this list. No farmer is created and nothing else changes.
+          The right choice for an identical copy.</div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:10px">Records here are <b>submissions</b>, not farmers — they are not counted anywhere and no field coordinator sees them.
+      Two farmer records that already exist are handled in <b>Duplicate records</b> instead.</div>
+  </div>`;
+}
+
 function openAttentionForm(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
+  /* v134 — lead with WHY this is here and WHAT differs from the record on
+     file. The raw form is still below, but it was never the thing the admin
+     needed first. */
+  const existing = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  if(existing) { try { loadForms(existing.id); } catch(e) {} }
+  const diffs = attnDiff(r, existing);
+  const why = attnReason(r, existing, diffs);
+
   const flat = [];
   const walk = (obj, prefix) => {
     if(!obj || typeof obj !== 'object') return;
     Object.keys(obj).forEach(k=>{
       const val = obj[k];
-      if(val && typeof val === 'object' && !Array.isArray(val)){ walk(val, prefix?prefix+' \u203a '+k:k); return; }
+      if(val && typeof val === 'object' && !Array.isArray(val)){ walk(val, prefix?prefix+' › '+k:k); return; }
       const shown = Array.isArray(val) ? val.join(', ') : String(val==null?'':val);
       if(shown === '' || shown === 'undefined') return;
-      flat.push([prefix?prefix+' \u203a '+k:k, shown]);
+      flat.push([prefix?prefix+' › '+k:k, shown]);
     });
   };
   walk(r.form, '');
-  const body = `<div class="hint" style="margin-bottom:12px">
-      <b>${esc(r.name||'')}</b>${r.village?' \u00b7 '+esc(r.village):''}${r.phone?' \u00b7 '+esc(r.phone):''}<br>
-      Applied for <b>${r.program==='haat'?'Haat':'Conversion'}</b> on ${esc(String(r.submittedAt||'').slice(0,10))}. This phone is already registered${r._existingId?' as '+esc(r._existingId):''}.
+
+  const body = `
+    <div style="background:var(--panel-2);border-left:3px solid var(--${why.kind==='identical'?'ink-faint':'orange,#c2410c'});border-radius:0 8px 8px 0;padding:11px 13px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:3px">${esc(why.title)}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55">${why.text}</div>
     </div>
-    <div style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
+    <div class="hint" style="margin-bottom:12px">
+      <b>${esc(r.name||'')}</b>${r.village?' · '+esc(r.village):''}${r.phone?' · '+esc(r.phone):''} · applied for
+      <b>${r.program==='haat'?'Haat':'Conversion'}</b> on ${esc(String(r.submittedAt||'').slice(0,10))}
+    </div>
+    ${existing ? attnDiffTable(diffs, existing) : '<div class="hint" style="margin-bottom:12px">The farmer this number belongs to could not be found, so there is nothing to compare against.</div>'}
+    <div class="subhead">Everything this farmer submitted</div>
+    <div style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
       <table style="width:100%;font-size:12px;border-collapse:collapse">
         ${flat.length ? flat.map(([k,val])=>`<tr><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft);width:42%;vertical-align:top">${esc(k)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600">${esc(val)}</td></tr>`).join('')
                       : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
       </table>
     </div>`;
-  modalShell('Submitted form \u2014 '+esc(r.name||''), body,
+  modalShell('Why this needs attention \u2014 '+esc(r.name||''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
-     <button class="btn btn-primary" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">Move across</button>`);
+     ${r._existingId ? `<button class="btn btn-primary" onclick="closeModal();addAttentionAsForm('${esc(r.id)}')">Same farmer, same farm \u2014 add as Form 2</button>
+     <button class="btn btn-clay" onclick="closeModal();addAttentionAsSecondFarm('${esc(r.id)}')">Same farmer, another farm</button>` : ''}
+     <button class="btn btn-ghost" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">A different person \u2014 create a new farmer</button>`);
 }
 
 /* Admin decides this really is a separate membership. The phone stays claimed

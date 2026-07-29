@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v134';
+const APP_VERSION = 'v135';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9539,7 +9539,10 @@ function viewHaat(){
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
     h+=`<tr data-id="${r.id}">
       <td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>
-      <td><span class="id-code">${r.id}</span></td>
+      <td><span class="id-code">${r.id}</span>${(function(){
+        const st = recordStamp(r);
+        return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
+      })()}</td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres} acres · ${r.yearsOrganic} yr organic</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td class="crop-cell" style="max-width:260px">${cropsHtml}</td>
@@ -12240,6 +12243,21 @@ function farmerFormList(f){
 function pickDrawerForm(farmerId, formId){
   window._drawerFormPick[farmerId] = formId || '';
   if(typeof openHaatDrawer === 'function') openHaatDrawer(farmerId);
+}
+
+/* v135 — when a record was created, to the minute. Two records for the same
+   farmer look identical in a list; the moment they arrived is often the only
+   thing that tells them apart. */
+function recordStamp(f){
+  const raw = (f && (f.publicSubmittedAt || f.submittedAt || f.enrollmentFormSubmittedAt)) || '';
+  if(!raw) return '';
+  const d = new Date(raw);
+  if(isNaN(d.getTime())) return String(raw).slice(0,10);
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let hh = d.getHours(), ap = hh >= 12 ? 'pm' : 'am';
+  hh = hh % 12; if(hh === 0) hh = 12;
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear()+', '+hh+':'+mm+' '+ap;
 }
 
 function renderHaatEnrollmentData(f){
@@ -18675,10 +18693,9 @@ function viewAttention(){
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
         <td>
           <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
-          ${r._existingId ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
-          ${r._existingId ? `<button class="btn btn-clay btn-sm" data-att-farm="${esc(r.id)}" style="padding:4px 9px">Second farm</button>` : ''}
-          <button class="btn btn-ghost btn-sm" data-att-move="${esc(r.id)}" style="padding:4px 9px">New farmer</button>
-          <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;color:var(--red)">Dismiss</button>
+          ${r._existingId && !resend ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;${resend?'':'color:var(--red)'}">Dismiss</button>
+          ${r._existingId ? `<button class="btn btn-ghost btn-sm" data-att-more="${esc(r.id)}" style="padding:4px 9px;color:var(--ink-soft)">Something else\u2026</button>` : ''}
         </td>
       </tr>`;
     });
@@ -18701,6 +18718,7 @@ function viewAttention(){
   v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
   v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>addAttentionAsForm(b.dataset.attAdd));
   v.querySelectorAll('[data-att-farm]').forEach(b=>b.onclick=()=>addAttentionAsSecondFarm(b.dataset.attFarm));
+  v.querySelectorAll('[data-att-more]').forEach(b=>b.onclick=()=>openAttentionOptions(b.dataset.attMore));
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
   v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));
 }
@@ -18742,6 +18760,11 @@ function attnDiff(sub, existing){
     out.push({ label:label, incoming:a, onFile:b, same:a===b, src:'record' });
   });
   const ms = _attnClaims(sub), me = _attnClaims(existing);
+  /* v135 — a Conversion farmer never filled the Haat enrolment form, so there
+     is nothing to compare question by question. Listing all 88 as differences
+     made it look like they had left the form blank rather than never having
+     been asked. Compare the form only when BOTH sides actually have one. */
+  if(!Object.keys(me).length || !Object.keys(ms).length) return out;
   const ids = [...new Set([...Object.keys(ms), ...Object.keys(me)])];
   const qLabel = id => {
     const q = (window.QUESTIONS_V5||[]).find(x=>x.id===id);
@@ -18865,6 +18888,9 @@ function openAttentionForm(id){
       <b>${r.program==='haat'?'Haat':'Conversion'}</b> on ${esc(String(r.submittedAt||'').slice(0,10))}
     </div>
     ${existing ? attnDiffTable(diffs, existing) : '<div class="hint" style="margin-bottom:12px">The farmer this number belongs to could not be found, so there is nothing to compare against.</div>'}
+    ${(existing && !Object.keys(_attnClaims(existing)).length) ? `<div class="hint" style="margin-bottom:12px">
+      <b>${esc(existing.name||existing.id)}</b> has no enrolment form of this kind on record${existing.program && existing.program!=='haat' ? ' — they are in the Conversion programme, which uses a different and much shorter form' : ''},
+      so there is only one form here and nothing to compare it against question by question. The details above are everything both records hold in common.</div>` : ''}
     <div class="subhead">Everything this farmer submitted</div>
     <div style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
       <table style="width:100%;font-size:12px;border-collapse:collapse">
@@ -18915,6 +18941,42 @@ async function addAttentionAsForm(id){
 
 /* v132 — the submission is the same farmer, but a different piece of land.
    It becomes a farm on the existing record, not a second farmer. */
+/* v135 — the two rarer choices, out of the row and behind one link, each
+   with its consequence spelled out. Five buttons on every row was the thing
+   the admin kept calling confusing. */
+function openAttentionOptions(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const ex = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  const exName = ex ? esc(ex.name||ex.id) : 'the farmer on file';
+  const crossProgramme = !!(ex && r.program && ((r.program==='haat' && ex.program!=='haat') || (r.program!=='haat' && ex.program==='haat')));
+  const body = `
+    ${crossProgramme ? `<div style="background:var(--panel-2);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55">
+      <b>Note:</b> ${exName} is on file in the <b>${ex.program==='haat'?'Haat':'Conversion'}</b> programme, and this application is for
+      <b>${r.program==='haat'?'Haat':'Conversion'}</b>. That is not a duplicate — it is the same person applying to the other programme.
+      <b>New farmer</b> is the option that puts them into it.</div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="border:1px solid var(--line);border-radius:8px;padding:11px 13px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:3px">Same farmer, a different piece of land</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px">Adds a farm under ${exName}, with its own field coordinator, its own visit and its own result.
+          <b>No new farmer</b> — your farmer count does not change.</div>
+        <button class="btn btn-clay btn-sm" id="aoFarm">Add as a second farm</button>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:8px;padding:11px 13px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:3px">A different person, or the other programme</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px"><b>Creates a new farmer record</b> on the same phone number.
+          ${exName} is left exactly as they are. Your farmer count goes up by one.</div>
+        <button class="btn btn-ghost btn-sm" id="aoNew">Create a new farmer</button>
+      </div>
+    </div>`;
+  modalShell('Something else \u2014 '+esc(r.name||''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>`);
+  const bf = document.getElementById('aoFarm'); if(bf) bf.onclick = () => { closeModal(); addAttentionAsSecondFarm(id); };
+  const bn = document.getElementById('aoNew');  if(bn) bn.onclick = () => { closeModal(); moveAttentionToFarmers(id); };
+}
+
 async function addAttentionAsSecondFarm(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;

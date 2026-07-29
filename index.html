@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v137';
+const APP_VERSION = 'v138';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4022,6 +4022,20 @@ function normaliseDB(d){
   }
   window.CROPS_CATALOG = d.crops;
   d.months=d.months||SEED.months;
+  // v138 — extend the list to today so month pickers and charts stay current.
+  try{
+    const now = new Date().toISOString().slice(0,7);
+    if(Array.isArray(d.months) && d.months.length && !d.months.includes(now)){
+      let [y,m] = String(d.months[d.months.length-1]).split('-').map(Number);
+      let guard = 0;
+      while(guard++ < 240){
+        m++; if(m > 12){ m = 1; y++; }
+        const key = y + '-' + String(m).padStart(2,'0');
+        if(!d.months.includes(key)) d.months.push(key);
+        if(key >= now) break;
+      }
+    }
+  }catch(e){}
   // v(district-cleanup) — force-correct on EVERY boot, not just first-seed.
   // Older/imported data (and even the old SEED literal) carries a messy,
   // duplicate-ridden district list (case dupes, spelling variants, missing
@@ -9021,7 +9035,7 @@ function viewDashboard(){
     return {haat:hn, active:all.filter(f=>f.active).length, onboarded:all.length};
   }).sort((a,b)=>b.active-a.active);
 
-  const recent3=DB.months.slice(-3);  // 3 most recent months
+  const recent3=recentMonths(3);  // v138 — from the calendar, not a stored list
   // Verifications are done by the Field Coordinators (Ayush / Harsh / Maheshbhai
   // and any others added in Settings) — not by every field coordinator in DB.fcs.
   const fcRows=(DB.fieldCoordinators||[]).map(fc=>{
@@ -9036,7 +9050,7 @@ function viewDashboard(){
   // (a farmer is "active in month M" if they have a visit/transaction logged that month;
   // since the data model only tracks visits, we approximate by counting onboarded farmers
   // whose latest visit fell in that month).
-  const recent3M=DB.months.slice(-3);
+  const recent3M=recentMonths(3);   // v138 — see above
   const haatRowsMo=getHaatList().map(_h=>_h.name).map(hn=>{
     const all=DB.haatFarmers.filter(f=>f.haat===hn&&f.status==='green');
     const monthly=recent3M.map(m=>{
@@ -9603,6 +9617,41 @@ function th(col,label){
 // with nothing parseable (very old imports) fall to 0 — bottom of a
 // latest-first sort, not the top, since we don't actually know when they
 // were created.
+/* v138 — the month it actually is, never read from a stored list. */
+function currentMonth(){ return todayISO().slice(0,7); }
+
+/* Keep DB.months covering everything up to now, so the month pickers and the
+   charts stay current without anyone maintaining a list by hand. Appends only;
+   it never removes a month someone already has data against. */
+function ensureMonthsCurrent(){
+  if(!Array.isArray(DB.months)) DB.months = [];
+  const now = currentMonth();
+  if(DB.months.includes(now)) return DB.months;
+  if(!DB.months.length){ DB.months = [now]; return DB.months; }
+  const last = DB.months[DB.months.length-1];
+  let [y,m] = String(last).split('-').map(Number);
+  let guard = 0;
+  while(guard++ < 240){
+    m++; if(m > 12){ m = 1; y++; }
+    const key = y + '-' + String(m).padStart(2,'0');
+    if(!DB.months.includes(key)) DB.months.push(key);
+    if(key >= now) break;
+  }
+  return DB.months;
+}
+
+/* The last N calendar months ending with this one, worked out from the date
+   rather than from whatever the stored list happens to contain. */
+function recentMonths(n){
+  const out = [];
+  const d = new Date();
+  for(let i = n - 1; i >= 0; i--){
+    const x = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push(x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0'));
+  }
+  return out;
+}
+
 function farmerLatestTs(f){
   const candidates = [f.submittedAt, f.enrollmentFormSubmittedAt, f.publicSubmittedAt, f.verificationFormSubmittedAt, f.enrolledMonth];
   for(const c of candidates){
@@ -10762,7 +10811,11 @@ function mapFormRow(row){
     practices,
     stage: fc ? 'assigned' : 'enrolled',
     transitionStatus:'red',
-    enrolledMonth: DB.months.includes(month) ? month : DB.months[DB.months.length-1],
+    enrolledMonth: (function(){ /* v138 — the real month, always. The old fallback
+        to the stored list's last entry is what stamped 285 farmers with 2026-05. */
+        const m = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonth();
+        ensureMonthsCurrent(); if(!DB.months.includes(m)) DB.months.push(m);
+        return m; })(),
     nextVisitDue: addDaysISO(today,30),
     observations:[], visits:[],
     lat:null, lng:null,
@@ -11453,7 +11506,11 @@ function openConvEnrollmentForm(){
       // pending" counter. Admin-created records keep the old behaviour.
       stage: fc ? 'assigned' : (isPublic ? 'verification_pending' : 'enrolled'),
       transitionStatus:'red',
-      enrolledMonth: DB.months.includes(month) ? month : DB.months[DB.months.length-1],
+      enrolledMonth: (function(){ /* v138 — the real month, always. The old fallback
+        to the stored list's last entry is what stamped 285 farmers with 2026-05. */
+        const m = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonth();
+        ensureMonthsCurrent(); if(!DB.months.includes(m)) DB.months.push(m);
+        return m; })(),
       nextVisitDue: addDaysISO((state.surveyDate||today), 30),
       observations:[], visits:[],
       lat:null, lng:null,
@@ -13585,7 +13642,7 @@ function openFarmerModal(program,id){
       logActivity('edit', `<b>${esc(f.name)}</b> (${esc(f.id)}) details edited`);
       toast('Farmer updated');
     }else{
-      const m=DB.months[DB.months.length-1];
+      const m=currentMonth();   // v138 — not the last entry of a stale list
       if(program==='haat'){
         const _assocYear=$('#ffAssocYear')?.value.trim();
         const _newHaatRec = {
@@ -16472,7 +16529,7 @@ window.addEventListener('message',async ev=>{
       }
     }
     // v9 audit-fix #29 — defensive default if DB.months is empty.
-    const m = (DB.months && DB.months.length) ? DB.months[DB.months.length-1] : todayISO().slice(0,7);
+    const m = currentMonth();   // v138 — see ensureMonthsCurrent
     const baseRec={
       program:'haat', name,
       village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',

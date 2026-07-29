@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v130';
+const APP_VERSION = 'v131';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8138,6 +8138,8 @@ function renderNav(){
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
     {sec:'Farm Locations'},
     {id:'farmMap',label:'Farm locations',ico:I.eye},
+    ...(dupPairs().length ? [{sec:'Data quality'},
+      {id:'dupRecords',label:'Duplicate records',ico:I.clock,badge:dupPairs().length}] : []),
     {sec:'Field Coordinators'},
     {id:'fieldCoordinators',label:'Field Coordinators',ico:I.fc,badge:(DB.fieldCoordinators||[]).length},
     {sec:'System'},
@@ -8861,6 +8863,7 @@ function viewFcProfile(){
 const TITLES={
   dashboard:['Programme oversight','Manager Dashboard'],
   farmMap:['Farm Locations','Farm Locations'],
+  dupRecords:['Data quality','Duplicate records'],
   haat:['Organic Haat Program','Haat Farmers'],
   verification:['Organic Haat Program','Verification Queue'],
   haats:['Organic Haat Program','Haats & Markets'],
@@ -14849,6 +14852,327 @@ function viewFarmMap(){
   setTimeout(plot, 50);
 }
 
+/* ============ VIEW: DUPLICATE RECORDS (v131, stage 2) ============
+   Two farmer RECORDS that turned out to be the same person get combined into
+   one. This is the counterpart to stage 1: that one stops new twins being
+   created from incoming submissions; this one cleans up the twins that already
+   exist and cannot be reached from Needs attention.
+
+   What a merge does, and does not do:
+     - one record survives and keeps its id
+     - the other is ARCHIVED, never deleted, and remembers what it merged into
+     - BOTH enrolment forms are kept — the loser's becomes Form 2 on the
+       survivor, using the same formsExtra machinery stage 1 built
+     - only the small summary the lists and map read has to be settled, field
+       by field, and only where the two records actually disagree
+     - the phone index is re-pointed at the survivor, so a future duplicate
+       submission is still caught
+   ================================================================= */
+
+const _dupTxt   = s => String(s==null?'':s).trim();
+const _dupPlain = s => _dupTxt(s).replace(/\s*\(.*$/,'');
+
+/* The summary fields a merge has to settle. Everything else lives in the
+   forms, which are kept whole and never reconciled. */
+const DUP_FIELDS = [
+  ['name','Farmer name'], ['village','Village'], ['taluka','Taluka'],
+  ['district','District'], ['landAcres','Land (acres)'],
+  ['yearsOrganic','Years organic'], ['certification','Certification'],
+  ['vertical','Vertical'], ['haat','Haat'], ['enrolledMonth','Joined'],
+];
+const DUP_NUMERIC = ['landAcres','yearsOrganic'];
+
+/* Active farmer records that share a phone number. Submissions waiting in
+   Needs attention are deliberately NOT included — those are stage 1's job,
+   and mixing them would offer two different answers to the same question. */
+function dupPairs(){
+  const all = [];
+  _excludeSeeds(DB.haatFarmers||[]).forEach(f => { if(f && !f._archived) all.push({rec:f, program:'haat'}); });
+  _excludeSeeds(DB.convFarmers||[]).forEach(f => { if(f && !f._archived) all.push({rec:f, program:'conv'}); });
+  const by = {};
+  all.forEach(x => {
+    const k = _phoneKey(x.rec.phone);
+    if(k) (by[k] = by[k] || []).push(x);
+  });
+  return Object.keys(by)
+    .filter(k => by[k].length > 1)
+    .filter(k => !by[k].some(x => x.rec._notDuplicate))
+    .map(k => {
+      const items = by[k].slice().sort((a,b) =>
+        String(a.rec.submittedAt||a.rec._sortTs||'').localeCompare(String(b.rec.submittedAt||b.rec._sortTs||'')));
+      /* Same farm or two? Judged ONLY from district and taluka, which come
+         from dropdowns and are therefore spelt consistently. Village is typed
+         by hand and routinely appears in both scripts, so a village mismatch
+         is not evidence of anything. Blank never counts as a difference. */
+      const differs = (x,y) => {
+        const p=_dupPlain(x).toLowerCase(), q=_dupPlain(y).toLowerCase();
+        return p && q && p !== q;
+      };
+      let sameArea = true;
+      for(let i=1;i<items.length;i++){
+        if(differs(items[0].rec.district, items[i].rec.district) ||
+           differs(items[0].rec.taluka,   items[i].rec.taluka)) sameArea = false;
+      }
+      return { phone:k, items:items, sameArea:sameArea };
+    })
+    .sort((a,b) => (a.sameArea===b.sameArea) ? 0 : (a.sameArea ? -1 : 1));
+}
+
+function _dupClaims(rec){
+  const fc = FORMS_CACHE[rec.id] || {};
+  const e = fc.enrol || rec.enrollmentFormFull;
+  return (e && Array.isArray(e.claims)) ? e.claims : [];
+}
+function _dupClaimMap(rec){
+  const m = {}; _dupClaims(rec).forEach(c => { if(c && c.id) m[c.id] = c; }); return m;
+}
+function _dupAnswered(rec){
+  return _dupClaims(rec).filter(c => {
+    const v = c && c.answer; if(v==null) return false;
+    const s = typeof v==='object' ? JSON.stringify(v) : String(v);
+    return s.trim() !== '' && s !== '[]';
+  }).length;
+}
+
+/* Where the two records disagree on a summary field. Form answers are NOT
+   compared — both forms survive intact, so there is nothing to choose. */
+function dupDiff(a, b){
+  return DUP_FIELDS.map(([k,label]) => {
+    const av=_dupTxt(a[k]), bv=_dupTxt(b[k]);
+    return { key:k, label:label, a:av, b:bv, same:av===bv };
+  });
+}
+
+function viewDuplicateRecords(){
+  const v = $('#view');
+  if(!FILTERS.dup) FILTERS.dup = { open:null, picks:{}, keep:null };
+  const F = FILTERS.dup;
+  const groups = dupPairs();
+  const g = F.open ? groups.find(x => x.phone === F.open) : null;
+
+  /* ---------------- list ---------------- */
+  if(!g){
+    const nRec = groups.reduce((n,x)=>n+x.items.length, 0);
+    let h = `<div class="card chart-card" style="margin-bottom:16px">
+      <div class="ct">Farmers on file more than once</div>
+      <div class="cs">A phone number should belong to one farmer. These records share one.
+        Combining them keeps every form and archives nothing but the spare record.</div>
+      <div class="detail-grid">
+        <div class="detail-cell"><div class="k">To review</div><div class="v">${groups.length}</div></div>
+        <div class="detail-cell"><div class="k">Records involved</div><div class="v">${nRec}</div></div>
+        <div class="detail-cell"><div class="k">Same area</div><div class="v" style="color:var(--yellow)">${groups.filter(x=>x.sameArea).length}</div></div>
+        <div class="detail-cell"><div class="k">Different taluka</div><div class="v" style="color:var(--accent)">${groups.filter(x=>!x.sameArea).length}</div></div>
+      </div>
+    </div>`;
+
+    if(!groups.length){
+      h += `<div class="empty">${svg(I.check)}<div>No farmer is on file twice. Nothing to do here.</div></div>`;
+      v.innerHTML = h; return;
+    }
+
+    h += `<div class="table-wrap"><table><thead><tr>
+      <th>Phone</th><th>Records</th><th>Where</th><th>Looks like</th><th></th>
+    </tr></thead><tbody>`;
+    groups.forEach(x => {
+      const names = [...new Set(x.items.map(i=>_dupTxt(i.rec.name)))];
+      h += `<tr>
+        <td><span class="id-code">${esc(x.phone)}</span></td>
+        <td class="name-cell"><div class="nm">${esc(names[0]||'')}</div>
+          <div class="sub">${names.length>1?esc(names[1]):'same name on both'}</div></td>
+        <td style="font-size:12px">${esc(_dupTxt(x.items[0].rec.village))}, ${esc(_dupPlain(x.items[0].rec.district))}
+          ${x.sameArea?'':`<div style="color:var(--ink-faint);font-size:11px">${esc(_dupTxt(x.items[1].rec.village))}, ${esc(_dupPlain(x.items[1].rec.district))}</div>`}</td>
+        <td><span class="tag ${x.sameArea?'yellow':'grey'}"><span class="d"></span>${x.sameArea?'One farmer twice':'Different taluka'}</span></td>
+        <td style="text-align:right"><button class="btn btn-sm btn-ghost" data-dup="${esc(x.phone)}">Review</button></td>
+      </tr>`;
+    });
+    h += `</tbody></table></div>`;
+    v.innerHTML = h;
+    v.querySelectorAll('[data-dup]').forEach(b => b.onclick = () => {
+      F.open = b.dataset.dup; F.picks = {}; F.keep = null;
+      // both forms are needed to show what each record carries
+      const grp = dupPairs().find(x=>x.phone===F.open);
+      if(grp) Promise.all(grp.items.map(i=>loadForms(i.rec.id).catch(()=>null))).then(()=>{
+        if(FILTERS.dup.open === b.dataset.dup) render();
+      });
+      render();
+    });
+    return;
+  }
+
+  /* ---------------- one pair ---------------- */
+  if(g.items.length > 2){
+    v.innerHTML = `<div class="empty">More than two records share ${esc(g.phone)}. Merge them two at a time.</div>`;
+    return;
+  }
+  const A = g.items[0].rec, B = g.items[1].rec;
+  const keepId = F.keep || A.id;                       // oldest survives by default
+  const keep = keepId === A.id ? A : B;
+  const drop = keepId === A.id ? B : A;
+  const rows = dupDiff(keep, drop);
+  const conflicts = rows.filter(r => !r.same && r.a && r.b);
+  const fills     = rows.filter(r => !r.same && (!r.a || !r.b));
+  const pickOf = k => {
+    if(F.picks[k]) return F.picks[k];
+    const r = rows.find(x=>x.key===k);
+    return (r && r.a) ? 'keep' : 'drop';
+  };
+
+  let h = `<button class="btn btn-sm btn-ghost" id="dupBack" style="margin-bottom:14px">← All duplicates</button>`;
+
+  h += `<div class="card chart-card" style="margin-bottom:14px;border-left:3px solid var(--${g.sameArea?'yellow':'accent'})">
+    <div class="ct">${g.sameArea ? 'The same farmer, entered twice' : 'Careful — these are in different talukas'}</div>
+    <div class="cs">${g.sameArea
+      ? 'Both records describe the same person in the same place. Combine them into one.'
+      : `<b>${esc(_dupPlain(A.taluka))}, ${esc(_dupPlain(A.district))}</b> and <b>${esc(_dupPlain(B.taluka))}, ${esc(_dupPlain(B.district))}</b>.
+         If this is one farmer with land in two places, do NOT merge — merging would lose one of the farms.
+         Leave it until we can hold two farms under one farmer.`}</div>
+  </div>`;
+
+  /* which record survives */
+  h += `<div class="card chart-card" style="margin-bottom:14px">
+    <div class="ct">Which record survives</div>
+    <div class="cs">The survivor keeps its ID. The other is archived — never deleted — and remembers what it was merged into.</div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap">
+      ${[A,B].map(r => `<button class="btn btn-sm ${keepId===r.id?'btn-primary':'btn-ghost'}" data-dupkeep="${esc(r.id)}" style="text-align:left;padding:8px 12px">
+        <span style="font-family:var(--mono,monospace);font-size:11.5px">${esc(r.id)}</span>
+        <span style="display:block;font-size:10.5px;font-weight:400;opacity:.85">${esc(_dupTxt(r.name))} · ${_dupAnswered(r)} answers${r.visits&&r.visits.length?' · '+r.visits.length+' visit'+(r.visits.length===1?'':'s'):''}</span>
+      </button>`).join('')}
+    </div>
+    ${(drop.visits&&drop.visits.length)?`<div class="hint" style="margin-top:9px;color:var(--red)">⚠ ${esc(drop.id)} has ${drop.visits.length} recorded farm visit${drop.visits.length===1?'':'s'}. Archiving it takes that history out of the active record — consider keeping that one instead.</div>`:''}
+  </div>`;
+
+  /* the summary fields */
+  h += `<div class="card chart-card" style="margin-bottom:14px">
+    <div class="detail-grid">
+      <div class="detail-cell"><div class="k">Need a decision</div><div class="v" style="color:var(--yellow)">${conflicts.length}</div></div>
+      <div class="detail-cell"><div class="k">Filled in for you</div><div class="v" style="color:var(--green)">${fills.length}</div></div>
+      <div class="detail-cell"><div class="k">Already the same</div><div class="v">${rows.length-conflicts.length-fills.length}</div></div>
+    </div>
+    <div class="cs" style="margin:2px 0 0">Only the summary the lists and map read is settled here.
+      <b>Both enrolment forms are kept in full</b> and appear as Form 1 and Form 2 on the surviving farmer.</div>
+  </div>`;
+
+  if(conflicts.length + fills.length){
+    h += `<div class="table-wrap" style="margin-bottom:14px"><table><thead><tr>
+      <th style="width:150px">Field</th>
+      <th>Keeping <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">${esc(keep.id)}</div></th>
+      <th>Archiving <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">${esc(drop.id)}</div></th>
+    </tr></thead><tbody>`;
+    const cell = (r, side, val) => {
+      const on = pickOf(r.key)===side, blank = !val;
+      return `<td style="padding:0">
+        <label style="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;cursor:${blank?'default':'pointer'};
+          background:${on?'var(--panel-2)':'transparent'};border-left:3px solid ${on?'var(--green)':'transparent'}">
+          <input type="radio" name="dup_${esc(r.key)}" data-dpk="${esc(r.key)}" data-side="${side}" ${on?'checked':''} ${blank?'disabled':''} style="margin-top:3px">
+          <span style="font-size:12.5px;${blank?'color:var(--ink-faint);font-style:italic':''}">${blank?'not recorded':esc(val)}</span>
+        </label></td>`;
+    };
+    if(conflicts.length) h += `<tr><td colspan="3" style="background:var(--panel-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)">They disagree — please choose</td></tr>`;
+    conflicts.concat(fills).forEach((r,i) => {
+      if(fills.length && i===conflicts.length){
+        h += `<tr><td colspan="3" style="background:var(--panel-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)">Only one has a value — taken automatically</td></tr>`;
+      }
+      h += `<tr><td style="font-size:12.5px">${esc(r.label)}</td>${cell(r,'keep',r.a)}${cell(r,'drop',r.b)}</tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+
+  h += `<div class="card chart-card">
+    <div class="ct">Result</div>
+    <div class="cs" id="dupPreview"></div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:6px">
+      <button class="btn btn-primary" id="dupMerge">Combine into one farmer</button>
+      <button class="btn btn-ghost" id="dupNot">These are two different people</button>
+    </div>
+    <div class="hint" style="margin-top:10px">Nothing is deleted. The archived record stays in the archive and can be restored,
+      and both enrolment forms remain exactly as the farmers submitted them.</div>
+  </div>`;
+
+  v.innerHTML = h;
+  $('#dupBack').onclick = () => { F.open=null; F.picks={}; F.keep=null; render(); };
+  v.querySelectorAll('[data-dupkeep]').forEach(b => b.onclick = () => { F.keep=b.dataset.dupkeep; F.picks={}; render(); });
+  const preview = () => {
+    const el = document.getElementById('dupPreview'); if(!el) return;
+    const nm = rows.find(r=>r.key==='name');
+    const finalName = nm ? (pickOf('name')==='keep' ? nm.a : nm.b) : _dupTxt(keep.name);
+    const fromDrop = conflicts.concat(fills).filter(r=>pickOf(r.key)==='drop').length;
+    el.innerHTML = `One farmer, <b>${esc(finalName)}</b>, keeping id <b>${esc(keep.id)}</b>
+      — ${fromDrop} value${fromDrop===1?'':'s'} taken from ${esc(drop.id)}, which is then archived.
+      <b>${esc(finalName)}</b> will show <b>2 forms</b>. Your farmer count drops by one.`;
+  };
+  v.querySelectorAll('[data-dpk]').forEach(r => r.onchange = () => { F.picks[r.dataset.dpk]=r.dataset.side; preview(); });
+  preview();
+  $('#dupMerge').onclick = () => mergeDuplicatePair(g.phone, keep.id, drop.id, Object.assign({}, F.picks));
+  $('#dupNot').onclick   = () => markNotDuplicate(g.phone);
+}
+
+/* ---------------- the actions ---------------- */
+
+async function mergeDuplicatePair(phone, keepId, dropId, picks){
+  const grp = dupPairs().find(x=>x.phone===phone);
+  if(!grp) return;
+  const kItem = grp.items.find(i=>i.rec.id===keepId), dItem = grp.items.find(i=>i.rec.id===dropId);
+  if(!kItem || !dItem) return toast('Could not find both records', 'error');
+  const keep = kItem.rec, drop = dItem.rec;
+
+  if(!grp.sameArea && !confirm('These records are in DIFFERENT talukas.\n\nIf this is one farmer with land in two places, merging will lose one of the farms. Continue anyway?')) return;
+  if(!confirm('Combine into one farmer?\n\nKeeps '+keep.id+'. '+drop.id+' is archived — not deleted — and both forms are kept.')) return;
+
+  // 1. settle the summary fields
+  const rows = dupDiff(keep, drop);
+  rows.filter(r=>!r.same).forEach(r => {
+    const side = picks[r.key] || (r.a ? 'keep' : 'drop');
+    const val  = side==='keep' ? r.a : r.b;
+    keep[r.key] = DUP_NUMERIC.includes(r.key) ? (parseFloat(val)||0) : val;
+  });
+
+  // 2. the archived record's form becomes Form 2 on the survivor
+  try{
+    await loadForms(drop.id);
+    const dropEnrol = (FORMS_CACHE[drop.id]||{}).enrol || drop.enrollmentFormFull;
+    if(dropEnrol && Array.isArray(dropEnrol.claims) && dropEnrol.claims.length){
+      await attachFormToFarmer(keep.id, drop.id, dropEnrol,
+        { at: drop.submittedAt || drop.publicSubmittedAt, name: drop.name||'', from: 'merged from '+drop.id });
+    }
+  }catch(e){ console.warn('[Sristi] could not carry the form across:', e); }
+
+  // 3. archive the loser — never delete
+  drop._archived   = true;
+  drop.archivedAt  = new Date().toISOString();
+  drop.archivedBy  = (actor()||{}).name || 'admin';
+  drop._mergedInto = keep.id;
+  keep._mergedFrom = (keep._mergedFrom||[]).concat([drop.id]);
+  markLocalTouch(dItem.program==='conv'?'convFarmers':'haatFarmers', drop.id);
+  markLocalTouch(kItem.program==='conv'?'convFarmers':'haatFarmers', keep.id);
+
+  // 4. the phone must end up pointing at the SURVIVOR. Whichever record held
+  //    the claim, release it and re-claim for the survivor — otherwise a future
+  //    duplicate submission would sail straight through unnoticed.
+  try{
+    await releasePhoneIndex(phone);
+    await claimPhoneIndex(keep.phone, kItem.program, keep.id);
+  }catch(e){ console.warn('[Sristi] phone index re-point failed:', e); }
+
+  logActivity('decision', `Combined <b>${esc(drop.id)}</b> into <b>${esc(keep.id)}</b> — ${esc(keep.name||'')} (${esc(phone)}). Both forms kept; ${esc(drop.id)} archived.`);
+  FILTERS.dup = { open:null, picks:{}, keep:null };
+  await saveDB(); render();
+  toast('Combined — '+(keep.name||keep.id)+' now has 2 forms');
+}
+
+async function markNotDuplicate(phone){
+  const grp = dupPairs().find(x=>x.phone===phone);
+  if(!grp) return;
+  if(!confirm('Mark these as two different people?\n\nBoth records stay exactly as they are and this pair stops being listed. Only do this if they really are different farmers who share a handset.')) return;
+  grp.items.forEach(i => {
+    i.rec._notDuplicate = true;
+    markLocalTouch(i.program==='conv'?'convFarmers':'haatFarmers', i.rec.id);
+  });
+  logActivity('edit', `Marked ${grp.items.length} records on <b>${esc(phone)}</b> as separate people — they share a handset.`);
+  FILTERS.dup = { open:null, picks:{}, keep:null };
+  await saveDB(); render();
+  toast('Marked as separate people');
+}
+
 function viewData(){
   const v=$('#view');
   const total=DB.haatFarmers.length+DB.convFarmers.length;
@@ -15008,7 +15332,7 @@ function render(){
   // v9 Batch 4 — route guard: FCs are confined to their action surfaces.
   // Any analytics, system, or config route bounces them to their home
   // (Verification Queue).
-  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap'].indexOf(ROUTE) >= 0){
+  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','dupRecords'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
   document.body.classList.toggle('fc-mode', !isAdminUser());
@@ -15047,6 +15371,7 @@ function render(){
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
     farmMap:viewFarmMap,
+    dupRecords:viewDuplicateRecords,
     public_landing:renderPublicLanding,
     public_haat_form:viewPublicHaatForm,
     public_conv_form:viewPublicConvForm,

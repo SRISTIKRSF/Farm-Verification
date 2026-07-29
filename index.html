@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v129';
+const APP_VERSION = 'v130';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5242,6 +5242,7 @@ async function loadForms(farmerId){
     if(cached){
       if(cached.enrol && !fc.enrol) fc.enrol = cached.enrol;
       if(cached.verif && !fc.verif) fc.verif = cached.verif;
+      if(cached.extra) fc.extra = Object.assign({}, cached.extra, fc.extra || {});
     }
   }catch(e){}
   // cloud — authoritative
@@ -5252,9 +5253,19 @@ async function loadForms(farmerId){
         const v = snap.val() || {};
         if(v.enrol) fc.enrol = v.enrol;
         if(v.verif) fc.verif = v.verif;
+
+      }
+      // v130 — attached forms (repeat submissions) live in their own node so
+      // an older build can never overwrite them. Only fetched when the record
+      // says there are some, so this costs nothing for the 99% with one form.
+      if((rec && (rec.extraForms||[]).length)){
+        try{
+          const ex = await fbRef('formsExtra/'+farmerId).get();
+          if(ex.exists()) fc.extra = Object.assign({}, fc.extra || {}, ex.val() || {});
+        }catch(e){ console.warn('[Sristi] attached forms load failed:', e); }
       }
       fc._complete = true;
-      idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null}).catch(()=>{});
+      idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null, extra: fc.extra||null}).catch(()=>{});
     }catch(e){ console.warn('[Sristi] forms load failed:', e); }
   }
   fc._attempted = true;
@@ -5265,11 +5276,45 @@ function setForms(farmerId, kind, data){   // kind: 'enrol' | 'verif'
   FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
   FORMS_CACHE[farmerId][kind] = data;
   _attachFormsToRecord(farmerId);
-  idbPut('forms', {farmerId, enrol: FORMS_CACHE[farmerId].enrol||null, verif: FORMS_CACHE[farmerId].verif||null}).catch(()=>{});
+  idbPut('forms', {farmerId, enrol: FORMS_CACHE[farmerId].enrol||null, verif: FORMS_CACHE[farmerId].verif||null,
+                   extra: FORMS_CACHE[farmerId].extra||null}).catch(()=>{});
   persistForms(farmerId);
 }
+/* v130 — attach a repeat submission to the farmer who already holds the
+   phone number, as an additional enrolment form. The farmer record keeps only
+   a small pointer (id, when, who it came from); the form itself lives in
+   forms/{farmerId}.extra so it costs nothing until someone opens the drawer. */
+async function attachFormToFarmer(farmerId, formId, formPayload, meta){
+  if(!farmerId || !formId || !formPayload) return null;
+  const rec = (DB.haatFarmers||[]).find(x=>x.id===farmerId)
+           || (DB.convFarmers||[]).find(x=>x.id===farmerId);
+  if(!rec) return null;
+  await loadForms(farmerId);                      // don't overwrite what's already there
+  const fc = FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
+  fc.extra = fc.extra || {};
+  fc.extra[formId] = formPayload;
+  idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null, extra: fc.extra}).catch(()=>{});
+  // Same durable queue the enrolment forms use: survives offline AND closing
+  // the tab, so the pointer on the record can never outlive the form itself.
+  const _p = sanitizeForFB(formPayload);
+  idbPut('formWrites', {key:'extra:'+farmerId+':'+formId, farmerId,
+                        path:'formsExtra/'+farmerId+'/'+formId, payload:_p, at:Date.now()})
+    .then(()=>flushFormWrites())
+    .catch(()=>{ if(FB && FB.ready) fbRef('formsExtra/'+farmerId+'/'+formId).set(_p).catch(e=>console.warn('attached form write:',e)); });
+  meta = meta || {};
+  rec.extraForms = (rec.extraForms||[]).filter(x => x && x.id !== formId);
+  rec.extraForms.push({ id: formId, at: meta.at || new Date().toISOString(),
+                        name: meta.name || '', from: meta.from || 'public form' });
+  markLocalTouch(rec.program === 'conversion' || rec.program === 'conv' ? 'convFarmers' : 'haatFarmers', rec.id);
+  return rec;
+}
+
 function persistForms(farmerId){
   const fc = FORMS_CACHE[farmerId]; if(!fc) return;
+  // v130 — deliberately NOT including attached forms here. This write
+  // replaces the whole node, and a device on an older build writes only
+  // {enrol, verif}; if attached forms lived here they would be wiped by any
+  // stale client saving a verification. They live in formsExtra/ instead.
   const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null});
   // durable write queue — survives offline AND closing the tab
   idbPut('formWrites', {key: farmerId, farmerId, payload, at: Date.now()})
@@ -5286,7 +5331,7 @@ async function flushFormWrites(){
     const items = await idbAll('formWrites').catch(()=>[]);
     for(const it of items){
       try{
-        await fbRef('forms/'+it.farmerId).set(it.payload);
+        await fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload);
         // #41 — re-read before deleting: if a newer persistForms() for the same farmer
         // landed during the write's await, the queue row now holds the newer payload —
         // leave it for the next flush instead of deleting the latest (unsynced) edit.
@@ -12161,7 +12206,57 @@ function openCropsHistoryModal(farmerId){
 /* Renders the comprehensive enrollment data the farmer filled in the long
    29-question Gujarati patrak. Each Q-section becomes a card. Empty sections
    collapse silently.                                                        */
+/* v130 — which enrolment form the drawer is currently showing.
+   null/'' means the original. */
+window._drawerFormPick = window._drawerFormPick || {};
+
+/* Every enrolment form on record for this farmer, oldest first. */
+function farmerFormList(f){
+  const out = [];
+  if(f.enrollmentFormFull) out.push({ id:'', label:'Form 1', at:f.enrollmentFormSubmittedAt||f.publicSubmittedAt||f.submittedAt||'', form:f.enrollmentFormFull });
+  const fc = FORMS_CACHE[f.id] || {};
+  (f.extraForms||[]).forEach((x,i)=>{
+    if(!x || !x.id) return;
+    const raw = (fc.extra||{})[x.id];
+    if(!raw) return;
+    const claims = ((raw.form||{}).farmer||{}).claims || (raw.farmer||{}).claims || raw.claims || [];
+    out.push({ id:x.id, label:'Form '+(out.length+1), at:x.at||'', from:x.from||'', form:{claims:claims} });
+  });
+  return out;
+}
+
+function pickDrawerForm(farmerId, formId){
+  window._drawerFormPick[farmerId] = formId || '';
+  if(typeof openHaatDrawer === 'function') openHaatDrawer(farmerId);
+}
+
 function renderHaatEnrollmentData(f){
+  /* v130 — a farmer can now carry more than one enrolment form (a repeat
+     submission attached by an admin). Show a tab per form and render the
+     selected one through the SAME summary renderer, by handing it a shallow
+     copy whose enrollmentFormFull is the chosen form. No duplicated view. */
+  const forms = farmerFormList(f);
+  if(forms.length > 1){
+    const pick = window._drawerFormPick[f.id] || '';
+    const cur  = forms.find(x=>x.id===pick) || forms[0];
+    let tabs = `<div class="subhead" style="margin-top:14px">Forms received (${forms.length})</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`;
+    forms.forEach(x=>{
+      const on = x.id === cur.id;
+      tabs += `<button class="btn btn-sm ${on?'btn-primary':'btn-ghost'}" data-formpick="${esc(x.id)}" style="padding:5px 11px;text-align:left">
+        ${esc(x.label)}
+        <span style="display:block;font-size:10px;font-weight:400;opacity:.8">${x.at?esc(fmtDate(String(x.at).slice(0,10))):'date unknown'}${x.from?' · '+esc(x.from):''}</span>
+      </button>`;
+    });
+    tabs += `</div>
+      <div class="hint" style="margin-bottom:10px">${forms.length} separate submissions from this phone number. Each is kept exactly as it was filled in — nothing has been merged or overwritten.</div>`;
+    const proxy = Object.assign({}, f, {enrollmentFormFull: cur.form});
+    return tabs + (Array.isArray(cur.form && cur.form.claims) ? renderV5EnrollmentSummary(proxy) : '');
+  }
+  return _renderHaatEnrollmentDataSingle(f);
+}
+
+function _renderHaatEnrollmentDataSingle(f){
   /* v6 - v5-aware short-circuit. If the farmer has an enrollmentFormFull
      (i.e. they came through the v5 schema-driven enrolment), render that
      view instead of the legacy v3 patrak renderer below.                  */
@@ -12483,10 +12578,17 @@ function openHaatDrawer(id){
   window._drawerFarmerId = id;
   if(!(FORMS_CACHE[id] && (FORMS_CACHE[id]._complete || FORMS_CACHE[id]._attempted))){
     const hadForms = !!(f.enrollmentFormFull || f.verificationFormFull);
+    // v130 — also repaint when ATTACHED forms arrive. A farmer who already had
+    // an enrolment form would otherwise never show the Form 1 / Form 2 tabs:
+    // the extras land in the cache after the first paint and nothing asked for
+    // a second one.
+    const hadExtra = Object.keys((FORMS_CACHE[id]||{}).extra||{}).length;
     loadForms(id).then(()=>{
       const gotForms = !!(f.enrollmentFormFull || f.verificationFormFull);
+      const gotExtra = Object.keys((FORMS_CACHE[id]||{}).extra||{}).length;
       const dr = $('#drawer');
-      if(!hadForms && gotForms && dr && dr.classList.contains('show') && window._drawerFarmerId === id){
+      if(((!hadForms && gotForms) || gotExtra > hadExtra)
+         && dr && dr.classList.contains('show') && window._drawerFarmerId === id){
         openHaatDrawer(id);
       }
     });
@@ -12544,6 +12646,7 @@ function openHaatDrawer(id){
   </div>`;
 
   // ============ ENROLLMENT FORM DATA — what the farmer filled in the long Gujarati patrak ============
+  // v130 — may render a tab strip when more than one form is on record.
   h+=renderHaatEnrollmentData(f);
 
   // visit timeline
@@ -12654,6 +12757,10 @@ function openHaatDrawer(id){
       else if(a==='cropsHistory'){ if(ev&&ev.preventDefault)ev.preventDefault(); openCropsHistoryModal(id); }
       else if(a==='toggle'){f.active=!f.active;await saveDB();closeDrawer();render();toast(f.active?'Marked active':'Marked inactive');}
     };
+  });
+  // v130 — switch between Form 1 / Form 2 without leaving the drawer.
+  $('#drawer').querySelectorAll('[data-formpick]').forEach(b=>{
+    b.onclick = () => pickDrawerForm(id, b.dataset.formpick);
   });
   const drawerPdfBtn = $('#drawerPdfBtn');
   if(drawerPdfBtn) drawerPdfBtn.onclick = async () => {
@@ -17894,7 +18001,8 @@ function viewAttention(){
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
         <td>
           <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
-          <button class="btn btn-primary btn-sm" data-att-move="${esc(r.id)}" style="padding:4px 9px">Move across</button>
+          ${r._existingId ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-att-move="${esc(r.id)}" style="padding:4px 9px">New farmer</button>
           <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;color:var(--red)">Dismiss</button>
         </td>
       </tr>`;
@@ -17916,6 +18024,7 @@ function viewAttention(){
     toast('Dismissed '+ids.length+' identical cop'+(ids.length===1?'y':'ies'));
   };
   v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
+  v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>addAttentionAsForm(b.dataset.attAdd));
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
   v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));
 }
@@ -17954,6 +18063,37 @@ function openAttentionForm(id){
 /* Admin decides this really is a separate membership. The phone stays claimed
    by the ORIGINAL record — the index exists to stop strangers self-registering
    twice, and an admin override is a conscious act, so we do not fight it. */
+/* v130 — the normal resolution for a repeat submission: it becomes another
+   form on the farmer who already holds that phone number. No second farmer
+   record, so the count stays right and no FC is sent out twice. */
+async function addAttentionAsForm(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const target = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  if(!target){
+    toast('Could not find the farmer this number belongs to. Use "New farmer" if they really are a different person.', 'error');
+    return;
+  }
+  if(!confirm('Add this submission to '+(target.name||target.id)+' as another form?\n\n'
+    + 'No new farmer is created. '+(target.name||'They')+' will show two forms, and you can compare them side by side.\n\n'
+    + 'Only do this if it is the same person.')) return;
+
+  const payload = r.form || (r.enrollmentFormFull ? {form:{farmer:{claims:r.enrollmentFormFull.claims||[]}}} : null);
+  if(!payload){ toast('That submission has no form data to attach.', 'error'); return; }
+
+  await attachFormToFarmer(target.id, r.id, payload,
+    { at: r.submittedAt || r.publicSubmittedAt, name: r.name || '', from: 'repeat submission' });
+
+  _explicitDeletes.add('pendingEnrolments/'+id);          // v129 — authorise, or saveDB refuses
+  DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>x.id!==id);
+  if(FB && FB.ready){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} }
+  logActivity('enroll', `Repeat submission from <b>${esc(r.name||'')}</b> (${esc(r.phone||'')}) added to <b>${esc(target.name||'')}</b> (${esc(target.id)}) as another form — no new farmer created.`);
+  await saveDB(); render();
+  toast('Added to '+(target.name||target.id)+' as another form');
+}
+
 async function moveAttentionToFarmers(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;

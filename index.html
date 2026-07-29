@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v128';
+const APP_VERSION = 'v129';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4756,12 +4756,39 @@ async function saveDB(silent){
     // v121 — an explicitly-authorised delete is never capped (see _explicitDeletes).
     const authorised = allMissing.filter(id => _explicitDeletes.has(col+'/'+id));
     authorised.forEach(id=>{ updates[col+'/'+id]=null; });
+    // v129 — no deletion is ever silent again. The five farmers lost on
+    // 2026-07-28 left no trace anywhere; only a manual audit found them.
+    if(authorised.length){
+      try{ logActivity('decision','Permanently removed '+authorised.length+' '+esc(col)+
+        ' record'+(authorised.length===1?'':'s')+' — <b>'+esc(authorised.slice(0,5).join(', '))+
+        (authorised.length>5?' …':'')+'</b>'); }catch(e){}
+    }
+    // v129 — an UNAUTHORISED delete is now never written, at any size.
+    //
+    // Every real deletion in this app registers itself in _explicitDeletes
+    // first (purgeArchived is the only path that removes a record outright;
+    // archiving keeps the record and just flags it). So a record that is in
+    // _lastSnap but missing from DB without being registered was NOT deleted
+    // by anyone — this device simply lost track of it. The old code wrote
+    // null for exactly that case, capped at MAX_AUTO_DELETE, which meant one
+    // record at a time slipped through in total silence. That is how five
+    // farmers disappeared on 2026-07-28 after being moved out of Needs
+    // attention: written successfully, then quietly nulled by a later save.
+    //
+    // The worst case of refusing is that a genuinely-removed record lingers
+    // on the server, which is visible and reversible. The worst case of
+    // writing was losing a farmer. Not a close call.
     const missingIds = allMissing.filter(id => !_explicitDeletes.has(col+'/'+id));
-    if(missingIds.length > MAX_AUTO_DELETE){
-      console.error('[Sristi] saveDB() BLOCKED an anomalous bulk delete — '+missingIds.length+' '+col+' records would have been removed in one save (cap: '+MAX_AUTO_DELETE+'). This almost certainly means this device\'s local data is stale, not that '+missingIds.length+' records were genuinely deleted. Nothing was deleted; reload this device before making further changes. IDs:', missingIds);
-      toast('⚠ Blocked an unusually large delete ('+missingIds.length+' '+col+' records) to protect your data — please reload this tab before continuing, and tell an admin.', 'error');
-    } else {
-      missingIds.forEach(id=>{ updates[col+'/'+id]=null; });
+    if(missingIds.length){
+      console.error('[Sristi] saveDB() REFUSED to delete '+missingIds.length+' '+col+
+        ' record(s) that this device lost track of but nobody asked to remove. Nothing was deleted. IDs:', missingIds);
+      try{ logActivity('alert','⚠ Refused to delete '+missingIds.length+' '+esc(col)+
+        ' record'+(missingIds.length===1?'':'s')+' that this device could not account for — <b>'+
+        esc(missingIds.slice(0,5).join(', '))+(missingIds.length>5?' …':'')+'</b>. Nothing was lost.'); }catch(e){}
+      if(missingIds.length > MAX_AUTO_DELETE){
+        toast('⚠ This device is out of step with the cloud ('+missingIds.length+' '+col+
+          ' records). Nothing was deleted — please reload this tab before continuing.', 'error');
+      }
     }
     snap[col]=sc;
   });
@@ -17881,6 +17908,7 @@ function viewAttention(){
     const ids = attentionList().filter(isResend).map(r=>r.id);
     if(!ids.length) return;
     if(!confirm('Dismiss '+ids.length+' identical cop'+(ids.length===1?'y':'ies')+'?\n\nThese farmers are already registered and were shown the normal confirmation. No farmer record is created and nothing else changes.')) return;
+    ids.forEach(x => _explicitDeletes.add('pendingEnrolments/'+x));   // v129 — see dismissAttention
     DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>ids.indexOf(x.id)===-1);
     if(FB && FB.ready){ for(const id of ids){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} } }
     logActivity('edit','Dismissed '+ids.length+' identical repeat submission'+(ids.length===1?'':'s'));
@@ -17943,6 +17971,7 @@ async function dismissAttention(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
   if(!confirm('Dismiss the submission from "'+(r.name||'')+'"?\n\nIt is removed from this list. No farmer record is created and nothing else changes.')) return;
+  _explicitDeletes.add('pendingEnrolments/'+id);   // v129 — authorise it, or saveDB now refuses
   DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>x.id!==id);
   if(FB && FB.ready){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} }
   logActivity('edit', `Dismissed a flagged duplicate submission \u2014 <b>${esc(r.name||'')}</b> (${esc(r.phone||'')})`);
@@ -18266,13 +18295,39 @@ async function acceptPendingEnrolment(id, opts){
     if(!dup) indexFarmerPhone(accepted, 'conv');    // v124 — see the haat branch
     DB.convFarmers.push(accepted);
   }
-  // Remove from pending
-  DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x => x.id !== id);
-  // Mirror to Firebase (per-record + remove)
-  if(FB && FB.ready){
-    try { await fbRef('pendingEnrolments/'+id).remove(); } catch(e) { /* non-fatal */ }
-  }
+  // v129 — ORDER MATTERS. This used to delete the application from the
+  // server first and write the farmer second. When the farmer write was later
+  // undone, the application was already gone and the farmer's own enrolment
+  // form was the only surviving copy. Now: write the farmer, confirm the
+  // server actually has it, and only then let go of the application.
   logActivity('enroll', `Public application <b>${esc(r.id)}</b> accepted — <b>${esc(r.name)}</b> moved to ${isHaat?'Haat':'Conversion'} pipeline as ${esc(newId)}`);
+  await saveDB();
+
+  let landed = true;
+  if(FB && FB.ready){
+    // Read it back. saveDB() resolving is not proof: the Firebase SDK resolves
+    // update() once the write is queued in memory, which can be well before it
+    // reaches the server.
+    try{
+      const chk = await fbRef((isHaat?'haatFarmers':'convFarmers')+'/'+newId).get();
+      landed = !!(chk && chk.exists());
+    }catch(e){ landed = false; }
+  }
+  if(!landed){
+    console.error('[Sristi] v129 — new farmer '+newId+' is not on the server; keeping application '+id);
+    try{ logActivity('alert','⚠ Could not confirm <b>'+esc(r.name)+'</b> reached the cloud, so application <b>'+esc(r.id)+'</b> was KEPT. Nothing was lost — try again when the connection is back.'); }catch(e){}
+    toast('⚠ Could not confirm '+r.name+' reached the cloud. The application has been kept so nothing is lost — try again when you are back online.', 'error');
+    render();
+    return;
+  }
+
+  // Confirmed on the server. Now the application can go, and it goes through
+  // the authorised-delete register so saveDB() will actually write it.
+  _explicitDeletes.add('pendingEnrolments/'+id);
+  DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x => x.id !== id);
+  if(FB && FB.ready){
+    try { await fbRef('pendingEnrolments/'+id).remove(); } catch(e) { /* saveDB will retry */ }
+  }
   await saveDB();
   toast(`Accepted — ${r.name} added to ${isHaat?'Haat':'Conversion'} pipeline`);
   render();
@@ -18281,6 +18336,7 @@ async function acceptPendingEnrolment(id, opts){
 async function rejectPendingEnrolment(id){
   const r = (DB.pendingEnrolments||[]).find(x => x.id === id);
   if(!r) return;
+  _explicitDeletes.add('pendingEnrolments/'+id);   // v129 — see dismissAttention
   DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x => x.id !== id);
   if(FB && FB.ready){
     try { await fbRef('pendingEnrolments/'+id).remove(); } catch(e) {}

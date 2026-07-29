@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v135';
+const APP_VERSION = 'v136';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18716,7 +18716,7 @@ function viewAttention(){
     toast('Dismissed '+ids.length+' identical cop'+(ids.length===1?'y':'ies'));
   };
   v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
-  v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>addAttentionAsForm(b.dataset.attAdd));
+  v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>openAddAsFormModal(b.dataset.attAdd));
   v.querySelectorAll('[data-att-farm]').forEach(b=>b.onclick=()=>addAttentionAsSecondFarm(b.dataset.attFarm));
   v.querySelectorAll('[data-att-more]').forEach(b=>b.onclick=()=>openAttentionOptions(b.dataset.attMore));
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
@@ -18900,7 +18900,7 @@ function openAttentionForm(id){
     </div>`;
   modalShell('Why this needs attention \u2014 '+esc(r.name||''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
-     ${r._existingId ? `<button class="btn btn-primary" onclick="closeModal();addAttentionAsForm('${esc(r.id)}')">Same farmer, same farm \u2014 add as Form 2</button>
+     ${r._existingId ? `<button class="btn btn-primary" onclick="closeModal();openAddAsFormModal('${esc(r.id)}')">Same farmer, same farm \u2014 add as Form 2</button>
      <button class="btn btn-clay" onclick="closeModal();addAttentionAsSecondFarm('${esc(r.id)}')">Same farmer, another farm</button>` : ''}
      <button class="btn btn-ghost" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">A different person \u2014 create a new farmer</button>`);
 }
@@ -18911,7 +18911,60 @@ function openAttentionForm(id){
 /* v130 — the normal resolution for a repeat submission: it becomes another
    form on the farmer who already holds that phone number. No second farmer
    record, so the count stays right and no FC is sent out twice. */
-async function addAttentionAsForm(id){
+/* v136 — attaching a repeat submission used to keep the farmer's existing
+   summary untouched, so a better name or a fuller address arriving in the new
+   form stayed buried inside Form 2 and the list went on showing the worse
+   value. The admin has to be able to pick, field by field, exactly as they can
+   on the merge screen. */
+function openAddAsFormModal(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const target = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  if(!target){ toast('Could not find the farmer this number belongs to.', 'error'); return; }
+  if(target.id) { try { loadForms(target.id); } catch(e) {} }
+
+  const weak = v => { const t=String(v==null?'':v).trim(); return t==='' || t==='0' || t==='—' || t==='-'; };
+  const rows = ATTN_FIELDS.map(([k,label]) => {
+    const inc = _attnVal(r[k]), cur = _attnVal(target[k]);
+    return { key:k, label:label, incoming:inc, onFile:cur, same:inc===cur };
+  }).filter(x => !x.same && (x.incoming || x.onFile));
+
+  if(!window._addFormPicks) window._addFormPicks = {};
+  const P = window._addFormPicks = {};
+  rows.forEach(x => { P[x.key] = (weak(x.onFile) && !weak(x.incoming)) ? 'new' : 'old'; });
+
+  const body = `
+    <div class="hint" style="margin-bottom:12px">The whole submission is kept either way and becomes <b>Form 2</b> on
+      <b>${esc(target.name||target.id)}</b>. <b>No new farmer is created.</b><br><br>
+      What this screen decides is only the short summary the farmer lists and the map read. Where the new form is better,
+      take it across.</div>
+    ${rows.length ? `<div class="table-wrap"><table><thead><tr>
+        <th style="width:32%">Field</th><th>Keep what is on file</th><th>Take from this submission</th>
+      </tr></thead><tbody>${rows.map(x => {
+        const cell = (side, val, other) => `<td style="padding:0">
+          <label style="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;cursor:${val?'pointer':'default'}">
+            <input type="radio" name="af_${esc(x.key)}" data-afk="${esc(x.key)}" data-afside="${side}" ${P[x.key]===side?'checked':''} ${val?'':'disabled'} style="margin-top:3px">
+            <span style="font-size:12.5px;${val?'':'color:var(--ink-faint);font-style:italic'}">${val?esc(val):'not recorded'}</span>
+          </label></td>`;
+        return `<tr><td style="font-size:12.5px;color:var(--ink-soft)">${esc(x.label)}</td>${cell('old',x.onFile,x.incoming)}${cell('new',x.incoming,x.onFile)}</tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="hint" style="margin-top:10px">Anything already blank or zero on file has been switched to the new value for you.
+        Change any of them if you disagree.</div>`
+    : '<div class="hint">The two records agree on every summary field, so there is nothing to choose. The form will simply be attached as Form 2.</div>'}`;
+
+  modalShell('Add as another form — ' + esc(r.name||''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="afGo">Attach as Form 2</button>`);
+  document.querySelectorAll('[data-afk]').forEach(el => {
+    el.onchange = () => { window._addFormPicks[el.dataset.afk] = el.dataset.afside; };
+  });
+  const go = document.getElementById('afGo');
+  if(go) go.onclick = () => { closeModal(); addAttentionAsForm(id, Object.assign({}, window._addFormPicks)); };
+}
+
+async function addAttentionAsForm(id, picks){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
   const target = r._existingId
@@ -18921,9 +18974,21 @@ async function addAttentionAsForm(id){
     toast('Could not find the farmer this number belongs to. Use "New farmer" if they really are a different person.', 'error');
     return;
   }
-  if(!confirm('Add this submission to '+(target.name||target.id)+' as another form?\n\n'
-    + 'No new farmer is created. '+(target.name||'They')+' will show two forms, and you can compare them side by side.\n\n'
-    + 'Only do this if it is the same person.')) return;
+  // v136 — apply whichever summary values the admin chose. Absent picks mean
+  // this was called without the chooser, in which case nothing is changed —
+  // the old behaviour, so no caller can be surprised.
+  const _applied = [];
+  if(picks){
+    ATTN_FIELDS.forEach(([k]) => {
+      if(picks[k] !== 'new') return;
+      const v = r[k];
+      if(v == null || String(v).trim() === '') return;
+      if(String(target[k]) === String(v)) return;
+      target[k] = (k === 'landAcres' || k === 'yearsOrganic') ? (parseFloat(v)||0) : v;
+      _applied.push(k);
+    });
+    if(_applied.length) markLocalTouch(target.program === 'conversion' || target.program === 'conv' ? 'convFarmers' : 'haatFarmers', target.id);
+  }
 
   const payload = r.form || (r.enrollmentFormFull ? {form:{farmer:{claims:r.enrollmentFormFull.claims||[]}}} : null);
   if(!payload){ toast('That submission has no form data to attach.', 'error'); return; }
@@ -18934,9 +18999,9 @@ async function addAttentionAsForm(id){
   _explicitDeletes.add('pendingEnrolments/'+id);          // v129 — authorise, or saveDB refuses
   DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>x.id!==id);
   if(FB && FB.ready){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} }
-  logActivity('enroll', `Repeat submission from <b>${esc(r.name||'')}</b> (${esc(r.phone||'')}) added to <b>${esc(target.name||'')}</b> (${esc(target.id)}) as another form — no new farmer created.`);
+  logActivity('enroll', `Repeat submission from <b>${esc(r.name||'')}</b> (${esc(r.phone||'')}) added to <b>${esc(target.name||'')}</b> (${esc(target.id)}) as another form — no new farmer created.${_applied.length?' Updated from the new form: <b>'+esc(_applied.join(', '))+'</b>.':''}`);
   await saveDB(); render();
-  toast('Added to '+(target.name||target.id)+' as another form');
+  toast('Added as Form 2'+(_applied.length?' — '+_applied.length+' detail'+(_applied.length===1?'':'s')+' updated from the new form':''));
 }
 
 /* v132 — the submission is the same farmer, but a different piece of land.

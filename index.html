@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v131';
+const APP_VERSION = 'v132';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9759,6 +9759,9 @@ function viewVerification(){
     ${isFc ? '' : `<div class="tab ${F.tab==='awaiting'?'on':''}" data-vt="awaiting">
       ⚖️ Awaiting decision (${awaiting.length})
     </div>`}
+    ${secondFarmUnits().length ? `<div class="tab ${F.tab==='secondfarms'?'on':''}" data-vt="secondfarms">
+      🌾 Second farms (${secondFarmUnits().length})
+    </div>` : ''}
     <div class="tab ${F.tab==='planning'?'on':''}" data-vt="planning">
       📅 Planning (${activePlans.length})
     </div>
@@ -9777,6 +9780,12 @@ function viewVerification(){
     // v9 Batch 5 — Planning tab has its own renderer
     if(F.tab === 'planning'){
       paintPlanning(body);
+      return;
+    }
+    // v132 — so does Second farms. Its own renderer keeps the three existing
+    // buckets exactly as they were: a farmer with one farm sees no difference.
+    if(F.tab === 'secondfarms'){
+      paintSecondFarms(body);
       return;
     }
     let list=listFor(F.tab);
@@ -12648,6 +12657,10 @@ function openHaatDrawer(id){
     <button class="btn btn-ghost btn-sm" id="drawerPdfBtn">${svg(I.download,2.2)}Download PDF</button>
   </div>`;
 
+  // v132 — every piece of land this farmer works, each with its own
+  // coordinator, visits and result.
+  h+=renderFarmsCard(f);
+
   // ============ ENROLLMENT FORM DATA — what the farmer filled in the long Gujarati patrak ============
   // v130 — may render a tab strip when more than one form is on record.
   h+=renderHaatEnrollmentData(f);
@@ -12764,6 +12777,15 @@ function openHaatDrawer(id){
   // v130 — switch between Form 1 / Form 2 without leaving the drawer.
   $('#drawer').querySelectorAll('[data-formpick]').forEach(b=>{
     b.onclick = () => pickDrawerForm(id, b.dataset.formpick);
+  });
+  // v132 — second farms
+  const _sfAdd = $('#sfAdd');
+  if(_sfAdd) _sfAdd.onclick = () => openSecondFarmModal(id, null);
+  $('#drawer').querySelectorAll('[data-farmedit]').forEach(b=>{
+    b.onclick = () => openSecondFarmModal(id, b.dataset.farmedit);
+  });
+  $('#drawer').querySelectorAll('[data-farmverify]').forEach(b=>{
+    b.onclick = () => openVerificationForm(id, b.dataset.farmverify);
   });
   const drawerPdfBtn = $('#drawerPdfBtn');
   if(drawerPdfBtn) drawerPdfBtn.onclick = async () => {
@@ -15173,6 +15195,202 @@ async function markNotDuplicate(phone){
   toast('Marked as separate people');
 }
 
+/* ============ SECOND FARMS (v132, stage 3) ============
+   One farmer, one id, more than one piece of land — in different places,
+   needing different field coordinators and separate verification.
+
+   WHY IT IS BUILT THIS WAY. The farmer record already IS a farm: it carries
+   village/taluka/district, fcId, status, stage and visits, and 263 places in
+   this file read those fields. Moving them onto a farm object would be a
+   rewrite of every screen an FC uses daily, to serve one farmer today.
+
+   So the record stays exactly as it is and remains FARM 1. Additional farms
+   live in `farms[]` on the same record. A farmer without a second farm has no
+   `farms` key at all and behaves identically to before — which is the whole
+   point, because that is 99.5% of them.
+
+   farms[] entry:
+     { fid, village, taluka, district, survey, acres,
+       fcId, status, stage, visits[], addedAt, addedBy }
+   ======================================================================= */
+
+function farmUnitsOf(f){
+  if(!f) return [];
+  const out = [{
+    farmerId:f.id, fid:'', label:'Farm 1', primary:true,
+    village:f.village||'', taluka:f.taluka||'', district:f.district||'',
+    survey:f.surveyNo||'', acres:f.landAcres||0,
+    fcId:f.fcId||'', status:f.status||'', stage:f.stage||'',
+    visits:f.visits||[], rec:f
+  }];
+  (f.farms||[]).forEach((x,i) => {
+    if(!x || !x.fid) return;
+    out.push({
+      farmerId:f.id, fid:x.fid, label:'Farm '+(i+2), primary:false,
+      village:x.village||'', taluka:x.taluka||'', district:x.district||'',
+      survey:x.survey||'', acres:x.acres||0,
+      fcId:x.fcId||'', status:x.status||'', stage:x.stage||'',
+      visits:x.visits||[], rec:f, farm:x
+    });
+  });
+  return out;
+}
+function farmOf(f, fid){ return (f && (f.farms||[]).find(x => x && x.fid === fid)) || null; }
+function hasSecondFarm(f){ return !!(f && (f.farms||[]).length); }
+
+/* Every additional farm across the book, for the queue. Farm 1 is deliberately
+   excluded — it is already in the existing buckets and must not double up. */
+function secondFarmUnits(){
+  const out = [];
+  _excludeSeeds(DB.haatFarmers||[]).forEach(f => {
+    if(f._archived || !hasSecondFarm(f)) return;
+    farmUnitsOf(f).forEach(u => { if(!u.primary) out.push(u); });
+  });
+  return out;
+}
+/* People vs pieces of land — the dashboard asks for both. */
+function countFarms(list){
+  return (list||[]).reduce((n,f) => (f && !f._archived) ? n + 1 + ((f.farms||[]).length) : n, 0);
+}
+
+/* ---------------- add or edit a farm ---------------- */
+function openSecondFarmModal(farmerId, fid){
+  const f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  if(!f) return;
+  const farm = fid ? farmOf(f, fid) : null;
+  const ex = farm || { village:'', taluka:'', district:'', survey:'', acres:'', fcId:'' };
+  const dOpts = Object.keys(DB.states && DB.states[f.state] ? DB.states[f.state] : {});
+  const body = `
+    <div class="hint" style="margin-bottom:12px">This adds another piece of land to <b>${esc(f.name)}</b>.
+      It stays one farmer with one ID — but this farm gets its own field coordinator, its own visit and its own result.</div>
+    ${fld('Village', `<input id="sfVillage" value="${esc(ex.village)}" placeholder="Village name">`, true)}
+    <div class="field-row">
+      ${fld('District', `<select id="sfDistrict">${['',...dOpts].map(d=>`<option value="${esc(d)}" ${ex.district===d?'selected':''}>${d?esc(districtDisplayName(d)):'— Select —'}</option>`).join('')}</select>`, true)}
+      ${fld('Taluka', `<input id="sfTaluka" value="${esc(_dupPlain(ex.taluka))}" placeholder="Taluka">`)}
+    </div>
+    <div class="field-row">
+      ${fld('Survey number(s)', `<input id="sfSurvey" value="${esc(ex.survey)}" placeholder="e.g. 226/1,2">`)}
+      ${fld('Land (acres)', `<input id="sfAcres" type="number" step="0.01" value="${ex.acres===''?'':ex.acres}">`)}
+    </div>
+    ${fld('Field coordinator for this farm', `<select id="sfFc"><option value="">— Not assigned —</option>${
+      (typeof fcChoices==='function' ? fcChoices(ex.fcId) : (DB.fcs||[]))
+        .map(c=>`<option value="${esc(c.id)}" ${ex.fcId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')
+    }</select>`)}
+    <div class="hint">If this farm is in another district it will usually need a different coordinator from Farm 1.</div>`;
+  modalShell(farm ? 'Edit farm' : 'Add another farm', body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     ${farm ? `<button class="btn btn-ghost" id="sfDel" style="color:var(--red)">Remove this farm</button>` : ''}
+     <button class="btn btn-primary" id="sfSave">${svg(I.check)}Save farm</button>`);
+
+  $('#sfSave').onclick = async () => {
+    const village = $('#sfVillage').value.trim();
+    const district = $('#sfDistrict').value;
+    if(!village || !district){ toast('Village and district are needed', 'error'); return; }
+    const data = {
+      village, district,
+      taluka: $('#sfTaluka').value.trim(),
+      survey: $('#sfSurvey').value.trim(),
+      acres: parseFloat($('#sfAcres').value) || 0,
+      fcId: $('#sfFc').value || '',
+    };
+    if(farm){
+      Object.assign(farm, data);
+      logActivity('edit', `Updated ${esc(farmUnitsOf(f).find(u=>u.fid===fid).label)} for <b>${esc(f.name)}</b> — ${esc(village)}, ${esc(districtDisplayName(district))}`);
+    }else{
+      f.farms = f.farms || [];
+      f.farms.push(Object.assign({
+        fid: 'F' + Date.now().toString(36).slice(-6),
+        status:'pending', stage:'verification_pending', visits:[],
+        addedAt: new Date().toISOString(), addedBy: (actor()||{}).name || 'admin',
+      }, data));
+      logActivity('enroll', `Added a second farm for <b>${esc(f.name)}</b> (${esc(f.id)}) — ${esc(village)}, ${esc(districtDisplayName(district))}. Still one farmer.`);
+    }
+    markLocalTouch('haatFarmers', f.id);
+    await saveDB(); closeModal(); render();
+    if(typeof openHaatDrawer === 'function') openHaatDrawer(f.id);
+    toast(farm ? 'Farm updated' : 'Second farm added');
+  };
+  const del = $('#sfDel');
+  if(del) del.onclick = async () => {
+    if(!confirm('Remove this farm from '+f.name+'?\n\nAny visits recorded against it are removed with it. The farmer and Farm 1 are untouched.')) return;
+    f.farms = (f.farms||[]).filter(x => x.fid !== fid);
+    markLocalTouch('haatFarmers', f.id);
+    logActivity('edit', `Removed a farm from <b>${esc(f.name)}</b> (${esc(f.id)})`);
+    await saveDB(); closeModal(); render();
+    toast('Farm removed');
+  };
+}
+
+/* ---------------- the drawer card ---------------- */
+function renderFarmsCard(f){
+  const units = farmUnitsOf(f);
+  const multi = units.length > 1;
+  let h = `<div class="subhead" style="margin-top:14px">${multi ? 'Farms ('+units.length+')' : 'Farm location'}</div>`;
+  if(multi){
+    h += `<div class="hint" style="margin-bottom:9px">One farmer, ${units.length} pieces of land. Each is verified separately and can pass or fail on its own.</div>`;
+  }
+  units.forEach(u => {
+    const fc = fcById(u.fcId);
+    const st = HAAT_STATUS[u.status] || {cls:'grey', label:'—'};
+    h += `<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--${u.primary?'accent':'clay'});border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:9px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:700">${multi ? esc(u.label) + (u.primary?'':' <span style="font-weight:400;font-size:11px;color:var(--ink-faint)">added later</span>') : 'Where the farm is'}</div>
+        <span class="tag ${st.cls}" style="font-size:10.5px"><span class="d"></span>${esc(st.label)}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px">
+        ${esc(u.village||'—')}${u.taluka?', '+esc(_dupPlain(u.taluka)):''}, ${esc(districtDisplayName(u.district)||'—')}
+        ${u.survey?` · survey ${esc(u.survey)}`:''}${u.acres?` · ${u.acres} acres`:''}
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-faint);margin-top:3px">
+        ${fc?('FC: '+esc(fc.name)):'No field coordinator yet'} · ${u.visits.length} visit${u.visits.length===1?'':'s'}
+      </div>
+      ${u.primary?'':`<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" data-farmedit="${esc(u.fid)}" style="padding:3px 9px">Edit</button>
+        <button class="btn btn-clay btn-sm" data-farmverify="${esc(u.fid)}" style="padding:3px 9px">Verification form</button>
+      </div>`}
+    </div>`;
+  });
+  h += `<button class="btn btn-ghost btn-sm" id="sfAdd" style="margin-bottom:4px">${svg(I.plus,2.2)}Add another farm</button>`;
+  return h;
+}
+
+/* ---------------- the queue tab ---------------- */
+function paintSecondFarms(body){
+  let units = secondFarmUnits();
+  // FCs see the farms in their own districts — the farm's district, not the
+  // farmer's, which is the whole reason a second farm needs its own row.
+  const ds = fcAssignedDistricts();
+  if(ds.length) units = units.filter(u => !u.district || ds.includes(u.district));
+
+  let h = `<div class="hint" style="margin:14px 0 10px">Farms that belong to a farmer already on the books, in a different place from their main farm.
+    Each needs its own visit — often from a different field coordinator.</div>`;
+  if(!units.length){
+    body.innerHTML = h + `<div class="empty">${svg(I.check)}<div>No second farms are waiting.</div></div>`;
+    return;
+  }
+  h += `<div class="table-wrap"><table><thead><tr>
+    <th>Farmer</th><th>Farm</th><th>Where</th><th>Coordinator</th><th>Status</th><th></th>
+  </tr></thead><tbody>`;
+  units.forEach(u => {
+    const fc = fcById(u.fcId);
+    const st = HAAT_STATUS[u.status] || {cls:'grey', label:'—'};
+    h += `<tr>
+      <td class="name-cell"><div class="nm">${esc(u.rec.name)}</div><div class="sub">${esc(u.farmerId)}</div></td>
+      <td>${esc(u.label)}</td>
+      <td style="font-size:12px">${esc(u.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(districtDisplayName(u.district))}</div></td>
+      <td style="font-size:12px">${fc?esc(fc.name):'<span style="color:var(--red)">Not assigned</span>'}</td>
+      <td><span class="tag ${st.cls}" style="font-size:10.5px"><span class="d"></span>${esc(st.label)}</span></td>
+      <td style="text-align:right"><button class="btn btn-clay btn-sm" data-sfv="${esc(u.farmerId)}|${esc(u.fid)}">${svg(I.plus,2.2)}Verification form</button></td>
+    </tr>`;
+  });
+  h += `</tbody></table></div>`;
+  body.innerHTML = h;
+  body.querySelectorAll('[data-sfv]').forEach(b => b.onclick = () => {
+    const [fid_, ff] = b.dataset.sfv.split('|');
+    openVerificationForm(fid_, ff);
+  });
+}
+
 function viewData(){
   const v=$('#view');
   const total=DB.haatFarmers.length+DB.convFarmers.length;
@@ -15962,6 +16180,12 @@ window.addEventListener('message',async ev=>{
   }
   if(d.type==='farm-verification-full' && d.data && _verifyTargetId){
     const f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);
+    // v132 — when a second farm is being verified, the visit and the result
+    // belong to THAT farm, not to the farmer. _tgt is the farm when one was
+    // named and the farmer otherwise, so the code below is unchanged for the
+    // 99.5% of farmers who have a single farm.
+    const _farmTgt = (f && window._verifyTargetFarmFid) ? farmOf(f, window._verifyTargetFarmFid) : null;
+    const _tgt = _farmTgt || f;
     if(f){
       // (countFcPhotos is defined below, next to the farm-verification-done
       // handler — function declarations hoist, so it's available here.)
@@ -15976,11 +16200,11 @@ window.addEventListener('message',async ev=>{
       // v11 — photos to upload queue, form text to forms/{id}.
       await extractPhotos(d.data, {program:'haat', farmerId: f.id});
       setForms(f.id, 'verif', d.data);
-      f.verificationFormSubmittedAt = d.data._submittedAt || todayISO();
-      f.visits = f.visits || [];
-      f.visits.push(stamp({
+      _tgt.verificationFormSubmittedAt = d.data._submittedAt || todayISO();
+      _tgt.visits = _tgt.visits || [];
+      _tgt.visits.push(stamp({
         date: (d.data.summary && d.data.summary.date) || todayISO(),
-        fc: f.fcId || '',
+        fc: _tgt.fcId || f.fcId || '',
         verifierName: (d.data.summary && d.data.summary.verifierName) || '',
         claimVerifications: claims.reduce((a,c)=>{a[c.id]={state:c.fcVerification||'na',fcNote:c.fcNote||''};return a;},{}),
         comments: d.data.comments || '',
@@ -15996,7 +16220,7 @@ window.addEventListener('message',async ev=>{
       // 'assigned' / 'senior_review'). 'onboarded' / 'decided' / 'verified-cleared'
       // are post-decision and must NOT be reverted.
       const POST_DECISION = ['onboarded','decided','verified-cleared'];
-      if(enoughEvidence && !POST_DECISION.includes(f.stage)) f.stage='verified';
+      if(enoughEvidence && !POST_DECISION.includes(_tgt.stage)) _tgt.stage='verified';
       // v125 — durable record that this verification exists, independent of
       // anything on the farmer's own row.
       if(enoughEvidence) markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
@@ -16320,7 +16544,10 @@ function buildVerifPrefill(f){
   };
 }
 
-function openVerificationForm(farmerId){
+function openVerificationForm(farmerId, farmFid){
+  // v132 — farmFid names WHICH farm is being verified. Empty/absent means the
+  // farmer's main farm, i.e. exactly the behaviour before second farms existed.
+  window._verifyTargetFarmFid = farmFid || '';
   const f = DB.haatFarmers.find(x=>x.id===farmerId);
   // v9 process-fix H2 — verification concurrency lock. If another FC opened
   // the form for this farmer < 30 min ago and hasn't submitted, warn before
@@ -18327,6 +18554,7 @@ function viewAttention(){
         <td>
           <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
           ${r._existingId ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
+          ${r._existingId ? `<button class="btn btn-clay btn-sm" data-att-farm="${esc(r.id)}" style="padding:4px 9px">Second farm</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-att-move="${esc(r.id)}" style="padding:4px 9px">New farmer</button>
           <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;color:var(--red)">Dismiss</button>
         </td>
@@ -18350,6 +18578,7 @@ function viewAttention(){
   };
   v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
   v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>addAttentionAsForm(b.dataset.attAdd));
+  v.querySelectorAll('[data-att-farm]').forEach(b=>b.onclick=()=>addAttentionAsSecondFarm(b.dataset.attFarm));
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
   v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));
 }
@@ -18417,6 +18646,40 @@ async function addAttentionAsForm(id){
   logActivity('enroll', `Repeat submission from <b>${esc(r.name||'')}</b> (${esc(r.phone||'')}) added to <b>${esc(target.name||'')}</b> (${esc(target.id)}) as another form — no new farmer created.`);
   await saveDB(); render();
   toast('Added to '+(target.name||target.id)+' as another form');
+}
+
+/* v132 — the submission is the same farmer, but a different piece of land.
+   It becomes a farm on the existing record, not a second farmer. */
+async function addAttentionAsSecondFarm(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const target = r._existingId ? (DB.haatFarmers||[]).find(x=>x.id===r._existingId) : null;
+  if(!target){ toast('Could not find the farmer this number belongs to.', 'error'); return; }
+  if(!confirm('Record this as a SECOND FARM for '+(target.name||target.id)+'?\n\n'
+    + 'Still one farmer with one ID. The new farm gets its own coordinator, its own visit and its own result.\n\n'
+    + 'The submitted form is kept alongside it.')) return;
+
+  target.farms = target.farms || [];
+  target.farms.push({
+    fid: 'F' + Date.now().toString(36).slice(-6),
+    village: r.village || '', taluka: r.taluka || '', district: r.district || '',
+    survey: '', acres: r.landAcres || 0, fcId: '',
+    status:'pending', stage:'verification_pending', visits:[],
+    addedAt: new Date().toISOString(), addedBy: (actor()||{}).name || 'admin',
+    fromSubmission: r.id,
+  });
+  markLocalTouch('haatFarmers', target.id);
+
+  const payload = r.form || null;
+  if(payload) await attachFormToFarmer(target.id, r.id, payload,
+    { at: r.submittedAt || r.publicSubmittedAt, name: r.name || '', from: 'second farm' });
+
+  _explicitDeletes.add('pendingEnrolments/'+id);
+  DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>x.id!==id);
+  if(FB && FB.ready){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} }
+  logActivity('enroll', `Recorded a second farm for <b>${esc(target.name||'')}</b> (${esc(target.id)}) at <b>${esc(r.village||'')}, ${esc(String(r.district||'').replace(/\s*\(.*$/,''))}</b> — still one farmer.`);
+  await saveDB(); render();
+  toast('Second farm added to '+(target.name||target.id));
 }
 
 async function moveAttentionToFarmers(id){

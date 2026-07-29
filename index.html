@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v136';
+const APP_VERSION = 'v137';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15027,6 +15027,8 @@ function viewDuplicateRecords(){
         written differently on each.<br><br>
         <b>How this differs from Needs attention:</b> that screen holds <i>submissions</i> that have not become farmers yet.
         This screen holds <i>farmer records</i> that already exist and are being counted twice.<br><br>
+        <b>Archived farmers are never listed here.</b> Once a record is archived it is off the books, so it can never pair with
+        anything — even though many archived records do share a number with an active one.<br><br>
         <b>Combining keeps everything.</b> One record survives and keeps its ID; the other is archived, never deleted, and can be
         restored. Both enrolment forms, all farm visits and any second farms move to the surviving farmer.</div>
       <div class="detail-grid">
@@ -19019,9 +19021,13 @@ function openAttentionOptions(id){
   const crossProgramme = !!(ex && r.program && ((r.program==='haat' && ex.program!=='haat') || (r.program!=='haat' && ex.program==='haat')));
   const body = `
     ${crossProgramme ? `<div style="background:var(--panel-2);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55">
-      <b>Note:</b> ${exName} is on file in the <b>${ex.program==='haat'?'Haat':'Conversion'}</b> programme, and this application is for
-      <b>${r.program==='haat'?'Haat':'Conversion'}</b>. That is not a duplicate — it is the same person applying to the other programme.
-      <b>New farmer</b> is the option that puts them into it.</div>` : ''}
+      <b>One person belongs to one programme.</b> ${exName} is already on file in the
+      <b>${ex.program==='haat'?'Haat':'Conversion'}</b> programme, and this application is for
+      <b>${r.program==='haat'?'Haat':'Conversion'}</b>. This is not a duplicate — it is the same person asking to move across.<br><br>
+      Doing it takes two steps, and the app cannot do it in one: create the
+      <b>${r.program==='haat'?'Haat':'Conversion'}</b> record below, then open <b>Duplicate records</b> and combine the two, keeping the
+      <b>${r.program==='haat'?'Haat':'Conversion'}</b> one. That leaves them on the books once, in the right programme, with both forms and all visits intact.<br><br>
+      If you would rather they stayed where they are, close this and dismiss the application instead.</div>` : ''}
     <div style="display:flex;flex-direction:column;gap:10px">
       <div style="border:1px solid var(--line);border-radius:8px;padding:11px 13px">
         <div style="font-size:13px;font-weight:700;margin-bottom:3px">Same farmer, a different piece of land</div>
@@ -19080,6 +19086,25 @@ async function moveAttentionToFarmers(id){
   const exRec = r._existingId
     ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
     : null;
+  /* v137 — one person belongs to ONE programme. Creating a farmer on a number
+     an ACTIVE farmer already holds always ends with one human on the books
+     twice, so it now has to be an explicit decision rather than a click. An
+     archived record does not count — that person is no longer on the books. */
+  if(exRec && !exRec._archived){
+    const sameProg = (exRec.program === 'haat') === (r.program === 'haat');
+    const msg = sameProg
+      ? 'This will create a SECOND farmer record for a phone number ' + esc(exRec.name||exRec.id) + ' already holds.\n\n'
+        + 'Only do this if they are genuinely two different people sharing one handset.\n\n'
+        + 'If it is the same person, close this and use "Add as another form" instead.'
+      : 'One person belongs to ONE programme.\n\n'
+        + (exRec.name||exRec.id) + ' is already on file in the '
+        + (exRec.program === 'haat' ? 'Haat' : 'Conversion') + ' programme, and this application is for '
+        + (r.program === 'haat' ? 'Haat' : 'Conversion') + '.\n\n'
+        + 'Creating the record here leaves them in BOTH until you finish the move: open Duplicate records afterwards and combine the two, keeping the '
+        + (r.program === 'haat' ? 'Haat' : 'Conversion') + ' one.\n\n'
+        + 'Continue?';
+    if(!confirm(msg)) return;
+  }
   const msg = 'Add "'+(r.name||'')+'" as a real '+(r.program==='haat'?'Haat':'Conversion')+' farmer?\n\n'
     + (exRec ? 'Phone '+(r.phone||'')+' already belongs to '+exRec.name+' ('+exRec.id+').\n\n' : '')
     + 'Both records will keep this number, and a phone search will show both. Do this only if it really is a second membership \u2014 for example a conversion farmer joining the haat.';

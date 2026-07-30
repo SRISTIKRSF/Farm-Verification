@@ -3123,7 +3123,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v138';
+const APP_VERSION = 'v139';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8150,8 +8150,8 @@ function renderNav(){
     // edited and deleted in ONE place now: Settings → Manage Haats.
     {sec:'Conversion Program'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
-    {sec:'Farm Locations'},
-    {id:'farmMap',label:'Farm locations',ico:I.eye},
+    {sec:'Reach'},
+    {id:'farmMap',label:'Haat catchment',ico:I.eye},
     ...(dupPairs().length ? [{sec:'Data quality'},
       {id:'dupRecords',label:'Duplicate records',ico:I.clock,badge:dupPairs().length}] : []),
     {sec:'Field Coordinators'},
@@ -8876,7 +8876,7 @@ function viewFcProfile(){
 
 const TITLES={
   dashboard:['Programme oversight','Manager Dashboard'],
-  farmMap:['Farm Locations','Farm Locations'],
+  farmMap:['Reach','Haat Catchment Map'],
   dupRecords:['Data quality','Duplicate records'],
   haat:['Organic Haat Program','Haat Farmers'],
   verification:['Organic Haat Program','Verification Queue'],
@@ -8985,7 +8985,9 @@ function viewDashboard(){
     return body;
   }
 
-  let h = _datePillsHtml();
+  // v139 — the filter no longer opens the page. It sits with the applications
+  // it filters, further down; see "Recent applications" below.
+  let h = '';
   h+=`<div class="section-head"><h3>🛒 Prakrutik Khedut Haat Program — Farmers</h3><div class="line"></div></div>`;
   h+=journeyBoxesHtml(hs,'nav');
 
@@ -8996,37 +8998,10 @@ function viewDashboard(){
     ${_cumChartCard('visits','Field Visits Done','var(--c-visit)',cum,r=>r.visitsTotal,r=>r.visitsNew)}
   </div>`;
 
-  // ===== farmers joined, by calendar year (both programs) =====
-  const yearStats=enrollmentYearStats();
-  if(yearStats.length){
-    const yearGrandTotal=yearStats.reduce((a,r)=>a+r.total,0);
-    h+=`<div class="card chart-card" style="margin-bottom:18px">
-      <div class="chart-head">
-        <div><div class="ct">Farmers Joined — by year</div>
-        <div class="cs">Haat + Conversion enrollments, grouped by the year each farmer joined</div></div>
-        <div class="chart-total"><b>${yearGrandTotal}</b> total</div>
-      </div>
-      ${barChart(yearStats.slice().reverse().map(r=>({label:String(r.year),haat:r.haat,conv:r.conv})),['haat','conv'],['var(--c-onboard)','var(--leaf)'])}
-      <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft)">
-        <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--c-onboard);margin-right:5px"></span>Haat</span>
-        <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--leaf);margin-right:5px"></span>Conversion</span>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:14px">
-        <thead><tr style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);border-bottom:1px solid var(--line)">
-          <th style="text-align:left;padding:7px 8px">Year</th>
-          <th style="text-align:right;padding:7px 8px">Haat</th>
-          <th style="text-align:right;padding:7px 8px">Conversion</th>
-          <th style="text-align:right;padding:7px 8px">Total</th>
-        </tr></thead><tbody>
-        ${yearStats.map(r=>`<tr style="border-bottom:1px solid var(--line-soft)">
-          <td style="padding:7px 8px;font-weight:600">${r.year}</td>
-          <td style="padding:7px 8px;text-align:right">${r.haat}</td>
-          <td style="padding:7px 8px;text-align:right">${r.conv}</td>
-          <td style="padding:7px 8px;text-align:right;font-weight:700">${r.total}</td>
-        </tr>`).join('')}
-      </tbody></table>
-    </div>`;
-  }
+  // v139 — "Farmers Joined — by year" removed. Every farmer on the books
+  // joined inside a two-year window, so the chart was one or two bars that
+  // repeated what the tiles above already say, and the table under it said
+  // it a third time. enrollmentYearStats() went with it.
 
   // ===== two summary tables, sitting under the two charts =====
   // LEFT: haat-wise active farmers   RIGHT: FC-wise verifications (last 3 months + total)
@@ -9117,6 +9092,20 @@ function viewDashboard(){
   // pipeline instead of two separate programs).
   h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program — Farmers</h3><div class="line"></div></div>`;
   h+=convPointerHtml(cs);
+
+  // ===== v139 — recent public applications, and the date filter that drives them =====
+  // The pills used to sit alone at the very top of the dashboard, above the
+  // headline tiles, driving _submissionsPanelHtml() — which was defined and
+  // never called. So the filter changed nothing visible on the page at all.
+  // Both panels are now rendered, and the filter sits immediately above them
+  // rather than above the tiles, so it is clear what it does and does not
+  // touch: the counts and charts above stay totals, always.
+  h+=`<div class="section-head"><h3>📥 Recent applications</h3><div class="line"></div></div>
+  <div class="hint" style="margin:0 0 10px">Applications farmers sent in themselves, newest first. The filter below applies
+    to these two lists only — every count and chart above this line is a running total and does not change with it.</div>`;
+  h+=_datePillsHtml();
+  h+=_submissionsPanelHtml('haat');
+  h+=_submissionsPanelHtml('conv');
 
   // ===== recent updates (activity log) =====
   const log=(DB.activity||[]).slice(0,12);
@@ -9701,22 +9690,6 @@ function wireDateRangePills(v,D){
   const fromEl=v.querySelector('#drFrom'), toEl=v.querySelector('#drTo');
   if(fromEl) fromEl.onchange=()=>{D.from=fromEl.value;render();};
   if(toEl) toEl.onchange=()=>{D.to=toEl.value;render();};
-}
-// Groups every farmer (both programs) by the calendar year of farmerLatestTs(),
-// for the "Farmers Joined — by year" dashboard report. Records with no
-// parseable date are excluded entirely (not bucketed under a fake year).
-function enrollmentYearStats(){
-  const years={};
-  function bump(f,key){
-    const ts=farmerLatestTs(f);
-    if(!ts) return;
-    const y=new Date(ts).getFullYear();
-    if(!years[y]) years[y]={year:y,haat:0,conv:0};
-    years[y][key]++;
-  }
-  (DB.haatFarmers||[]).forEach(f=>bump(f,'haat'));
-  (DB.convFarmers||[]).forEach(f=>bump(f,'conv'));
-  return Object.values(years).sort((a,b)=>b.year-a.year).map(r=>({...r,total:r.haat+r.conv}));
 }
 function sortRows(rows){
   const c=SORT.col,d=SORT.dir;
@@ -14060,7 +14033,6 @@ function viewSettings(){
       <div class="tab ${cur==='haats'?'on':''}" data-st="haats">🛒 Manage Haats</div>
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
-      <div class="tab ${cur==='duplicates'?'on':''}" data-st="duplicates">🔁 Duplicates</div>
       <div class="tab ${cur==='crops'?'on':''}" data-st="crops">🌾 Manage Crops</div>
       <div class="tab ${cur==='backup'?'on':''}" data-st="backup">💾 Backup</div>
     </div>`;
@@ -14209,109 +14181,13 @@ function viewSettings(){
     });
     return;
   }
-  if(STab==='duplicates'){
-    let h=tabBar();
-    // Two independent detection passes, both cross-program (haat + conv),
-    // both active-records-only (archived ones are already resolved, don't
-    // keep flagging them). "Same phone" is the hard signal — phone is each
-    // farmer's unique ID and new duplicates are now blocked at every entry
-    // point, so what's left here predates that enforcement. "Same name +
-    // village" is the soft signal that CSV import dedup already uses
-    // (see normName() at the import-confirm handler) — it catches the
-    // opposite failure mode: a bulk-import batch where every row was typed
-    // (or auto-generated) with a DIFFERENT phone number, so the phone check
-    // finds nothing even though it's clearly the same person/import event.
-    // Neither pass is auto-resolved — merging farmer history needs a human
-    // call — but each row gets an inline Archive so that call doesn't
-    // require leaving this screen.
-    const normName = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
-    const allActive = [...(DB.haatFarmers||[]).map(f=>({f,program:'haat'})), ...(DB.convFarmers||[]).map(f=>({f,program:'conv'}))].filter(({f})=>!f._archived);
-
-    const phoneGroups={};
-    allActive.forEach(({f,program})=>{
-      const ph=_normPhone(f.phone);
-      if(!ph||ph.length!==10) return;
-      (phoneGroups[ph]=phoneGroups[ph]||[]).push({f,program});
-    });
-    const phoneDupKeys=Object.keys(phoneGroups).filter(k=>phoneGroups[k].length>1).sort((a,b)=>phoneGroups[b].length-phoneGroups[a].length);
-
-    // Name+village groups, excluding anyone already shown in a phone group
-    // above (a record can only usefully be reviewed once) and rows with no
-    // name or no village (too weak a signal — every blank-village record
-    // would otherwise cluster into one giant false-positive group).
-    const inPhoneGroup = new Set(phoneDupKeys.flatMap(k=>phoneGroups[k].map(r=>r.program+':'+r.f.id)));
-    const nameGroups={};
-    allActive.forEach(({f,program})=>{
-      if(inPhoneGroup.has(program+':'+f.id)) return;
-      const nm=normName(f.name), vl=normName(f.village);
-      if(!nm||!vl) return;
-      const key=nm+'|'+vl;
-      (nameGroups[key]=nameGroups[key]||[]).push({f,program});
-    });
-    const nameDupKeys=Object.keys(nameGroups).filter(k=>nameGroups[k].length>1).sort((a,b)=>nameGroups[b].length-nameGroups[a].length);
-
-    const dupRowHtml=({f,program})=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line-soft);font-size:12.5px">
-      <span><b>${esc(f.name||'—')}</b> <span style="color:var(--ink-faint)">${esc(f.id)} · ${program==='haat'?'Haat':'Conversion'} · ${esc(f.village||'—')}${f.phone?' · '+esc(f.phone):''}</span></span>
-      <span style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" data-dupopen="${esc(program)}:${esc(f.id)}" style="font-size:11px">Open →</button>
-        <button class="btn btn-danger btn-sm" data-duparchive="${esc(program)}:${esc(f.id)}" style="font-size:11px">Archive</button>
-      </span>
-    </div>`;
-
-    h+=`<div class="card" style="padding:18px 20px;max-width:980px;margin-bottom:14px">
-      <div class="ct" style="font-size:14px;font-weight:700">📵 Same phone number</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
-        These <b>${phoneDupKeys.length}</b> phone number${phoneDupKeys.length===1?'':'s'} are shared by more than one active farmer. Review each and either fix a mistyped number or archive the extra record.
-      </div>
-      ${phoneDupKeys.length?phoneDupKeys.map(ph=>{
-        const rows=phoneGroups[ph];
-        const sameName = new Set(rows.map(r=>normName(r.f.name))).size===1;
-        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:${sameName?'#fef2f2':'var(--panel-2)'}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <b style="font-family:monospace;font-size:13px">${esc(ph)}</b>
-            ${sameName?'<span class="tag red" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>same name — likely a true duplicate</span>':'<span class="tag yellow" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>different names — likely a mistyped number</span>'}
-          </div>
-          ${rows.map(dupRowHtml).join('')}
-        </div>`;
-      }).join(''):'<div class="hint" style="text-align:center;padding:20px;color:var(--ink-soft)">✓ No duplicate phone numbers found.</div>'}
-    </div>`;
-
-    h+=`<div class="card" style="padding:18px 20px;max-width:980px">
-      <div class="ct" style="font-size:14px;font-weight:700">👤 Same name + village, different phone</div>
-      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
-        These <b>${nameDupKeys.length}</b> group${nameDupKeys.length===1?'':'s'} share a name and village but were NOT caught above — usually a bulk-import batch where every row got a different (often blank or placeholder) phone number. Excludes anyone already listed in a phone group above.
-      </div>
-      ${nameDupKeys.length?nameDupKeys.map(key=>{
-        const rows=nameGroups[key];
-        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fffbeb">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <b style="font-size:13px">${esc(rows[0].f.name||'—')}</b>
-            <span class="tag yellow" style="font-size:9.5px;padding:1px 7px"><span class="d"></span>${rows.length} matching records</span>
-          </div>
-          ${rows.map(dupRowHtml).join('')}
-        </div>`;
-      }).join(''):'<div class="hint" style="text-align:center;padding:20px;color:var(--ink-soft)">✓ No same-name/village groups found.</div>'}
-    </div>`;
-
-    v.innerHTML=h;
-    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    v.querySelectorAll('[data-dupopen]').forEach(b=>b.onclick=()=>{
-      const [program,fid]=b.dataset.dupopen.split(':');
-      if(program==='haat') openHaatDrawer(fid); else openConvDrawer(fid);
-    });
-    v.querySelectorAll('[data-duparchive]').forEach(b=>b.onclick=async()=>{
-      const [program,fid]=b.dataset.duparchive.split(':');
-      const store = program==='haat' ? DB.haatFarmers : DB.convFarmers;
-      const f = (store||[]).find(x=>x.id===fid);
-      const ok = await confirmModal({ title:'Archive this farmer?',
-        message:`"${(f&&f.name)||fid}" will be hidden from all lists and dashboard counts. You can restore it anytime from "Show archived" on the ${program==='haat'?'Haat':'Conversion'} Farmers list.`,
-        confirmLabel:'Archive', danger:true });
-      if(!ok) return;
-      await archiveFarmers(program, [fid]);
-      render();
-    });
-    return;
-  }
+  /* v139 — the Settings "Duplicates" tab lived here. It listed same-phone and
+     same-name+village groups and offered nothing but Archive, so resolving a
+     real twin still meant leaving the screen. Data quality -> Duplicate
+     records (v131) does the same detection AND combines the two records,
+     carrying forms, visits and second farms across. Keeping both meant the
+     admin met the duplicate question twice, in two different shapes, with
+     only one of them able to finish the job. */
   if(FILTERS.settings.tab==='scoring'){
     let h = tabBar();
     h += '<div class="card" style="padding:18px 20px;max-width:980px">'
@@ -14875,76 +14751,270 @@ function openHaatEditModal(name){
   };
 }
 
-/* ============ VIEW: FARM LOCATIONS MAP ============
-   Leaflet-based map. Markers coloured by program (haat/conversion) and
-   filterable by haat / status.  =====*/
+/* ============ VIEW: HAAT CATCHMENT MAP (v139) ============
+   Replaces the old "Farm locations" pin map.
+
+   WHY the rebuild: the old screen plotted farmer.lat/lng. In production
+   exactly ONE farmer out of ~1,100 has coordinates, so the map was blank and
+   told nobody anything. What almost every farmer DOES have is a district, so
+   district is the only location unit the data can actually support today.
+
+   So this screen answers the question the empty pin map never could: for each
+   haat we run, how much farmer supply is actually within reach of it?
+   District bubbles sized by farmer count, plus a real distance ring drawn
+   around the haat.
+
+   Distances are haat -> district headquarters, so they are approximate (a
+   district is 50-100 km across). That is good enough to tell 40 km from
+   300 km, which is the decision this screen exists to inform. Farmers who do
+   have real GPS are still plotted individually on top. ==================== */
+
+/* District headquarters, used as the plot point for a district. Covers all 33
+   Gujarat districts, not just the ones present today, so new sign-ups don't
+   silently fall off the map. A district with no entry here is counted in the
+   "no district recorded" figure rather than being dropped. */
+const GJ_DISTRICT_LATLNG = {
+  'Ahmedabad':[23.0225,72.5714], 'Amreli':[21.6032,71.2221], 'Anand':[22.5645,72.9289],
+  'Aravalli':[23.4626,73.2985], 'Banaskantha':[24.1722,72.4381], 'Bharuch':[21.7051,72.9959],
+  'Bhavnagar':[21.7645,72.1519], 'Botad':[22.1717,71.6685], 'Chhota Udaipur':[22.3050,74.0120],
+  'Dahod':[22.8351,74.2530], 'Dang':[20.7500,73.6833], 'Devbhumi Dwarka':[22.2394,69.6500],
+  'Gandhinagar':[23.2156,72.6369], 'Gir Somnath':[20.9130,70.3670], 'Jamnagar':[22.4707,70.0577],
+  'Junagadh':[21.5222,70.4579], 'Kheda':[22.6939,72.8618], 'Kutch':[23.2530,69.6690],
+  'Mahisagar':[23.1287,73.6103], 'Mehsana':[23.5880,72.3693], 'Morbi':[22.8173,70.8370],
+  'Narmada':[21.8700,73.5000], 'Navsari':[20.9467,72.9520], 'Panchmahal':[22.7788,73.6143],
+  'Patan':[23.8493,72.1266], 'Porbandar':[21.6417,69.6293], 'Rajkot':[22.3039,70.8022],
+  'Sabarkantha':[23.5980,72.9630], 'Surat':[21.1702,72.8311], 'Surendranagar':[22.7196,71.6369],
+  'Tapi':[21.1120,73.3930], 'Vadodara':[22.3072,73.1812], 'Valsad':[20.5992,72.9342],
+};
+/* District values are stored bilingually, e.g. "Junagadh (જૂનાગઢ)", and a few
+   spellings drift ("Kachchh", "Devbhoomi Dwarka"). Normalise before lookup. */
+const GJ_DISTRICT_ALIAS = {
+  'kachchh':'Kutch', 'kachchh - kutch':'Kutch', 'kutchh':'Kutch',
+  'devbhoomi dwarka':'Devbhumi Dwarka', 'devbhumi dwarka':'Devbhumi Dwarka',
+  'chota udaipur':'Chhota Udaipur', 'chhotaudepur':'Chhota Udaipur', 'chhota udepur':'Chhota Udaipur',
+  'panch mahal':'Panchmahal', 'panchmahals':'Panchmahal',
+  'the dangs':'Dang', 'dangs':'Dang',
+  'sabar kantha':'Sabarkantha', 'banas kantha':'Banaskantha',
+  'mahisagar':'Mahisagar', 'mehsana':'Mehsana', 'mahesana':'Mehsana',
+};
+function _distName(d){
+  const raw = String(d||'').replace(/\s*\(.*$/,'').trim();
+  if(!raw) return '';
+  const key = raw.toLowerCase();
+  if(GJ_DISTRICT_ALIAS[key]) return GJ_DISTRICT_ALIAS[key];
+  const hit = Object.keys(GJ_DISTRICT_LATLNG).find(k => k.toLowerCase() === key);
+  return hit || raw;
+}
+function districtLatLng(d){ const k = _distName(d); return GJ_DISTRICT_LATLNG[k] || null; }
+
 function viewFarmMap(){
   const v = $('#view');
-  if(!FILTERS.farmMap) FILTERS.farmMap = { program:'all', haat:'all', status:'all' };
+  if(!FILTERS.farmMap) FILTERS.farmMap = { program:'all', haat:'all', status:'all', ring:50 };
   const F = FILTERS.farmMap;
-  const haats = getHaatList();
-  const statuses = [['','All statuses'],['green','Onboarded'],['pending','Verification pending'],['yellow','In Progress'],['red','Not adopting']];
-  let h = `<div class="toolbar" style="margin-bottom:14px">
-    <select id="fmProg"><option value="all">Both programs</option><option value="haat" ${F.program==='haat'?'selected':''}>Haat only</option><option value="conversion" ${F.program==='conversion'?'selected':''}>Conversion only</option></select>
-    <select id="fmHaat"><option value="all">All haats</option>${haats.map(x=>`<option value="${esc(x.name)}" ${F.haat===x.name?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
-    <select id="fmStatus"><option value="all">All statuses</option>${statuses.slice(1).map(([v,l])=>`<option value="${v}" ${F.status===v?'selected':''}>${esc(l)}</option>`).join('')}</select>
-    <span style="font-size:11.5px;color:var(--ink-soft);align-self:center"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:middle"></span>Onboarded · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--yellow);margin-right:4px;vertical-align:middle"></span>In progress · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--red);margin-right:4px;vertical-align:middle"></span>Not adopting · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);margin-right:4px;vertical-align:middle"></span>Haat location</span>
-  </div>
-  <div id="farmMap" style="width:100%;height:65vh;border:1px solid var(--line);border-radius:10px;background:#e0e7ee"></div>`;
+  if(F.ring == null) F.ring = 50;
+
+  const haats     = getHaatList();
+  const plottable = haats.filter(h => h.lat != null && h.lng != null);
+  const noGps     = haats.filter(h => h.lat == null || h.lng == null);
+  if(F.haat !== 'all' && !plottable.some(h => h.name === F.haat)) F.haat = 'all';
+
+  /* ---- gather the farmers this user is allowed to see ---- */
+  const rows = [];
+  if(F.program !== 'conversion')
+    _excludeSeeds(filterByCurrentFc(DB.haatFarmers||[])).filter(f=>!f._archived)
+      .forEach(f => rows.push(Object.assign({}, f, {_program:'haat'})));
+  if(F.program !== 'haat')
+    _excludeSeeds(filterByCurrentFc(DB.convFarmers||[])).filter(f=>!f._archived)
+      .forEach(f => rows.push(Object.assign({}, f, {_program:'conversion'})));
+
+  const stageOf = f => f._program === 'conversion' ? (convCategory(f) || '') : (f.status || '');
+  const shown = rows.filter(f => F.status === 'all' || stageOf(f) === F.status);
+
+  /* ---- roll up to districts ---- */
+  const byDist = new Map();
+  let noLocation = 0;
+  shown.forEach(f => {
+    const ll = districtLatLng(f.district);
+    if(!ll){ noLocation++; return; }
+    const k = _distName(f.district);
+    if(!byDist.has(k)) byDist.set(k, {name:k, lat:ll[0], lng:ll[1], nHaat:0, nConv:0, farmers:[]});
+    const g = byDist.get(k);
+    if(f._program === 'conversion') g.nConv++; else g.nHaat++;
+    g.farmers.push(f);
+  });
+
+  /* ---- how far is each district from the haat(s) we are measuring from? ---- */
+  const refs = F.haat === 'all' ? plottable : plottable.filter(h => h.name === F.haat);
+  function nearestHaat(g){
+    let km = null, near = null;
+    refs.forEach(h => {
+      const d = haversineKm(g.lat, g.lng, h.lat, h.lng);
+      if(d != null && (km == null || d < km)){ km = d; near = h; }
+    });
+    return {km:km, near:near};
+  }
+  const groups = [...byDist.values()].map(g => {
+    const n = nearestHaat(g);
+    g.km = n.km; g.near = n.near; g.total = g.nHaat + g.nConv;
+    return g;
+  });
+  groups.sort((a,b) => (a.km==null?1e9:a.km) - (b.km==null?1e9:b.km));
+
+  const inRing  = groups.filter(g => g.km != null && g.km <= F.ring);
+  const outRing = groups.filter(g => g.km == null || g.km >  F.ring);
+  const sum     = arr => arr.reduce((n,g) => n + g.total, 0);
+  const nIn = sum(inRing), nOut = sum(outRing);
+  const pct = shown.length ? Math.round(nIn / shown.length * 100) : 0;
+  const withGps = shown.filter(f => f.lat != null && f.lng != null).length;
+
+  const dot = c => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};margin-right:5px;vertical-align:middle"></span>`;
+  const mix = g => (g.nHaat && g.nConv) ? `<div class="mini-sub">${g.nHaat} haat · ${g.nConv} conversion</div>` : '';
+  const statuses = [['green','Onboarded'],['pending','Verification pending'],['yellow','In progress'],['red','Not adopting']];
+
+  let h = `<div class="toolbar" style="margin-bottom:12px;flex-wrap:wrap">
+    <select id="fmProg">
+      <option value="all">Both programmes</option>
+      <option value="haat" ${F.program==='haat'?'selected':''}>Haat only</option>
+      <option value="conversion" ${F.program==='conversion'?'selected':''}>Conversion only</option>
+    </select>
+    <select id="fmHaat">
+      <option value="all">Measure from: all haats</option>
+      ${plottable.map(x=>`<option value="${esc(x.name)}" ${F.haat===x.name?'selected':''}>Measure from: ${esc(x.name)}</option>`).join('')}
+    </select>
+    <select id="fmRing">${[25,50,100,150].map(k=>`<option value="${k}" ${F.ring===k?'selected':''}>Within ${k} km</option>`).join('')}</select>
+    <select id="fmStatus">
+      <option value="all">All statuses</option>
+      ${statuses.map(([k,l])=>`<option value="${k}" ${F.status===k?'selected':''}>${esc(l)}</option>`).join('')}
+    </select>
+  </div>`;
+
+  /* ---- the headline, stated in words above the map ---- */
+  h += `<div class="card chart-card" style="margin-bottom:12px">
+    <div class="ct">Supply within reach</div>
+    <div class="cs">Of the <b>${shown.length}</b> farmers on the books, <b style="color:${nIn?'var(--green)':'var(--red)'}">${nIn}</b>
+      (${pct}%) sit in a district within <b>${F.ring} km</b> of
+      ${F.haat==='all' ? 'a haat we run' : esc(F.haat)}. The other <b>${nOut}</b> are further away${noLocation?`, and ${noLocation} ${noLocation===1?'has':'have'} no district recorded`:''}.</div>
+    <div class="detail-grid">
+      <div class="detail-cell"><div class="k">Within ${F.ring} km</div><div class="v" style="color:var(--green)">${nIn}</div></div>
+      <div class="detail-cell"><div class="k">Beyond ${F.ring} km</div><div class="v" style="color:var(--red)">${nOut}</div></div>
+      <div class="detail-cell"><div class="k">Haats plotted</div><div class="v">${plottable.length} of ${haats.length}</div></div>
+      <div class="detail-cell"><div class="k">Exact farm GPS</div><div class="v">${withGps}</div></div>
+    </div>
+  </div>`;
+
+  h += `<div id="farmMap" style="width:100%;height:58vh;min-height:340px;border:1px solid var(--line);border-radius:10px;background:#e0e7ee;position:relative;z-index:0"></div>
+  <div style="font-size:11.5px;color:var(--ink-soft);margin:8px 0 16px;line-height:1.8">
+    ${dot('#16a34a')}District within ${F.ring} km &nbsp; ${dot('#94a3b8')}District beyond ${F.ring} km &nbsp;
+    ${dot('#1d4ed8')}Haat &nbsp; ${dot('#7c3aed')}Farm with exact GPS<br>
+    Bubble size = number of farmers. Distance is measured to the district headquarters, so treat it as approximate.
+  </div>`;
+
+  /* ---- the two lists that turn the map into a decision ---- */
+  h += `<div class="card" style="margin-bottom:16px">
+    <div class="mini-tbl-head">
+      <h3>Districts within ${F.ring} km — work these first</h3>
+      <span class="mini-tbl-sub">these farmers can realistically reach ${F.haat==='all'?'one of our haats':esc(F.haat)}</span>
+    </div>
+    <div class="mini-tbl-wrap"><table class="mini-tbl"><thead><tr>
+      <th>District</th><th class="num">Farmers</th><th class="num">Distance</th><th>Nearest haat</th>
+    </tr></thead><tbody>${inRing.length ? inRing.map(g=>`<tr style="cursor:default">
+      <td class="strong">${esc(g.name)}${mix(g)}</td>
+      <td class="num"><b style="color:var(--green)">${g.total}</b></td>
+      <td class="num" style="white-space:nowrap">${Math.round(g.km)} km</td>
+      <td class="muted" style="font-size:11.5px">${esc((g.near&&g.near.name)||'')}</td>
+    </tr>`).join('') : `<tr><td colspan="4" class="mini-empty">No district is within ${F.ring} km of a haat with GPS.</td></tr>`}</tbody></table></div>
+  </div>`;
+
+  h += `<div class="card" style="margin-bottom:16px">
+    <div class="mini-tbl-head">
+      <h3>Districts beyond ${F.ring} km — ${nOut} farmers we cannot currently serve</h3>
+      <span class="mini-tbl-sub">either they need a haat nearer to them, or they were signed up for something other than haat sales</span>
+    </div>
+    <div class="mini-tbl-wrap"><table class="mini-tbl"><thead><tr>
+      <th>District</th><th class="num">Farmers</th><th class="num">Distance</th>
+    </tr></thead><tbody>${outRing.length ? outRing.slice().sort((a,b)=>b.total-a.total).map(g=>`<tr style="cursor:default">
+      <td class="strong">${esc(g.name)}${mix(g)}</td>
+      <td class="num"><b>${g.total}</b></td>
+      <td class="num" style="white-space:nowrap">${g.km==null?'—':Math.round(g.km)+' km'}</td>
+    </tr>`).join('') : `<tr><td colspan="3" class="mini-empty">None — every district is within range.</td></tr>`}</tbody></table></div>
+  </div>`;
+
+  if(noGps.length){
+    h += `<div class="card chart-card" style="margin-bottom:16px;border-left:3px solid var(--yellow)">
+      <div class="ct">${noGps.length} haat${noGps.length===1?'':'s'} cannot be plotted</div>
+      <div class="cs"><b>${noGps.map(x=>esc(x.name)).join(', ')}</b> ${noGps.length===1?'has':'have'} no GPS coordinates,
+      so ${noGps.length===1?'it is':'they are'} missing from this map and from every distance above.
+      Add coordinates in <b>Settings → Manage Haats</b> and this picture will change.</div>
+    </div>`;
+  }
+
+  if(noLocation){
+    h += `<div class="card chart-card" style="margin-bottom:16px;border-left:3px solid var(--yellow)">
+      <div class="ct">${noLocation} farmer${noLocation===1?'':'s'} with no district recorded</div>
+      <div class="cs">They are missing from every figure on this page. Their district can be filled in from the farmer's
+      own record — open them from the Haat or Conversion farmers list and use <b>Edit details</b>.</div>
+    </div>`;
+  }
+
   v.innerHTML = h;
-  const onF = (k, id) => { const el = $('#'+id); if(el) el.onchange = () => { F[k] = el.value; render(); }; };
-  onF('program','fmProg'); onF('haat','fmHaat'); onF('status','fmStatus');
-  // Wait until Leaflet is loaded (defer + CDN), then plot.
-  // v8 bug fix: rapid filter changes were causing "Map container already
-  // initialized" errors. Guard against double-init and against poll-races.
+
+  const onF = (k, id, num) => { const el = $('#'+id); if(el) el.onchange = () => { F[k] = num ? +el.value : el.value; render(); }; };
+  onF('program','fmProg'); onF('haat','fmHaat'); onF('status','fmStatus'); onF('ring','fmRing',true);
+
+  /* ---- draw ---- */
   function plot(){
     if(typeof L === 'undefined'){ setTimeout(plot, 200); return; }
     const container = document.getElementById('farmMap');
-    if(!container) return;                     // view changed while polling
-    if(container._leaflet_id) return;          // already initialised by previous render
-    const map = L.map(container).setView([22.6, 72.5], 7); // centred on Gujarat
+    if(!container) return;                 // view changed while polling
+    if(container._leaflet_id) return;      // already initialised by a previous render
+    const map = L.map(container).setView([22.6, 72.0], 7);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       {attribution:'&copy; OpenStreetMap', maxZoom:18}).addTo(map);
-    function colorFor(stage, program){
-      if(stage === 'green' || stage === 'adopted') return '#16a34a';
-      if(stage === 'yellow' || stage === 'inProgress') return '#d97706';
-      if(stage === 'red') return '#dc2626';
-      if(stage === 'pending') return '#94a3b8';
-      return program === 'conversion' ? '#8b5cf6' : '#3b82f6';
-    }
-    const farmers = [];
-    // v8 — role filter: FC users see only their own farmers on the map.
-    if(F.program !== 'conversion') filterByCurrentFc(DB.haatFarmers||[]).forEach(f => farmers.push({...f, _program:'haat'}));
-    if(F.program !== 'haat')       filterByCurrentFc(DB.convFarmers||[]).forEach(f => farmers.push({...f, _program:'conversion'}));
-    let plotted = 0;
-    farmers.forEach(f => {
+
+    // Catchment rings first, so they sit under everything else.
+    refs.forEach(hx => {
+      L.circle([hx.lat, hx.lng], {radius:F.ring*1000, color:'#16a34a', weight:1.5,
+        opacity:.65, fillColor:'#16a34a', fillOpacity:.06, dashArray:'5,5'}).addTo(map);
+    });
+
+    // District bubbles.
+    groups.forEach(g => {
+      const near = g.km != null && g.km <= F.ring;
+      const c = near ? '#16a34a' : '#94a3b8';
+      const m = L.circleMarker([g.lat, g.lng], {radius:5 + Math.sqrt(g.total) * 2.4,
+        color:c, fillColor:c, fillOpacity:.55, weight:1.5}).addTo(map);
+      const top = g.farmers.slice(0,6).map(f => esc(f.name||'') + (f.village ? ' — ' + esc(f.village) : '')).join('<br>');
+      m.bindPopup(`<b>${esc(g.name)}</b><br>
+        <b>${g.total}</b> farmers (${g.nHaat} haat · ${g.nConv} conversion)<br>
+        ${g.km==null ? '<i>no haat with GPS to measure from</i>'
+                     : `<b>${Math.round(g.km)} km</b> to ${esc((g.near&&g.near.name)||'')}`}
+        <hr style="margin:5px 0">${top}${g.farmers.length>6?`<br><i>+${g.farmers.length-6} more</i>`:''}`);
+      m.bindTooltip(`${esc(g.name)}: ${g.total}`, {direction:'top'});
+    });
+
+    // Farms that DO have exact coordinates, on top of the bubbles.
+    shown.forEach(f => {
       if(f.lat == null || f.lng == null) return;
-      if(F.haat !== 'all' && f.haat !== F.haat) return;
-      const stage = f._program === 'conversion' ? (convCategory(f) || '') : (f.status || '');
-      if(F.status !== 'all' && stage !== F.status) return;
-      const c = colorFor(stage, f._program);
-      const marker = L.circleMarker([f.lat, f.lng], {radius:6, color:c, fillColor:c, fillOpacity:.85, weight:1}).addTo(map);
-      marker.bindPopup(`<b>${esc(f.name||'')}</b><br>${esc(f.id||'')}<br>${esc(f.village||'')}, ${esc(f.district||'')}<br><i>${esc(f._program==='conversion'?'Conversion':'Haat')}</i>`);
-      plotted++;
+      L.circleMarker([f.lat, f.lng], {radius:5, color:'#5b21b6', fillColor:'#7c3aed',
+        fillOpacity:.95, weight:1.5}).addTo(map)
+       .bindPopup(`<b>${esc(f.name||'')}</b><br>${esc(f.village||'')}, ${esc(f.district||'')}<br><i>exact farm GPS</i>`);
     });
-    // Haat locations (blue accent markers)
-    haats.forEach(haat => {
-      if(haat.lat == null || haat.lng == null) return;
-      const m = L.circleMarker([haat.lat, haat.lng], {radius:9, color:'#1e40af', fillColor:'#3b82f6', fillOpacity:.95, weight:2}).addTo(map);
-      m.bindPopup(`<b>🛒 ${esc(haat.name)}</b><br>${esc((haat.weekdays||[]).join(', '))}<br><i>${DB.haatFarmers.filter(f=>f.haat===haat.name).length} farmers</i>`);
+
+    // Haats last, so they are never hidden behind a bubble.
+    plottable.forEach(hx => {
+      const n = shown.filter(f => f.haat === hx.name).length;
+      L.circleMarker([hx.lat, hx.lng], {radius:9, color:'#fff', fillColor:'#1d4ed8',
+        fillOpacity:1, weight:2.5}).addTo(map)
+       .bindPopup(`<b>🛒 ${esc(hx.name)}</b><br>${esc(hx.city||'')}<br>
+         ${esc((hx.weekdays||[]).join(', ')) || '<i>no market day set</i>'}<br>
+         <i>${n} farmer${n===1?'':'s'} assigned to it</i>`);
     });
-    // Fit to plotted points if any.
-    const allLayers = [];
-    map.eachLayer(l => { if(l.getLatLng) allLayers.push(l); });
-    if(allLayers.length){
-      const group = L.featureGroup(allLayers);
-      try{ map.fitBounds(group.getBounds().pad(0.1)); }catch(e){}
+
+    const layers = [];
+    map.eachLayer(l => { if(l.getLatLng) layers.push(l); });
+    if(layers.length){
+      try{ map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12)); }catch(e){}
     }
-    // Show a tiny stat overlay
-    const stat = document.createElement('div');
-    stat.style.cssText = 'position:absolute;top:60px;right:30px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;box-shadow:var(--sh-2);z-index:1000';
-    stat.innerHTML = `<b>${plotted}</b> farms plotted · <b>${haats.filter(h => h.lat!=null).length}</b> haats`;
-    document.getElementById('farmMap').appendChild(stat);
   }
   setTimeout(plot, 50);
 }

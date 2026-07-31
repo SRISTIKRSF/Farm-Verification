@@ -1116,7 +1116,15 @@ const CROP_ROWS = [{}];
    Note: photos are base64 in PHOTOS so they roundtrip too. */
 const DRAFT_KEY = 'sristi_patrak_draft_v1';
 let _draftTimer = null;
+/* v141 — true once this form has been submitted. ANSWERS stays populated in
+   memory after a submit, so without this any later save would rewrite the
+   draft of a form that has already gone. Reset by definition on the next
+   open, because that is a fresh iframe. "Start fresh" deliberately does NOT
+   set it: the farmer is still filling the form there and their next edit
+   must be saved as normal. */
+let _draftClosed = false;
 function saveDraft(){
+  if(_draftClosed) return;
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       at: new Date().toISOString(),
@@ -1127,6 +1135,7 @@ function saveDraft(){
   } catch(e) { /* quota or private-mode — ignore */ }
 }
 function scheduleDraftSave(){
+  if(_draftClosed) return;
   if(_draftTimer) clearTimeout(_draftTimer);
   _draftTimer = setTimeout(saveDraft, 1200);
 }
@@ -1151,7 +1160,18 @@ function restoreDraft(){
     return true;
   } catch(e) { return false; }
 }
-function clearDraft(){ try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
+/* v141 — cancel a save that is already in flight.
+   Draft saves are debounced 1.2 seconds after the last edit, so a farmer who
+   answers the final question and taps Submit straight away ALWAYS has one
+   pending. clearDraft() removed the key and then that pending save wrote it
+   straight back. The next time the form was opened it offered to restore a
+   form that had already been sent — and one tap on "ચાલુ રાખો" plus one on
+   Submit sent all 88 identical answers a second time.
+   That is exactly what produced the "IDENTICAL COPY" rows in Needs attention:
+   five of them on 31 July alone, each arriving 21–60 seconds after a
+   submission that had already succeeded. */
+function cancelDraftSave(){ if(_draftTimer){ clearTimeout(_draftTimer); _draftTimer = null; } }
+function clearDraft(){ cancelDraftSave(); try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2080,6 +2100,9 @@ function submit(){
     window.parent.postMessage({type:'kisan-haat-full', data:{...ANSWERS, claims, photos:PHOTOS, _submittedAt: new Date().toISOString()}}, '*');
   }
   // v9 H1 — submission complete; drop the draft so the next farmer starts fresh.
+  // v141 — and close it for good. Dropping it was never enough on its own:
+  // see cancelDraftSave().
+  _draftClosed = true;
   clearDraft();
   $('#formWrap').querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   $('#successScreen').classList.add('show');
@@ -3123,7 +3146,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v140';
+const APP_VERSION = 'v141';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

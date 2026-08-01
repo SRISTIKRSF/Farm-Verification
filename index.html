@@ -457,6 +457,14 @@ tbody tr{transition:background .12s,box-shadow .12s}
 tbody tr:hover{background:var(--accent-soft);cursor:pointer;
   box-shadow:inset 3px 0 0 var(--accent)}
 tbody tr:last-child td{border-bottom:none}
+/* v142 — Needs attention action column. The four buttons were bare inline
+   elements in a 230px cell, so each wrapped onto its own line and every row
+   staggered to a different height — rows read as overlapping each other.
+   A flex row with real gaps keeps them tidy, and top-aligning the cells lines
+   the first button up with the farmer's name on every row. */
+.attn-tbl tbody td{vertical-align:top}
+.attn-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:flex-start}
+.attn-acts .btn{margin:0;white-space:nowrap}
 .empty{text-align:center;padding:50px 20px;color:var(--ink-soft)}
 .empty svg{width:38px;height:38px;margin-bottom:11px;opacity:.3}
 .empty div{font-size:13px}
@@ -3146,7 +3154,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v141';
+const APP_VERSION = 'v142';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19029,9 +19037,9 @@ function viewAttention(){
   if(!rows.length){
     h += `<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">Nothing needs attention${F.program==='all'?'':' in this programme'}.</div>`;
   } else {
-    h += `<div class="table-wrap"><table><thead><tr>
+    h += `<div class="table-wrap"><table class="attn-tbl"><thead><tr>
       <th>Farmer</th><th>Location</th><th>Phone</th><th>Applied for</th>
-      <th>Already on file as</th><th>Submitted</th><th style="width:230px">Action</th>
+      <th>Already on file as</th><th>Submitted</th><th style="width:264px">Action</th>
     </tr></thead><tbody>`;
     rows.forEach(r=>{
       const exProg = r._existingProgram==='haat' ? 'Haat' : (r._existingProgram==='conv' ? 'Conversion' : '');
@@ -19044,21 +19052,36 @@ function viewAttention(){
         <td><b>${esc(r.name||'\u2014')}</b>${(function(){
           // v134 — say how many answers actually differ, not just that they do.
           if(resend) return '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">Identical copy \u2014 safe to dismiss</div>';
-          var n = 0; try{ n = attnDiff(r, exRec).filter(function(d){return !d.same;}).length; }catch(e){}
-          return '<div style="font-size:10px;font-weight:700;color:var(--orange,#c2410c);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">'
-            + (n ? n+' answer'+(n===1?'':'s')+' differ \u2014 open to see which' : 'Same phone as a farmer on file') + '</div>';
+          // v142 \u2014 name the fields instead of counting them. The old "3 answers
+          // differ" was measured with the farmer's enrolment form NOT loaded, so
+          // it only ever counted the six summary fields \u2014 it said 3 where 61
+          // form answers actually differed. Naming what we can genuinely see
+          // here is both honest and better triage: "only the name differs" and
+          // "land and years differ" call for very different decisions. The full
+          // question-by-question comparison is in View form.
+          var SHORT = {'Farmer name':'name','Village':'village','Taluka':'taluka',
+                       'District':'district','Land (acres)':'land','Years organic':'years organic'};
+          var d = []; try{ d = attnDiff(r, exRec).filter(function(x){ return !x.same; }); }catch(e){}
+          var names = d.map(function(x){ return SHORT[x.label] || x.label; });
+          // Two names plus a count keeps this to one line. Uppercase is dropped
+          // here on purpose \u2014 a list of field names is far harder to read in caps.
+          var txt = names.length
+            ? esc(names.slice(0,2).join(', ') + (names.length>2 ? ' +'+(names.length-2)+' more' : '')) + (names.length===1 ? ' differs' : ' differ')
+            : 'same phone as a farmer on file';
+          return '<div style="font-size:11px;font-weight:600;color:var(--orange,#c2410c);margin-top:2px;line-height:1.4">'
+            + txt.charAt(0).toUpperCase() + txt.slice(1) + '</div>';
         })()}</td>
         <td style="font-size:12px">${esc(r.village||'')}${r.district?'<div style="font-size:10.5px;color:var(--ink-faint)">'+esc(String(r.district).split(' (')[0])+'</div>':''}</td>
         <td style="font-size:12px">${r.phone?`<a href="tel:${esc(r.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(r.phone)}</a>`:'\u2014'}</td>
         <td><span class="tag ${r.program==='haat'?'green':'blue'}" style="font-size:10.5px">${r.program==='haat'?'Haat':'Conversion'}</span></td>
         <td style="font-size:12px">${exRec?esc(exRec.name):'<span style="color:var(--ink-faint)">unknown</span>'}${exProg?'<div style="font-size:10.5px;color:var(--ink-faint)">'+exProg+'</div>':''}</td>
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
-        <td>
+        <td><div class="attn-acts">
           <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
           ${r._existingId && !resend ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;${resend?'':'color:var(--red)'}">Dismiss</button>
           ${r._existingId ? `<button class="btn btn-ghost btn-sm" data-att-more="${esc(r.id)}" style="padding:4px 9px;color:var(--ink-soft)">Something else\u2026</button>` : ''}
-        </td>
+        </div></td>
       </tr>`;
     });
     h += '</tbody></table></div>';
@@ -19154,7 +19177,18 @@ function attnReason(r, existing, diffs){
     text:'The number was already registered'
        + (existing ? ' to <b>'+esc(existing.name||'')+'</b> ('+esc(existing.id)+')' : '')
        + ', so the app held this submission here instead of creating a second farmer on its own. '
-       + (nDiff ? '<b>'+nDiff+' answer'+(nDiff===1?'':'s')+' differ</b> from what is on file — those are listed below.'
+       // v142 — split the count. "64 answers differ" hides the useful part;
+       // a changed village is a very different thing from 61 changed form
+       // answers, and until v142 the form half was not being counted at all.
+       + (nDiff ? (function(){
+             const dl = (diffs||[]).filter(d=>!d.same);
+             const nRec  = dl.filter(d=>d.src==='record').length;
+             const nForm = dl.filter(d=>d.src==='form').length;
+             const bits = [];
+             if(nRec)  bits.push('<b>'+nRec+' summary detail'+(nRec===1?'':'s')+'</b>');
+             if(nForm) bits.push('<b>'+nForm+' form answer'+(nForm===1?'':'s')+'</b>');
+             return bits.join(' and ') + ' differ from the record on file — all of them are listed below.';
+           })()
                 : 'Nothing in it differs from the record on file.')
        + ' Someone has to decide whether it is the same person, the same person with another piece of land, or a different person sharing the handset.' };
 }
@@ -19214,7 +19248,7 @@ function attnActionGuide(){
   </div>`;
 }
 
-function openAttentionForm(id){
+async function openAttentionForm(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
   /* v134 — lead with WHY this is here and WHAT differs from the record on
@@ -19223,16 +19257,33 @@ function openAttentionForm(id){
   const existing = r._existingId
     ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
     : null;
-  if(existing) { try { loadForms(existing.id); } catch(e) {} }
+  // v142 — AWAIT it. This was fire-and-forget, so on the first open the
+  // farmer's enrolment form had not arrived yet and attnDiff() silently fell
+  // back to comparing the six summary fields only. The screen therefore said
+  // "3 answers differ" for a submission where 61 form answers differed, and
+  // the question-by-question table appeared only if you closed and reopened.
+  if(existing) { try { await loadForms(existing.id); } catch(e) {} }
   const diffs = attnDiff(r, existing);
   const why = attnReason(r, existing, diffs);
 
   const flat = [];
+  /* v142 — the claims array IS the form. The generic walk below stringified it
+     as "farmer › claims: [object Object], [object Object], …", one useless row
+     where the farmer's answers should be. Render it properly first, question by
+     question, then let the walk handle whatever else the payload carries. */
+  const _cl = _attnClaims(r);
+  Object.keys(_cl).forEach(k => {
+    const c = _cl[k] || {};
+    const a = _attnVal(c.answer);
+    if(a) flat.push([c.en || c.gu || c.id || k, a]);
+  });
   const walk = (obj, prefix) => {
     if(!obj || typeof obj !== 'object') return;
     Object.keys(obj).forEach(k=>{
       const val = obj[k];
       if(val && typeof val === 'object' && !Array.isArray(val)){ walk(val, prefix?prefix+' › '+k:k); return; }
+      // handled above, and never readable when joined
+      if(Array.isArray(val) && val.some(x => x && typeof x === 'object')) return;
       const shown = Array.isArray(val) ? val.join(', ') : String(val==null?'':val);
       if(shown === '' || shown === 'undefined') return;
       flat.push([prefix?prefix+' › '+k:k, shown]);

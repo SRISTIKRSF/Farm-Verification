@@ -126,7 +126,12 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 /* ============ MAIN ============ */
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{
-  display:flex;align-items:center;gap:16px;padding:14px 28px;
+  /* v143 — wraps instead of pushing the "+ New Farmer" button off the right
+     edge. Below about 1000px the title, search box, sync pill, user chip and
+     button add up to more than the bar, and with nowrap the whole page gained
+     a horizontal scrollbar. Wrapping only engages when they genuinely do not
+     fit, so nothing changes at desktop width. */
+  display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:14px 28px;
   background:var(--panel);border-bottom:1px solid var(--line);
   position:sticky;top:0;z-index:20;
 }
@@ -535,7 +540,14 @@ tbody tr:last-child td{border-bottom:none}
 .modal-head h3{font-size:17px;flex:1;font-weight:700}
 .modal-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
 .modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:9px;
-  justify-content:flex-end;background:var(--panel);border-radius:0 0 var(--r-lg) var(--r-lg)}
+  flex-wrap:wrap;justify-content:flex-end;background:var(--panel);border-radius:0 0 var(--r-lg) var(--r-lg)}
+/* v143 — a table inside a modal must fit the modal. The global table rule sets
+   min-width:840px, which is wider than the 720px dialog: the third column of
+   the duplicate comparison ("already on file") was pushed out of sight and 143
+   cells sat past the modal's right edge. Fixed layout plus wrapping cells keeps
+   every column visible instead of hiding one behind a horizontal scrollbar. */
+.modal-tbl{min-width:0;width:100%;table-layout:fixed}
+.modal-tbl th,.modal-tbl td{white-space:normal;overflow-wrap:anywhere;word-break:normal;vertical-align:top}
 
 /* status picker (conversion set-status modal) */
 .status-picker{display:flex;flex-direction:column;gap:9px}
@@ -3154,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v142';
+const APP_VERSION = 'v143';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19201,8 +19213,10 @@ function attnDiffTable(diffs, existing){
     return '<div class="hint" style="margin-bottom:12px">Nothing differs from the record on file — every answer matches.</div>';
   }
   let h = `<div class="subhead" style="margin-top:4px">What is different (${d.length})</div>
-    <div class="table-wrap" style="margin-bottom:12px"><table><thead><tr>
-      <th style="width:34%">Question</th>
+    <div class="table-wrap" style="margin-bottom:12px"><table class="modal-tbl">
+      <colgroup><col style="width:28%"><col style="width:36%"><col style="width:36%"></colgroup>
+      <thead><tr>
+      <th>Question</th>
       <th>This submission</th>
       <th>Already on file${existing?' — '+esc(existing.id):''}</th>
     </tr></thead><tbody>`;
@@ -19306,16 +19320,21 @@ async function openAttentionForm(id){
       so there is only one form here and nothing to compare it against question by question. The details above are everything both records hold in common.</div>` : ''}
     <div class="subhead">Everything this farmer submitted</div>
     <div style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
-      <table style="width:100%;font-size:12px;border-collapse:collapse">
-        ${flat.length ? flat.map(([k,val])=>`<tr><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft);width:42%;vertical-align:top">${esc(k)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600">${esc(val)}</td></tr>`).join('')
+      <table class="modal-tbl" style="font-size:12px;border-collapse:collapse">
+        <colgroup><col style="width:42%"><col style="width:58%"></colgroup>
+        ${flat.length ? flat.map(([k,val])=>`<tr><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft)">${esc(k)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600">${esc(val)}</td></tr>`).join('')
                       : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
       </table>
     </div>`;
   modalShell('Why this needs attention \u2014 '+esc(r.name||''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
+     <span style="flex:1"></span>
      ${r._existingId ? `<button class="btn btn-primary" onclick="closeModal();openAddAsFormModal('${esc(r.id)}')">Same farmer, same farm \u2014 add as Form 2</button>
      <button class="btn btn-clay" onclick="closeModal();addAttentionAsSecondFarm('${esc(r.id)}')">Same farmer, another farm</button>` : ''}
      <button class="btn btn-ghost" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">A different person \u2014 create a new farmer</button>`);
+  // v143 \u2014 this is a three-column side-by-side; 720px was never enough for it.
+  // closeModal() drops the class again, so no other dialog inherits it.
+  const _mw = document.getElementById('modal'); if(_mw) _mw.classList.add('wide');
 }
 
 /* Admin decides this really is a separate membership. The phone stays claimed

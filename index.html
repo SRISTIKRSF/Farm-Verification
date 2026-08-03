@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v147';
+const APP_VERSION = 'v148';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -20035,6 +20035,16 @@ async function acceptPendingEnrolment(id, opts){
       ? Object.assign({}, _payload, {
           _submittedAt: _payload.submittedAt || accepted.publicSubmittedAt || accepted.submittedAt || todayISO() })
       : {...accepted});
+    /* v148 — and drop the copy that rode in on the queue record. The whole
+       88-answer form now lives in forms/{id}, which is fetched on demand;
+       leaving a second copy on the farmer record puts ~14 KB per farmer into
+       haatFarmers, which every device downloads in full on every sync. That
+       is precisely the cost v11 moved the form payloads out to fix, and
+       FORM_FIELDS only strips enrollmentFormFull / verificationFormFull, so
+       this one was riding along unnoticed.
+       Only done where the form has just been written to forms/{id} above —
+       never when _payload is null, because then this IS the only copy. */
+    if(_payload) delete accepted.form;
   } else {
     // v107 — this path bypassed every convForms backup call site added in
     // v106 (it doesn't go through openConvEnrollmentForm or the CSV import,

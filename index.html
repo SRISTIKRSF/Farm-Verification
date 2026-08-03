@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v143';
+const APP_VERSION = 'v144';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -17904,13 +17904,21 @@ const SRISTI_OFFICE_WHATSAPP = '919510386635';  // SRISTI office WhatsApp — ev
 // === PUBLIC LANDING ===
 function renderPublicLanding(){
   const v = $('#view');
-  // v95 — back to a conditional Login card: the plain site URL (what staff
-  // use/bookmark) shows all 3 boxes including Login; a farmer-specific link
-  // (#join, or a direct #haat/#conv share link) shows only the 2 form boxes.
-  // v91 removed the card outright, which also broke a fresh #admin/#fc link
-  // (fixed in v92 by auto-opening the login modal on boot instead) — that
-  // fallback stays in place regardless of which layout renders here.
-  const viaDirectLink = /^#(haat|apply|public_haat_form|conv|convert|public_conv_form|join|forms)$/i.test(location.hash||'');
+  /* v144 — the landing page is the FARMER's page, full stop. Two forms, and
+     nothing else to get wrong.
+
+     History, so nobody flips this a fourth time: v91 removed the Login card,
+     v95 put it back for the plain URL on the reasoning that staff bookmark
+     that URL. In practice the plain URL is the link being sent to farmers, so
+     every farmer was met with a third box asking for a password. Staff have
+     their own link (#admin), which opens the login box on its own — see the
+     boot fallback added in v92, still in place.
+
+     The one real risk in removing it is a staff member who bookmarked the
+     plain URL, or installed the app (manifest start_url is "./", no hash),
+     and no longer has a way in. That is what the small "Staff login" line in
+     the footer below is for: too small and too English for a farmer to take
+     as an instruction, always there for someone who needs it. */
   v.innerHTML = `
     <div class="public-wrap">
       <div class="public-hero">
@@ -17923,7 +17931,7 @@ function renderPublicLanding(){
         <h1>સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ</h1>
         <div class="sub">નીચે આપેલા બે વિકલ્પોમાંથી તમારા માટે યોગ્ય ફોર્મ પસંદ કરો.</div>
       </div>
-      <div class="public-cards${viaDirectLink?'':' three'}">
+      <div class="public-cards">
         <button class="public-card" data-action="haat">
           <div class="public-card-emoji">🛒</div>
           <div class="text-col">
@@ -17940,14 +17948,6 @@ function renderPublicLanding(){
           </div>
           <span class="cta">Form ખોલો →</span>
         </button>
-        ${viaDirectLink?'':`<button class="public-card login" data-action="login">
-          <div class="public-card-emoji">🔐</div>
-          <div class="text-col">
-            <h2>Sristi Login</h2>
-            <p class="desc">તમારું ID અને Password નાખીને ડેશબોર્ડ ખોલો.</p>
-          </div>
-          <span class="cta">Sign in →</span>
-        </button>`}
       </div>
       <div class="public-foot">
         <div style="margin-bottom:18px;padding:14px 18px;background:#fff;border:1.5px solid #e7e9f0;border-radius:12px;display:inline-flex;align-items:center;gap:12px;font-family:'Hind Vadodara',sans-serif">
@@ -17957,7 +17957,8 @@ function renderPublicLanding(){
             <a href="tel:+919510386635" style="font-size:18px;font-weight:800;color:#3d2419;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">+91 95103 86635</a>
           </div>
         </div>
-        <p style="font-size:11.5px;color:#929fb5">Sristi · KRSF · Gujarat · 2026-27 &nbsp;·&nbsp; <span style="font-weight:700">Prakrutik Khedut Haat ${APP_VERSION.toUpperCase()}</span></p>
+        <p style="font-size:11.5px;color:#929fb5">Sristi · KRSF · Gujarat · 2026-27 &nbsp;·&nbsp; <span style="font-weight:700">Prakrutik Khedut Haat ${APP_VERSION.toUpperCase()}</span>
+          &nbsp;·&nbsp; <a href="#admin" data-action="login" style="color:#a9b3c4;text-decoration:none;border-bottom:1px dotted #c3cad6">Staff login</a></p>
       </div>
     </div>
   `;

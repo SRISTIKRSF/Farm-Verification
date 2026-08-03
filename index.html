@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v146';
+const APP_VERSION = 'v147';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -20014,7 +20014,27 @@ async function acceptPendingEnrolment(id, opts){
     // a circular reference that throws inside persistForms()'s
     // JSON.stringify the moment this runs. Caught by testing this before
     // shipping, not by inspection.
-    setForms(newId, 'enrol', {...accepted});
+    /* v147 — store THE FORM, not the record wrapped around it.
+       This line was written (v108) for the lightweight public quick-apply
+       submission, where the record IS all the data there is, so writing the
+       record as the "form" was reasonable. A submission that came through the
+       real 88-question enrolment form is different: it carries that form in
+       .form, and writing the record here buried the answers one level deeper
+       than every reader looks for them:
+           stored:  enrol.form.farmer.claims
+           read:    enrol.claims          (_renderHaatEnrollmentDataSingle,
+                                           farmerFormList, _attnClaims)
+       So the drawer said "No long-form enrollment data on record" for a
+       farmer whose 88 answers were sitting right there. Unwrap it when one is
+       present, and keep the old behaviour when it is not. */
+    const _payload = accepted.form
+      ? (Array.isArray((accepted.form.farmer||{}).claims) ? accepted.form.farmer
+        : (Array.isArray(accepted.form.claims) ? accepted.form : null))
+      : null;
+    setForms(newId, 'enrol', _payload
+      ? Object.assign({}, _payload, {
+          _submittedAt: _payload.submittedAt || accepted.publicSubmittedAt || accepted.submittedAt || todayISO() })
+      : {...accepted});
   } else {
     // v107 — this path bypassed every convForms backup call site added in
     // v106 (it doesn't go through openConvEnrollmentForm or the CSV import,

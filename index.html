@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v145';
+const APP_VERSION = 'v146';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4169,7 +4169,27 @@ function normaliseDB(d){
    not arrays. This is the collision-proof pattern: each record is its own node,
    so two farmers enrolling at the same moment write to different keys and can
    never overwrite each other. The app still works with arrays internally. */
-function mapToArr(m){return m?Object.keys(m).map(k=>m[k]):[];}
+/* v146 — carry the Firebase key onto any record that has lost its own id.
+
+   Two archived Haat records had been stripped down to nothing but the archive
+   stamp (_archived / archivedAt / archivedBy) — no id, no name, no anything.
+   Every list, restore and delete path matches on f.id, so with id undefined
+   the row rendered "undefined", the checkbox carried the string "undefined",
+   and both Restore and Delete silently did nothing: ids.includes(f.id) can
+   never be true. A record you can neither restore nor remove is a record
+   nobody can ever clean up, and it sits in the archive count forever.
+
+   The key is always the id — that is how every other path writes them
+   (fbRef(col+'/'+rec.id).set(...)), so adopting it is a restatement of what
+   the record already is, not a guess. */
+function mapToArr(m){
+  if(!m) return [];
+  return Object.keys(m).map(k => {
+    const r = m[k];
+    if(r && typeof r === 'object' && !r.id) r.id = k;
+    return r;
+  });
+}
 // Strip session-only fields (e.g. _localTouchAt that leaked in earlier
 // builds) so they never round-trip through Firebase.
 // v11 — the heavy form payloads (enrollmentFormFull / verificationFormFull)
@@ -9785,7 +9805,10 @@ function viewHaat(){
     // v8 bug fix: r.status may be undefined for imported / partial farmers
     const st=HAAT_STATUS[r.status]||{cls:'grey',label:'—'};
     // v8 — bilingual normalisation so Haat + Conversion farmers list look the same.
-    const cropsHtml = r.crops.length
+    // v146 — guarded. normaliseDB backfills crops on load, so this only bites
+    // a record that reaches the list by another route, but an unguarded
+    // .length here takes the WHOLE Haat list down rather than one row.
+    const cropsHtml = (r.crops||[]).length
       ? r.crops.map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')
       : '<span style="color:var(--ink-faint)">—</span>';
     let activeCell;
@@ -9799,7 +9822,8 @@ function viewHaat(){
         const st = recordStamp(r);
         return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
       })()}</td>
-      <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres} acres · ${r.yearsOrganic} yr organic</div></td>
+      <td class="name-cell"><div class="nm">${r.name?esc(r.name):'<span style="color:var(--ink-faint);font-style:italic">no name on record</span>'}</div>
+        <div class="sub">${(r.landAcres==null||r.landAcres==='')?'—':r.landAcres} acres · ${(r.yearsOrganic==null||r.yearsOrganic==='')?'—':r.yearsOrganic} yr organic</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td class="crop-cell" style="max-width:260px">${cropsHtml}</td>
       <td>${r.haat?esc(r.haat):'<span style="color:var(--ink-faint)">—</span>'}</td>

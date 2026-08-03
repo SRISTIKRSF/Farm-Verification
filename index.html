@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v144';
+const APP_VERSION = 'v145';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19349,13 +19349,142 @@ async function openAttentionForm(id){
    form stayed buried inside Form 2 and the list went on showing the worse
    value. The admin has to be able to pick, field by field, exactly as they can
    on the merge screen. */
-function openAddAsFormModal(id){
+/* v145 — when the submission is for the OTHER programme, ask which programme
+   the farmer belongs in. Do not guess.
+
+   What went wrong without this: three farmers already in Conversion filled in
+   the HAAT enrolment form. Their number was already on file, so each landed in
+   Needs attention, and "Add as another form" — the obvious, recommended button
+   — silently attached an 88-question Haat application to a Conversion record.
+   Nothing was lost, but all three vanished from the Haat pipeline: no Haat
+   record, no verification queue entry, no visit, ever. The admin was never
+   told a programme boundary was being crossed.
+
+   The rule the admin set is "one person belongs to ONE programme", so the only
+   honest thing this screen can do is ask which one. */
+function openProgrammeChoiceModal(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
   const target = r._existingId
     ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
     : null;
   if(!target){ toast('Could not find the farmer this number belongs to.', 'error'); return; }
+
+  const appliedHaat = r.program === 'haat';
+  const appliedFor  = appliedHaat ? 'Haat' : 'Conversion';
+  const onFileIn    = (target.program === 'haat') ? 'Haat' : 'Conversion';
+  const nm = esc(target.name || target.id);
+
+  const body = `
+    <div style="background:var(--panel-2);border-left:3px solid var(--orange,#c2410c);border-radius:0 8px 8px 0;padding:11px 13px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:3px">This application is for the other programme</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55">
+        <b>${nm}</b> is on file in the <b>${esc(onFileIn)}</b> programme, and this form is the
+        <b>${esc(appliedFor)}</b> enrolment form. One person belongs to one programme, so this is a choice
+        only you can make.</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="border:1.5px solid var(--leaf);border-radius:9px;padding:12px 14px">
+        <div style="font-size:13.5px;font-weight:700;margin-bottom:3px">Move them to ${esc(appliedFor)}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:9px">
+          They asked to join <b>${esc(appliedFor)}</b>, so put them there. A ${esc(appliedFor)} record is created from
+          this form and enters the ${appliedHaat?'verification queue for a farm visit':'conversion programme'}.
+          Their ${esc(onFileIn)} record is <b>archived, not deleted</b> — every visit, score and form on it is kept
+          and can be restored at any time from "Show archived".</div>
+        <button class="btn btn-primary btn-sm" id="pcMove">Move to ${esc(appliedFor)}</button>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 14px">
+        <div style="font-size:13.5px;font-weight:700;margin-bottom:3px">Keep them in ${esc(onFileIn)}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:9px">
+          Leave them where they are. This form is attached to <b>${nm}</b> as an extra form you can read later.
+          <b>They do not join ${esc(appliedFor)}</b> — no ${esc(appliedFor)} record, and
+          ${appliedHaat?'no farm visit will ever be scheduled':'no conversion assessment will be made'} from it.</div>
+        <button class="btn btn-ghost btn-sm" id="pcKeep">Keep in ${esc(onFileIn)} — attach the form</button>
+      </div>
+    </div>`;
+
+  modalShell('Which programme? — ' + esc(r.name || ''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>`);
+  const bm = document.getElementById('pcMove');
+  if(bm) bm.onclick = () => { closeModal(); moveAttentionToOwnProgramme(id); };
+  const bk = document.getElementById('pcKeep');
+  if(bk) bk.onclick = () => { closeModal(); openAddAsFormModal(id, {skipProgrammeCheck:true}); };
+}
+
+/* Put the farmer in the programme they actually applied for, and retire the
+   record in the other one.
+
+   Creation goes through acceptPendingEnrolment() — the app's own, tested path,
+   which builds the right record shape for either programme, writes the
+   forms/{id} backup, logs the activity and clears the queue entry. Nothing
+   here re-implements any of that. */
+async function moveAttentionToOwnProgramme(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const old = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  if(!old){ toast('Could not find the farmer this number belongs to.', 'error'); return; }
+
+  const appliedHaat = r.program === 'haat';
+  const appliedFor  = appliedHaat ? 'Haat' : 'Conversion';
+  const oldProg     = (old.program === 'haat') ? 'haat' : 'conv';
+  const oldLabel    = oldProg === 'haat' ? 'Haat' : 'Conversion';
+
+  const ok = await confirmModal({
+    title: 'Move to ' + appliedFor + '?',
+    message: (old.name||old.id) + ' will be created as a ' + appliedFor + ' farmer from this form.\n\n'
+      + 'Their ' + oldLabel + ' record (' + old.id + ') is ARCHIVED — hidden from lists and counts, '
+      + 'with every visit, score and form kept. You can restore it any time from "Show archived" '
+      + 'on the ' + oldLabel + ' Farmers list.\n\n'
+      + 'Nothing is deleted.',
+    confirmLabel: 'Move to ' + appliedFor });
+  if(!ok) return;
+
+  const appId = r.id;
+  await acceptPendingEnrolment(appId, {force:true});
+
+  // The record acceptPendingEnrolment just created carries publicAppId = the
+  // application id, which is how we find it without it having to hand one back.
+  const store = appliedHaat ? (DB.haatFarmers||[]) : (DB.convFarmers||[]);
+  const created = store.find(x => x && x.publicAppId === appId);
+  if(!created){
+    // Creation failed for some reason — do NOT archive the record they still
+    // have. Leaving them where they are is always the safer half-step.
+    toast('The new ' + appliedFor + ' record was not created, so nothing was archived. Try again.', 'error');
+    return;
+  }
+
+  await archiveFarmers(oldProg, [old.id]);
+
+  // archiveFarmers() releases the phone from the index (so an archived farmer
+  // can re-enrol later). The number now belongs to the record we just created,
+  // so claim it back for them — otherwise the next submission from this phone
+  // sails through as a brand-new farmer instead of being flagged.
+  try{ indexFarmerPhone(created, appliedHaat ? 'haat' : 'conv'); }catch(e){}
+
+  logActivity('decision', `<b>${esc(created.name||'')}</b> moved to the <b>${esc(appliedFor)}</b> programme `
+    + `(${esc(created.id)}) — their ${esc(oldLabel)} record <b>${esc(old.id)}</b> was archived, not deleted.`);
+  await saveDB(); render();
+  toast(appliedFor + ' record created — ' + oldLabel + ' record archived');
+}
+
+function openAddAsFormModal(id, opts){
+  opts = opts || {};
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const target = r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+  if(!target){ toast('Could not find the farmer this number belongs to.', 'error'); return; }
+  /* v145 — never attach across a programme boundary without asking. This is
+     the button that quietly folded three Haat applications into Conversion
+     records; the programme question has to come first. openProgrammeChoiceModal
+     calls back in here with skipProgrammeCheck once the admin has chosen. */
+  if(!opts.skipProgrammeCheck && (target.program === 'haat') !== (r.program === 'haat')){
+    openProgrammeChoiceModal(id);
+    return;
+  }
   if(target.id) { try { loadForms(target.id); } catch(e) {} }
 
   const weak = v => { const t=String(v==null?'':v).trim(); return t==='' || t==='0' || t==='—' || t==='-'; };

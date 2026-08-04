@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v148';
+const APP_VERSION = 'v149';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9547,12 +9547,18 @@ function convFunnelHtml(cs, activeStatus, notInterestedOn){
   </button>`;
   h += '<div class="conv-branch-arrow">splits into<br>score bands →</div>';
   const cards = [
-    {key:'red', gauge:'✕', num:cs.red, label:'Not adopting', sub:'Score below 50%', sc:'var(--red)', scb:'var(--red-bg)', scl:'var(--red-line)',
-     tip:'આ ખેડૂતોનો સ્કોર 50% કરતાં ઓછો છે — હજુ પ્રાકૃતિક ખેતી અપનાવી નથી.'},
-    {key:'yellow', gauge:'◐', num:cs.yellow, label:'In progress', sub:'Score 50–70%', sc:'var(--yellow)', scb:'var(--yellow-bg)', scl:'var(--yellow-line)',
-     tip:'આ ખેડૂતોનો સ્કોર 50-70% ની વચ્ચે છે — પ્રાકૃતિક ખેતી તરફ આગળ વધી રહ્યા છે.'},
-    {key:'green', gauge:'✓', num:cs.green, label:'Adopted', sub:'Score above 70%', sc:'var(--green)', scb:'var(--green-bg)', scl:'var(--green-line)',
-     tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
+    /* v149 — the bands never mentioned the A1/A2 override, so a farmer sitting
+       in "Not adopting" on a score of 75 looked like a bug. It is the rule
+       working: chemical fertilizer or chemical pesticide found on the plot
+       forces Not adopting whatever the total says (see convCategory —
+       !cs.chemFree returns 'red' before the score is even looked at). Both of
+       the other two bands therefore also require a chemical-free plot. */
+    {key:'red', gauge:'✕', num:cs.red, label:'Not adopting', sub:'Below 50%, or chemical use found', sc:'var(--red)', scb:'var(--red-bg)', scl:'var(--red-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 50% કરતાં ઓછો છે, અથવા ખેતરમાં રાસાયણિક ખાતર / જંતુનાશકનો ઉપયોગ જણાયો છે. રાસાયણિક ઉપયોગ મળે તો કુલ સ્કોર ગમે તેટલો હોય તોપણ ખેડૂત અહીં જ ગણાય.'},
+    {key:'yellow', gauge:'◐', num:cs.yellow, label:'In progress', sub:'50–70%, no chemical use', sc:'var(--yellow)', scb:'var(--yellow-bg)', scl:'var(--yellow-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 50-70% ની વચ્ચે છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી તરફ આગળ વધી રહ્યા છે.'},
+    {key:'green', gauge:'✓', num:cs.green, label:'Adopted', sub:'Above 70%, no chemical use', sc:'var(--green)', scb:'var(--green-bg)', scl:'var(--green-line)',
+     tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
   ];
   h += '<div class="conv-fan">';
   cards.forEach(c=>{
@@ -9564,7 +9570,8 @@ function convFunnelHtml(cs, activeStatus, notInterestedOn){
     </button>`;
   });
   h += '</div></div>';
-  h += '<div class="conv-note">ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.</div>';
+  h += '<div class="conv-note">ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.'
+     + '<br>Chemical fertilizer or chemical pesticide found on the plot (questions A1 / A2) puts the farmer in <b>Not adopting</b> whatever the total score is — so a farmer can sit there on 75/100.</div>';
   h += '</div>';
   // v80 — "Organic Commitment" (question 3 at intake) is a separate axis from
   // the score bands above (that's adoption progress; this is willingness at

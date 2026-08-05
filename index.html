@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v154';
+const APP_VERSION = 'v155';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19056,7 +19056,8 @@ function viewAttention(){
   // v128 — an identical resend is noise the admin wants to SEE and dismiss,
   // not something the app should decide about on its own.
   const isResend = r => r && r._reason === 'identical_resend';
-  const nResend = all.filter(isResend).length;
+  const nResend = rows.filter(isResend).length;
+  const nBack = all.filter(x => _revBackwards(x, _revExisting(x))).length;   // v155
 
   let h = `<div class="card" style="padding:14px 18px;margin-bottom:14px;background:var(--yellow-bg,#fffbeb);border:1px solid var(--yellow-line,#fcd34d)">
     <div style="font-size:13px;font-weight:700;margin-bottom:4px">These farmers filled in the whole form, but their phone number is already registered</div>
@@ -19071,6 +19072,7 @@ function viewAttention(){
     <button class="btn btn-sm ${F.program==='haat'?'btn-primary':'btn-ghost'}" data-af="haat">Haat (${nHaat})</button>
     <button class="btn btn-sm ${F.program==='conv'?'btn-primary':'btn-ghost'}" data-af="conv">Conversion (${nConv})</button>
     ${nResend ? `<span style="flex:1"></span><button class="btn btn-ghost btn-sm" id="attDropResends" style="color:var(--red)">Dismiss all ${nResend} identical cop${nResend===1?'y':'ies'}</button>` : ''}
+    ${nBack ? `${nResend?'':'<span style="flex:1"></span>'}<button class="btn btn-ghost btn-sm" id="attDropBackwards" style="color:var(--ink-soft)">આ જેવા ${nBack} ફોર્મ દૂર કરો · clear ${nBack} not needed</button>` : ''}
   </div>`;
   if(nResend){
     h += `<div class="hint" style="margin-bottom:12px">${nResend} of these ${nResend===1?'is an':'are'} <b>identical cop${nResend===1?'y':'ies'}</b> of a form already accepted \u2014 every answer matched, minutes apart. Those farmers ARE registered and were shown the normal confirmation. Nothing to do but clear them.</div>`;
@@ -19136,6 +19138,28 @@ function viewAttention(){
   }
   v.innerHTML = h;
   v.querySelectorAll('[data-af]').forEach(b=>b.onclick=()=>{ F.program=b.dataset.af; render(); });
+  /* v155 — the five suvera rows are one mistake made five times, 35 minutes
+     apart. Clearing them one at a time is five identical decisions. */
+  const dropBack = document.getElementById('attDropBackwards');
+  if(dropBack) dropBack.onclick = async () => {
+    const ids = attentionList().filter(x => _revBackwards(x, _revExisting(x))).map(x => x.id);
+    if(!ids.length) return;
+    const ok = await confirmModal({
+      title: 'આ જેવા ' + ids.length + ' ફોર્મ દૂર કરવા?',
+      message: 'These ' + ids.length + ' farmers have all already filed the Haat form, which is the more detailed one. '
+        + 'Haat is the step AFTER Conversion, so these Conversion forms add nothing.'
+        + String.fromCharCode(10,10)
+        + 'Nothing on any farmer changes and no record is deleted — their Haat applications carry on exactly as they are. '
+        + 'Only these queue entries are cleared.',
+      confirmLabel: 'દૂર કરો · Clear ' + ids.length });
+    if(!ok) return;
+    ids.forEach(x => _explicitDeletes.add('pendingEnrolments/'+x));   // v129 — see dismissAttention
+    DB.pendingEnrolments = (DB.pendingEnrolments||[]).filter(x=>ids.indexOf(x.id)===-1);
+    if(FB && FB.ready){ for(const id of ids){ try{ await fbRef('pendingEnrolments/'+id).remove(); }catch(e){} } }
+    logActivity('edit','Cleared '+ids.length+' Conversion submission'+(ids.length===1?'':'s')+' from farmers already in the Haat programme — no farmer record changed.');
+    await saveDB(); render();
+    toast(ids.length + ' ફોર્મ દૂર થયા · cleared');
+  };
   const dropAll = document.getElementById('attDropResends');
   if(dropAll) dropAll.onclick = async () => {
     const ids = attentionList().filter(isResend).map(r=>r.id);
@@ -19393,6 +19417,75 @@ function _revLandEvidence(r, ex){
   </div>`;
 }
 
+/* ===== v155 — a Conversion form from someone already in Haat is not needed =====
+
+   Haat is the programme a farmer reaches AFTER conversion: three years
+   chemical-free, the 88-question form, a farm visit. Conversion is for
+   farmers who want to START. So the two directions are not symmetrical, and
+   the app was treating them as if they were:
+
+     Conversion -> Haat   progress. Worth moving them.
+     Haat -> Conversion   backwards. The form adds nothing.
+
+   Five of the nine rows in the queue are the second kind, and they are one
+   mistake rather than five: the same five farmers filed Haat forms on 1 Aug
+   and then Conversion forms on 4 Aug, all within 35 minutes of each other,
+   all from Aravalli, all still waiting for their first field visit. Somebody
+   sat down and filled the wrong form for a group.
+
+   So this case gets its own screen: say why it is not needed, name the date
+   of the Haat form so the admin can see it for themselves, and make "not
+   needed" the obvious answer instead of one of three equals. The other two
+   ways out stay, quietly, because a shared handset is always possible. */
+function _revBackwards(r, ex){
+  if(!r || !ex) return false;
+  const appliedConv = r.program !== 'haat';
+  const onFileHaat  = ex.program !== 'conversion' && ex.program !== 'conv';
+  return appliedConv && onFileHaat;
+}
+function _revHaatFormDate(ex){
+  const raw = (ex && (ex.publicSubmittedAt || ex.submittedAt || ex.enrollmentFormSubmittedAt)) || '';
+  return raw ? fmtDate(String(raw).slice(0,10)) : '';
+}
+function _revBackwardsBody(r, ex){
+  const when = _revHaatFormDate(ex);
+  const pending = ex.stage === 'verification_pending' || ex.status === 'pending';
+  return `
+    <div style="background:var(--panel-2);border-left:3px solid var(--green);border-radius:0 9px 9px 0;padding:13px 15px;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:5px">આ ફોર્મની જરૂર નથી</div>
+      <div style="font-size:13px;color:var(--ink-soft);line-height:1.6">
+        <b>${esc(ex.name||ex.id)}</b> ${when?('એ <b>'+esc(when)+'</b>ના રોજ '):''}હાટનું ફોર્મ ભરી ચૂક્યા છે — એ વધુ વિગતવાર ફોર્મ છે.
+        ${pending?'હાલ તેમની ફાર્મ મુલાકાત બાકી છે.':''}<br>
+        હાટ એ કન્વર્ઝન <b>પછીનું</b> પગલું છે, એટલે કન્વર્ઝનનું ફોર્મ કંઈ નવું ઉમેરતું નથી.
+      </div>
+      <div style="font-size:12px;color:var(--ink-faint);line-height:1.55;margin-top:7px">
+        They already filed the Haat form${when?' on '+esc(when):''} — the detailed one${pending?', and their farm visit is still due':''}.
+        Haat is the step <b>after</b> Conversion, so this form adds nothing.
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(215px,100%),1fr));gap:10px" id="revStep1">
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="drop">${_revBtn('જરૂર નથી','Not needed','btn-primary')}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">ફોર્મ યાદીમાંથી નીકળી જશે. ખેડૂતના રેકોર્ડમાં કંઈ બદલાશે નહીં, હાટની અરજી એમ જ રહેશે.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Clears it from the list. Nothing on the farmer changes; their Haat application carries on.</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="moveconv">${_revBtn('તોપણ કન્વર્ઝનમાં ખસેડો','Move to Conversion anyway')}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">હાટની અરજી <b>આર્કાઇવ</b> થશે — કાઢી નાખવામાં આવશે નહીં.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Their Haat application is archived, not deleted. Only if they really should not be in Haat.</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="other">${_revBtn('ના, અલગ વ્યક્તિ','No, a different person')}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">એક જ ફોન બે જણ વાપરતા હોય તો — નવો ખેડૂત બનશે.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Two people sharing one handset. Creates a new farmer.</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;font-size:12.5px">
+      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">શું અલગ છે તે જુઓ</a>
+      <span style="color:var(--ink-faint)"> · see what differs</span>
+    </div>`;
+}
+
 async function openAttentionReview(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
@@ -19416,7 +19509,9 @@ async function openAttentionReview(id){
   const val = k => _attnVal(r[k]) || '—';
   const exVal = k => _attnVal(ex[k]) || '—';
 
-  const body = `
+  // v155 — a Conversion form from a farmer already in Haat is not a question
+  // about who they are; it is a form that adds nothing. Say so instead.
+  const body = _revBackwards(r, ex) ? _revBackwardsBody(r, ex) : `
     <div class="hint" style="margin-bottom:14px">બંને એક જ ફોન નંબર પર છે. નક્કી કરવાનું છે કે એક જ વ્યક્તિ છે કે નહીં.
       <span style="color:var(--ink-faint)">Both are on the same phone number. What has to be decided is whether they are the same person.</span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:12px;margin-bottom:16px;overflow-wrap:anywhere">
@@ -19467,6 +19562,8 @@ async function openAttentionReview(id){
 
   const wire = (k, fn) => { const el = document.querySelector('[data-rev="'+k+'"] button'); if(el) el.onclick = fn; };
   wire('later', () => { closeModal(); toast('યાદીમાં જ રહેશે · left in the list for you to come back to'); });
+  wire('drop',     () => { closeModal(); dismissAttention(id); });
+  wire('moveconv', () => { closeModal(); moveAttentionToOwnProgramme(id); });
   wire('other', () => { closeModal(); moveAttentionToFarmers(id); });
   wire('same',  () => { closeModal(); _openReviewStep2(id); });
   const dl = document.getElementById('revDiff');

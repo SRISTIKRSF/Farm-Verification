@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v150';
+const APP_VERSION = 'v151';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19337,10 +19337,32 @@ function _revAutoPicks(r, target){
   return picks;
 }
 
-function openAttentionReview(id){
+/* v151 — read land and years off the FORM, not off the summary field.
+   buildAttentionRecord hardcodes landAcres:0 and yearsOrganic:0 (fine for a
+   queue entry nobody has accepted), and plenty of farmer records were created
+   before those fields were filled in either. The result on screen was
+   "0 acres" against "0 acres" — the one row of the comparison that gave the
+   admin nothing at all, while the farmer's own form said 11.2 acres. */
+function _revAnswer(rec, re, fallbackKey){
+  try{
+    const claims = _attnClaims(rec);
+    const hit = Object.keys(claims).map(k=>claims[k]).find(c => c && re.test(String(c.en||c.id)));
+    const a = hit ? _attnVal(hit.answer) : '';
+    if(a) return a;
+  }catch(e){}
+  const v = _attnVal(rec && rec[fallbackKey]);
+  return (v && v !== '0') ? v : '';
+}
+const _revLand  = rec => _revAnswer(rec, /^total land|how many acres/i, 'landAcres');
+const _revYears = rec => _revAnswer(rec, /years of organic/i, 'yearsOrganic');
+
+async function openAttentionReview(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
   const ex = _revExisting(r);
+  // The farmer's own form is where the real numbers are; it has to be here
+  // before the two cards are drawn, or they fall back to the summary again.
+  if(ex && ex.id){ try{ await loadForms(ex.id); }catch(e){} }
   if(!ex){
     // Nobody to compare against — the only sensible question is whether to
     // file them at all, so ask that one directly.
@@ -19365,23 +19387,38 @@ function openAttentionReview(id){
         <div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px">હમણાં આવેલું ફોર્મ · JUST SENT</div>
         <div style="font-size:14px;font-weight:600">${esc(r.name||'—')}</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">${esc(val('village'))} · ${esc(r.phone||'')}</div>
-        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(val('landAcres'))} acres · ${esc(val('yearsOrganic'))} વર્ષ</div>
+        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(_revLand(r)||'—')} acres · ${esc(_revYears(r)||'—')} વર્ષ</div>
         <div style="font-size:11.5px;color:var(--ink-faint);margin-top:4px">${meHaat?'હાટ માટે અરજી · applied for Haat':'કન્વર્ઝન માટે અરજી · applied for Conversion'}</div>
       </div>
       <div style="background:var(--panel-2);border-radius:9px;padding:12px 14px">
         <div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px">પહેલેથી નોંધાયેલ · ALREADY ON FILE</div>
         <div style="font-size:14px;font-weight:600">${esc(ex.name||ex.id)}</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">${esc(exVal('village'))} · ${esc(ex.phone||'')}</div>
-        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(exVal('landAcres'))} acres · ${esc(exVal('yearsOrganic'))} વર્ષ</div>
+        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(_revLand(ex)||'—')} acres · ${esc(_revYears(ex)||'—')} વર્ષ</div>
         <div style="font-size:11.5px;color:var(--ink-faint);margin-top:4px">${exHaat?'હાટમાં છે · in Haat':'કન્વર્ઝનમાં છે · in Conversion'}</div>
       </div>
     </div>
     <div style="font-size:16px;font-weight:700;margin-bottom:2px">શું આ એક જ વ્યક્તિ છે?</div>
     <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:12px">Is this the same person?</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap" id="revStep1">
-      <span data-rev="same">${_revBtn('હા, એક જ વ્યક્તિ','Yes, same person','btn-primary')}</span>
-      <span data-rev="other">${_revBtn('ના, અલગ વ્યક્તિ','No, different person')}</span>
-      <span data-rev="later">${_revBtn('ખાતરી નથી, ફોન કરીશ',"Not sure, I'll call")}</span>
+    <!-- v151 — every answer says what it does. Question 2 always did; this one
+         did not, and the admin had to ask. Only the middle one changes
+         anything, and it says so. -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px" id="revStep1">
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="same">${_revBtn('હા, એક જ વ્યક્તિ','Yes, same person','btn-primary')}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">હજી કંઈ સેવ થશે નહીં — બીજો પ્રશ્ન પૂછાશે.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Nothing is saved yet. Goes to the next question.</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="other">${_revBtn('ના, અલગ વ્યક્તિ','No, different person')}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">એ જ નંબર પર <b>નવો ખેડૂત બનશે</b>. ગણતરી એકથી વધશે. પહેલાં ખાતરી પૂછાશે.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Creates a second farmer on this number. Your count goes up by one. It asks first.</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px 13px">
+        <span data-rev="later">${_revBtn('ખાતરી નથી, ફોન કરીશ',"Not sure, I'll call")}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">કંઈ બદલાશે નહીં. યાદીમાં જ રહેશે.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);line-height:1.45">Nothing changes. He stays in the list.</div>
+      </div>
     </div>
     <div style="margin-top:14px;font-size:12.5px">
       <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">શું અલગ છે તે જુઓ</a>

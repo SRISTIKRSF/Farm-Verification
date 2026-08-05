@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v153';
+const APP_VERSION = 'v154';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19592,12 +19592,23 @@ async function openAttentionForm(id){
                       : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
       </table>
     </div>`;
-  modalShell('Why this needs attention \u2014 '+esc(r.name||''), body,
-    `<button class="btn btn-ghost" onclick="closeModal()">Close</button>
+  modalShell('\u0ab6\u0ac1\u0a82 \u0a85\u0ab2\u0a97 \u0a9b\u0ac7 \u2014 '+esc(r.name||''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">\u0aac\u0a82\u0aa7 \u0a95\u0ab0\u0acb \u00b7 Close</button>
      <span style="flex:1"></span>
-     ${r._existingId ? `<button class="btn btn-primary" onclick="closeModal();openAddAsFormModal('${esc(r.id)}')">Same farmer, same farm \u2014 add as Form 2</button>
-     <button class="btn btn-clay" onclick="closeModal();addAttentionAsSecondFarm('${esc(r.id)}')">Same farmer, another farm</button>` : ''}
-     <button class="btn btn-ghost" onclick="closeModal();moveAttentionToFarmers('${esc(r.id)}')">A different person \u2014 create a new farmer</button>`);
+     ${r._existingId ? `<button class="btn btn-primary" id="attnBackToReview">\u2190 \u0aaa\u0acd\u0ab0\u0ab6\u0acd\u0aa8 \u0aaa\u0ab0 \u0aaa\u0abe\u0a9b\u0abe \u00b7 Back to the question</button>` : ''}`);
+  /* v154 \u2014 this screen decides nothing any more.
+     It is reached from one place, the "\u0ab6\u0ac1\u0a82 \u0a85\u0ab2\u0a97 \u0a9b\u0ac7 \u0aa4\u0ac7 \u0a9c\u0ac1\u0a93" link inside Review,
+     and it used to end with the three buttons Review exists to replace \u2014
+     "Same farmer, same farm \u2014 add as Form 2" and friends. The simplified row
+     led straight back into the jargon it was meant to remove.
+     Worse, "Same farmer, another farm" called addAttentionAsSecondFarm with
+     no programme check at all: on Anilbhai \u2014 a CONVERSION application from a
+     farmer on file in HAAT \u2014 it would have added a field under his Haat
+     record without a word. openAddAsFormModal has the v145 programme
+     question; that path never did.
+     So: look here, then go back and answer the question. One place decides. */
+  const _bk = document.getElementById('attnBackToReview');
+  if(_bk) _bk.onclick = () => { closeModal(); openAttentionReview(id); };
   // v143 \u2014 this is a three-column side-by-side; 720px was never enough for it.
   // closeModal() drops the class again, so no other dialog inherits it.
   const _mw = document.getElementById('modal'); if(_mw) _mw.classList.add('wide');

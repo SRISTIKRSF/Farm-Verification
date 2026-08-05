@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v149';
+const APP_VERSION = 'v150';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19076,7 +19076,13 @@ function viewAttention(){
     h += `<div class="hint" style="margin-bottom:12px">${nResend} of these ${nResend===1?'is an':'are'} <b>identical cop${nResend===1?'y':'ies'}</b> of a form already accepted \u2014 every answer matched, minutes apart. Those farmers ARE registered and were shown the normal confirmation. Nothing to do but clear them.</div>`;
   }
 
-  h += attnActionGuide();   // v134 — say what each button does, on the screen
+  /* v150 — the "What each choice does" card is gone. It existed to explain
+     four buttons that no longer exist; Review now asks the question those
+     buttons were a disguised way of asking, and each answer states its own
+     consequence beside it. attnActionGuide() and openAttentionOptions() are
+     both kept, unused, because the wording in them is the clearest plain
+     description of the four outcomes anywhere in the file and is worth
+     having if this is ever revisited. Neither has a caller. */
 
   if(!rows.length){
     h += `<div class="card" style="padding:40px 30px;text-align:center;color:var(--ink-faint)">Nothing needs attention${F.program==='all'?'':' in this programme'}.</div>`;
@@ -19121,10 +19127,8 @@ function viewAttention(){
         <td style="font-size:12px">${exRec?esc(exRec.name):'<span style="color:var(--ink-faint)">unknown</span>'}${exProg?'<div style="font-size:10.5px;color:var(--ink-faint)">'+exProg+'</div>':''}</td>
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
         <td><div class="attn-acts">
-          <button class="btn btn-ghost btn-sm" data-att-view="${esc(r.id)}" style="padding:4px 9px">View form</button>
-          ${r._existingId && !resend ? `<button class="btn btn-primary btn-sm" data-att-add="${esc(r.id)}" style="padding:4px 9px">Add as another form</button>` : ''}
-          <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:4px 9px;${resend?'':'color:var(--red)'}">Dismiss</button>
-          ${r._existingId ? `<button class="btn btn-ghost btn-sm" data-att-more="${esc(r.id)}" style="padding:4px 9px;color:var(--ink-soft)">Something else\u2026</button>` : ''}
+          <button class="btn btn-primary btn-sm" data-att-review="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left">તપાસો<span style="display:block;font-size:10px;opacity:.75;font-weight:400">Review</span></button>
+          <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left;color:var(--ink-soft)">જરૂર નથી<span style="display:block;font-size:10px;opacity:.75;font-weight:400">Not needed</span></button>
         </div></td>
       </tr>`;
     });
@@ -19144,10 +19148,9 @@ function viewAttention(){
     await saveDB(); render();
     toast('Dismissed '+ids.length+' identical cop'+(ids.length===1?'y':'ies'));
   };
-  v.querySelectorAll('[data-att-view]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attView));
-  v.querySelectorAll('[data-att-add]').forEach(b=>b.onclick=()=>openAddAsFormModal(b.dataset.attAdd));
-  v.querySelectorAll('[data-att-farm]').forEach(b=>b.onclick=()=>addAttentionAsSecondFarm(b.dataset.attFarm));
-  v.querySelectorAll('[data-att-more]').forEach(b=>b.onclick=()=>openAttentionOptions(b.dataset.attMore));
+  v.querySelectorAll('[data-att-review]').forEach(b=>b.onclick=()=>openAttentionReview(b.dataset.attReview));
+  // v150 — these buttons are gone from the row; the same functions are now
+  // reached through openAttentionReview's two questions.
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
   v.querySelectorAll('[data-att-drop]').forEach(b=>b.onclick=()=>dismissAttention(b.dataset.attDrop));
 }
@@ -19292,6 +19295,162 @@ function attnActionGuide(){
     <div class="hint" style="margin-top:10px">Records here are <b>submissions</b>, not farmers — they are not counted anywhere and no field coordinator sees them.
       Two farmer records that already exist are handled in <b>Duplicate records</b> instead.</div>
   </div>`;
+}
+
+/* ===== v150 — one button, two plain questions =====
+
+   The admin's words: "Someone new would never know how to operate and what
+   to do." They were right. Every row carried four buttons — Add as another
+   form / Second farm / New farmer / Dismiss — and above them a card of 120
+   words explaining what the four buttons meant. You had to read the card to
+   use the buttons, and the words "form", "farm" and "farmer" all meant
+   different things in the same sentence.
+
+   Now the row has one action, Review, and Review asks what a person would
+   ask: is this the same person, and is it the same land. Every answer says
+   what will happen right next to it, at the moment of choosing, instead of
+   in a card at the top that is read once and forgotten.
+
+   Nothing underneath changed. Each answer calls the same tested function the
+   old buttons called, so the behaviour, the safeguards and the activity log
+   are identical. This is a different way in, not different machinery. */
+
+function _revBtn(gu, en, cls){
+  return '<button class="btn '+(cls||'btn-ghost')+'" style="line-height:1.25;text-align:left;padding:9px 14px">'
+    + esc(gu) + '<span style="display:block;font-size:10.5px;opacity:.72;font-weight:400">' + esc(en) + '</span></button>';
+}
+function _revExisting(r){
+  return r._existingId
+    ? ((DB.haatFarmers||[]).find(x=>x.id===r._existingId) || (DB.convFarmers||[]).find(x=>x.id===r._existingId))
+    : null;
+}
+/* Take the incoming answer only where the record on file has nothing worth
+   keeping. Same rule the field-by-field chooser already defaults to (v136) —
+   applied without asking, because "same person, same land" is not a question
+   about individual fields. */
+function _revAutoPicks(r, target){
+  const weak = v => { const t=String(v==null?'':v).trim(); return t==='' || t==='0' || t==='—' || t==='-'; };
+  const picks = {};
+  ATTN_FIELDS.forEach(([k]) => {
+    picks[k] = (weak(target[k]) && !weak(r[k])) ? 'new' : 'old';
+  });
+  return picks;
+}
+
+function openAttentionReview(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const ex = _revExisting(r);
+  if(!ex){
+    // Nobody to compare against — the only sensible question is whether to
+    // file them at all, so ask that one directly.
+    modalShell('શું આ ખેડૂતને ઉમેરવા છે? — ' + esc(r.name||''),
+      '<div class="hint">આ નંબર સાથે નોંધાયેલ ખેડૂત મળ્યો નથી.<br>'
+      + '<span style="color:var(--ink-faint)">The farmer this number belongs to could not be found.</span></div>',
+      '<button class="btn btn-ghost" onclick="closeModal()">બંધ કરો</button>'
+      + '<button class="btn btn-primary" onclick="closeModal();moveAttentionToFarmers(\'' + esc(id) + '\')">નવો ખેડૂત બનાવો</button>');
+    return;
+  }
+
+  const meHaat = r.program === 'haat';
+  const exHaat = ex.program !== 'conversion' && ex.program !== 'conv';
+  const val = k => _attnVal(r[k]) || '—';
+  const exVal = k => _attnVal(ex[k]) || '—';
+
+  const body = `
+    <div class="hint" style="margin-bottom:14px">બંને એક જ ફોન નંબર પર છે. નક્કી કરવાનું છે કે એક જ વ્યક્તિ છે કે નહીં.
+      <span style="color:var(--ink-faint)">Both are on the same phone number. What has to be decided is whether they are the same person.</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:16px">
+      <div style="background:var(--panel-2);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px">હમણાં આવેલું ફોર્મ · JUST SENT</div>
+        <div style="font-size:14px;font-weight:600">${esc(r.name||'—')}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">${esc(val('village'))} · ${esc(r.phone||'')}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(val('landAcres'))} acres · ${esc(val('yearsOrganic'))} વર્ષ</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:4px">${meHaat?'હાટ માટે અરજી · applied for Haat':'કન્વર્ઝન માટે અરજી · applied for Conversion'}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px">પહેલેથી નોંધાયેલ · ALREADY ON FILE</div>
+        <div style="font-size:14px;font-weight:600">${esc(ex.name||ex.id)}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">${esc(exVal('village'))} · ${esc(ex.phone||'')}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft)">${esc(exVal('landAcres'))} acres · ${esc(exVal('yearsOrganic'))} વર્ષ</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:4px">${exHaat?'હાટમાં છે · in Haat':'કન્વર્ઝનમાં છે · in Conversion'}</div>
+      </div>
+    </div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:2px">શું આ એક જ વ્યક્તિ છે?</div>
+    <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:12px">Is this the same person?</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="revStep1">
+      <span data-rev="same">${_revBtn('હા, એક જ વ્યક્તિ','Yes, same person','btn-primary')}</span>
+      <span data-rev="other">${_revBtn('ના, અલગ વ્યક્તિ','No, different person')}</span>
+      <span data-rev="later">${_revBtn('ખાતરી નથી, ફોન કરીશ',"Not sure, I'll call")}</span>
+    </div>
+    <div style="margin-top:14px;font-size:12.5px">
+      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">શું અલગ છે તે જુઓ</a>
+      <span style="color:var(--ink-faint)"> · see what differs, only if you need it</span>
+    </div>`;
+
+  modalShell('તપાસો — ' + esc(r.name||''), body,
+    `<button class="btn btn-ghost" onclick="closeModal()">બંધ કરો · Close</button>`);
+
+  const wire = (k, fn) => { const el = document.querySelector('[data-rev="'+k+'"] button'); if(el) el.onclick = fn; };
+  wire('later', () => { closeModal(); toast('યાદીમાં જ રહેશે · left in the list for you to come back to'); });
+  wire('other', () => { closeModal(); moveAttentionToFarmers(id); });
+  wire('same',  () => { closeModal(); _openReviewStep2(id); });
+  const dl = document.getElementById('revDiff');
+  if(dl) dl.onclick = () => { closeModal(); openAttentionForm(id); };
+}
+
+/* Second question. Which one it is depends on the situation, because only one
+   of the two is ever a real question: if the submission is for the other
+   programme, land is beside the point. */
+function _openReviewStep2(id){
+  const r = attentionList().find(x=>x.id===id);
+  if(!r) return;
+  const ex = _revExisting(r);
+  if(!ex) return;
+
+  const meHaat = r.program === 'haat';
+  const exHaat = ex.program !== 'conversion' && ex.program !== 'conv';
+  const crossProgramme = meHaat !== exHaat;
+
+  const opt = (gu, en, guWhy, enWhy, key, primary) => `
+    <div style="border:1px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:10px">
+      <span data-rev2="${key}">${_revBtn(gu, en, primary?'btn-primary':'btn-ghost')}</span>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:9px;line-height:1.55">${guWhy}</div>
+      <div style="font-size:12px;color:var(--ink-faint);margin-top:3px;line-height:1.5">${enWhy}</div>
+    </div>`;
+
+  const body = crossProgramme
+    ? `<div style="font-size:16px;font-weight:700;margin-bottom:2px">કયા કાર્યક્રમમાં રાખવા છે?</div>
+       <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:14px">Which programme should they be in?</div>
+       ${opt(meHaat?'હાટમાં ખસેડો':'કન્વર્ઝનમાં ખસેડો', meHaat?'Move to Haat':'Move to Conversion',
+             'તેમણે એ જ કાર્યક્રમ માટે અરજી કરી છે. જૂનો રેકોર્ડ આર્કાઇવ થશે — કાઢી નાખવામાં આવશે નહીં, દરેક મુલાકાત અને ફોર્મ સચવાશે.',
+             'They asked to join it. Their existing record is archived, not deleted — every visit and form on it is kept and can be restored.',
+             'move', true)}
+       ${opt(exHaat?'હાટમાં જ રાખો':'કન્વર્ઝનમાં જ રાખો', exHaat?'Keep in Haat':'Keep in Conversion',
+             'જ્યાં છે ત્યાં જ રહેશે. નવું ફોર્મ તેમના રેકોર્ડ સાથે જોડાશે, પણ બીજા કાર્યક્રમમાં જોડાશે નહીં.',
+             'They stay where they are. The new form is attached to their record, but they do not join the other programme.',
+             'keep', false)}`
+    : `<div style="font-size:16px;font-weight:700;margin-bottom:2px">એ જ જમીન છે કે બીજું ખેતર?</div>
+       <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:14px">Same land, or a different field?</div>
+       ${opt('એ જ જમીન','Same land',
+             'નવું ફોર્મ તેમના રેકોર્ડમાં ઉમેરાશે. નવો ખેડૂત બનશે નહીં, ગણતરી બદલાશે નહીં.',
+             'The new form is added to their record. No new farmer, your counts do not move.',
+             'same', true)}
+       ${opt('બીજું ખેતર','A different field',
+             'તેમના નામે બીજું ખેતર ઉમેરાશે. તેની અલગ મુલાકાત અને અલગ પરિણામ થશે. ખેડૂત તો એક જ રહેશે.',
+             'A second field is added under them, with its own visit and its own result. Still one farmer.',
+             'farm', false)}`;
+
+  modalShell('તપાસો — ' + esc(r.name||''), body,
+    `<button class="btn btn-ghost" id="revBack">← પાછળ · Back</button>`);
+
+  const wire2 = (k, fn) => { const el = document.querySelector('[data-rev2="'+k+'"] button'); if(el) el.onclick = fn; };
+  wire2('move', () => { closeModal(); moveAttentionToOwnProgramme(id); });
+  wire2('keep', () => { closeModal(); addAttentionAsForm(id, _revAutoPicks(r, ex)); });
+  wire2('same', () => { closeModal(); addAttentionAsForm(id, _revAutoPicks(r, ex)); });
+  wire2('farm', () => { closeModal(); addAttentionAsSecondFarm(id); });
+  const bk = document.getElementById('revBack');
+  if(bk) bk.onclick = () => { closeModal(); openAttentionReview(id); };
 }
 
 async function openAttentionForm(id){

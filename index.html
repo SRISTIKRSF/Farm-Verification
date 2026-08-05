@@ -276,6 +276,18 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .tip-bubble::before{
   content:"";position:absolute;left:50%;top:-6px;transform:translateX(-50%);
   border:6px solid transparent;border-bottom-color:var(--navy-deep)}
+/* v156 — left-anchored variant, for a trigger in the first column of a table.
+   The centred default put a 250px bubble 22px off the left of the screen when
+   the trigger sat near the left edge. Anchoring to the trigger's own left edge
+   keeps it on screen and inside .table-wrap, which is a scroll container and
+   would otherwise clip it. */
+[data-tip].tip-left > .tip-bubble{left:0;transform:none}
+[data-tip].tip-left > .tip-bubble::before{left:20px;transform:none}
+/* …and flipped above the trigger when it would fall out of the bottom of a
+   scroll container. On the last row of the attention table the bubble ended
+   51px below the table's own box and was cut in half. The JS below decides. */
+.tip-bubble.tip-up{top:auto;bottom:calc(100% + 8px)}
+.tip-bubble.tip-up::before{top:auto;bottom:-6px;border-bottom-color:transparent;border-top-color:var(--navy-deep)}
 @media(max-width:680px){
   .journey{flex-direction:column;gap:2px;padding:10px}
   .jstep{padding:12px 12px}
@@ -3166,7 +3178,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v155';
+const APP_VERSION = 'v156';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -17596,6 +17608,17 @@ if(window.matchMedia && matchMedia('(hover:hover) and (pointer:fine)').matches){
     bubble.className = 'tip-bubble';
     bubble.textContent = t.dataset.tip;
     t.appendChild(bubble);
+    /* v156 — flip it above the trigger when it would fall out of the bottom of
+       a scrolling ancestor. .table-wrap is overflow:auto, so on the last row of
+       the attention table the bubble hung 51px past the table's own box and got
+       cut in half. Measured after appending, because the height depends on how
+       much Gujarati the tip carries. */
+    try{
+      const clip = t.closest('.table-wrap, .modal-body, .fc-cards');
+      if(clip && bubble.getBoundingClientRect().bottom > clip.getBoundingClientRect().bottom - 2){
+        bubble.classList.add('tip-up');
+      }
+    }catch(e){}
   });
   document.addEventListener('mouseout', e => {
     const t = e.target.closest('[data-tip]');
@@ -19111,6 +19134,26 @@ function viewAttention(){
           // here is both honest and better triage: "only the name differs" and
           // "land and years differ" call for very different decisions. The full
           // question-by-question comparison is in View form.
+          /* v156 — say it on the ROW, not only after a click.
+             A Conversion form from a farmer already in Haat is not a warning,
+             it is a resolved case: Haat is the step AFTER conversion, so the
+             form adds nothing. Green rather than orange, with the whole reason
+             in a hover tooltip so the row stays one line. Five of the nine
+             rows in the live queue are this. */
+          if(_revBackwards(r, exRec)){
+            var _when = _revHaatFormDate(exRec);
+            var _due  = (exRec.stage === 'verification_pending' || exRec.status === 'pending');
+            var _tip  = (exRec.name || 'આ ખેડૂત') + ' એ ' + (_when ? _when + 'ના રોજ ' : '')
+              + 'હાટનું વિગતવાર ફોર્મ ભરી દીધું છે'
+              + (_due ? ' અને તેમની ફાર્મ મુલાકાત હજી બાકી છે' : '')
+              + '. હાટ એ કન્વર્ઝન પછીનું પગલું છે, એટલે કન્વર્ઝનનું આ ફોર્મ કંઈ નવું ઉમેરતું નથી. '
+              + 'તપાસો દબાવીને દૂર કરી શકાય — ખેડૂતના રેકોર્ડમાં કંઈ બદલાશે નહીં.';
+            return '<div style="margin-top:3px;line-height:1.4">'
+              + '<span class="tip-left" data-tip="' + esc(_tip) + '" style="font-size:11px;font-weight:600;color:var(--green);'
+              + 'border-bottom:1px dotted var(--green);cursor:help">પહેલેથી હાટમાં — આ ફોર્મની જરૂર નથી</span>'
+              + '<div style="font-size:10px;font-weight:400;color:var(--ink-faint);margin-top:1px">already enrolled in Haat'
+              + (_when ? ' on ' + esc(_when) : '') + ' · this form is not needed</div></div>';
+          }
           var SHORT = {'Farmer name':'name','Village':'village','Taluka':'taluka',
                        'District':'district','Land (acres)':'land','Years organic':'years organic'};
           var d = []; try{ d = attnDiff(r, exRec).filter(function(x){ return !x.same; }); }catch(e){}
@@ -19126,7 +19169,13 @@ function viewAttention(){
         <td style="font-size:12px">${esc(r.village||'')}${r.district?'<div style="font-size:10.5px;color:var(--ink-faint)">'+esc(String(r.district).split(' (')[0])+'</div>':''}</td>
         <td style="font-size:12px">${r.phone?`<a href="tel:${esc(r.phone)}" style="color:var(--accent);text-decoration:none">\u{1F4DE} ${esc(r.phone)}</a>`:'\u2014'}</td>
         <td><span class="tag ${r.program==='haat'?'green':'blue'}" style="font-size:10.5px">${r.program==='haat'?'Haat':'Conversion'}</span></td>
-        <td style="font-size:12px">${exRec?esc(exRec.name):'<span style="color:var(--ink-faint)">unknown</span>'}${exProg?'<div style="font-size:10.5px;color:var(--ink-faint)">'+exProg+'</div>':''}</td>
+        <td style="font-size:12px">${exRec?esc(exRec.name):'<span style="color:var(--ink-faint)">unknown</span>'}${exProg?'<div style="font-size:10.5px;color:var(--ink-faint)">'+exProg+(
+          // v156 — when they are already in Haat, name the date and say the form
+          // is the detailed one. That is the whole reason this row is harmless.
+          _revBackwards(r, exRec)
+            ? ' · વિગતવાર ફોર્મ' + (_revHaatFormDate(exRec) ? '<div style="color:var(--green)">'+esc(_revHaatFormDate(exRec))+'</div>' : '')
+            : ''
+        )+'</div>':''}</td>
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
         <td><div class="attn-acts">
           <button class="btn btn-primary btn-sm" data-att-review="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left">તપાસો<span style="display:block;font-size:10px;opacity:.75;font-weight:400">Review</span></button>

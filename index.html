@@ -3166,7 +3166,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v152';
+const APP_VERSION = 'v153';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19362,6 +19362,37 @@ function _revAnswer(rec, re, fallbackKey){
 const _revLand  = rec => _revAnswer(rec, /^total land|how many acres/i, 'landAcres');
 const _revYears = rec => _revAnswer(rec, /years of organic/i, 'yearsOrganic');
 
+/* v153 — show the thing that actually answers the question.
+   "Same land or a different field?" is decided by the farm address, and the
+   screen did not show it: the admin had to remember, or leave and hunt
+   through the 43-row comparison. Riteshbhai settles in one glance once you
+   can see it — both his forms give the farm address as "behind the 66 kV
+   substation, Dhasa road, Gadhada", one in English and one in Gujarati. */
+function _revLandEvidence(r, ex){
+  const rows = [
+    ['ખેતરનું સરનામું','farm address',   /^farm address/i,               'farmAddress'],
+    ['સર્વે નંબર',      'survey number',  /survey number/i,               'surveyNumber'],
+    ['કુલ જમીન',        'total land',     /^total land|how many acres/i,  'landAcres'],
+  ].map(([gu,en,re,fb]) => {
+    const a = _revAnswer(r, re, fb), b = _revAnswer(ex, re, fb);
+    if(!a && !b) return '';
+    const cell = t => `<td style="padding:6px 8px;font-size:12.5px;vertical-align:top">${
+      t ? esc(t) : '<span style="color:var(--ink-faint);font-style:italic">લખ્યું નથી</span>'}</td>`;
+    return `<tr><td style="padding:6px 8px;color:var(--ink-faint);font-size:11.5px;vertical-align:top">${esc(gu)}<div style="font-size:10px">${esc(en)}</div></td>${cell(a)}${cell(b)}</tr>`;
+  }).filter(Boolean).join('');
+  if(!rows) return '';
+  return `<div style="border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:14px;background:var(--panel-2)">
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:9px;line-height:1.5">સરનામું સરખું હોય તો <b>એ જ જમીન</b>. જુદું હોય તો <b>બીજું ખેતર</b>.
+      <span style="color:var(--ink-faint)">Same address means same land. A different address means a different field.</span></div>
+    <div style="overflow-x:auto"><table class="modal-tbl">
+      <colgroup><col style="width:24%"><col style="width:38%"><col style="width:38%"></colgroup>
+      <thead><tr><th style="padding:5px 8px">&nbsp;</th>
+        <th style="padding:5px 8px">નવું ફોર્મ · new</th>
+        <th style="padding:5px 8px">પહેલેથી · on file</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
 async function openAttentionReview(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
@@ -19474,7 +19505,8 @@ function _openReviewStep2(id){
              'They stay where they are. The new form is attached to their record, but they do not join the other programme.',
              'keep', false)}`
     : `<div style="font-size:16px;font-weight:700;margin-bottom:2px">એ જ જમીન છે કે બીજું ખેતર?</div>
-       <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:14px">Same land, or a different field?</div>
+       <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:12px">Same land, or a different field?</div>
+       ${_revLandEvidence(r, ex)}
        ${opt('એ જ જમીન','Same land',
              'નવું ફોર્મ તેમના રેકોર્ડમાં ઉમેરાશે. નવો ખેડૂત બનશે નહીં, ગણતરી બદલાશે નહીં.',
              'The new form is added to their record. No new farmer, your counts do not move.',

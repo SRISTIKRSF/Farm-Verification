@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v157';
+const APP_VERSION = 'v158';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19688,6 +19688,146 @@ function _openReviewStep2(id){
   if(bk) bk.onclick = () => { closeModal(); openAttentionReview(id); };
 }
 
+/* ===== v158 — the two forms side by side =====
+
+   The admin: "I want to see two forms side-by-side. So I can decide."
+
+   Until now this screen showed two separate tables — a short "what is
+   different" one at the top and, far below, an unlabelled dump of the
+   incoming form with raw keys ("answers > convertAcres"). Neither let you
+   read the two submissions against each other, which is the only thing the
+   decision actually needs.
+
+   Now there is one table: question, this form, already on file. Every
+   question, in the form's own order, blanks included and labelled "not
+   answered" rather than silently dropped — the hidden blanks are why 88
+   questions looked like 39 rows and the admin could not find the form he
+   was looking at.
+
+   Two shapes are comparable and both are handled:
+     Haat  vs Haat  — the 88 claims, matched by question id.
+     Conv  vs Conv  — the intake answers. The submitted keys and the stored
+                      record do not share names (usesChem/usesChemicals,
+                      waterAvail/waterAvailability, convertAcres/organicAcres),
+                      so CONV_SBS carries the mapping, taken from the writer
+                      at the enrolment form itself rather than guessed.
+   A Haat form against a Conversion record is genuinely not comparable; that
+   case shows the incoming side alone and says so, as before. */
+function _sbsBool(v){
+  if(v === true) return 'Yes'; if(v === false) return 'No';
+  if(v === 'yes') return 'Yes'; if(v === 'no') return 'No';
+  return v == null ? '' : String(v);
+}
+function _sbsLivestock(o){
+  return (o && typeof o === 'object')
+    ? Object.entries(o).filter(([_,v]) => v).map(([k,v]) => k+': '+v).join(' · ') : '';
+}
+function _sbsList(v){
+  if(Array.isArray(v)) return v.map(x => (x && typeof x === 'object') ? (x.crop || x.name || '') : x).filter(Boolean).join(', ');
+  return v == null ? '' : String(v);
+}
+/* label, read from the submitted answers, read from the farmer on file.
+   Mirrors the baseRec/intake writer in the Conversion enrolment form. */
+const CONV_SBS = [
+  ['ઉંમર · Age',                      a => a.age,                    x => (x.intake||{}).age],
+  ['જાતિ · Gender',                   a => a.gender,                 x => (x.intake||{}).gender],
+  ['કુલ જમીન · Total land (acres)', a => a.landAcres, x => x.landAcres],
+  ['કન્વર્ટ કરવાની જમીન · Land to convert (acres)',
+                                                               a => a.convertAcres,           x => (x.organicAcres != null ? x.organicAcres : x.organicBigha)],
+  ['પાક · Crops',                          a => _sbsList(a.crops),        x => _sbsList(x.crops)],
+  ['સિંચાઈ · Irrigation',   a => a.irrigation,             x => (x.intake||{}).irrigation],
+  ['પાણીની ઉપલબ્ધતા · Water availability',
+                                                               a => a.waterAvail,             x => (x.intake||{}).waterAvailability],
+  ['રાસાયણિક વપરાશ · Uses chemicals',
+                                                               a => _sbsBool(a.usesChem),     x => _sbsBool((x.intake||{}).usesChemicals)],
+  ['રાસાયણિક ખર્ચ · Chemical cost/year',
+                                                               a => a.chemCost,               x => (x.intake||{}).chemCost],
+  ['ખાતરના પ્રકાર · Fertilizer types',
+                                                               a => _sbsList(a.fertTypes),    x => _sbsList((x.intake||{}).fertilizerTypes)],
+  ['છાણિયું ખાતર · Uses FYM',
+                                                               a => _sbsBool(a.usesFYM),      x => _sbsBool((x.intake||{}).usesFYM)],
+  ['પશુધન · Livestock',          a => _sbsLivestock(a.livestock), x => _sbsLivestock((x.intake||{}).livestock)],
+  ['આવકનો સ્રોત · Income source',
+                                                               a => a.incomeSource,           x => (x.intake||{}).incomeSource],
+  ['આવક · Income range',                   a => a.incomeRange,            x => (x.intake||{}).incomeRange],
+  ['રસાયણ-મુક્ત તૈયારી · Willing chem-free',
+                                                               a => a.willingChemFree,        x => (x.intake||{}).willingChemFree],
+  ['જરૂરી મદદ · Support needed',
+                                                               a => _sbsList(a.supportNeeded), x => _sbsList((x.intake||{}).supportNeeded)],
+  ['ચિંતા · Concerns',           a => _sbsList(a.concerns),     x => _sbsList((x.intake||{}).concerns)],
+  ['FC નામ · FC name',                     a => a.fcName,                 x => (x.intake||{}).fcName],
+  ['સર્વે તારીખ · Survey date',
+                                                               a => a.surveyDate,             x => (x.intake||{}).surveyDate],
+];
+/* Returns {rows, mode}. mode 'haat' | 'conv' | 'summary' — the last meaning
+   the two records have no comparable form, only the details they share. */
+function _sbsRows(r, ex){
+  const rows = [];
+  /* src is 'record' for the six summary details and 'form' for the questions.
+     attnReason() splits its sentence on exactly that, so tagging the rows here
+     lets the paragraph above the table and the table itself report the same
+     number — before this they were counted by two different functions and the
+     paragraph said "4 differ" over a table showing 11. */
+  const add = (label, a, b, always, src) => {
+    const A = _attnVal(a), B = _attnVal(b);
+    if(!always && !A && !B) return;
+    rows.push({ label: label, a: A, b: B, same: A === B, src: src || 'form' });
+  };
+  ATTN_FIELDS.forEach(([k,label]) => add(label, r[k], ex ? ex[k] : '', false, 'record'));
+  const nSummary = rows.length;
+
+  const ms = _attnClaims(r), me = _attnClaims(ex);
+  if(Object.keys(ms).length){
+    // Keep the form's own order, then anything the schema no longer lists.
+    const qs = (window.QUESTIONS_V5||[]);
+    const ordered = qs.map(q => q.id).filter(id => ms[id] || me[id]);
+    const rest = Object.keys(ms).concat(Object.keys(me)).filter(id => ordered.indexOf(id) < 0);
+    Array.from(new Set(ordered.concat(rest))).forEach(id => {
+      const q = qs.find(x => x.id === id) || ms[id] || me[id] || {};
+      add((q.gu || q.en || id) + (q.gu && q.en ? ' · ' + q.en : ''),
+          (ms[id]||{}).answer, (me[id]||{}).answer, true);
+    });
+    return { rows: rows, mode: 'haat', nSummary: nSummary, exHasForm: !!Object.keys(me).length };
+  }
+
+  const ans = (r.form||{}).answers;
+  if(ans && typeof ans === 'object' && ex && (ex.intake || ex.program === 'conversion' || ex.program === 'conv')){
+    CONV_SBS.forEach(pair => add(pair[0], pair[1](ans), ex ? pair[2](ex) : '', true));
+    return { rows: rows, mode: 'conv', nSummary: nSummary };
+  }
+  if(ans && typeof ans === 'object'){
+    CONV_SBS.forEach(pair => add(pair[0], pair[1](ans), '', true));
+    return { rows: rows, mode: 'conv', nSummary: nSummary };
+  }
+  return { rows: rows, mode: 'summary', nSummary: nSummary };
+}
+function _sbsTable(sbs, r, ex){
+  const cell = v => v
+    ? '<span style="font-weight:600">' + esc(v) + '</span>'
+    : '<span style="color:var(--ink-faint);font-style:italic">— not answered</span>';
+  const body = sbs.rows.map((x, i) => {
+    const head = i === sbs.nSummary && sbs.nSummary
+      ? '<tr><td colspan="3" style="padding:9px 10px 5px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--ink-faint);text-transform:uppercase;border-bottom:1px solid var(--line)">'
+        + (sbs.mode === 'haat' ? 'ફોર્મના જવાબ · form answers' : 'ફોર્મના જવાબ · form answers')
+        + '</td></tr>'
+      : '';
+    return head + '<tr style="' + (x.same ? '' : 'background:var(--panel-2)') + '">'
+      + '<td style="padding:7px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft);'
+      + (x.same ? '' : 'border-left:3px solid var(--orange,#c2410c);') + '">' + esc(x.label) + '</td>'
+      + '<td style="padding:7px 10px;border-bottom:1px solid var(--line)">' + cell(x.a) + '</td>'
+      + '<td style="padding:7px 10px;border-bottom:1px solid var(--line)">' + cell(x.b) + '</td></tr>';
+  }).join('');
+  return '<div style="max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px">'
+    + '<table class="modal-tbl" style="font-size:12px;border-collapse:collapse">'
+    + '<colgroup><col style="width:34%"><col style="width:33%"><col style="width:33%"></colgroup>'
+    + '<thead><tr>'
+    + '<th style="position:sticky;top:0;background:var(--panel);padding:8px 10px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--ink-faint);border-bottom:1px solid var(--line)">પ્રશ્ન · QUESTION</th>'
+    + '<th style="position:sticky;top:0;background:var(--panel);padding:8px 10px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--ink-faint);border-bottom:1px solid var(--line)">આ ફોર્મ · THIS FORM</th>'
+    + '<th style="position:sticky;top:0;background:var(--panel);padding:8px 10px;text-align:left;font-size:10.5px;letter-spacing:.05em;color:var(--ink-faint);border-bottom:1px solid var(--line)">'
+    + (ex ? 'પહેલેથી · ON FILE — <span style="text-transform:none">' + esc(ex.id||'') + '</span>' : 'પહેલેથી · ON FILE') + '</th>'
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
 async function openAttentionForm(id){
   const r = attentionList().find(x=>x.id===id);
   if(!r) return;
@@ -19703,33 +19843,14 @@ async function openAttentionForm(id){
   // "3 answers differ" for a submission where 61 form answers differed, and
   // the question-by-question table appeared only if you closed and reopened.
   if(existing) { try { await loadForms(existing.id); } catch(e) {} }
-  const diffs = attnDiff(r, existing);
-  const why = attnReason(r, existing, diffs);
 
-  const flat = [];
-  /* v142 — the claims array IS the form. The generic walk below stringified it
-     as "farmer › claims: [object Object], [object Object], …", one useless row
-     where the farmer's answers should be. Render it properly first, question by
-     question, then let the walk handle whatever else the payload carries. */
-  const _cl = _attnClaims(r);
-  Object.keys(_cl).forEach(k => {
-    const c = _cl[k] || {};
-    const a = _attnVal(c.answer);
-    if(a) flat.push([c.en || c.gu || c.id || k, a]);
-  });
-  const walk = (obj, prefix) => {
-    if(!obj || typeof obj !== 'object') return;
-    Object.keys(obj).forEach(k=>{
-      const val = obj[k];
-      if(val && typeof val === 'object' && !Array.isArray(val)){ walk(val, prefix?prefix+' › '+k:k); return; }
-      // handled above, and never readable when joined
-      if(Array.isArray(val) && val.some(x => x && typeof x === 'object')) return;
-      const shown = Array.isArray(val) ? val.join(', ') : String(val==null?'':val);
-      if(shown === '' || shown === 'undefined') return;
-      flat.push([prefix?prefix+' › '+k:k, shown]);
-    });
-  };
-  walk(r.form, '');
+  /* v158 — one table instead of two. See _sbsRows above.
+     attnReason() is fed the SAME rows the table renders, so the paragraph and
+     the table can never again disagree about how many answers differ. */
+  const sbs   = _sbsRows(r, existing);
+  const nDiff = sbs.rows.filter(x => !x.same).length;
+  const nAns  = sbs.rows.filter(x => x.a).length;
+  const why   = attnReason(r, existing, sbs.rows);
 
   const body = `
     <div style="background:var(--panel-2);border-left:3px solid var(--${why.kind==='identical'?'ink-faint':'orange,#c2410c'});border-radius:0 8px 8px 0;padding:11px 13px;margin-bottom:14px">
@@ -19740,18 +19861,15 @@ async function openAttentionForm(id){
       <b>${esc(r.name||'')}</b>${r.village?' · '+esc(r.village):''}${r.phone?' · '+esc(r.phone):''} · applied for
       <b>${r.program==='haat'?'Haat':'Conversion'}</b> on ${esc(String(r.submittedAt||'').slice(0,10))}
     </div>
-    ${existing ? attnDiffTable(diffs, existing) : '<div class="hint" style="margin-bottom:12px">The farmer this number belongs to could not be found, so there is nothing to compare against.</div>'}
-    ${(existing && !Object.keys(_attnClaims(existing)).length) ? `<div class="hint" style="margin-bottom:12px">
-      <b>${esc(existing.name||existing.id)}</b> has no enrolment form of this kind on record${existing.program && existing.program!=='haat' ? ' — they are in the Conversion programme, which uses a different and much shorter form' : ''},
-      so there is only one form here and nothing to compare it against question by question. The details above are everything both records hold in common.</div>` : ''}
-    <div class="subhead">Everything this farmer submitted</div>
-    <div style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px">
-      <table class="modal-tbl" style="font-size:12px;border-collapse:collapse">
-        <colgroup><col style="width:42%"><col style="width:58%"></colgroup>
-        ${flat.length ? flat.map(([k,val])=>`<tr><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft)">${esc(k)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600">${esc(val)}</td></tr>`).join('')
-                      : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
-      </table>
-    </div>`;
+    ${!existing ? '<div class="hint" style="margin-bottom:12px">The farmer this number belongs to could not be found, so there is nothing to compare against.</div>' : ''}
+    ${(existing && (sbs.mode==='summary' || (sbs.mode==='haat' && !sbs.exHasForm))) ? `<div class="hint" style="margin-bottom:12px">
+      <b>${esc(existing.name||existing.id)}</b> never filled in this form${existing.program && existing.program!=='haat' ? ' — they are in the Conversion programme, which asks a different and much shorter set of questions' : ''},
+      so the right-hand column is empty. That is not a blank answer; the question was never put to them.</div>` : ''}
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:8px">
+      <div style="font-size:13.5px;font-weight:700">${nDiff} અલગ · ${nDiff} differ</div>
+      <div style="font-size:12.5px;color:var(--ink-soft)">${sbs.rows.length - nDiff} same · ${nAns} of ${sbs.rows.length} answered on this form</div>
+    </div>
+    ${_sbsTable(sbs, r, existing)}`;
   modalShell('\u0aab\u0acb\u0ab0\u0acd\u0aae \u2014 '+esc(r.name||''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">\u0aac\u0a82\u0aa7 \u0a95\u0ab0\u0acb \u00b7 Close</button>
      <span style="flex:1"></span>

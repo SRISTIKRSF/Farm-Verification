@@ -482,6 +482,10 @@ tbody tr:last-child td{border-bottom:none}
 .attn-tbl tbody td{vertical-align:top}
 .attn-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:flex-start}
 .attn-acts .btn{margin:0;white-space:nowrap}
+/* v157 — three buttons instead of two, so they wrap 2 + 1 on a narrow actions
+   column. Left to wrap on purpose: forcing the column wider (min-width:340px
+   was tried) squeezed the farmer-name column to 90px and pushed the whole
+   table into horizontal scroll — a worse trade than a second button row. */
 .empty{text-align:center;padding:50px 20px;color:var(--ink-soft)}
 .empty svg{width:38px;height:38px;margin-bottom:11px;opacity:.3}
 .empty div{font-size:13px}
@@ -3178,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v156';
+const APP_VERSION = 'v157';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19179,6 +19183,7 @@ function viewAttention(){
         <td style="font-size:11.5px">${esc(String(r.submittedAt||'').slice(0,10))}</td>
         <td><div class="attn-acts">
           <button class="btn btn-primary btn-sm" data-att-review="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left">તપાસો<span style="display:block;font-size:10px;opacity:.75;font-weight:400">Review</span></button>
+          <button class="btn btn-ghost btn-sm" data-att-form="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left">ફોર્મ જુઓ<span style="display:block;font-size:10px;opacity:.75;font-weight:400">View form</span></button>
           <button class="btn btn-ghost btn-sm" data-att-drop="${esc(r.id)}" style="padding:6px 12px;line-height:1.25;text-align:left;color:var(--ink-soft)">જરૂર નથી<span style="display:block;font-size:10px;opacity:.75;font-weight:400">Not needed</span></button>
         </div></td>
       </tr>`;
@@ -19222,6 +19227,15 @@ function viewAttention(){
     toast('Dismissed '+ids.length+' identical cop'+(ids.length===1?'y':'ies'));
   };
   v.querySelectorAll('[data-att-review]').forEach(b=>b.onclick=()=>openAttentionReview(b.dataset.attReview));
+  /* v157 — View form is back on the row. It was dropped in v150 when the four
+     buttons became two, and that made the farmer's own answers unreachable
+     without first opening Review and then finding a link called "see what
+     differs" — which, for a Conversion farmer with no Haat form to compare
+     against, opens by saying there is nothing to compare. The admin asked
+     "currently I can't see his haat questions?" and was right: 88 answers were
+     stored and rendering correctly, two clicks behind a misleading label.
+     This button reads only. */
+  v.querySelectorAll('[data-att-form]').forEach(b=>b.onclick=()=>openAttentionForm(b.dataset.attForm));
   // v150 — these buttons are gone from the row; the same functions are now
   // reached through openAttentionReview's two questions.
   v.querySelectorAll('[data-att-move]').forEach(b=>b.onclick=()=>moveAttentionToFarmers(b.dataset.attMove));
@@ -19530,8 +19544,8 @@ function _revBackwardsBody(r, ex){
       </div>
     </div>
     <div style="margin-top:14px;font-size:12.5px">
-      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">શું અલગ છે તે જુઓ</a>
-      <span style="color:var(--ink-faint)"> · see what differs</span>
+      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">તેમણે શું ભર્યું છે તે જુઓ</a>
+      <span style="color:var(--ink-faint)"> · see everything they filled in</span>
     </div>`;
 }
 
@@ -19602,8 +19616,8 @@ async function openAttentionReview(id){
       </div>
     </div>
     <div style="margin-top:14px;font-size:12.5px">
-      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">શું અલગ છે તે જુઓ</a>
-      <span style="color:var(--ink-faint)"> · see what differs, only if you need it</span>
+      <a href="javascript:void(0)" id="revDiff" style="color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)">તેમણે શું ભર્યું છે તે જુઓ</a>
+      <span style="color:var(--ink-faint)"> · see everything they filled in</span>
     </div>`;
 
   modalShell('તપાસો — ' + esc(r.name||''), body,
@@ -19738,7 +19752,7 @@ async function openAttentionForm(id){
                       : '<tr><td style="padding:14px;color:var(--ink-faint)">No form detail was captured with this submission.</td></tr>'}
       </table>
     </div>`;
-  modalShell('\u0ab6\u0ac1\u0a82 \u0a85\u0ab2\u0a97 \u0a9b\u0ac7 \u2014 '+esc(r.name||''), body,
+  modalShell('\u0aab\u0acb\u0ab0\u0acd\u0aae \u2014 '+esc(r.name||''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">\u0aac\u0a82\u0aa7 \u0a95\u0ab0\u0acb \u00b7 Close</button>
      <span style="flex:1"></span>
      ${r._existingId ? `<button class="btn btn-primary" id="attnBackToReview">\u2190 \u0aaa\u0acd\u0ab0\u0ab6\u0acd\u0aa8 \u0aaa\u0ab0 \u0aaa\u0abe\u0a9b\u0abe \u00b7 Back to the question</button>` : ''}`);

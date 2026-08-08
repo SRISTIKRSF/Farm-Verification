@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v158';
+const APP_VERSION = 'v159';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15410,6 +15410,26 @@ function dupDiff(a, b){
   });
 }
 
+/* v159 — pick which enrolment form the merged farmer leads with.
+   Both are always kept; this only decides which is Form 1 and which is Form 2.
+   The answer counts are on the buttons because that is the whole basis for
+   the choice, and reading it off the table below took scrolling. */
+function _dupFormChooser(keep, drop, mainFormId){
+  const btn = r => {
+    const on = mainFormId === r.id, n = _dupAnswered(r);
+    return '<button class="btn btn-sm ' + (on ? 'btn-primary' : 'btn-ghost') + '" data-dupform="' + esc(r.id) + '"'
+      + ' style="text-align:left;padding:8px 12px">'
+      + '<span style="font-family:var(--mono,monospace);font-size:11.5px;text-transform:none">' + esc(r.id) + '</span>'
+      + '<span style="display:block;font-size:10.5px;font-weight:400;opacity:.85">'
+      + (n ? n + ' answer' + (n === 1 ? '' : 's') : 'no answers recorded')
+      + (on ? ' · main form' : '') + '</span></button>';
+  };
+  return '<div style="background:var(--panel-2);border-radius:8px;padding:11px 12px;margin:2px 0 12px">'
+    + '<div style="font-size:12.5px;font-weight:700;margin-bottom:2px">Which form should the farmer lead with?</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:9px">The other one is still kept, as Form 2. Nothing is deleted either way.</div>'
+    + '<div style="display:flex;gap:9px;flex-wrap:wrap">' + btn(keep) + btn(drop) + '</div></div>';
+}
+
 /* v133 — every question either record answered, paired up. The enrolment
    forms are NOT merged: both survive on the farmer as Form 1 and Form 2. This
    exists so the admin can see which record is the fuller one BEFORE choosing
@@ -15509,6 +15529,14 @@ function viewDuplicateRecords(){
   const keepId = F.keep || A.id;                       // oldest survives by default
   const keep = keepId === A.id ? A : B;
   const drop = keepId === A.id ? B : A;
+  /* v159 — which of the two enrolment forms the survivor leads with. The
+     survivor is chosen by AGE (oldest wins), and the older record is very
+     often the emptier one, so leading with its form put "not answered" down
+     the whole first column while 46 real answers sat in the second. Default
+     to whichever form actually has more answers; the admin can flip it.
+     Neither form is ever discarded — the other becomes Form 2. */
+  const _mainDefault = _dupAnswered(drop) > _dupAnswered(keep) ? drop.id : keep.id;
+  const mainFormId = (F.mainForm === keep.id || F.mainForm === drop.id) ? F.mainForm : _mainDefault;
   const rows = dupDiff(keep, drop);
   const conflicts = rows.filter(r => !r.same && r.a && r.b);
   const fills     = rows.filter(r => !r.same && (!r.a || !r.b));
@@ -15596,13 +15624,14 @@ function viewDuplicateRecords(){
   if(fRows.length){
     h += `<div class="card chart-card" style="margin-bottom:14px">
       <div class="ct">The two enrolment forms, side by side</div>
-      <div class="cs">${fDiff.length} of ${fRows.length} answered questions differ. Nothing here has to be chosen —
-        <b>both forms are kept in full</b> and stay on the surviving farmer as Form 1 and Form 2.
-        This is here so you can see which record is the fuller one before you decide.</div>
+      <div class="cs">${fDiff.length} of ${fRows.length} answered questions differ.
+        <b>Both forms are kept in full</b> — neither is ever deleted. What you choose below is only which of
+        the two the farmer's record leads with; the other sits behind it as Form 2.</div>
+      ${_dupFormChooser(keep, drop, mainFormId)}
       <div class="table-wrap"><table><thead><tr>
         <th style="width:30%">Question</th>
-        <th>${esc(keep.id)} <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">keeping</div></th>
-        <th>${esc(drop.id)} <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">archiving</div></th>
+        <th><span style="text-transform:none">${esc(keep.id)}</span> <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">${mainFormId===keep.id?'main form':'kept as Form 2'}</div></th>
+        <th><span style="text-transform:none">${esc(drop.id)}</span> <div style="font-weight:400;font-size:11px;color:var(--ink-faint)">${mainFormId===drop.id?'main form':'kept as Form 2'}</div></th>
       </tr></thead><tbody>`;
     const cellFor = (txt, other) => {
       const blank = !txt;
@@ -15635,14 +15664,15 @@ function viewDuplicateRecords(){
       <b style="color:var(--ink)">Exactly what happens</b><br>
       <b>Kept as the primary record:</b> ${esc(keep.id)} — it keeps its ID, and anything already recorded against it stays.<br>
       <b>Overwritten on it:</b> only the summary fields you chose above. Nothing else is touched.<br>
-      <b>Moved across from ${esc(drop.id)}:</b> its enrolment form (becomes Form 2), every farm visit it has recorded, and any second farms.<br>
+      <b>Moved across from ${esc(drop.id)}:</b> its enrolment form (${mainFormId===drop.id?'becomes the <b>main form</b>, and '+esc(keep.id)+'’s own form becomes Form 2':'becomes Form 2'}), every farm visit it has recorded, and any second farms.<br>
       <b>Archived, not deleted:</b> ${esc(drop.id)} goes to the archive with its own copy of everything, and can be restored at any time.<br>
       <b>Also updated:</b> the phone number is re-pointed at ${esc(keep.id)}, so a future duplicate is still caught.</div>
   </div>`;
 
   v.innerHTML = h;
-  $('#dupBack').onclick = () => { F.open=null; F.picks={}; F.keep=null; render(); };
-  v.querySelectorAll('[data-dupkeep]').forEach(b => b.onclick = () => { F.keep=b.dataset.dupkeep; F.picks={}; render(); });
+  $('#dupBack').onclick = () => { F.open=null; F.picks={}; F.keep=null; F.mainForm=null; render(); };
+  v.querySelectorAll('[data-dupkeep]').forEach(b => b.onclick = () => { F.keep=b.dataset.dupkeep; F.picks={}; F.mainForm=null; render(); });
+  v.querySelectorAll('[data-dupform]').forEach(b => b.onclick = () => { F.mainForm=b.dataset.dupform; render(); });
   const _tgl = document.getElementById('dupToggleAll');
   if(_tgl) _tgl.onclick = () => { F.showAllForm = !F.showAllForm; render(); };
   const preview = () => {
@@ -15652,17 +15682,19 @@ function viewDuplicateRecords(){
     const fromDrop = conflicts.concat(fills).filter(r=>pickOf(r.key)==='drop').length;
     el.innerHTML = `One farmer, <b>${esc(finalName)}</b>, keeping id <b>${esc(keep.id)}</b>
       — ${fromDrop} value${fromDrop===1?'':'s'} taken from ${esc(drop.id)}, which is then archived.
-      <b>${esc(finalName)}</b> will show <b>2 forms</b>. Your farmer count drops by one.`;
+      <b>${esc(finalName)}</b> will show <b>2 forms</b>, leading with the one from
+      <b><span style="text-transform:none">${esc(mainFormId)}</span></b> (${_dupAnswered(mainFormId===keep.id?keep:drop)} answers).
+      Your farmer count drops by one.`;
   };
   v.querySelectorAll('[data-dpk]').forEach(r => r.onchange = () => { F.picks[r.dataset.dpk]=r.dataset.side; preview(); });
   preview();
-  $('#dupMerge').onclick = () => mergeDuplicatePair(g.phone, keep.id, drop.id, Object.assign({}, F.picks));
+  $('#dupMerge').onclick = () => mergeDuplicatePair(g.phone, keep.id, drop.id, Object.assign({}, F.picks), mainFormId);
   $('#dupNot').onclick   = () => markNotDuplicate(g.phone);
 }
 
 /* ---------------- the actions ---------------- */
 
-async function mergeDuplicatePair(phone, keepId, dropId, picks){
+async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
   const grp = dupPairs().find(x=>x.phone===phone);
   if(!grp) return;
   const kItem = grp.items.find(i=>i.rec.id===keepId), dItem = grp.items.find(i=>i.rec.id===dropId);
@@ -15675,7 +15707,9 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks){
     + 'KEEPS: '+keep.id+' (stays the primary record, keeps its ID)\n'
     + 'ARCHIVES: '+drop.id+' — not deleted, restorable at any time\n\n'
     + 'Moved to '+keep.id+':\n'
-    + '  • its enrolment form, as Form 2\n'
+    + '  • its enrolment form — ' + (mainFormId === drop.id
+        ? 'as the MAIN form (' + keep.id + '’s own form becomes Form 2)'
+        : 'as Form 2') + '\n'
     + (_nv ? '  • '+_nv+' farm visit'+(_nv===1?'':'s')+'\n' : '')
     + (_nf ? '  • '+_nf+' second farm'+(_nf===1?'':'s')+'\n' : '')
     + '  • the summary fields you chose\n\n'
@@ -15689,11 +15723,27 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks){
     keep[r.key] = DUP_NUMERIC.includes(r.key) ? (parseFloat(val)||0) : val;
   });
 
-  // 2. the archived record's form becomes Form 2 on the survivor
+  /* 2. both enrolment forms end up on the survivor. mainFormId decides which
+        one it LEADS with; the other is attached as Form 2. Neither is deleted.
+        v159 — before this the survivor always led with its own form, and since
+        the survivor is picked by age, an empty older record led with an empty
+        form while the real answers sat behind it. */
   try{
     await loadForms(drop.id);
+    await loadForms(keep.id);
+    const hasClaims = f => !!(f && Array.isArray(f.claims) && f.claims.length);
     const dropEnrol = (FORMS_CACHE[drop.id]||{}).enrol || drop.enrollmentFormFull;
-    if(dropEnrol && Array.isArray(dropEnrol.claims) && dropEnrol.claims.length){
+    const keepEnrol = (FORMS_CACHE[keep.id]||{}).enrol || keep.enrollmentFormFull;
+    if(mainFormId === drop.id && hasClaims(dropEnrol)){
+      // Demote the survivor's own form FIRST — setForms would otherwise
+      // overwrite the only copy we still have of it in the cache.
+      if(hasClaims(keepEnrol)){
+        await attachFormToFarmer(keep.id, keep.id, keepEnrol,
+          { at: keep.submittedAt || keep.publicSubmittedAt, name: keep.name||'',
+            from: 'the earlier form on '+keep.id });
+      }
+      setForms(keep.id, 'enrol', dropEnrol);
+    } else if(hasClaims(dropEnrol)){
       await attachFormToFarmer(keep.id, drop.id, dropEnrol,
         { at: drop.submittedAt || drop.publicSubmittedAt, name: drop.name||'', from: 'merged from '+drop.id });
     }

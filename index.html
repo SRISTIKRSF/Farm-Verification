@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v159';
+const APP_VERSION = 'v160';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9624,9 +9624,33 @@ function convPointerHtml(cs){
    per-list "Show archived" toggle. Recoverable via Restore — nothing is destroyed. */
 const ARCH_SEL  = { haat:new Set(), conv:new Set() };   // selected ids per list
 const ARCH_SHOW = { haat:false, conv:false };           // "show archived" toggle per list
+const ARCH_MERGED = { haat:false, conv:false };         // v160 — reveal merged-away records
 function _archStore(p){ return p==='haat' ? DB.haatFarmers : DB.convFarmers; }
 function _archCol(p){ return p==='haat' ? 'haatFarmers' : 'convFarmers'; }
-function archivedCount(p){ return (_archStore(p)||[]).filter(f=>f._archived).length; }
+/* v160 — what the archive is actually FOR: records an admin archived and may
+   want back. Two kinds of row were sitting in there that are neither.
+
+   Seeded demo records (HF_VANSHITA_001 and friends) are baked into this file,
+   never existed in Firebase, and are already excluded from every count — so
+   the archived list was the one place they appeared, looking like a real
+   farmer someone had removed.
+
+   Merged-away records are history, not a decision: their forms, visits and
+   farms are already on the survivor and the survivor points back at them.
+   The admin asked how to "clean" two of them; the honest answer is that they
+   should not have been on the list, NOT that they should be deleted. They are
+   hidden by default and reachable behind their own toggle. Nothing is
+   removed — deleteFarmersPermanently is still the only thing that deletes. */
+function _isMergedAway(f){ return !!(f && f._mergedInto); }
+function archivedRows(p){ return (_archStore(p)||[]).filter(f => f._archived && !_isSeededRecord(f)); }
+function archivedCount(p){ return archivedRows(p).filter(f => !_isMergedAway(f)).length; }
+function mergedAwayCount(p){ return archivedRows(p).filter(_isMergedAway).length; }
+/* The one place the archived-list filter is defined, so the two lists cannot drift. */
+function archFilterRows(p, rows){
+  return ARCH_SHOW[p]
+    ? rows.filter(r => r._archived && !_isSeededRecord(r) && (ARCH_MERGED[p] || !_isMergedAway(r)))
+    : rows.filter(r => !r._archived);
+}
 async function archiveFarmers(p, ids){
   if(!ids || !ids.length) return;
   const who = (actor()||{}).name || 'admin';
@@ -9687,7 +9711,16 @@ async function _confirmAndDelete(p, ids){
 function archToggleHtml(p){
   const n = archivedCount(p), on = ARCH_SHOW[p];
   const onStyle = on ? 'background:#fef3c7;color:#92400e;border-color:#fcd34d;' : '';
-  return `<button class="btn btn-sm btn-ghost" id="archToggle_${p}" style="margin-left:8px;${onStyle}">${svg(on?I.eye:I.trash,2)} ${on?'Showing archived':'Show archived'} (${n})</button>`;
+  let h = `<button class="btn btn-sm btn-ghost" id="archToggle_${p}" style="margin-left:8px;${onStyle}">${svg(on?I.eye:I.trash,2)} ${on?'Showing archived':'Show archived'} (${n})</button>`;
+  // v160 — merged-away records live behind their own toggle, and only while
+  // the archive is open. They are history; nothing here is waiting on anyone.
+  const m = mergedAwayCount(p);
+  if(on && m){
+    const mOn = ARCH_MERGED[p];
+    h += `<button class="btn btn-sm btn-ghost" id="mergedToggle_${p}" style="margin-left:6px;${mOn?'background:var(--panel-2);':''}">`
+      + `${mOn?'Hide':'Show'} ${m} merged into another farmer</button>`;
+  }
+  return h;
 }
 // Sticky action bar shown when ≥1 row is selected.
 function archBarHtml(p){
@@ -9721,7 +9754,9 @@ function wireArch(v, p, pagedIds){
     render();
   };
   const tg = v.querySelector('#archToggle_'+p);
-  if(tg) tg.onclick = () => { ARCH_SHOW[p] = !ARCH_SHOW[p]; sel.clear(); render(); };
+  if(tg) tg.onclick = () => { ARCH_SHOW[p] = !ARCH_SHOW[p]; ARCH_MERGED[p] = false; sel.clear(); render(); };
+  const mtg = v.querySelector('#mergedToggle_'+p);
+  if(mtg) mtg.onclick = () => { ARCH_MERGED[p] = !ARCH_MERGED[p]; sel.clear(); render(); };
   const clr = v.querySelector('#archClear_'+p);
   if(clr) clr.onclick = () => { sel.clear(); render(); };
   const doBtn = v.querySelector('#archDo_'+p);
@@ -9780,7 +9815,7 @@ function viewHaat(){
   // v8 — role filter: FC users see only their own farmers.
   let rows=filterByCurrentFc(DB.haatFarmers).slice();
   // archive: hide archived farmers unless the "Show archived" toggle is on (then show ONLY archived)
-  rows = rows.filter(r => ARCH_SHOW.haat ? r._archived : !r._archived);
+  rows = archFilterRows('haat', rows);
   // status box keys: pending & verified are pipeline STAGES; green/yellow/red are decision STATUSES
   if(F.status==='pending') rows=rows.filter(r=>r.stage==='verification_pending');
   else if(F.status==='verified') rows=rows.filter(r=>r.stage==='verified');
@@ -10682,7 +10717,7 @@ function viewConversion(){
   // v8 — role filter: FC users see only their own farmers.
   let rows=filterByCurrentFc(DB.convFarmers).slice();
   // archive: hide archived unless "Show archived" is on (then show ONLY archived)
-  rows = rows.filter(r => ARCH_SHOW.conv ? r._archived : !r._archived);
+  rows = archFilterRows('conv', rows);
   if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
   if(F.state) rows=rows.filter(r=>r.state===F.state);

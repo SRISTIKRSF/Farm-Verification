@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v163';
+const APP_VERSION = 'v164';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7462,7 +7462,14 @@ function openConvScoreModal(id){
     + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📅 Visit details</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
     +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Visit date</label><input type="date" id="vsDate" value="' + today + '" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px"></div>'
-    +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Field Coordinator</label><select id="vsFc" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">' + fcOpts + '</select></div>'
+    +   (isMobilizerUser()
+          /* v164 — a mobilizer IS the person who made the visit, so asking them
+             to pick a field coordinator filed their work under somebody else's
+             name. The picker is replaced by their own name, and the save writes
+             it down the existing "Other" path (fcId empty, fcName typed) — the
+             same shape used for anyone who is not on the FC roster. */
+          ? '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Visited by</label><input type="text" value="' + esc((SESSION && SESSION.userName) || 'Mobilizer') + '" disabled style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;background:var(--panel-2);color:var(--ink-soft)"></div>'
+          : '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Field Coordinator</label><select id="vsFc" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px">' + fcOpts + '</select></div>')
     +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:3px">Next visit (auto +3 months)</label><input type="date" id="vsNext" value="' + nextDef + '" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px"></div>'
     + '</div>'
     // Other-FC name input — hidden by default, revealed when "Other" picked
@@ -7703,8 +7710,13 @@ function openConvScoreModal(id){
     else {                               f.stage = 'enrolled';   f.transitionStatus = 'red'; }
     // ===== Visit row: club the visit + score together =====
     const vdate = (document.getElementById('vsDate') || {}).value || todayISO();
-    const vfcVal = (document.getElementById('vsFc') || {}).value || (f.fcId || '');
-    const vfcOther = ((document.getElementById('vsFcOther') || {}).value || '').trim();
+    /* v164 — for a mobilizer there is no picker to read; without this the ||
+       fallback below would quietly file the visit under the farmer's FC. */
+    const _visitByMob = isMobilizerUser();
+    const vfcVal = _visitByMob ? '__other__'
+                 : ((document.getElementById('vsFc') || {}).value || (f.fcId || ''));
+    const vfcOther = _visitByMob ? ((SESSION && SESSION.userName) || 'Mobilizer')
+                 : ((document.getElementById('vsFcOther') || {}).value || '').trim();
     // "Other" → store empty fcId but keep the typed name in fcName field.
     const vfc     = vfcVal === '__other__' ? '' : vfcVal;
     const vfcName = vfcVal === '__other__' ? vfcOther : '';

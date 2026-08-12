@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v160';
+const APP_VERSION = 'v161';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5085,16 +5085,33 @@ function photoSrc(p){
 }
 function photoThumb(p, w){
   const src = photoSrc(p);
-  if(!src) return photoPendingPlaceholder();
+  if(!src) return photoPendingPlaceholder(p);
   // Cloudinary URLs get a real server-side thumbnail — ~10 KB instead of 200 KB.
   if(src.indexOf('res.cloudinary.com') !== -1 && src.indexOf('/upload/') !== -1 && src.indexOf('/upload/w_') === -1){
     return src.replace('/upload/', '/upload/w_'+(w||300)+',q_auto,f_auto/');
   }
   return src;
 }
-function photoPendingPlaceholder(){
+/* v161 — say which of the two things this actually is.
+   A photo entry with a photoId and no url is "still uploading" ONLY on the
+   device that took it, and only while that tab is open (see the v85 note).
+   Anywhere else — every admin screen, every other FC — those bytes are not
+   coming: they sit in the photographer's IndexedDB. Labelling that
+   "uploading…" told the admin to wait for something that will never arrive.
+   Lalasinh Chandubhai Padiyar's verification has 11 photos uploaded and 10
+   in this state. Display only; the stored entries are untouched. */
+function photoIsStranded(p){
+  return !!(p && typeof p === 'object' && p.photoId && !p.url && !p.data && !_photoSession[p.photoId]);
+}
+function photoPendingPlaceholder(p){
+  const stranded = photoIsStranded(p);
+  const line = stranded ? 'not uploaded' : 'uploading…';
+  const fill = stranded ? '#f4e4e2' : '#e2e8f0';
+  const ink  = stranded ? '#993c1d' : '#64748b';
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="78" height="78"><rect width="78" height="78" fill="#e2e8f0"/><text x="39" y="34" font-size="20" text-anchor="middle">📷</text><text x="39" y="56" font-size="9" text-anchor="middle" fill="#64748b">uploading…</text></svg>');
+    '<svg xmlns="http://www.w3.org/2000/svg" width="78" height="78"><rect width="78" height="78" fill="'+fill+'"/>'
+    + '<text x="39" y="34" font-size="20" text-anchor="middle">📷</text>'
+    + '<text x="39" y="56" font-size="8.5" text-anchor="middle" fill="'+ink+'">'+line+'</text></svg>');
 }
 
 /* ---------- photo extraction: pull base64 out of any payload, queue uploads ----------
@@ -5819,6 +5836,20 @@ const HAAT_STATUS={
   yellow:{label:'On hold',cls:'yellow'},
   red:{label:'Rejected',cls:'red'},
 };
+/* v161 — `status` and `stage` are two different things and the lists only ever
+   read one of them. `stage` is where the record is in the pipeline
+   (verification_pending -> verified); `status` is the ADMIN's decision
+   (pending -> green/yellow/red). A farm the FC has visited and scored sits at
+   stage 'verified' with status still 'pending', and every list rendered that
+   as "Verification pending" — telling the admin the visit had not happened
+   when the score was on the very same screen. The dashboard tile got this
+   right ("8 waiting for approval"), the rows did not.
+   Display only: nothing is written, and HAAT_STATUS.verified was already
+   defined and simply never reachable. */
+function haatStatusMeta(f){
+  if(f && f.status === 'pending' && f.stage === 'verified') return HAAT_STATUS.verified;
+  return HAAT_STATUS[f && f.status] || {cls:'grey', label:'—'};
+}
 
 /* =============================================================
    v5 — MASTER QUESTION SCHEMA
@@ -9861,7 +9892,7 @@ function viewHaat(){
   pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
     // v8 bug fix: r.status may be undefined for imported / partial farmers
-    const st=HAAT_STATUS[r.status]||{cls:'grey',label:'—'};
+    const st=haatStatusMeta(r);
     // v8 — bilingual normalisation so Haat + Conversion farmers list look the same.
     // v146 — guarded. normaliseDB backfills crops on load, so this only bites
     // a record that reaches the list by another route, but an unguarded
@@ -10050,7 +10081,7 @@ function exportHaatCSV(rows){
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,
     certification:f.certification||'',field_coordinator:(fcById(f.fcId)||{}).name||'',
-    haat:f.haat||'',status:(HAAT_STATUS[f.status]||{label:''}).label,
+    haat:f.haat||'',status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
   }));
@@ -12432,7 +12463,7 @@ function renderV5EnrollmentSummary(f){
       arr.forEach((p, i) => {
         // v11 — photoSrc handles {url} (Cloudinary), legacy {data} base64,
         // and still-uploading {photoId} (session copy or placeholder).
-        const url = photoSrc(p) || photoPendingPlaceholder();
+        const url = photoSrc(p) || photoPendingPlaceholder(p);
         const turl = photoThumb(p, 200);
         const cap = (q.gu||q.en||qid) + ' #' + (i+1);
         // v109 — esc() on the URLs too (the caption alongside was already
@@ -12988,7 +13019,7 @@ function openHaatDrawer(id){
       }
     });
   }
-  const fc=fcById(f.fcId),st=HAAT_STATUS[f.status];
+  const fc=fcById(f.fcId),st=haatStatusMeta(f);
   // v9 audit-fix #13 — surface who decided + when, plus the decision note.
   const decisionInfo = (f.decisionBy || f.decisionAt) ? (() => {
     const stamp = fmtRecordedBy({recordedBy: f.decisionBy, recordedAt: f.decisionAt});
@@ -13293,7 +13324,7 @@ function openConvDrawer(id){
       if(Array.isArray(o.photos) && o.photos.length){
         h+=`<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">`
          + o.photos.map(p => {
-             const url = photoSrc(p) || photoPendingPlaceholder();
+             const url = photoSrc(p) || photoPendingPlaceholder(p);
              const turl = photoThumb(p, 160);
              return `<a href="${esc(url)}" data-photo style="display:block;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="${esc(turl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>`;
            }).join('')
@@ -14198,7 +14229,7 @@ function openCompareFormsModal(id){
   function renderPhotos(arr){
     if(!Array.isArray(arr) || !arr.length) return '';
     return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">' + arr.map(p => {
-      const url = photoSrc(p) || photoPendingPlaceholder();
+      const url = photoSrc(p) || photoPendingPlaceholder(p);
       const turl = photoThumb(p, 200);
       return '<a href="'+esc(url)+'" data-photo style="display:block;width:72px;height:72px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);background:#f1f5f9"><img src="'+esc(turl)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
     }).join('') + '</div>';
@@ -15977,7 +16008,7 @@ function renderFarmsCard(f){
   }
   units.forEach(u => {
     const fc = fcById(u.fcId);
-    const st = HAAT_STATUS[u.status] || {cls:'grey', label:'—'};
+    const st = haatStatusMeta(u.stage ? u : (u.rec || u));
     h += `<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--${u.primary?'accent':'clay'});border-radius:8px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:9px;flex-wrap:wrap">
         <div style="font-size:13px;font-weight:700">${multi ? esc(u.label) + (u.primary?'':' <span style="font-weight:400;font-size:11px;color:var(--ink-faint)">added later</span>') : 'Where the farm is'}</div>
@@ -16019,7 +16050,7 @@ function paintSecondFarms(body){
   </tr></thead><tbody>`;
   units.forEach(u => {
     const fc = fcById(u.fcId);
-    const st = HAAT_STATUS[u.status] || {cls:'grey', label:'—'};
+    const st = haatStatusMeta(u.stage ? u : (u.rec || u));
     h += `<tr>
       <td class="name-cell"><div class="nm">${esc(u.rec.name)}</div><div class="sub">${esc(u.farmerId)}</div></td>
       <td>${esc(u.label)}</td>
@@ -16093,7 +16124,7 @@ function viewData(){
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,certification:f.certification||'',
     field_coordinator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
-    status:(HAAT_STATUS[f.status]||{label:''}).label,
+    status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
   }))));
@@ -16685,7 +16716,7 @@ window.addEventListener('message',async ev=>{
       const photos = {};
       Object.keys(rawPhotos).forEach(qid => {
         const arr = Array.isArray(rawPhotos[qid]) ? rawPhotos[qid] : [];
-        photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder():'') })).filter(p => p.data);
+        photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder(p):'') })).filter(p => p.data);
       });
       const farmer = {
         id: f.id, name: f.name,
@@ -16704,7 +16735,7 @@ window.addEventListener('message',async ev=>{
       const prevPhotos = {};
       Object.keys(prevPhotosRaw).forEach(qid => {
         const arr = Array.isArray(prevPhotosRaw[qid]) ? prevPhotosRaw[qid] : [];
-        prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder():'') })).filter(p => p.data);
+        prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder(p):'') })).filter(p => p.data);
       });
       const prevVerif = prevV ? {
         submittedAt: f.verificationFormSubmittedAt || '',
@@ -17840,25 +17871,63 @@ function enterPublicMode(targetRoute){
     .lb-overlay .lb-close { position: absolute; top: 16px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.12); color: #fff; border: 0; font-size: 22px; cursor: pointer; display: grid; place-items: center; font-family: inherit; }
     .lb-overlay .lb-close:hover { background: rgba(255,255,255,0.24); }
     .lb-overlay .lb-cap { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font-size: 12px; font-family: inherit; max-width: 80vw; text-align: center; }
+    .lb-overlay .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,0.14); color: #fff; border: 0; font-size: 30px; line-height: 1; cursor: pointer; display: grid; place-items: center; font-family: inherit; padding-bottom: 4px; }
+    .lb-overlay .lb-nav:hover { background: rgba(255,255,255,0.28); }
+    .lb-overlay .lb-prev { left: 16px; }
+    .lb-overlay .lb-next { right: 16px; }
+    @media (max-width: 680px){ .lb-overlay .lb-nav { width: 44px; height: 44px; font-size: 26px; } .lb-overlay .lb-prev { left: 6px; } .lb-overlay .lb-next { right: 6px; } }
   `;
   document.head.appendChild(css);
 
   const overlay = document.createElement('div');
   overlay.id = 'lightboxOverlay';
   overlay.className = 'lb-overlay';
-  overlay.innerHTML = '<button class="lb-close" aria-label="Close">✕</button><img id="lbImg" src="" alt=""><div class="lb-cap" id="lbCap"></div>';
+  overlay.innerHTML = '<button class="lb-close" aria-label="Close">✕</button>'
+    + '<button class="lb-nav lb-prev" aria-label="Previous photo">‹</button>'
+    + '<img id="lbImg" src="" alt="">'
+    + '<button class="lb-nav lb-next" aria-label="Next photo">›</button>'
+    + '<div class="lb-cap" id="lbCap"></div>';
   document.body.appendChild(overlay);
 
+  /* v161 — the admin: "there is no button to next photo". A verification can
+     carry twenty photos across four questions and the only way through them
+     was close, scroll, click the next thumbnail, twenty times.
+     The set is gathered at open time from the photo links around the one that
+     was clicked, so it follows whatever is on screen without any screen having
+     to declare its photos. Entries that never uploaded are left out — stepping
+     through a run of identical "not uploaded" placeholders is not navigation. */
+  let LB = { items: [], i: 0 };
+  function lbShow(i){
+    if(!LB.items.length) return;
+    LB.i = (i + LB.items.length) % LB.items.length;
+    const it = LB.items[LB.i];
+    document.getElementById('lbImg').src = it.url;
+    // Not every surface gives its photos a caption; don't leave a dangling "·".
+    const counter = LB.items.length > 1 ? (LB.i + 1) + ' / ' + LB.items.length : '';
+    document.getElementById('lbCap').textContent =
+      [it.cap || '', counter].filter(Boolean).join('   ·   ');
+    const many = LB.items.length > 1;
+    overlay.querySelector('.lb-prev').style.display = many ? 'grid' : 'none';
+    overlay.querySelector('.lb-next').style.display = many ? 'grid' : 'none';
+  }
   function close(){ overlay.classList.remove('show'); document.body.style.overflow = ''; }
   overlay.addEventListener('click', e => {
+    if(e.target.classList.contains('lb-prev')){ e.stopPropagation(); lbShow(LB.i - 1); return; }
+    if(e.target.classList.contains('lb-next')){ e.stopPropagation(); lbShow(LB.i + 1); return; }
     if(e.target === overlay || e.target.classList.contains('lb-close')) close();
   });
-  document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape') return close();
+    if(!overlay.classList.contains('show')) return;
+    if(e.key === 'ArrowLeft')  { e.preventDefault(); lbShow(LB.i - 1); }
+    if(e.key === 'ArrowRight') { e.preventDefault(); lbShow(LB.i + 1); }
+  });
 
-  window.openLightbox = (src, caption) => {
+  window.openLightbox = (src, caption, items, index) => {
     if(!src) return;
-    document.getElementById('lbImg').src = src;
-    document.getElementById('lbCap').textContent = caption || '';
+    LB = (items && items.length) ? { items: items, i: index || 0 }
+                                 : { items: [{url: src, cap: caption || ''}], i: 0 };
+    lbShow(LB.i);
     overlay.classList.add('show');
     document.body.style.overflow = 'hidden';
   };
@@ -17878,7 +17947,28 @@ function enterPublicMode(targetRoute){
     e.preventDefault();
     const url = a.getAttribute('data-photo') || href;
     const cap = a.getAttribute('data-photo-caption') || a.querySelector('img')?.getAttribute('alt') || '';
-    window.openLightbox(url, cap);
+    /* v161 — collect the photos around this one so the arrows have something
+       to move through. Scope: the nearest panel that holds photos, falling
+       back to the document, so a click in the comparison modal never steps
+       into the drawer behind it. A never-uploaded placeholder is skipped —
+       but if the clicked thumbnail IS one, it is still shown on its own so
+       the click does something rather than nothing. */
+    const scope = a.closest('.modal-body, .drawer-body, .card, #view') || document;
+    const SEL = 'a[href^="data:image"], a[data-photo], a[href^="blob:"]';
+    const all = [...scope.querySelectorAll(SEL)]
+      .map(x => ({ el: x,
+                   url: x.getAttribute('data-photo') || x.getAttribute('href') || '',
+                   cap: x.getAttribute('data-photo-caption') || (x.querySelector('img') ? x.querySelector('img').getAttribute('alt') : '') || '' }))
+      .filter(x => x.url && x.url.indexOf('data:image/svg') !== 0);
+    const idx = all.findIndex(x => x.el === a);
+    if(idx < 0){
+      /* The clicked tile is a placeholder — it has no photograph behind it, so
+         opening a viewer on it is a dead end. Say what happened instead. */
+      if(typeof toast === 'function') toast('This photo never reached the server. Ask the coordinator to open the app on the phone that took it.', 'error');
+      return;
+    }
+    if(all.length > 1) window.openLightbox(all[idx].url, all[idx].cap, all, idx);
+    else window.openLightbox(url, cap);
   }, false);   // v9 L2 — bubble phase, no stopPropagation, so other handlers can co-exist
 })();
 

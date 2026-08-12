@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v161';
+const APP_VERSION = 'v162';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10772,7 +10772,7 @@ function viewConversion(){
     <div class="spacer"></div>
     ${archToggleHtml('conv')}
     <button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>
-    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button>
+    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
   </div>`;
@@ -10851,6 +10851,7 @@ function viewConversion(){
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('state','cState');setF('district','cDistrict');setF('fc','cFc');
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
+  const cMoveBtn=$('#cMove'); if(cMoveBtn) cMoveBtn.onclick=openReassignFcModal;
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
   const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
@@ -13764,6 +13765,156 @@ function openBulkAssignModal(){
     logActivity('status',`<b>${n}</b> conversion farmer${n===1?'':'s'} in <b>${esc(t)}</b> bulk-assigned to ${esc((fcById(fcId)||{}).name||'FC')}`);
     await saveDB();closeModal();render();
     toast(n+' farmer'+(n===1?'':'s')+' assigned');
+  };
+}
+
+/* ============ MODAL: MOVE FARMERS BETWEEN COORDINATORS (v162) ============
+
+   The admin: "Earlier some farmers were assigned to FC Harsh Patel. Later we
+   switched the districts. And Narmada was assigned to Ayush. But here it
+   still shows Harsh Patel. What is the issue?"
+
+   The coordinator is stamped ONTO each farmer as fcId at the moment they are
+   assigned; district coverage lives on the coordinator. Changing coverage
+   rewrites nothing, and there was no tool that could: openBulkAssignModal
+   deliberately only offers farmers with NO coordinator, so 205 Narmada
+   farmers were stranded on a coordinator who no longer covers the district,
+   changeable only one at a time.
+
+   This writes to live farmer records, so it is built to be boring:
+     - it shows the exact list before it writes anything;
+     - it changes fcId and nothing else — not stage, not the visit schedule,
+       not a single recorded visit (a visit keeps the coordinator who made it,
+       which is the truth about who was there);
+     - it never touches an archived record;
+     - it stores fcPrevId, so a move can be reversed exactly even if the
+       district later fills with other people's farmers;
+     - it moves nobody unless BOTH coordinators are chosen and they differ. */
+function _reassignPool(){
+  return (DB.convFarmers||[]).filter(f => f && !f._archived && !_isSeededRecord(f));
+}
+function _reassignDistrict(f){
+  const d = String(f.district || '').trim();
+  return d ? d.split(' (')[0] : '—';
+}
+function _reassignMatches(fromId, district){
+  return _reassignPool().filter(f =>
+    (f.fcId || '') === fromId &&
+    (district === '*' || _reassignDistrict(f) === district));
+}
+function openReassignFcModal(){
+  const pool = _reassignPool();
+  const assigned = pool.filter(f => f.fcId);
+  if(!assigned.length){
+    modalShell('Move farmers between coordinators',
+      '<div class="hint">No conversion farmer has a coordinator yet, so there is nothing to move. '
+      + 'Use <b>Bulk-assign by taluka</b> to assign the unassigned ones.</div>',
+      '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
+    return;
+  }
+  const byFc = {};
+  assigned.forEach(f => { byFc[f.fcId] = (byFc[f.fcId] || 0) + 1; });
+  const fromOpts = Object.keys(byFc)
+    .map(id => [id, ((fcById(id)||{}).name || id) + ' (' + byFc[id] + ')'])
+    .sort((a,b) => a[1].localeCompare(b[1]));
+
+  const body = `
+    <div class="hint" style="margin-bottom:12px">
+      Moves farmers who are already assigned from one coordinator to another. Only the coordinator changes —
+      the farmer's stage, visit schedule and every recorded visit stay exactly as they are.
+    </div>
+    <div class="field-row">
+      ${fld('Currently assigned to', sel('raFrom', fromOpts, fromOpts[0] && fromOpts[0][0]), true)}
+      ${fld('District', sel('raDist', [['*','— loading —']]), true)}
+      ${fld('Move to', sel('raTo', [['','— select coordinator —']].concat(activeFcs().map(x=>[x.id,x.name]))), true)}
+    </div>
+    <div id="raPreview" style="margin-top:6px"></div>`;
+
+  modalShell('Move farmers between coordinators', body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="raGo">Move these farmers</button>`);
+
+  function fillDistricts(){
+    const fromId = $('#raFrom').value;
+    const mine = _reassignPool().filter(f => (f.fcId||'') === fromId);
+    const counts = {};
+    mine.forEach(f => { const d = _reassignDistrict(f); counts[d] = (counts[d]||0) + 1; });
+    const names = Object.keys(counts).sort();
+    const opts = names.map(d => [d, d + ' (' + counts[d] + ')']);
+    if(names.length > 1) opts.unshift(['*', 'All districts (' + mine.length + ')']);
+    const s = $('#raDist');
+    s.innerHTML = opts.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>').join('');
+    s.value = opts[0] ? opts[0][0] : '*';
+  }
+  function refresh(){
+    const fromId = $('#raFrom').value, dist = $('#raDist').value, toId = $('#raTo').value;
+    const list = _reassignMatches(fromId, dist);
+    const fromN = (fcById(fromId)||{}).name || fromId;
+    const toN   = toId ? ((fcById(toId)||{}).name || toId) : '';
+    const same  = toId && toId === fromId;
+    const rows = list.slice(0, 200).map(f =>
+      '<tr><td style="padding:4px 8px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-soft)">'
+      + esc(f.id) + '</td><td style="padding:4px 8px;border-bottom:1px solid var(--line);font-size:12px">'
+      + esc(f.name||'') + '</td><td style="padding:4px 8px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-soft)">'
+      + esc(_reassignDistrict(f)) + '</td></tr>').join('');
+    $('#raPreview').innerHTML =
+      (same
+        ? '<div class="hint" style="color:var(--orange,#c2410c)">That is the same coordinator. Pick a different one to move to.</div>'
+        : '<div style="font-size:14px;font-weight:700;margin-bottom:3px">'
+          + list.length + ' farmer' + (list.length===1?'':'s') + ' will move'
+          + (toN ? ' from <b>' + esc(fromN) + '</b> to <b>' + esc(toN) + '</b>' : ' from <b>' + esc(fromN) + '</b>')
+          + '</div>'
+          + (toN ? '' : '<div class="hint" style="color:var(--ink-faint);margin-bottom:6px">Choose who they move to.</div>'))
+      + (list.length
+        ? '<div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px">'
+          + '<table style="width:100%;border-collapse:collapse">' + rows + '</table></div>'
+          + (list.length > 200 ? '<div class="hint" style="margin-top:5px">Showing the first 200 of ' + list.length + '. All ' + list.length + ' will move.</div>' : '')
+        : '<div class="hint" style="margin-top:6px">Nobody matches that combination.</div>');
+  }
+  $('#raFrom').onchange = () => { fillDistricts(); refresh(); };
+  $('#raDist').onchange = refresh;
+  $('#raTo').onchange   = refresh;
+  fillDistricts(); refresh();
+
+  $('#raGo').onclick = async () => {
+    const fromId = $('#raFrom').value, dist = $('#raDist').value, toId = $('#raTo').value;
+    if(!toId)          return toast('Pick the coordinator they move to', 'error');
+    if(toId === fromId) return toast('That is the same coordinator', 'error');
+    const list = _reassignMatches(fromId, dist);
+    if(!list.length)   return toast('Nobody matches that combination', 'error');
+    const fromN = (fcById(fromId)||{}).name || fromId;
+    const toN   = (fcById(toId)||{}).name || toId;
+    const where = dist === '*' ? 'every district' : dist;
+
+    const ok = await confirmModal({
+      title: 'Move ' + list.length + ' farmer' + (list.length===1?'':'s') + ' to ' + toN + '?',
+      message: list.length + ' conversion farmer' + (list.length===1?'':'s') + ' in ' + where
+        + ' will move from ' + fromN + ' to ' + toN + '.' + String.fromCharCode(10,10)
+        + 'ONLY the coordinator changes. Their stage, adoption score, next visit date and every '
+        + 'recorded farm visit stay exactly as they are — a visit keeps the coordinator who actually made it.'
+        + String.fromCharCode(10,10)
+        + 'Nothing is deleted, and the previous coordinator is remembered on each record so this can be undone.',
+      confirmLabel: 'Move ' + list.length + ' to ' + toN });
+    if(!ok) return;
+
+    const who = actor() || {};
+    const nowIso = new Date().toISOString();
+    let n = 0;
+    list.forEach(f => {
+      f.fcPrevId       = f.fcId || '';
+      f.fcId           = toId;
+      f.fcAssignedBy   = who.name || 'admin';
+      f.fcAssignedById = who.id || '';
+      f.fcAssignedAt   = nowIso;
+      markLocalTouch('convFarmers', f.id);
+      n++;
+    });
+    logActivity('status', '<b>' + n + '</b> conversion farmer' + (n===1?'':'s') + ' in <b>' + esc(where)
+      + '</b> moved from <b>' + esc(fromN) + '</b> to <b>' + esc(toN) + '</b> — coordinator only; no visit or score changed.');
+    await saveDB();
+    closeModal();
+    render();
+    toast(n + ' farmer' + (n===1?'':'s') + ' moved to ' + toN);
   };
 }
 

@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v162';
+const APP_VERSION = 'v163';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10772,7 +10772,7 @@ function viewConversion(){
     <div class="spacer"></div>
     ${archToggleHtml('conv')}
     <button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>
-    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button>
+    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button><button class="btn btn-ghost btn-sm" id="cMob">${svg(I.user,2.2)}Assign to mobilizer</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
   </div>`;
@@ -10852,6 +10852,7 @@ function viewConversion(){
   setF('state','cState');setF('district','cDistrict');setF('fc','cFc');
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   const cMoveBtn=$('#cMove'); if(cMoveBtn) cMoveBtn.onclick=openReassignFcModal;
+  const cMobBtn=$('#cMob'); if(cMobBtn) cMobBtn.onclick=openAssignMobilizerModal;
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
   const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
@@ -15627,6 +15628,201 @@ function dupDiff(a, b){
   });
 }
 
+/* ================= MOBILIZER (v163) =================
+
+   The admin: "FCs are deeply involved with haat farmers ... they have limited
+   bandwidth to engage with every conversion farmer ... we have a team of
+   mobilizers who have connect with 5-10 farmers ... This role can only see
+   list of those 5-10 conversion farmers - they can open form, update
+   progress, update photos and submit."
+
+   A mobilizer is NOT a small FC. An FC deliberately sees every farmer so the
+   team can back each other up (see filterByCurrentFc, which is a no-op on
+   purpose). A mobilizer sees only the farmers handed to them, and only in the
+   Conversion programme — no Haat, no queue, no planning, no other farmers.
+   That scope is enforced here in myMobilizerFarmers(), which is the ONLY way
+   their screens get a farmer list.
+
+   Once inside a farmer they get exactly what an FC gets — the same visit and
+   score form, the same photo capture — because the admin asked for "same as
+   the fc". Nothing about how a visit is stored changes: it is recorded
+   against the farmer the same way, so an FC opening that farmer afterwards
+   sees the mobilizer's visit as an ordinary visit.
+
+   Assignment lives in ONE field, mobilizerId on the conversion farmer,
+   holding the mobilizer's username key. No farmer moves programme, no
+   coordinator is displaced: a farmer can have an FC and a mobilizer at once,
+   which is the whole point. */
+function isMobilizerUser(){ return !!(SESSION && SESSION.role === 'mobilizer'); }
+function currentMobilizerId(){ return isMobilizerUser() ? (SESSION.userId || '') : null; }
+function mobilizerList(){
+  return (typeof getUsersList === 'function' ? getUsersList() : [])
+    .filter(u => u && u.role === 'mobilizer' && u.active !== false);
+}
+function mobilizerById(id){ return mobilizerList().find(u => u && u.id === id) || null; }
+/* The hard scope. Archived and seeded records are never included, and an
+   empty/unknown id yields nothing rather than everything — the failure mode
+   of a scoping bug should be "sees nothing", never "sees everyone". */
+function myMobilizerFarmers(){
+  const me = currentMobilizerId();
+  if(!me) return [];
+  return (DB.convFarmers || []).filter(f =>
+    f && !f._archived && !_isSeededRecord(f) && f.mobilizerId === me);
+}
+function mobilizerFarmerCount(id){
+  return (DB.convFarmers || []).filter(f => f && !f._archived && f.mobilizerId === id).length;
+}
+
+function renderMobBottomNav(){
+  let el = document.getElementById('fc-bnav');
+  if(!el){ el = document.createElement('div'); el.id = 'fc-bnav'; document.body.appendChild(el); }
+  const tabs = [
+    {r:'mob_farmers', p:I.check, label:'My farmers'},
+    {r:'fc_profile',  p:I.user,  label:'Profile'},
+  ];
+  el.innerHTML = tabs.map(t => `
+    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}">
+      <div class="nb">${svg(t.p,1.8)}</div><span>${t.label}</span>
+    </button>`).join('');
+  el.querySelectorAll('.fc-ni').forEach(b => {
+    b.onclick = () => { ROUTE = b.dataset.route; render(); };
+  });
+}
+
+function viewMobFarmers(){
+  const v = $('#view');
+  const mine = myMobilizerFarmers();
+  const me = mobilizerById(currentMobilizerId());
+  // _fcTopbar(avatar, subtitle, title) — the same header the FC screens use.
+  const initials = ((me && me.name) || 'M').trim().slice(0,1).toUpperCase();
+  const head = (typeof _fcTopbar === 'function')
+    ? _fcTopbar(initials, (me && me.name) || 'Mobilizer', 'My farmers · મારા ખેડૂતો')
+    : '';
+  if(!mine.length){
+    v.innerHTML = head + `<div class="empty" style="margin-top:18px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">કોઈ ખેડૂત સોંપાયા નથી</div>
+      <div style="font-size:13px;color:var(--ink-soft)">No farmers have been assigned to you yet. The office assigns them.</div>
+    </div>`;
+    return;
+  }
+  const card = f => {
+    const cs = (typeof calculateConvScore === 'function') ? calculateConvScore(f) : null;
+    const scored = cs && cs.assessed;
+    const st = scored && CONV_SCORE_STATUS[cs.status] ? CONV_SCORE_STATUS[cs.status] : null;
+    const last = (f.visits && f.visits.length) ? fmtDate(f.visits[f.visits.length-1].date) : '';
+    return `<div class="card" style="padding:13px 14px;margin-bottom:10px">
+      <div style="font-size:15px;font-weight:700">${esc(f.name||'—')}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">
+        ${esc(f.village||'')}${f.taluka?' · '+esc(String(f.taluka).split(' (')[0]):''}
+        ${f.phone?' · <a href="tel:'+esc(f.phone)+'" style="color:var(--accent);text-decoration:none">'+esc(f.phone)+'</a>':''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        ${scored
+          ? '<span class="tag ' + (st?st.cls:'grey') + '" style="font-size:10.5px">' + esc(st?st.label:'') + ' · ' + cs.total + '/100</span>'
+          : '<span class="tag grey" style="font-size:10.5px">હજી મૂલ્યાંકન બાકી · not yet scored</span>'}
+        ${last ? '<span style="font-size:11.5px;color:var(--ink-faint)">છેલ્લી મુલાકાત ' + esc(last) + '</span>' : ''}
+      </div>
+      <button class="btn btn-primary btn-sm" data-mobvisit="${esc(f.id)}" style="margin-top:11px;width:100%;line-height:1.3">
+        મુલાકાત નોંધો<span style="display:block;font-size:10.5px;font-weight:400;opacity:.8">Log visit + score</span>
+      </button>
+    </div>`;
+  };
+  v.innerHTML = head
+    + `<div class="hint" style="margin:12px 0">તમને સોંપાયેલા ખેડૂતો. ખેડૂત પસંદ કરીને મુલાકાત નોંધો, પ્રગતિ અને ફોટા ઉમેરો.
+        <span style="color:var(--ink-faint)">Your assigned farmers. Open one to log a visit, update progress and add photos.</span></div>`
+    + `<div class="fc-cards">${mine.map(card).join('')}</div>`;
+  v.querySelectorAll('[data-mobvisit]').forEach(b => {
+    b.onclick = () => openConvScoreModal(b.dataset.mobvisit);
+  });
+}
+
+/* ---- admin side: hand farmers to a mobilizer ----
+   Same shape as the coordinator move (v162): show the exact list first, write
+   one field, never touch anything else, and let it be undone by assigning
+   back to "nobody". */
+function openAssignMobilizerModal(){
+  const mobs = mobilizerList();
+  if(!mobs.length){
+    modalShell('Assign to mobilizer',
+      '<div class="hint">No mobilizer accounts exist yet. Create one first in <b>Settings → Users</b> '
+      + '(role <b>Mobilizer</b>), then come back here to hand them farmers.</div>',
+      '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
+    return;
+  }
+  const pool = (DB.convFarmers||[]).filter(f => f && !f._archived && !_isSeededRecord(f));
+  const talukas = {};
+  pool.forEach(f => { const t = (talukaDisplayName(f.taluka,f.district)||f.district||'—').trim(); talukas[t] = (talukas[t]||0)+1; });
+  const tOpts = Object.keys(talukas).sort().map(t => [t, t + ' (' + talukas[t] + ')']);
+
+  const body = `
+    <div class="hint" style="margin-bottom:12px">
+      A mobilizer sees only the farmers you give them, and only in the Conversion programme.
+      This does not change who the field coordinator is — a farmer can have both.
+    </div>
+    <div class="field-row">
+      ${fld('Mobilizer', sel('amMob', mobs.map(m => [m.id, m.name + ' (' + mobilizerFarmerCount(m.id) + ' now)'])), true)}
+      ${fld('Taluka', sel('amTaluka', tOpts, tOpts[0] && tOpts[0][0]), true)}
+    </div>
+    <div id="amPick" style="margin-top:6px"></div>`;
+
+  modalShell('Assign farmers to a mobilizer', body,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="amGo">Assign selected</button>`);
+
+  function refresh(){
+    const t = $('#amTaluka').value, mobId = $('#amMob').value;
+    const list = pool.filter(f => (talukaDisplayName(f.taluka,f.district)||f.district||'—').trim() === t);
+    $('#amPick').innerHTML = list.length
+      ? '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px">Tick the farmers to hand to <b>'
+        + esc((mobilizerById(mobId)||{}).name||'') + '</b>. Already theirs are ticked.</div>'
+        + '<div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px">'
+        + list.map(f => '<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 2px;cursor:pointer">'
+            + '<input type="checkbox" data-amf="' + esc(f.id) + '" ' + (f.mobilizerId === mobId ? 'checked' : '') + ' style="margin-top:3px">'
+            + '<span style="font-size:12.5px">' + esc(f.name||f.id)
+            + '<span style="display:block;font-size:11px;color:var(--ink-faint)">' + esc(f.village||'') + ' · ' + esc(f.id)
+            + (f.mobilizerId && f.mobilizerId !== mobId ? ' · now with ' + esc((mobilizerById(f.mobilizerId)||{}).name||f.mobilizerId) : '')
+            + '</span></span></label>').join('')
+        + '</div>'
+      : '<div class="hint">No conversion farmers in that taluka.</div>';
+  }
+  $('#amTaluka').onchange = refresh;
+  $('#amMob').onchange = refresh;
+  refresh();
+
+  $('#amGo').onclick = async () => {
+    const mobId = $('#amMob').value;
+    const mobN = (mobilizerById(mobId)||{}).name || mobId;
+    const boxes = [...document.querySelectorAll('[data-amf]')];
+    const want = new Set(boxes.filter(b => b.checked).map(b => b.dataset.amf));
+    const shown = boxes.map(b => b.dataset.amf);
+    const add = [], remove = [];
+    shown.forEach(id => {
+      const f = (DB.convFarmers||[]).find(x => x.id === id); if(!f) return;
+      if(want.has(id) && f.mobilizerId !== mobId) add.push(f);
+      if(!want.has(id) && f.mobilizerId === mobId) remove.push(f);
+    });
+    if(!add.length && !remove.length) return toast('Nothing changed');
+    const ok = await confirmModal({
+      title: 'Update ' + mobN + "'s farmers?",
+      message: (add.length ? add.length + ' farmer' + (add.length===1?'':'s') + ' will be handed to ' + mobN + '.' : '')
+        + (add.length && remove.length ? String.fromCharCode(10) : '')
+        + (remove.length ? remove.length + ' farmer' + (remove.length===1?'':'s') + ' will be taken off their list.' : '')
+        + String.fromCharCode(10,10)
+        + 'Only who the mobilizer is changes. The field coordinator, the stage, the score and every '
+        + 'recorded visit stay exactly as they are, and no farmer is removed from the Conversion programme.',
+      confirmLabel: 'Save' });
+    if(!ok) return;
+    add.forEach(f => { f.mobilizerId = mobId; markLocalTouch('convFarmers', f.id); });
+    remove.forEach(f => { delete f.mobilizerId; markLocalTouch('convFarmers', f.id); });
+    logActivity('status', '<b>' + esc(mobN) + '</b> mobilizer list updated — '
+      + add.length + ' added, ' + remove.length + ' removed. Coordinator, stage, score and visits unchanged.');
+    await saveDB();
+    closeModal();
+    render();
+    toast(mobN + ': ' + add.length + ' added, ' + remove.length + ' removed');
+  };
+}
+
 /* v159 — pick which enrolment form the merged farmer leads with.
    Both are always kept; this only decides which is Form 1 and which is Form 2.
    The answer counts are on the buttons because that is the whole basis for
@@ -16381,8 +16577,16 @@ function render(){
   if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','dupRecords'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
+  /* v163 — a mobilizer only ever has two screens. Anything else, including
+     every FC screen, bounces to their own farmer list. */
+  if(isMobilizerUser() && ['mob_farmers','fc_profile'].indexOf(ROUTE) < 0) ROUTE = 'mob_farmers';
   document.body.classList.toggle('fc-mode', !isAdminUser());
   renderNav();
+  if(isMobilizerUser()){
+    renderMobBottomNav();
+    (ROUTE === 'fc_profile' ? viewFcProfile : viewMobFarmers)();
+    return;
+  }
   if(!isAdminUser()){
     renderFcBottomNav();
     ({haat:viewFcActivity,conversion:viewFcConversion,verification:viewFcQueue,
@@ -18628,6 +18832,7 @@ function openUserModal(userId, opts) {
         <select id="umRole" style="width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:14px;background:#fff">
           <option value="admin" ${!lockFc && (!editing || editing.role==='admin') ? 'selected' : ''}>Admin \u2014 full access</option>
           <option value="fc"    ${lockFc || (editing && editing.role==='fc')    ? 'selected' : ''}>Field Coordinator</option>
+          <option value="mobilizer" ${editing && editing.role==='mobilizer' ? 'selected' : ''}>Mobilizer \u2014 a few conversion farmers only</option>
         </select>
       </div>
       <div id="umFcRow" style="${(lockFc || (editing && editing.role==='fc')) ? '' : 'display:none'}">
@@ -18888,7 +19093,7 @@ function openLoginModal(){
       }
     }
     // Success — set session and flip to admin mode.
-    SESSION = { role: authUser.role, userId: authUser.fcCode || '', userName: authUser.name };
+    SESSION = { role: authUser.role, userId: authUser.fcCode || authUser.id || '', userName: authUser.name };
     saveSession(SESSION);
     // v9 process-fix M2 — multi-device warning. Track active sessions in
     // Firebase under activeSessions/{userId}. On sign-in, check if another

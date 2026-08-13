@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v180';
+const CACHE = 'sristi-fv-v181';
 
 const SHELL = [
   './',
@@ -8,6 +8,10 @@ const SHELL = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+  // v181 — App Check SDK. Precached like the others so an offline reopen does
+  // not sit waiting on a CDN. If it fails to cache, allSettled shrugs and the
+  // activation guard in index.html skips App Check entirely.
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',

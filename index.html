@@ -18,6 +18,7 @@
 <link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js">
 <link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js">
 <link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js">
+<link rel="preload" as="script" href="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <meta name="theme-color" content="#3b82f6">
@@ -900,6 +901,10 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<!-- v181 - App Check. If this file fails to load (offline, CDN blocked, ad
+     blocker) firebase.appCheck is simply undefined and the guard below skips
+     activation; nothing else changes. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
 <!-- CGPT UI refresh: presentation-only SaaS and FC mobile layer. App logic unchanged. -->
 <style>
 :root{
@@ -3208,7 +3213,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v180';
+const APP_VERSION = 'v181';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3228,6 +3233,14 @@ const FB_CONFIG = {
   appId:         "1:269627097742:web:2d82d97f0621db87133fdf",
 };
 const FB_NAMESPACE='prakrutik_kheti';   // all data lives under this node
+/* v181 - reCAPTCHA v3 site key for App Check. This is a PUBLIC value by design,
+   exactly like apiKey above - it identifies the site, it does not authorise
+   anything, and the matching secret stays in the Firebase console.
+   EMPTY = App Check is completely inactive. Fill this in only after the
+   reCAPTCHA provider has been registered in Firebase Console > App Check for
+   the domain sristikrsf.github.io, or every request starts failing to get a
+   token for no benefit. */
+const APPCHECK_SITE_KEY = '';
 const FB={app:null,db:null,online:navigator.onLine,ready:false,initFailed:false};
 
 function fbConfigured(){
@@ -3266,6 +3279,44 @@ async function loadDB(){
   if(fbConfigured() && typeof firebase!=='undefined'){
     try{
       FB.app=firebase.initializeApp(FB_CONFIG);
+
+      /* ===== v181 - APP CHECK, MONITORING ONLY =====
+         Attaches a "this request really did come from the app" token to every
+         Firebase call. Firebase RECORDS whether a token was present. NOTHING IS
+         BLOCKED: that is enforcement, a separate switch in the console and a
+         separate decision. Turning enforcement on before the console shows 100%
+         verified traffic is how you lock out a field coordinator, and it does
+         not look like a security error to them - it looks like the app is dead.
+
+         What this does NOT do: it does not close the underlying hole. The
+         database rule is still `auth != null` and the app still signs everyone
+         in anonymously, so anyone using the REAL app still reaches everything.
+         This makes the database hard to reach from OUTSIDE the app. It is a
+         strong lock on the door, not a different door.
+
+         Everything below is deliberately defensive, because it runs in the most
+         fragile line of the whole boot sequence - after initializeApp, before
+         the database is touched. A throw here would show every user an empty
+         app. So it:
+           - does nothing unless a site key is set (empty key = App Check off);
+           - does nothing if the SDK did not load (offline / CDN blocked);
+           - is wrapped so a throw can never stop boot;
+           - is NOT awaited, so a slow reCAPTCHA cannot delay first paint.
+         Verified by booting with a deliberately INVALID key: app still loads,
+         still signs in, still shows data. */
+      try{
+        if(APPCHECK_SITE_KEY && typeof firebase.appCheck === 'function'){
+          firebase.appCheck().activate(
+            new firebase.appCheck.ReCaptchaV3Provider(APPCHECK_SITE_KEY),
+            true   // keep the token refreshed in the background
+          );
+          console.info('[AppCheck] activated - monitoring only, nothing is blocked');
+        }
+      }catch(e){
+        // Never rethrow. An App Check problem must never cost anyone their app.
+        console.warn('[AppCheck] not activated:', (e && e.message) || e);
+      }
+
       // Anonymous auth gates RTDB. SDK caches token in localStorage so
       // offline visits after first load continue to work.
       try{ await firebase.auth().signInAnonymously(); }

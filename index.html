@@ -168,6 +168,16 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   white-space:nowrap;
 }
 .btn:active{transform:translateY(.5px)}
+/* v169 - the clean answer on A1/A2 is green, and has to beat .btn-primary's
+   gradient. background alone is not enough: that gradient is a background
+   IMAGE, so it must be cleared or it paints straight over any colour. */
+.btn.a-clean, .btn.a-clean:hover{
+  background:#16a34a !important;
+  background-image:none !important;
+  border-color:#16a34a !important;
+  color:#fff !important;
+}
+.btn.a-clean svg{color:#fff}
 .btn svg{width:14px;height:14px;stroke-width:2.4}
 .btn-primary{background:var(--accent);color:#fff;
   box-shadow:0 1px 2px rgba(37,99,235,.25),0 2px 8px -2px rgba(37,99,235,.35)}
@@ -3182,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v168';
+const APP_VERSION = 'v169';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7403,8 +7413,7 @@ function openConvScoreModal(id){
       /* v168 - the clean answer is the GREEN one. It used to take the same clay
          fill as every other selected button, so once chosen "no chemicals" and
          "chemicals found" looked identical. */
-      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left'
-      +     (noOn ? ';background:var(--green);border-color:var(--green);color:#fff' : '') + '" data-aset="' + key + '" data-av="no">' + svg(I.check,2)
+      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary a-clean' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="no">' + svg(I.check,2)
       +     (key==='A1' ? 'રાસાયણિક ખાતર નથી' : 'રાસાયણિક દવા નથી') + ' (' + fw.marks + ')</button>'
       +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="yes">✗ '
       +     (key==='A1' ? 'ખાતર મળ્યું' : 'દવા મળી') + ' (0)</button>'
@@ -7652,20 +7661,10 @@ function openConvScoreModal(id){
     btn.parentNode.querySelectorAll('button').forEach(b => {
       const isNo = b.dataset.av === 'no';
       const on = (isNo && W[key].confirmed === true) || (!isNo && W[key].confirmed === false);
-      b.className = 'btn ' + (on ? (isNo ? 'btn-primary' : 'btn-clay') : 'btn-ghost') + ' btn-sm';
-      /* v168 - this handler repaints by swapping classes, it does not re-render
-         the section, so the green the markup applies to a chosen clean answer
-         has to be applied (and removed) here too. Without this the green only
-         appeared when reopening an already-scored farmer. */
-      if(isNo && on){
-        b.style.background = 'var(--green)';
-        b.style.borderColor = 'var(--green)';
-        b.style.color = '#fff';
-      } else if(isNo){
-        b.style.background = '';
-        b.style.borderColor = '';
-        b.style.color = '';
-      }
+      /* v169 - this handler repaints by swapping classes and does NOT re-render
+         the section, so the green class has to be applied here too or it would
+         only ever show when reopening an already-scored farmer. */
+      b.className = 'btn ' + (on ? (isNo ? 'btn-primary a-clean' : 'btn-clay') : 'btn-ghost') + ' btn-sm';
     });
     // Hide the per-section "must answer" warning once the FC has decided.
     const section = btn.closest('div[style*="border-left"]');

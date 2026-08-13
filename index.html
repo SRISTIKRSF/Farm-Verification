@@ -171,6 +171,22 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 /* v169 - the clean answer on A1/A2 is green, and has to beat .btn-primary's
    gradient. background alone is not enough: that gradient is a background
    IMAGE, so it must be cleared or it paints straight over any colour. */
+/* v180 - the C1 / C2 land boxes in the visit form sat at different heights on a
+   phone. Nothing was wrong with the boxes: C1's Gujarati label ("કુલ ખેતીલાયક
+   જમીન (એકર)") fits on one line at 375-428px while C2's longer one ("ઝેર-મુક્ત
+   ખેતી હેઠળનો વિસ્તાર (એકર)") wraps to two, so the second box started 16px lower
+   than the first. It lined up at 375px inside the wide admin modal and at
+   desktop widths, which is why it survived testing - the gap only opens across
+   the band of widths real phones actually are.
+   Each field is now a column that pushes its input to the BOTTOM, so the boxes
+   line up whatever the labels do - one line, two, or three. Below 560px they
+   stack full-width instead: two 140px number boxes under three-line Gujarati
+   labels was never a phone layout. */
+.c-land-row{display:flex;gap:10px;flex-wrap:wrap}
+.c-land-fld{flex:1;min-width:140px;display:flex;flex-direction:column;justify-content:flex-end}
+.c-land-fld label{font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px}
+.c-land-fld input{width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px}
+@media (max-width:560px){ .c-land-fld{flex:1 0 100%;min-width:0} }
 .btn.a-clean, .btn.a-clean:hover{
   background:#16a34a !important;
   background-image:none !important;
@@ -3192,7 +3208,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v179';
+const APP_VERSION = 'v180';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7567,9 +7583,9 @@ function openConvScoreModal(id){
       // v8 bug fix: marks come from the editable framework, not hardcoded.
       /* v174 - same as the B sections: the scoring rule is the app's business,
          not something to explain to the person filling the form in. */
-      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">C1. કુલ ખેતીલાયક જમીન (એકર)</label><input type="number" min="0" step="0.25" data-cv="totalLand" value="' + esc(W.C.totalLand) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">C2. ઝેર-મુક્ત ખેતી હેઠળનો વિસ્તાર (એકર)</label><input type="number" min="0" step="0.25" data-cv="chemFreeLand" value="' + esc(W.C.chemFreeLand) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
+      + '<div class="c-land-row">'
+      +   '<div class="c-land-fld"><label>C1. કુલ ખેતીલાયક જમીન (એકર)</label><input type="number" min="0" step="0.25" inputmode="decimal" data-cv="totalLand" value="' + esc(W.C.totalLand) + '"></div>'
+      +   '<div class="c-land-fld"><label>C2. ઝેર-મુક્ત ખેતી હેઠળનો વિસ્તાર (એકર)</label><input type="number" min="0" step="0.25" inputmode="decimal" data-cv="chemFreeLand" value="' + esc(W.C.chemFreeLand) + '"></div>'
       + '</div>'
       + '<div id="cDelta" style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)"></div>'
       + '</div>';

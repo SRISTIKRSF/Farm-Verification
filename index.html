@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v178';
+const APP_VERSION = 'v179';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -11344,11 +11344,28 @@ function mapFormRow(row){
   const taluka  = pick(row,'taluka','તાલુકો');
   const district= pick(row,'district','જિલ્લો');
   const state   = pick(row,'state') || 'Gujarat';
-  const bighaStr= pick(row,'totalland','land','landbigha','total land','total land (bigha)','land (bigha)');
-  // KRSF CSV column "Convert (bigha)" = how much land the farmer wants under organic conversion.
-  const orgBigha= pick(row,'areafororganic','organicarea','area for organic farming','organic land','convertbigha','convert','convert (bigha)','land for conversion');
-  const bigha   = parseFloat(bighaStr)||0;
-  const landAcres = bigha ? +(bigha*0.625).toFixed(2) : 0;  // Gujarat bigha ≈ 0.625 acre
+  /* v179 - acre is the unit of record everywhere now, so the importer looks
+     for an acre column FIRST and takes that figure exactly as given. A column
+     that says bigha in its heading still converts, because the older KRSF
+     sheets genuinely are in bigha. A bare "Land" / "Total land" heading names
+     no unit at all: it used to be assumed to be bigha, which now silently
+     shrinks a modern acre sheet by 1.6x on every row, so it is read as ACRES
+     and the preview says so before anything is imported. */
+  const acreStr = pick(row,'landacres','land acres','land (acre)','land (acres)','totallandacre','total land (acre)','total land (acres)','acres','acre');
+  const bighaCol= pick(row,'landbigha','land bigha','land (bigha)','total land (bigha)','totallandbigha');
+  const plainCol= pick(row,'totalland','total land','land');
+  // Convert-area column, read exactly like the land column above: an acre
+  // heading wins, an explicit bigha heading converts, an unlabelled heading
+  // is acres. KRSF's older sheets head this column "Convert (bigha)".
+  const orgAcre  = pick(row,'convertacres','convert acres','convert (acre)','convert (acres)','organicacres','organic land (acre)','areafororganicacre');
+  const orgBighaCol = pick(row,'convertbigha','convert (bigha)','organic land (bigha)','areafororganicbigha');
+  const orgPlain = pick(row,'areafororganic','organicarea','area for organic farming','organic land','convert','land for conversion');
+  const orgBigha = orgBighaCol;
+  const bigha   = parseFloat(bighaCol)||0;
+  let landAcres = 0, _landUnit = 'none';
+  if(parseFloat(acreStr) > 0){ landAcres = +parseFloat(acreStr).toFixed(2); _landUnit = 'acre'; }
+  else if(bigha){ landAcres = +(bigha*0.625).toFixed(2); _landUnit = 'bigha'; }   // Gujarat bigha ≈ 0.625 acre
+  else if(parseFloat(plainCol) > 0){ landAcres = +parseFloat(plainCol).toFixed(2); _landUnit = 'assumed-acre'; }
   const cropStrs=[
     pick(row,'crop1','crop 1','cropname1','crop1name'),
     pick(row,'crop2','crop 2','cropname2','crop2name'),
@@ -11379,6 +11396,13 @@ function mapFormRow(row){
     id: uid('CF'), program:'conversion',
     name, phone, village, taluka: talukaDisplayName(taluka,district), district, state,
     landAcres, landBigha:bigha, organicBigha:parseFloat(orgBigha)||0,
+    // Always a real acre figure, so the `organicAcres ?? organicBigha` fallback
+    // on the farmer card can never print a bigha number labelled "acre".
+    organicAcres:
+      parseFloat(orgAcre) > 0      ? +parseFloat(orgAcre).toFixed(2) :
+      parseFloat(orgBighaCol) > 0  ? +(parseFloat(orgBighaCol)*0.625).toFixed(2) :
+      parseFloat(orgPlain) > 0     ? +parseFloat(orgPlain).toFixed(2) : 0,
+    _landUnit,                                  // preview-only, stripped on import
     crops: cropsRaw,
     fcId: fc ? fc.id : '',
     // Preview-only flag: set when a real name was provided that didn't match any FC.
@@ -12213,7 +12237,8 @@ function openConvEnrollmentForm(){
 function openImportFormModal(){
   const body=`<div class="hint" style="margin-bottom:12px">
     Upload a <b>CSV</b> file (e.g. the KRSF farmer list) or paste CSV/JSON below. First row of CSV must be the column names. Field names are matched loosely (case + spaces ignored).
-    <div style="margin-top:6px;font-size:11px">Recognised columns: <code>Name, Mobile, Village, Taluka, District, Land (bigha), Convert (bigha), Crop 1/2/3, Uses Chemicals, Uses FYM, Field Coordinator, Survey Date</code></div>
+    <div style="margin-top:6px;font-size:11px">Recognised columns: <code>Name, Mobile, Village, Taluka, District, Land (acre), Convert (acre), Crop 1/2/3, Uses Chemicals, Uses FYM, Field Coordinator, Survey Date</code></div>
+    <div style="margin-top:5px;font-size:11px;color:var(--ink-soft)">Land is recorded in <b>acres</b>. Put the unit in the heading — <code>Land (acre)</code> or <code>Land (bigha)</code> — and a bigha column is converted for you. A bare <code>Land</code> heading is read as acres.</div>
   </div>
   <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <label class="btn btn-ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
@@ -12270,6 +12295,19 @@ function openImportFormModal(){
     let h = corruptRows.length ? `<div class="hint" style="margin-bottom:10px;background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b;border-radius:8px;padding:10px 12px">
       ⚠ <b>${corruptRows.length} row${corruptRows.length===1?'':'s'}</b> ha${corruptRows.length===1?'s':'ve'} "??" in place of text — this is almost always Gujarati/Hindi script that got destroyed by Excel (opening/re-saving a CSV without a UTF-8 marker turns non-English characters into literal "?"). That text <b>cannot be recovered</b> from this file. Re-export the source spreadsheet as "CSV UTF-8" (not plain "CSV") and re-upload, or accept these rows will import with "?" in the affected field.
     </div>` : '';
+    /* v179 - reading a land column in the wrong unit is a silent 1.6x error on
+       every row, and nothing downstream would ever look wrong enough to notice.
+       Say which way it was read while the admin can still cancel. */
+    const unitCount = u => parsed.filter(x => x._landUnit === u).length;
+    const nAcre = unitCount('acre'), nBigha = unitCount('bigha'), nAssumed = unitCount('assumed-acre');
+    if(nBigha || nAssumed){
+      h += `<div class="hint" style="margin-bottom:10px;background:#fffbeb;border:1.5px solid #fde68a;color:#92400e;border-radius:8px;padding:10px 12px">
+        ⚠ <b>Check the land unit.</b> `
+        + (nBigha ? `<b>${nBigha}</b> row${nBigha===1?'':'s'} had a heading that says <b>bigha</b> — those were converted to acres (× 0.625). ` : '')
+        + (nAssumed ? `<b>${nAssumed}</b> row${nAssumed===1?'':'s'} had a land column with <b>no unit in the heading</b> — read as <b>acres</b>. If that sheet is in bigha, cancel and rename the column to "Land (bigha)" first. ` : '')
+        + (nAcre ? `<b>${nAcre}</b> row${nAcre===1?'':'s'} named acres explicitly. ` : '')
+        + `</div>`;
+    }
     h+=`<div class="hint" style="margin-bottom:6px">Detected <b>${parsed.length}</b> farmer${parsed.length===1?'':'s'}:</div>
       <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px">
       <table style="width:100%;font-size:12px;border-collapse:collapse">
@@ -12318,7 +12356,7 @@ function openImportFormModal(){
     const normName  = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
     let added=0, skipped=0;
     parsed.forEach(p=>{
-      const {_unmatchedFcName, ...rec} = p;
+      const {_unmatchedFcName, _landUnit, ...rec} = p;
       if(rec.phone) rec.phone = _normPhone(rec.phone) || rec.phone;
       const nm = normName(rec.name);
       // Dedup against ACTIVE farmers only — archived records must NOT count as
@@ -19486,206 +19524,17 @@ function viewPublicConvForm(){
 // might still point at the short forms. Live public submissions go through
 // the existing full enrolment forms (openEnrollmentForm / openConvEnrollmentForm).
 // Safe to delete after a release cycle if no telemetry hits show this is called.
+/* v179 - was a second, older public enrolment form that asked for land in
+   BIGHA and multiplied by 0.625 on submit. It has had no callers since v8.2
+   (live public submissions go through openEnrollmentForm /
+   openConvEnrollmentForm, both of which ask acres and store acres), but it
+   was kept as a fallback for old deep links - so the one place left in the
+   app where somebody could type a land figure in bigha was a form nobody
+   was watching. Acre is now the unit everywhere, so the fallback sends the
+   farmer to the real form instead of to a second, divergent one.
+   The old links keep working; there is simply only one form behind them. */
 function renderPublicForm(kind){
-  const isHaat = kind === 'haat';
-  const v = $('#view');
-  // Build crop checkboxes
-  const cropHtml = PUBLIC_CROPS_HAAT.map((c,i) =>
-    `<label class="pf-check"><input type="checkbox" data-crop="${esc(c[0])}"><span>${esc(c[0])} <span style="color:#929fb5;font-size:11.5px">/ ${esc(c[1])}</span></span></label>`
-  ).join('');
-  const districtOpts = PUBLIC_DISTRICTS.map(d => `<option>${esc(d)}</option>`).join('');
-  const timeOpts = PUBLIC_TIME_SLOTS.map(t => `<option value="${esc(t[0])}">${esc(t[1])}</option>`).join('');
-
-  const titleGu = isHaat ? 'ખેડૂત હાટ સાથે જોડાવા માટેનું ફોર્મ' : 'પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ';
-  const titleEn = isHaat ? 'Join Khedut Haat' : 'Apply for Conversion';
-
-  // Conversion-specific block (chemicals + willingness)
-  const convBlock = !isHaat ? `
-    <div class="pf-fld">
-      <label>હાલમાં રસાયણ વાપરો છો? <span class="en">Currently using chemicals?</span> <span class="req">*</span></label>
-      <div class="pf-yn" id="pfChem">
-        <button type="button" class="chip" data-v="yes">હા / Yes</button>
-        <button type="button" class="chip" data-v="some">થોડુંઘણું / Some</button>
-        <button type="button" class="chip" data-v="no">ના / No</button>
-      </div>
-    </div>
-    <div class="pf-fld">
-      <label>કુલ જમીન (વીઘા) <span class="en">Total land (bigha)</span> <span class="req">*</span></label>
-      <input type="number" id="pfLand" min="0" step="0.5" inputmode="decimal" placeholder="દા.ત. 5">
-    </div>
-    <div class="pf-fld">
-      <label>કેટલા વીઘા કન્વર્ટ કરવા તૈયાર છો? <span class="en">Bigha you'd convert</span> <span class="req">*</span></label>
-      <input type="number" id="pfConvert" min="0" step="0.5" inputmode="decimal" placeholder="દા.ત. 3">
-    </div>
-  ` : `
-    <div class="pf-fld">
-      <label>કુલ જમીન (એકર) <span class="en">Total land (acres)</span> <span class="req">*</span></label>
-      <input type="number" id="pfLand" min="0" step="0.1" inputmode="decimal" placeholder="દા.ત. 4.5">
-    </div>
-    <div class="pf-fld">
-      <label>કેટલા વર્ષથી પ્રાકૃતિક ખેતી કરો છો? <span class="en">Years doing organic</span> <span class="req">*</span></label>
-      <input type="number" id="pfYears" min="0" max="60" inputmode="numeric" placeholder="દા.ત. 4">
-    </div>
-  `;
-
-  v.innerHTML = `
-    <div class="pf-wrap">
-      <div class="pf-head">
-        <button class="pf-back" id="pfBack" title="પાછા જાઓ">←</button>
-        <div>
-          <h1>${esc(titleGu)}</h1>
-          <div class="en">${esc(titleEn)}</div>
-        </div>
-      </div>
-      <div id="pfErr"></div>
-      <div class="pf-card">
-        <div class="pf-fld">
-          <label>નામ <span class="en">Full name</span> <span class="req">*</span></label>
-          <input type="text" id="pfName" placeholder="તમારું પૂરું નામ">
-        </div>
-        <div class="pf-fld">
-          <label>મોબાઈલ નંબર <span class="en">Mobile (10 digit)</span> <span class="req">*</span></label>
-          <input type="tel" id="pfMobile" maxlength="10" inputmode="numeric" placeholder="9876543210">
-        </div>
-        <div class="pf-fld">
-          <label>ગામ <span class="en">Village</span> <span class="req">*</span></label>
-          <input type="text" id="pfVillage" placeholder="તમારા ગામનું નામ">
-        </div>
-        <div class="pf-fld">
-          <label>તાલુકો <span class="en">Taluka</span> <span class="req">*</span></label>
-          <input type="text" id="pfTaluka" placeholder="તાલુકાનું નામ">
-        </div>
-        <div class="pf-fld">
-          <label>જિલ્લો <span class="en">District</span> <span class="req">*</span></label>
-          <select id="pfDistrict"><option value="">— પસંદ કરો / Select —</option>${districtOpts}</select>
-        </div>
-        ${convBlock}
-        <div class="pf-fld">
-          <label>મુખ્ય પાક <span class="en">Main crops (pick all that apply)</span></label>
-          <div class="pf-checks" id="pfCrops">${cropHtml}</div>
-        </div>
-        <div class="pf-fld">
-          <label>FC ક્યારે ફોન કરે? <span class="en">Best time to call</span></label>
-          <select id="pfTime">${timeOpts}</select>
-        </div>
-        <div class="pf-fld">
-          <label>વધારાની માહિતી <span class="en">Anything else? (optional)</span></label>
-          <textarea id="pfNotes" placeholder="તમારી ખેતી વિશે, કોઈ ખાસ વાત, સવાલ…"></textarea>
-        </div>
-        <button class="pf-submit" id="pfSubmit">${isHaat?'અરજી મોકલો':'અરજી મોકલો'} · Submit application</button>
-      </div>
-    </div>
-  `;
-
-  // Back button
-  $('#pfBack').onclick = () => enterPublicMode('public_landing');
-
-  // Y/N chips for conversion
-  if(!isHaat){
-    let chemVal = '';
-    $('#pfChem').querySelectorAll('.chip').forEach(c => {
-      c.onclick = () => {
-        chemVal = c.dataset.v;
-        $('#pfChem').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.v===chemVal));
-      };
-    });
-    window._pfChem = () => chemVal;
-  }
-
-  // Crop checkboxes (visual toggle)
-  v.querySelectorAll('.pf-check input').forEach(cb => {
-    cb.addEventListener('change', () => {
-      cb.closest('.pf-check').classList.toggle('checked', cb.checked);
-    });
-  });
-
-  // Phone digit-only
-  $('#pfMobile').addEventListener('input', e => {
-    const v = e.target.value.replace(/\D/g,'').slice(0,10);
-    if(v !== e.target.value) e.target.value = v;
-  });
-
-  $('#pfSubmit').onclick = () => submitPublicForm(kind);
-}
-
-async function submitPublicForm(kind){
-  const isHaat = kind === 'haat';
-  const name    = ($('#pfName').value||'').trim();
-  const mobile  = ($('#pfMobile').value||'').trim();
-  const village = ($('#pfVillage').value||'').trim();
-  const taluka  = ($('#pfTaluka').value||'').trim();
-  const district= $('#pfDistrict').value;
-  const land    = +($('#pfLand').value||0);
-  const notes   = ($('#pfNotes').value||'').trim();
-  const time    = $('#pfTime').value;
-  const crops   = [...document.querySelectorAll('#pfCrops input:checked')].map(c => c.dataset.crop);
-
-  // Validate
-  const err = $('#pfErr');
-  const missing = [];
-  if(!name) missing.push('નામ');
-  if(!/^\d{10}$/.test(mobile)) missing.push('10-digit મોબાઈલ');
-  if(!village) missing.push('ગામ');
-  if(!taluka) missing.push('તાલુકો');
-  if(!district) missing.push('જિલ્લો');
-  if(!land || land<=0) missing.push(isHaat?'જમીન (એકર)':'જમીન (વીઘા)');
-  if(!isHaat){
-    if(!window._pfChem || !window._pfChem()) missing.push('રસાયણ વાપરો છો?');
-    const convert = +($('#pfConvert').value||0);
-    if(!convert || convert<=0) missing.push('કેટલા વીઘા કન્વર્ટ');
-  } else {
-    const yrs = +($('#pfYears').value||-1);
-    if(yrs < 0) missing.push('વર્ષ - પ્રાકૃતિક ખેતી');
-  }
-  if(missing.length){
-    if(err) err.innerHTML = `<div class="pf-err"><b>કૃપા કરી ભરો / Please fill:</b><br>${missing.map(esc).join(' · ')}</div>`;
-    window.scrollTo({top:0,behavior:'smooth'});
-    return;
-  }
-  if(err) err.innerHTML = '';
-  $('#pfSubmit').disabled = true;
-  $('#pfSubmit').textContent = 'મોકલી રહ્યું છે… / Submitting…';
-
-  const appId = (isHaat?'PUB-HF-':'PUB-CF-') + (Date.now().toString().slice(-7));
-  const submission = {
-    id: appId,
-    program: isHaat ? 'haat' : 'conversion',
-    source: 'self-enrolled-public',
-    submittedAt: new Date().toISOString(),
-    status: 'pending_admin_review',
-    name, mobile, village, taluka, district,
-    crops,
-    notes,
-    bestTimeToCall: time,
-    landAcres: isHaat ? land : +(land*0.625).toFixed(2),  // bigha→acres for conv
-    landBigha: isHaat ? +(land/0.625).toFixed(2) : land,
-  };
-  if(isHaat){
-    submission.yearsOrganic = +($('#pfYears').value||0);
-  } else {
-    submission.usesChemicals = window._pfChem();
-    submission.convertBigha = +($('#pfConvert').value||0);
-  }
-
-  // Save to local + Firebase (queue in IDB if offline for later flush)
-  try {
-    DB.pendingEnrolments = DB.pendingEnrolments || [];
-    DB.pendingEnrolments.push(submission);
-    cacheLocal();
-    if(FB && FB.ready && navigator.onLine){
-      await fbRef('pendingEnrolments/'+appId).set(sanitizeForFB(submission));
-    } else {
-      await idbPut('pendingEnrolments', submission).catch(()=>{});
-    }
-    // Show thanks screen
-    window._pfLastApp = submission;
-    enterPublicMode('public_thanks');
-  } catch (e) {
-    console.error('Public submit failed:', e);
-    if(err) err.innerHTML = `<div class="pf-err"><b>Submit ભૂલ:</b> ${esc(e.message||String(e))}. કૃપા કરી ફરી પ્રયત્ન કરો.</div>`;
-    $('#pfSubmit').disabled = false;
-    $('#pfSubmit').textContent = 'અરજી મોકલો · Submit application';
-  }
+  return kind === 'haat' ? viewPublicHaatForm() : viewPublicConvForm();
 }
 
 // === PDF EXPORT (outer app) ===

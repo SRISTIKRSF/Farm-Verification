@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v174';
+const APP_VERSION = 'v175';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19218,20 +19218,31 @@ function openLoginModal(){
 
   const body = `
     <div class="login-modal-wrap">
-      <div class="lm-hint">તમારું Sristi ID અને Password નાખો<br><span style="font-size:11.5px;color:#929fb5">Enter your Sristi credentials to access the dashboard</span></div>
+      <!-- v175 - the branding stays, the closed-system wording goes. "Sristi ID"
+           and "Sristi credentials" read like an internal staff system; this is
+           an open app, and what the person needs to know is whose app it is,
+           not that their username has a company name attached to it. -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <img src="icon-192.png" alt="" style="width:38px;height:38px;border-radius:9px;flex-shrink:0" onerror="this.style.display='none'">
+        <div style="min-width:0">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#929fb5">SRISTI · KRSF</div>
+          <div style="font-size:15px;font-weight:700;line-height:1.3">સૃષ્ટિ પ્રાકૃતિક ખેતી</div>
+        </div>
+      </div>
+      <div class="lm-hint">પ્રવેશ માટે તમારું યુઝરનેમ અને પાસવર્ડ નાખો<br><span style="font-size:11.5px;color:#929fb5">Enter your username and password</span></div>
       <div id="lmErr"></div>
       <div class="lm-fld">
-        <label>User ID</label>
-        <input id="lmId" autocomplete="username" placeholder="Your phone number or username" autofocus>
+        <label>યુઝરનેમ · Username</label>
+        <input id="lmId" autocomplete="username" placeholder="ફોન નંબર અથવા યુઝરનેમ" autofocus>
       </div>
       <div class="lm-fld">
-        <label>Password</label>
+        <label>પાસવર્ડ · Password</label>
         <input id="lmPw" type="password" autocomplete="current-password" placeholder="••••••••">
       </div>
       <button class="lm-submit" id="lmSubmit">Sign in →</button>
     </div>
   `;
-  modalShell('Sristi Login', body,
+  modalShell('પ્રવેશ · Sign in', body,
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>');
 
   const attempt = async () => {

@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v172';
+const APP_VERSION = 'v173';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7560,7 +7560,8 @@ function openConvScoreModal(id){
        crop stays selected even after it is filtered out of view - the save
        reads the .on chips, not what happens to be visible. */
     + (window.CROPS_CATALOG||[]).filter(c=>c!=='Other (અન્ય)').map(c=>{
-        const common = VS_COMMON_CROPS.some(k => String(c).toLowerCase().indexOf(k) === 0);
+        const plain = (String(c).split('(').length - 1) === 1;   // varieties carry extra brackets
+        const common = plain && VS_COMMON_CROPS.some(k => String(c).toLowerCase().indexOf(k) === 0);
         return `<button type="button" class="vs-crop-chip${common?' vs-common':''}" data-crop="${esc(c)}"${common?'':' style="display:none"'}>${esc(c)}</button>`;
       }).join('')
     + '<button type="button" id="vsCropAll" class="vs-crop-chip" style="border-style:dashed;color:var(--accent)">બધા પાક · show all</button>'
@@ -13469,7 +13470,26 @@ function openConvDrawer(id){
   openDrawer();
 }
 /* ============ MODAL CORE ============ */
-function openModal(){$('#overlay').classList.add('show');$('#modal').classList.add('show');}
+/* v173 (first shipped as v171, lost in the v170 rollback) - on a phone in
+   FC/mobilizer mode the dialog is a SHEET anchored to the screen edges, not a
+   box centred with translate(-50%,-50%). Centring plus a max-height, with a
+   fixed 62px bottom nav over it, put the real bottom at mid-screen and the top
+   half off the top: measured on a 412x915 phone, top -377 / bottom 460, which
+   is why the Save bar sat across the middle of the form.
+   transition:none is the load-bearing line. A CSS transition outranks author
+   rules, !important, AND inline !important while it owns a property, and
+   .modal transitions `transform` - a stylesheet !important rule was verifiably
+   parsed and lost, and an inline important declaration was verifiably on the
+   element and lost. Switching the animation off is what releases it. Measured
+   after: top 8 / bottom 845. Phones in FC mode only; admin is untouched. */
+function _sheetify(m){
+  const on = document.body.classList.contains('fc-mode') && window.innerWidth <= 680;
+  const P = (k,v) => on ? m.style.setProperty(k, v, 'important') : m.style.removeProperty(k);
+  P('top','8px'); P('left','8px'); P('right','8px'); P('bottom','70px');
+  P('width','auto'); P('height','auto'); P('max-height','none');
+  P('transform','none'); P('transition','none');
+}
+function openModal(){$('#overlay').classList.add('show');const _m=$('#modal');_m.classList.add('show');_sheetify(_m);}
 function closeModal(){$('#overlay').classList.remove('show');$('#modal').classList.remove('show');$('#modal').classList.remove('wide');}
 function modalShell(title,bodyHtml,footHtml){
   $('#modal').innerHTML=`

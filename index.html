@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v177';
+const APP_VERSION = 'v178';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7212,15 +7212,68 @@ const CONV_SCORE_FRAMEWORK = {
       {key:'mulching', label:'Mulching', gu:'મલ્ચિંગ / આચ્છાદન'},
     ],
   },
+  /* v178 - C used to ask "did the chemical-free area grow since last season",
+     which scored a farmer on movement and said nothing about how much of his
+     farm is actually poison-free: half a bigha out of forty scored the same
+     full 20 as forty out of forty. It now asks the two figures that matter -
+     total cultivable land, and the part of it under zer-mukt farming - and
+     scores the SHARE. Both in acres, because acres is what the enrolment
+     record already holds (landAcres); the old fields said bigha while the
+     enrolment beside them said acres. */
   C: {
-    label:'How has the chemical-free area changed compared to the previous season?',
-    gu:'પાછલા ઋતુની તુલનામાં રાસાયણિક-મુક્ત વિસ્તારમાં શું ફેરફાર છે?',
-    shortLabel:'Expansion of Chemical-Free Area',
+    label:'What share of the total cultivable land is under poison-free (zer-mukt) farming?',
+    gu:'કુલ ખેતીલાયક જમીનમાંથી કેટલા વિસ્તારમાં ઝેર-મુક્ત ખેતી થાય છે?',
+    shortLabel:'Share of Land under Poison-Free Farming',
     marks:20,
   },
 };
+/* v178 - the marks the programme picked (20 / 15 / 10 / 5 / 0) are exactly
+   100% / 75% / 50% / 25% / 0 of the section total, so the bands are stored as
+   fractions. Change C's marks in Settings and every band rescales with it
+   instead of silently going out of step.
+   Boundaries: the written rule reads "75% to 99.9%" and "50% to 75%", which
+   overlaps at 75. Each band is treated as "this figure and above", so exactly
+   75.0% earns 15, exactly 50.0% earns 10, exactly 25.0% earns 5 - the farmer
+   gets the higher of the two readings. 99.95% lands in the 15 band, not 20;
+   only the whole farm earns full marks. */
+const CONV_C_BANDS = [
+  { minPct:100, frac:1.00 },
+  { minPct:75,  frac:0.75 },
+  { minPct:50,  frac:0.50 },
+  { minPct:25,  frac:0.25 },
+];
+/* A record scored before v178 has previousArea/currentArea and no land figures.
+   Those SIX records keep the old formula for as long as they are untouched, so
+   nobody's score moves under them because the question changed. The moment an
+   FC re-visits and enters the land figures, it switches to the share rule. */
+function convCIsNew(C){ return !!(C && C.totalLand != null && C.totalLand !== ''); }
+function convCInvalid(total, chemFree){
+  const t = parseFloat(total) || 0, c = parseFloat(chemFree) || 0;
+  return t > 0 && c > t + 0.001;         // tolerance covers float noise only
+}
+function convCPercent(total, chemFree){
+  const t = parseFloat(total) || 0, c = parseFloat(chemFree) || 0;
+  if(t <= 0 || c <= 0) return 0;
+  // More poison-free land than land: one of the two figures is wrong. Capping
+  // this at 100% would have handed a typo the full 20 marks, so it scores
+  // nothing until it is corrected - the form says so in red at the same moment.
+  if(convCInvalid(t, c)) return 0;
+  return (c / t) * 100;
+}
+function convCMarks(total, chemFree){
+  const pct = convCPercent(total, chemFree);
+  const max = CONV_SCORE_FRAMEWORK.C.marks;
+  for(let i = 0; i < CONV_C_BANDS.length; i++){
+    if(pct >= CONV_C_BANDS[i].minPct) return Math.round(max * CONV_C_BANDS[i].frac);
+  }
+  return 0;
+}
 // Sections that are NOT user-configurable in Settings (system-generated, mandatory).
-const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2'];
+// v178: C joins the list. Settings only ever exposed C's MARKS box, but a Save
+// there wrote the whole framework back including whatever wording was in memory
+// at the time - which would have re-applied the old question text on top of the
+// new one. Locked means marks still flex; the wording stays system-defined.
+const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2','C'];
 // All B-section keys (used by the scorer to iterate without hard-coding).
 const CONV_SCORE_B_KEYS = ['B1','B2','B3','B4'];
 
@@ -7260,11 +7313,18 @@ function calculateConvScore(f){
   });
   let c = 0;
   let prev = 0, cur = 0, areaDelta = 0;
+  let cPercent = 0, cLegacy = true, totalLand = '', chemFreeLand = '';
   if(s.C){
     prev = parseFloat(s.C.previousArea) || 0;
     cur  = parseFloat(s.C.currentArea)  || 0;
     areaDelta = cur - prev;
-    if(cur > prev) c = CONV_SCORE_FRAMEWORK.C.marks;
+    if(convCIsNew(s.C)){
+      cLegacy = false;
+      totalLand = s.C.totalLand; chemFreeLand = s.C.chemFreeLand;
+      cPercent = convCPercent(totalLand, chemFreeLand);
+      c = convCMarks(totalLand, chemFreeLand);
+    }
+    else if(cur > prev) c = CONV_SCORE_FRAMEWORK.C.marks;
     else if(cur === prev && cur > 0) c = Math.round(CONV_SCORE_FRAMEWORK.C.marks/2);
     else c = 0;
   }
@@ -7283,6 +7343,7 @@ function calculateConvScore(f){
     C:c,
     b1Count:bCounts.B1||0, b2Count:bCounts.B2||0, b3Count:bCounts.B3||0, b4Count:bCounts.B4||0,
     previousArea:prev, currentArea:cur, areaDelta,
+    totalLand, chemFreeLand, cPercent, cLegacy,
   };
 }
 
@@ -7298,7 +7359,18 @@ function openConvScoreModal(id){
           evidence: (existing.A1 && existing.A1.evidence) || [], notes: (existing.A1 && existing.A1.notes) || '' },
     A2: { confirmed: existing.A2 && typeof existing.A2.confirmed === 'boolean' ? existing.A2.confirmed : null,
           evidence: (existing.A2 && existing.A2.evidence) || [], notes: (existing.A2 && existing.A2.notes) || '' },
-    C: { previousArea: (existing.C && existing.C.previousArea != null) ? existing.C.previousArea : '',
+    /* v178 - total land is a stable fact the enrolment already recorded, so it
+       is pre-filled where we have it (137 farmers do) and the FC only corrects
+       it. The chemical-free figure is NOT pre-filled from organicAcres: that
+       number is the farmer's own claim, and this form exists to verify it, not
+       to hand it back as the answer.
+       previousArea/currentArea are carried through untouched - they are the
+       only record of how the six already-scored farmers were scored. */
+    C: { totalLand: (existing.C && existing.C.totalLand != null && existing.C.totalLand !== '')
+                      ? existing.C.totalLand
+                      : ((parseFloat(f.landAcres) || 0) > 0 ? f.landAcres : ''),
+         chemFreeLand: (existing.C && existing.C.chemFreeLand != null) ? existing.C.chemFreeLand : '',
+         previousArea: (existing.C && existing.C.previousArea != null) ? existing.C.previousArea : '',
          currentArea: (existing.C && existing.C.currentArea != null) ? existing.C.currentArea : '' },
   };
   CONV_SCORE_B_KEYS.forEach(g => {
@@ -7347,7 +7419,8 @@ function openConvScoreModal(id){
     });
     const prev = parseFloat(W.C.previousArea)||0, cur = parseFloat(W.C.currentArea)||0;
     let c = 0;
-    if(cur > prev) c = F.C.marks;
+    if(convCIsNew(W.C)) c = convCMarks(W.C.totalLand, W.C.chemFreeLand);
+    else if(cur > prev) c = F.C.marks;
     else if(cur === prev && cur > 0) c = Math.round(F.C.marks/2);
     const total = a1 + a2 + bTotal + c;
     const chemFree = a1 === F.A1.marks && a2 === F.A2.marks;
@@ -7483,10 +7556,10 @@ function openConvScoreModal(id){
 
   function cSection(){
     const cMax = CONV_SCORE_FRAMEWORK.C.marks;
-    // Compute initial C earned from existing previous/current values.
     const prevC = parseFloat(W.C.previousArea)||0, curC = parseFloat(W.C.currentArea)||0;
     let initEarnedC = 0;
-    if(curC > prevC) initEarnedC = cMax;
+    if(convCIsNew(W.C)) initEarnedC = convCMarks(W.C.totalLand, W.C.chemFreeLand);
+    else if(curC > prevC) initEarnedC = cMax;
     else if(curC === prevC && curC > 0) initEarnedC = Math.round(cMax/2);
     const cColor = initEarnedC === cMax ? 'var(--green)' : (initEarnedC > 0 ? 'var(--yellow)' : 'var(--red)');
     return '<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;margin-bottom:10px">'
@@ -7495,24 +7568,29 @@ function openConvScoreModal(id){
       /* v174 - same as the B sections: the scoring rule is the app's business,
          not something to explain to the person filling the form in. */
       + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">ગયા સીઝનમાં રસાયણ-મુક્ત વિસ્તાર (વીઘા)</label><input type="number" min="0" step="0.5" data-cv="previousArea" value="' + esc(W.C.previousArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">આ સીઝનમાં રસાયણ-મુક્ત વિસ્તાર (વીઘા)</label><input type="number" min="0" step="0.5" data-cv="currentArea" value="' + esc(W.C.currentArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
+      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">C1. કુલ ખેતીલાયક જમીન (એકર)</label><input type="number" min="0" step="0.25" data-cv="totalLand" value="' + esc(W.C.totalLand) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
+      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">C2. ઝેર-મુક્ત ખેતી હેઠળનો વિસ્તાર (એકર)</label><input type="number" min="0" step="0.25" data-cv="chemFreeLand" value="' + esc(W.C.chemFreeLand) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
       + '</div>'
       + '<div id="cDelta" style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)"></div>'
       + '</div>';
   }
 
+  /* v178 - reads back the share, not the marks. v174 settled that the person
+     filling the form does not get told what an answer is worth; the running
+     total at the top of the form is the only place a number appears. */
   function paintCDelta(){
     const el = document.getElementById('cDelta'); if(!el) return;
-    const prev = parseFloat(W.C.previousArea)||0, cur = parseFloat(W.C.currentArea)||0;
-    /* v174 - Gujarati, and without the marks. The person filling this in reads
-       Gujarati and does not need to be told what the sum is worth; the running
-       total at the top of the form already says what the app decided. */
-    if(!prev && !cur){ el.innerHTML = '<i>બંને આંકડા ભરો</i>'; return; }
-    const d = cur - prev;
-    if(d > 0) el.innerHTML = '<b style="color:var(--green)">' + d.toFixed(2) + ' વીઘા વધ્યું</b>';
-    else if(d === 0) el.innerHTML = '<b style="color:var(--yellow)">' + cur.toFixed(2) + ' વીઘા એટલું જ</b>';
-    else el.innerHTML = '<b style="color:var(--red)">' + Math.abs(d).toFixed(2) + ' વીઘા ઘટ્યું</b>';
+    const t = parseFloat(W.C.totalLand)||0, c = parseFloat(W.C.chemFreeLand)||0;
+    if(!t || !c){ el.innerHTML = '<i>બંને આંકડા ભરો</i>'; return; }
+    if(c > t){
+      el.innerHTML = '<b style="color:var(--red)">ઝેર-મુક્ત વિસ્તાર કુલ જમીન કરતાં વધારે છે — ફરી તપાસો</b>';
+      return;
+    }
+    const pct = (c / t) * 100;
+    const col = pct >= 100 ? 'var(--green)' : (pct >= 50 ? 'var(--yellow)' : 'var(--red)');
+    el.innerHTML = pct >= 100
+      ? '<b style="color:var(--green)">આખી જમીન ઝેર-મુક્ત (100%)</b>'
+      : '<b style="color:' + col + '">' + 'જમીનનો ' + pct.toFixed(1) + '% ભાગ ઝેર-મુક્ત' + '</b>';
   }
 
   // Visit fields — these are merged with the scoring, so every score-save
@@ -7600,7 +7678,7 @@ function openConvScoreModal(id){
     + aSection('A1') + aSection('A2')
     + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">B · Natural Farming System Adoption (' + CONV_SCORE_B_KEYS.reduce((s,k)=>s+(CONV_SCORE_FRAMEWORK[k]?CONV_SCORE_FRAMEWORK[k].marks:0),0) + ' marks)</div>'
     + CONV_SCORE_B_KEYS.map(k => bSection(k)).join('')
-    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">C · Expansion of Chemical-Free Area (' + CONV_SCORE_FRAMEWORK.C.marks + ' marks)</div>'
+    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">C · Share of Land under Poison-Free Farming (' + CONV_SCORE_FRAMEWORK.C.marks + ' marks)</div>'
     + cSection();
 
   modalShell('Log visit + score · ' + esc(f.name), body,
@@ -7772,7 +7850,7 @@ function openConvScoreModal(id){
     });
     const cPrev = parseFloat(W.C.previousArea) || 0;
     const cCur  = parseFloat(W.C.currentArea) || 0;
-    const anyC = cCur > 0 || cPrev > 0;
+    const anyC = (parseFloat(W.C.chemFreeLand) || 0) > 0 || cCur > 0 || cPrev > 0;
     if(!anyB && !anyC){
       const ok = confirm('No practices ticked and chemical-free area is 0. This will save A1/A2 only (≤50/100).\n\nContinue anyway?');
       if(!ok) return;
@@ -7799,13 +7877,18 @@ function openConvScoreModal(id){
           b1Count: previousCs.b1Count, b2Count: previousCs.b2Count,
           b3Count: previousCs.b3Count, b4Count: previousCs.b4Count,
           previousArea: previousCs.previousArea, currentArea: previousCs.currentArea,
+          totalLand: previousCs.totalLand, chemFreeLand: previousCs.chemFreeLand,
+          cPercent: previousCs.cPercent,
         },
       });
     }
     f.conversionScoring = stamp({
       A1: { confirmed: W.A1.confirmed, evidence: W.A1.evidence.slice(), notes: W.A1.notes },
       A2: { confirmed: W.A2.confirmed, evidence: W.A2.evidence.slice(), notes: W.A2.notes },
-      C: { previousArea: W.C.previousArea, currentArea: W.C.currentArea },
+      // v178 - the land figures are the live answer; previousArea/currentArea are
+      // written straight back so no earlier record loses what it was scored on.
+      C: { totalLand: W.C.totalLand, chemFreeLand: W.C.chemFreeLand,
+           previousArea: W.C.previousArea, currentArea: W.C.currentArea },
       lastUpdated: new Date().toISOString(),
       lastUpdatedBy: actor().name,
     });
@@ -7873,6 +7956,9 @@ function openConvScoreModal(id){
       adoptedPractices: adoptedFlat,
       areaPrev: cs.previousArea,
       areaCur:  cs.currentArea,
+      landTotal:    cs.totalLand,
+      landChemFree: cs.chemFreeLand,
+      landPercent:  cs.cPercent,
       photos: vphotos,
     });
     // Only de-dupe in place when a real FC is attached. A blank FC ("Other") has
@@ -7928,7 +8014,8 @@ function convScoreHistoryCard(f){
       isCurrent: true,
       breakdown: { A1:current.A1, A2:current.A2, B1:current.B1, B2:current.B2, B3:current.B3, B4:current.B4, C:current.C,
                    b1Count:current.b1Count, b2Count:current.b2Count, b3Count:current.b3Count, b4Count:current.b4Count,
-                   previousArea:current.previousArea, currentArea:current.currentArea },
+                   previousArea:current.previousArea, currentArea:current.currentArea,
+                   totalLand:current.totalLand, chemFreeLand:current.chemFreeLand, cPercent:current.cPercent },
     });
   }
   if(!items.length) return '';
@@ -8050,10 +8137,18 @@ function convScoreCard(f){
     + rowHtml('B3', cs.B3, F.B3.marks, bDetail('B3', cs.b3Count))
     + rowHtml('B4', cs.B4, F.B4.marks, bDetail('B4', cs.b4Count))
     + rowHtml('C',  cs.C,  F.C.marks,
-        cs.areaDelta > 0 ? 'Expanded: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha (+' + cs.areaDelta.toFixed(2) + ')' :
-        cs.areaDelta === 0 && cs.previousArea > 0 ? 'Maintained: ' + cs.currentArea + ' bigha' :
-        cs.previousArea > 0 ? 'Reduced: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha' :
-        'Not tracked yet');
+        // v178 - new records read as a share; the six scored before v178 keep
+        // reading the way they were scored, labelled so nobody compares them.
+        !cs.cLegacy
+          ? (convCInvalid(cs.totalLand, cs.chemFreeLand)
+              ? '⚠ ' + cs.chemFreeLand + ' poison-free acres recorded against ' + cs.totalLand + ' total — figures need checking'
+              : cs.cPercent > 0
+                ? cs.chemFreeLand + ' of ' + cs.totalLand + ' acres poison-free (' + cs.cPercent.toFixed(1) + '%)'
+                : 'Land figures not entered')
+          : (cs.areaDelta > 0 ? 'Expanded: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha (+' + cs.areaDelta.toFixed(2) + ') · scored before v178' :
+             cs.areaDelta === 0 && cs.previousArea > 0 ? 'Maintained: ' + cs.currentArea + ' bigha · scored before v178' :
+             cs.previousArea > 0 ? 'Reduced: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha · scored before v178' :
+             'Not tracked yet'));
   // Footer: just the last-scored stamp — the "Update visit" button at the
   // top of the drawer handles re-scoring, so no duplicate button here.
   const footer = (f.conversionScoring && f.conversionScoring.lastUpdated)

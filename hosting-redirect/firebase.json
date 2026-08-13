@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Hosting config for prakrutik-kheti-e9194 ONLY. Kept in its own folder, with no",
+    "database block, because the firebase.json in the parent folder deploys DATABASE",
+    "RULES - running a plain `firebase deploy` there would overwrite the live security",
+    "rules. Nothing in here can touch the database.",
+    "",
+    "WHY THIS EXISTS: prakrutik-kheti-e9194.web.app is the Farm Verification project's",
+    "own hosting address, but it was serving a STALE COPY OF KHEDUT HAAT (57 KB, no",
+    "version marker, against the real 80 KB V8.7 on sristikheduthaat.in). That old",
+    "client was talking to the live Khedut Haat database, and its config is where the",
+    "wrong appId in Farm Verification came from (fixed in app v183).",
+    "",
+    "It redirects rather than being deleted so that anyone still holding an old link -",
+    "including /submit and /admin, which both answered 200 - lands on the real, current",
+    "shop instead of a dead page. The path is carried across, so /submit goes to",
+    "sristikheduthaat.in/submit.",
+    "",
+    "DEPLOY:  firebase deploy --only hosting --project prakrutik-kheti-e9194",
+    "         (run from this folder; --only hosting is belt-and-braces)"
+  ],
+  "hosting": {
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "redirects": [
+      {
+        "_why": "The catch-all below does NOT match the bare root - verified on a preview channel, where / served the fallback file instead of redirecting. This explicit rule handles it. Keep it FIRST.",
+        "source": "/",
+        "destination": "https://sristikheduthaat.in/",
+        "type": 301
+      },
+      {
+        "_why": "Everything else, carrying the path across: /submit -> sristikheduthaat.in/submit. Firebase serves its own reserved /__/auth/handler ahead of this, verified on the preview channel - which matters because that is the Firebase Auth endpoint.",
+        "source": "/:rest*",
+        "destination": "https://sristikheduthaat.in/:rest*",
+        "type": 301
+      }
+    ]
+  }
+}

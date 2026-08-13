@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v176';
+const APP_VERSION = 'v177';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9865,6 +9865,17 @@ async function _confirmAndDelete(p, ids){
   if(ok) await deleteFarmersPermanently(p, ids);
 }
 // "Show archived (N)" toggle button for a list header.
+/* v177 - "Showing archived" hides every live farmer, so a search run while it
+   is on returns nothing and reads as "this farmer does not exist". Say what is
+   actually happening and offer the way out, instead of an empty box. */
+function archEmptyMsg(p, searching){
+  if(!ARCH_SHOW[p]) return searching ? 'No farmers match these filters.' : 'No farmers yet.';
+  return searching
+    ? 'You are looking inside the <b>archive</b>, and nothing archived matches that search.'
+      + '<div style="margin-top:9px"><button class="btn btn-sm btn-primary" data-archoff="' + p + '">'
+      + 'Search all farmers instead</button></div>'
+    : 'No archived farmers.';
+}
 function archToggleHtml(p){
   const n = archivedCount(p), on = ARCH_SHOW[p];
   const onStyle = on ? 'background:#fef3c7;color:#92400e;border-color:#fcd34d;' : '';
@@ -9910,6 +9921,10 @@ function wireArch(v, p, pagedIds){
     if(selAll.checked) (pagedIds||[]).forEach(id=>sel.add(id)); else (pagedIds||[]).forEach(id=>sel.delete(id));
     render();
   };
+  v.querySelectorAll('[data-archoff]').forEach(b => b.onclick = () => {
+    ARCH_SHOW[b.dataset.archoff] = false; ARCH_MERGED[b.dataset.archoff] = false;
+    ARCH_SEL[b.dataset.archoff].clear(); render();
+  });
   const tg = v.querySelector('#archToggle_'+p);
   if(tg) tg.onclick = () => { ARCH_SHOW[p] = !ARCH_SHOW[p]; ARCH_MERGED[p] = false; sel.clear(); render(); };
   const mtg = v.querySelector('#mergedToggle_'+p);
@@ -10013,7 +10028,7 @@ function viewHaat(){
     ${ARCH_SHOW.haat?'<th></th>':''}
   </tr></thead><tbody>`;
   if(!rows.length){
-    h+=`<tr><td colspan="11"><div class="empty">${svg(I.haat)}<div>${ARCH_SHOW.haat?'No archived farmers.':'No farmers match these filters.'}</div></div></td></tr>`;
+    h+=`<tr><td colspan="11"><div class="empty">${svg(I.haat)}<div>${archEmptyMsg('haat', !!(F.q||F.state||F.district||F.haat||F.crop||F.status))}</div></div></td></tr>`;
   }
   pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
@@ -10911,7 +10926,7 @@ function viewConversion(){
     ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}${th('_sortTs','Joined')}<th>Action</th>
     ${ARCH_SHOW.conv?'<th></th>':''}
   </tr></thead><tbody>`;
-  if(!rows.length)h+=`<tr><td colspan="12"><div class="empty">${svg(I.convert)}<div>${ARCH_SHOW.conv?'No archived farmers.':'No conversion farmers match.'}</div></div></td></tr>`;
+  if(!rows.length)h+=`<tr><td colspan="12"><div class="empty">${svg(I.convert)}<div>${archEmptyMsg('conv', !!(F.q||F.state||F.district||F.status))}</div></div></td></tr>`;
   const today=todayISO();
   pagedConvRows.forEach(r=>{
     const fc=fcById(r.fcId);

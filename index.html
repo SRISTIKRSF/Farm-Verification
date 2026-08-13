@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v166';
+const APP_VERSION = 'v167';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15827,18 +15827,50 @@ function openAssignMobilizerModal(){
   function refresh(){
     const t = $('#amTaluka').value, mobId = $('#amMob').value;
     const list = pool.filter(f => (talukaDisplayName(f.taluka,f.district)||f.district||'—').trim() === t);
+    /* v167 — a taluka can hold 375 farmers and the admin needs 8 of them.
+       The rows are HIDDEN, never removed: the save reads every [data-amf] box
+       in the DOM to work out what to add and what to take away, so filtering
+       by removing rows would make a ticked-but-filtered-out farmer silently
+       not get assigned. Hiding keeps every checkbox — and therefore every
+       decision — intact while you search. */
     $('#amPick').innerHTML = list.length
       ? '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px">Tick the farmers to hand to <b>'
         + esc((mobilizerById(mobId)||{}).name||'') + '</b>. Already theirs are ticked.</div>'
+        + '<input id="amSearch" type="search" placeholder="Search name, village or ID…" autocomplete="off"'
+        + ' style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:7px">'
+        + '<div id="amCount" style="font-size:12px;color:var(--ink-soft);margin-bottom:6px"></div>'
         + '<div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px">'
-        + list.map(f => '<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 2px;cursor:pointer">'
+        + list.map(f => '<label data-amrow="' + esc((f.name||'') + ' ' + (f.village||'') + ' ' + f.id + ' ' + (f.phone||'')).toLowerCase() + '"'
+            + ' style="display:flex;gap:9px;align-items:flex-start;padding:5px 2px;cursor:pointer">'
             + '<input type="checkbox" data-amf="' + esc(f.id) + '" ' + (f.mobilizerId === mobId ? 'checked' : '') + ' style="margin-top:3px">'
             + '<span style="font-size:12.5px">' + esc(f.name||f.id)
             + '<span style="display:block;font-size:11px;color:var(--ink-faint)">' + esc(f.village||'') + ' · ' + esc(f.id)
             + (f.mobilizerId && f.mobilizerId !== mobId ? ' · now with ' + esc((mobilizerById(f.mobilizerId)||{}).name||f.mobilizerId) : '')
             + '</span></span></label>').join('')
+        + '<div id="amNone" style="display:none;padding:10px 2px;font-size:12.5px;color:var(--ink-faint)">Nobody matches that.</div>'
         + '</div>'
       : '<div class="hint">No conversion farmers in that taluka.</div>';
+
+    const rows = [...document.querySelectorAll('[data-amrow]')];
+    const countEl = document.getElementById('amCount');
+    const noneEl = document.getElementById('amNone');
+    const paint = () => {
+      const n = rows.filter(r => r.querySelector('input').checked).length;
+      if(countEl) countEl.innerHTML = '<b>' + n + '</b> selected of ' + rows.length + ' in this taluka';
+    };
+    const search = document.getElementById('amSearch');
+    if(search) search.oninput = () => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      rows.forEach(r => {
+        const hit = !q || r.dataset.amrow.indexOf(q) >= 0;
+        r.style.display = hit ? 'flex' : 'none';
+        if(hit) shown++;
+      });
+      if(noneEl) noneEl.style.display = shown ? 'none' : '';
+    };
+    rows.forEach(r => r.querySelector('input').addEventListener('change', paint));
+    paint();
   }
   $('#amTaluka').onchange = refresh;
   $('#amMob').onchange = refresh;

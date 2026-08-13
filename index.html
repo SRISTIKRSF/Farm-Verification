@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v173';
+const APP_VERSION = 'v174';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7454,7 +7454,11 @@ function openConvScoreModal(id){
       : '📋 Adopt ≥ <b>' + fw.threshold + '</b> of the practices below to earn full <b>' + fw.marks + '</b> marks. Below that = 0.';
     return '<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--leaf);border-radius:8px;padding:12px 14px;margin-bottom:10px">'
       + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">' + key + '. ' + esc(fw.gu || fw.label) + '</div></div><b data-earned="' + key + '" style="color:' + earnedColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarned + ' / ' + fw.marks + '</b></div>'
-      + '<div style="font-size:11.5px;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 10px;margin-bottom:10px">' + hintLine + '</div>'
+      /* v174 - the admin: "I dont need scoring guide. Like Adopt>1 etc."
+         The marks arithmetic is the app's job, and the running total at the top
+         of the form already shows what it decided. It was a line of English in
+         a Gujarati form telling the reader how to do a sum they never have to
+         do. hintLine is left computed above and simply not rendered. */
       + '<div style="display:flex;flex-direction:column;gap:7px">'
       + fw.practices.map(p => {
           const w = W[key][p.key];
@@ -7476,12 +7480,13 @@ function openConvScoreModal(id){
     else if(curC === prevC && curC > 0) initEarnedC = Math.round(cMax/2);
     const cColor = initEarnedC === cMax ? 'var(--green)' : (initEarnedC > 0 ? 'var(--yellow)' : 'var(--red)');
     return '<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;margin-bottom:10px">'
-      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">C. ' + esc(CONV_SCORE_FRAMEWORK.C.label) + '</div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">' + esc(CONV_SCORE_FRAMEWORK.C.gu) + '</div></div><b data-earned="C" style="color:' + cColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarnedC + ' / ' + cMax + '</b></div>'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">C. ' + esc(CONV_SCORE_FRAMEWORK.C.gu || CONV_SCORE_FRAMEWORK.C.label) + '</div></div><b data-earned="C" style="color:' + cColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarnedC + ' / ' + cMax + '</b></div>'
       // v8 bug fix: marks come from the editable framework, not hardcoded.
-      + '<div style="font-size:11.5px;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 10px;margin-bottom:10px">📈 Increased = '+cMax+' · Maintained = '+Math.round(cMax/2)+' · Reduced = 0. System auto-classifies based on the bigha values you enter.</div>'
+      /* v174 - same as the B sections: the scoring rule is the app's business,
+         not something to explain to the person filling the form in. */
       + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">Previous season chemical-free area (bigha)</label><input type="number" min="0" step="0.5" data-cv="previousArea" value="' + esc(W.C.previousArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
-      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">Current season chemical-free area (bigha)</label><input type="number" min="0" step="0.5" data-cv="currentArea" value="' + esc(W.C.currentArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
+      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">ગયા સીઝનમાં રસાયણ-મુક્ત વિસ્તાર (વીઘા)</label><input type="number" min="0" step="0.5" data-cv="previousArea" value="' + esc(W.C.previousArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
+      +   '<div style="flex:1;min-width:140px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:4px">આ સીઝનમાં રસાયણ-મુક્ત વિસ્તાર (વીઘા)</label><input type="number" min="0" step="0.5" data-cv="currentArea" value="' + esc(W.C.currentArea) + '" style="width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13.5px"></div>'
       + '</div>'
       + '<div id="cDelta" style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)"></div>'
       + '</div>';
@@ -7490,14 +7495,14 @@ function openConvScoreModal(id){
   function paintCDelta(){
     const el = document.getElementById('cDelta'); if(!el) return;
     const prev = parseFloat(W.C.previousArea)||0, cur = parseFloat(W.C.currentArea)||0;
-    if(!prev && !cur){ el.innerHTML = '<i>Enter both values to see the delta.</i>'; return; }
+    /* v174 - Gujarati, and without the marks. The person filling this in reads
+       Gujarati and does not need to be told what the sum is worth; the running
+       total at the top of the form already says what the app decided. */
+    if(!prev && !cur){ el.innerHTML = '<i>બંને આંકડા ભરો</i>'; return; }
     const d = cur - prev;
-    // v8 bug fix: marks come from CONV_SCORE_FRAMEWORK.C.marks (admin-editable).
-    const cFullMarks = CONV_SCORE_FRAMEWORK.C.marks;
-    const cHalfMarks = Math.round(cFullMarks/2);
-    if(d > 0) el.innerHTML = '<b style="color:var(--green)">Expanded by ' + d.toFixed(2) + ' bigha (+' + ((d/Math.max(prev,1))*100).toFixed(0) + '%)</b> · ' + cFullMarks + ' marks';
-    else if(d === 0) el.innerHTML = '<b style="color:var(--yellow)">Maintained at ' + cur.toFixed(2) + ' bigha</b> · ' + cHalfMarks + ' marks';
-    else el.innerHTML = '<b style="color:var(--red)">Reduced by ' + Math.abs(d).toFixed(2) + ' bigha</b> · 0 marks';
+    if(d > 0) el.innerHTML = '<b style="color:var(--green)">' + d.toFixed(2) + ' વીઘા વધ્યું</b>';
+    else if(d === 0) el.innerHTML = '<b style="color:var(--yellow)">' + cur.toFixed(2) + ' વીઘા એટલું જ</b>';
+    else el.innerHTML = '<b style="color:var(--red)">' + Math.abs(d).toFixed(2) + ' વીઘા ઘટ્યું</b>';
   }
 
   // Visit fields — these are merged with the scoring, so every score-save

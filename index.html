@@ -3213,7 +3213,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v182';
+const APP_VERSION = 'v183';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3230,7 +3230,18 @@ const FB_CONFIG = {
   projectId:     "prakrutik-kheti-e9194",
   storageBucket: "prakrutik-kheti-e9194.firebasestorage.app",
   messagingSenderId: "711481160967",
-  appId:         "1:269627097742:web:2d82d97f0621db87133fdf",
+  /* v183 - was 1:269627097742:web:2d82d97f0621db87133fdf, which is an app in
+     the KHEDUT HAAT project (prakrutik-kheti-c0a89, project number
+     269627097742). Every other field here is Farm Verification
+     (prakrutik-kheti-e9194, project number 711481160967) - note that the
+     messagingSenderId directly above is the correct number and the appId did
+     not match it.
+     It never mattered: RTDB and Auth key off apiKey/databaseURL/projectId, and
+     nothing here loads Analytics, so appId was unused. App Check is the first
+     thing to read it, and it asked project e9194 to verify an app belonging to
+     project c0a89 - which is exactly the 403 the console showed, followed by a
+     24-hour client-side throttle. */
+  appId:         "1:711481160967:web:647f8d2f696b8aae34c1a2",
 };
 const FB_NAMESPACE='prakrutik_kheti';   // all data lives under this node
 /* v181 - reCAPTCHA v3 site key for App Check. This is a PUBLIC value by design,

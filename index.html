@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v164';
+const APP_VERSION = 'v165';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4406,7 +4406,32 @@ const _liveSnapshotSeen = new Set();
        the historical "Narmada (??????)" corruption) can never hide a
        farmer from the one FC who actually owns them.
    Admin and any other role keep the full, unscoped listener. */
+/* v165 — a mobilizer reads ONLY the farmers handed to them, one record at a
+   time, instead of the whole 1.6 MB convFarmers node. Per-id refs are used
+   deliberately in preference to orderByChild('mobilizerId'): an unindexed
+   query does not fail, it silently downloads the entire node and filters in
+   the browser, which is exactly the "data exploded overnight" failure this is
+   meant to prevent. Per-id reads cannot degrade that way and need no rules
+   change at all.
+   Safe against the thing that makes scoping dangerous — a partial collection
+   looking like mass deletion — because saveDB's v129 guard refuses any delete
+   that nobody registered in _explicitDeletes, at any size. */
+function _mobFarmerIds(){
+  const me = (SESSION && SESSION.role === 'mobilizer') ? SESSION.userId : '';
+  if(!me) return [];
+  const u = (typeof getUsersList === 'function' ? getUsersList() : []).find(x => x && x.id === me);
+  const f = u && u.farmers;
+  if(Array.isArray(f)) return f.filter(Boolean);
+  if(f && typeof f === 'object') return Object.keys(f).filter(k => f[k]);
+  return [];
+}
 function _scopedFcQueries(key){
+  if(SESSION && SESSION.role === 'mobilizer'){
+    if(key !== 'convFarmers') return null;
+    const ids = _mobFarmerIds();
+    if(!ids.length) return null;
+    return ids.map(id => ({tag:'m:'+id, wrapId:id, ref: fbRef('convFarmers/'+id)}));
+  }
   if(key!=='haatFarmers' && key!=='convFarmers') return null;
   if(!SESSION || SESSION.role!=='fc' || !SESSION.userId) return null;
   const districts=fcAssignedDistricts();
@@ -4438,6 +4463,18 @@ const _scopedParts={};   // key -> {queryTag -> {id:record}}, merged into _liveS
 function _activeSyncKeys(){
   if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
     return LIVE_SYNC_KEYS.filter(k => k==='meta' || k==='fcs' || k==='fieldCoordinators');
+  }
+  /* v165 — a mobilizer has exactly two screens and neither reads Haat farmers,
+     the activity log, the applications queue, verification plans, the verif
+     index or income records. Not subscribing to them is both the bandwidth
+     saving and the scope: what is never fetched cannot leak.
+     convFarmers joins the list only once we know WHICH farmers are theirs —
+     config/users arrives on its own listener, which re-runs attachLiveListener
+     when it does. */
+  if(SESSION && SESSION.role === 'mobilizer'){
+    const base = ['meta','fcs','fieldCoordinators'];
+    if(_mobFarmerIds().length) base.push('convFarmers');
+    return base;
   }
   return LIVE_SYNC_KEYS;
 }
@@ -4483,7 +4520,13 @@ function attachLiveListener(){
     const partsSeen=new Set();
     queries.forEach(q => {
       q.ref.on('value', snap => {
-        _scopedParts[key][q.tag] = snap.exists() ? snap.val() : {};
+        // v165 — a per-id ref yields the RECORD; the merge below expects an
+        // id->record map, so wrap it. Without this the record's own fields
+        // would be spread into the collection as if each were a farmer.
+        const _val = snap.exists() ? snap.val() : null;
+        _scopedParts[key][q.tag] = q.wrapId
+          ? (_val ? {[q.wrapId]: _val} : {})
+          : (_val || {});
         partsSeen.add(q.tag);
         const merged={};
         Object.keys(_scopedParts[key]).forEach(tag => Object.assign(merged, _scopedParts[key][tag]));
@@ -15826,6 +15869,17 @@ function openAssignMobilizerModal(){
     if(!ok) return;
     add.forEach(f => { f.mobilizerId = mobId; markLocalTouch('convFarmers', f.id); });
     remove.forEach(f => { delete f.mobilizerId; markLocalTouch('convFarmers', f.id); });
+    /* v165 — the mobilizer's own account carries the id list, because that is
+       what their device reads to know WHICH farmer records to fetch. Written
+       as a child set() so the account node — password hash and all — is never
+       replaced. Derived from the farmers themselves, so the two can't drift. */
+    try{
+      const mine = {};
+      (DB.convFarmers||[]).forEach(f => { if(f && f.mobilizerId === mobId && !f._archived) mine[f.id] = true; });
+      if(FB && FB.ready) await fbRef('config/users/u_' + mobId + '/farmers').set(mine);
+      const _u = (typeof getUsersList === 'function' ? getUsersList() : []).find(x => x && x.id === mobId);
+      if(_u) _u.farmers = mine;
+    }catch(e){ console.warn('[Sristi] could not write the mobilizer farmer list:', e); }
     logActivity('status', '<b>' + esc(mobN) + '</b> mobilizer list updated — '
       + add.length + ' added, ' + remove.length + ' removed. Coordinator, stage, score and visits unchanged.');
     await saveDB();
@@ -18731,6 +18785,10 @@ async function forcePasswordChangeModal(user){
 function subscribeUsers() {
   if (!FB || !FB.ready) return;
   fbRef('config/users').on('value', snap => {
+    /* v165 — a mobilizer's farmer list lives on their own account record, so
+       convFarmers cannot be subscribed until this fires. Re-running the
+       attach is cheap: _attachedKeys skips everything already listening. */
+    setTimeout(() => { try{ if(SESSION && SESSION.role === 'mobilizer') attachLiveListener(); }catch(e){} }, 0);
     if (!snap.exists()) { migrateDefaultUsers(); return; }
     USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
     saveUsersCache(USERS_LIST);

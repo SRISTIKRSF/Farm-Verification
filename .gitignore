@@ -14,3 +14,13 @@ _backups/
 # Security plan — documents live, unfixed vulnerabilities. This repo is
 # public, so publishing it would hand an attacker the roadmap. Never push.
 SECURITY-PLAN.md
+
+# Operational docs (Runbook / Data Note / Decision Log). Same reason as
+# SECURITY-PLAN.md — the Decision Log describes unfixed holes and the Data
+# Note says exactly where the farmer PII sits. Publishing the Runbook alone
+# would be a deliberate decision, not a default.
+docs/0*-*.md
+docs/0*-*.docx
+
+# Firebase CLI deploy cache (hosting-redirect)
+hosting-redirect/.firebase/

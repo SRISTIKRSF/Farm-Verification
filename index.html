@@ -3182,7 +3182,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v165';
+const APP_VERSION = 'v166';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15056,14 +15056,14 @@ function viewSettings(){
     h += '<div style="max-width:700px">';
     h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
-        <div style="font-size:14px;font-weight:700">Admin accounts</div>
-        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Logins with full access to every screen</div>
+        <div style="font-size:14px;font-weight:700">Logins</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Admins and mobilizers. The dialog asks which.</div>
       </div>
-      ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add admin</button>' : ''}
+      ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add user</button>' : ''}
     </div>`;
     h += `<div class="hint" style="margin-bottom:14px"><b>${fcCount} Field Coordinator${fcCount===1?'':'s'}</b> \u2014 their logins, passwords and district assignments all live on the <a href="#fieldCoordinators" id="uFcLink" style="color:var(--accent);font-weight:600">Field Coordinators</a> page.</div>`;
     if (!uList.length) {
-      h += `<div class="card" style="padding:24px;text-align:center;color:var(--ink-faint)">${isConnected ? 'No admin accounts found.' : 'Offline — connect to load the account list.'}</div>`;
+      h += `<div class="card" style="padding:24px;text-align:center;color:var(--ink-faint)">${isConnected ? 'No accounts found.' : 'Offline — connect to load the account list.'}</div>`;
     } else {
       h += '<div class="card" style="padding:0;overflow:hidden">';
       uList.forEach(function(u, i) {

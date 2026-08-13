@@ -702,24 +702,6 @@ tbody tr:last-child td{border-bottom:none}
 @media(max-width:420px){
   .statbox-grid{grid-template-columns:1fr}
 }
-/* v171 - on a phone in FC/mobilizer mode the dialog was centred with
-   transform:translate(-50%,-50%) and sized by a max-height, while a FIXED 62px
-   bottom nav sat on top of it. The sticky footer therefore pinned to the bottom
-   of a box whose real bottom was somewhere behind the nav, and the Cancel /
-   Save bar ended up floating across the middle of the form with content
-   visible above AND below it.
-   Anchoring the sheet to all four edges instead removes the arithmetic: the
-   modal is a panel between the top of the screen and the nav, .modal-body
-   already flexes and scrolls inside it, and the footer sits on its real
-   bottom edge. */
-@media(max-width:680px){
-  body.fc-mode .modal, body.fc-mode .modal.show{
-    top:8px; left:8px; right:8px; bottom:70px;
-    width:auto !important; height:auto; max-height:none !important;
-    transform:none !important;
-  }
-  body.fc-mode .modal-foot{position:static}
-}
 
 /* ===== enrollment form overlay (embedded Gujarati patrak) ===== */
 .enroll-host{
@@ -3210,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v171';
+const APP_VERSION = 'v170';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13458,30 +13440,7 @@ function openConvDrawer(id){
   openDrawer();
 }
 /* ============ MODAL CORE ============ */
-/* v171 - on a phone in FC/mobilizer mode the dialog is a SHEET anchored to the
-   screen edges, not a box centred with translate(-50%,-50%). Centring plus a
-   max-height put its real bottom at mid-screen with the top half scrolled off
-   above, so the Save bar sat across the middle of the form (measured on a
-   412x915 phone: modal top -377, bottom 460).
-   Set inline with priority rather than in the stylesheet: a plain !important
-   rule for this was verifiably parsed and still lost to a later one that
-   re-applied the centring transform. An inline important declaration cannot be
-   outranked by any author rule, so this is the one place it is worth using. */
-function _sheetify(m){
-  const on = document.body.classList.contains('fc-mode') && window.innerWidth <= 680;
-  const P = (k,v) => on ? m.style.setProperty(k, v, 'important') : m.style.removeProperty(k);
-  P('top','8px'); P('left','8px'); P('right','8px'); P('bottom','70px');
-  P('width','auto'); P('height','auto'); P('max-height','none'); P('transform','none');
-  /* The open animation is what actually beat every other attempt. A CSS
-     transition outranks !important AND inline styles while it owns the
-     property, and .modal transitions `transform` - so the centring translate
-     kept winning no matter how it was overridden. Measured on a 412x915
-     phone: with the transition live the sheet sat at top -377 / bottom 460;
-     switching it off put it at top 8 / bottom 845, exactly the intended box.
-     The dialog now appears instead of gliding, on phones only. */
-  P('transition','none');
-}
-function openModal(){$('#overlay').classList.add('show');const _m=$('#modal');_m.classList.add('show');_sheetify(_m);}
+function openModal(){$('#overlay').classList.add('show');$('#modal').classList.add('show');}
 function closeModal(){$('#overlay').classList.remove('show');$('#modal').classList.remove('show');$('#modal').classList.remove('wide');}
 function modalShell(title,bodyHtml,footHtml){
   $('#modal').innerHTML=`

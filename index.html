@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v169';
+const APP_VERSION = 'v170';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14541,9 +14541,17 @@ function openCompareFormsModal(id){
   /* FC attribution banner — who did the survey. Issue 3: must be prominent. */
   const fcRec = (DB.fcs || []).find(x => x.id === f.fcId);
   const latestVisit = (f.visits || []).slice(-1)[0];
-  const fcName = (fcRec && fcRec.name)
+  /* v170 - the verification form stores who did it in summary.verifierName,
+     and this banner never looked there: it started from f.fcId, which on a
+     publicly-enrolled farmer is usually blank, so the banner read "-" even
+     though the name was sitting in the record.
+     verifierName goes FIRST on purpose. f.fcId is whoever is assigned TODAY,
+     and that changes - 205 Narmada farmers moved from Harsh to Ayush this
+     week. The person who actually stood in the field does not change. */
+  const fcName = (verif && verif.summary && verif.summary.verifierName)
               || (latestVisit && (latestVisit.byName || latestVisit.fcName))
               || (verif && verif._submittedByName)
+              || (fcRec && fcRec.name)
               || '—';
   body += '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,#f3e7df 0%,#f5f0ea 100%);border:1px solid var(--accent);border-radius:10px;margin-bottom:14px">'
        +   '<div style="width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px;font-family:inherit;flex-shrink:0">' + esc(fcName.charAt(0).toUpperCase()) + '</div>'

@@ -3192,7 +3192,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v170';
+const APP_VERSION = 'v172';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7304,6 +7304,10 @@ function openConvScoreModal(id){
      visit form speaks Gujarati. English survives only as the fallback for a
      question with no Gujarati text on record: a missing translation must
      never blank out a question. */
+  /* v172 - the crops an FC actually ticks on almost every visit, matched as a
+     substring so it works against catalogue entries like "Paddy / Rice
+     (ડાંગર)". Everything else is one search away. */
+  const VS_COMMON_CROPS = ['paddy','wheat','okra','bottle gourd','maize','cotton','tomato','brinjal','tur /'];
   const EVIDENCE_OPTS = [
     {key:'farmer',      label:'Farmer declaration',           gu:'ખેડૂતનું કથન'},
     {key:'observation', label:'Field observation',            gu:'ખેતરમાં જોયું'},
@@ -7547,8 +7551,19 @@ function openConvScoreModal(id){
     + '<textarea id="vsNotes" placeholder="ખેડૂતે શું શરૂ કર્યું, શું જોવા મળ્યું…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;min-height:48px;resize:vertical"></textarea>'
     + '<div style="margin-top:10px"><label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Crops grown on selected plot</label>'
     + '<input type="text" id="vsCropSearch" placeholder="🔍 Search crop…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:7px;box-sizing:border-box">'
-    + '<div id="vsCropWrap" style="display:flex;flex-wrap:wrap;gap:5px;max-height:220px;overflow-y:auto">'
-    + (window.CROPS_CATALOG||[]).filter(c=>c!=='Other (અન્ય)').map(c=>`<button type="button" class="vs-crop-chip" data-crop="${esc(c)}">${esc(c)}</button>`).join('')
+    + '<div id="vsCropWrap" style="display:flex;flex-wrap:wrap;gap:5px">'
+    /* v172 - the admin: "The crop list is too big. so it keeps on scrolling."
+       Every crop in the catalogue was rendered at once inside a 220px scroll
+       box, which on a phone traps the thumb: you scroll the page, the crop box
+       eats it. The everyday crops show by default and the rest arrive through
+       the search that was already there. Chips are HIDDEN, never removed, so a
+       crop stays selected even after it is filtered out of view - the save
+       reads the .on chips, not what happens to be visible. */
+    + (window.CROPS_CATALOG||[]).filter(c=>c!=='Other (અન્ય)').map(c=>{
+        const common = VS_COMMON_CROPS.some(k => String(c).toLowerCase().indexOf(k) === 0);
+        return `<button type="button" class="vs-crop-chip${common?' vs-common':''}" data-crop="${esc(c)}"${common?'':' style="display:none"'}>${esc(c)}</button>`;
+      }).join('')
+    + '<button type="button" id="vsCropAll" class="vs-crop-chip" style="border-style:dashed;color:var(--accent)">બધા પાક · show all</button>'
     + '</div></div>'
     // Farm-visit photos — multiple, stored as base64 in the visit record
     + '<div style="margin-top:10px">'
@@ -7641,8 +7656,22 @@ function openConvScoreModal(id){
   if(vsCropSearchEl) vsCropSearchEl.oninput = e=>{
     const q=e.target.value.trim().toLowerCase();
     document.querySelectorAll('.vs-crop-chip').forEach(btn=>{
-      btn.style.display = (!q || cropSearchBlob(btn.dataset.crop).includes(q)) ? '' : 'none';
+      if(!btn.dataset.crop) return;                       // the "show all" chip
+      /* An already-ticked crop is never hidden: hiding it would leave it
+         selected and invisible, which is how a filter quietly changes what
+         gets saved. */
+      const keep = btn.classList.contains('on')
+                || (q ? cropSearchBlob(btn.dataset.crop).includes(q)
+                      : btn.classList.contains('vs-common'));
+      btn.style.display = keep ? '' : 'none';
     });
+    const allBtn = document.getElementById('vsCropAll');
+    if(allBtn) allBtn.style.display = q ? 'none' : '';
+  };
+  const vsCropAllEl = document.getElementById('vsCropAll');
+  if(vsCropAllEl) vsCropAllEl.onclick = () => {
+    document.querySelectorAll('.vs-crop-chip').forEach(b => { if(b.dataset.crop) b.style.display = ''; });
+    vsCropAllEl.style.display = 'none';
   };
   const modalEl = document.getElementById('modal');
   if(modalEl) modalEl.classList.add('wide');

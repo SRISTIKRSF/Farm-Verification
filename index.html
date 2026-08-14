@@ -3262,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v188';
+const APP_VERSION = 'v189';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7364,13 +7364,13 @@ const CONV_SCORE_FRAMEWORK = {
   },
   A2: {
     label:'Is the farmer using any chemical pesticide / herbicide / weedicide on the verified plot?',
-    gu:'શું ખેડૂત ચકાસેલા પ્લોટ પર કોઈ રાસાયણિક જંતુનાશક / નિંદામણનાશક વાપરે છે?',
+    gu:'શું ખેડૂત ચકાસેલા પ્લોટ પર કોઈ રાસાયણિક જંતુનાશક / નીંદામણની દવા વાપરે છે?',
     shortLabel:'No chemical pesticide / herbicide used',
     marks:25,
   },
   B1: {
     label:'Which natural input preparation practices does the farmer follow?',
-    gu:'ખેડૂત કુદરતી ઈનપુટ તૈયાર કરવાની કઈ પદ્ધતિઓ અપનાવે છે?',
+    gu:'ખેડૂત કુદરતી ખાતર તૈયાર કરવાની કઈ પદ્ધતિઓ અપનાવે છે?',
     shortLabel:'Natural Input Preparation System',
     // Partial credit: 1 practice = 5, 2+ = full 10.
     marks:10, threshold:2, halfThreshold:1,
@@ -7384,7 +7384,7 @@ const CONV_SCORE_FRAMEWORK = {
   },
   B2: {
     label:'Which natural pest management practices does the farmer follow?',
-    gu:'ખેડૂત કુદરતી જીવાત નિયંત્રણ માટે કઈ પદ્ધતિઓ વાપરે છે?',
+    gu:'ખેડૂત કુદરતી જીવાત નિયંત્રણ / જંતુનાશક / નીંદામણ નાશક માટે કઈ પદ્ધતિઓ વાપરે છે?',
     shortLabel:'Natural Pest Management System',
     // Partial credit: 1-2 practices = 5, 3+ = full 10.
     marks:10, threshold:3, halfThreshold:1,
@@ -7394,12 +7394,12 @@ const CONV_SCORE_FRAMEWORK = {
       {key:'dashparniArk',  label:'Dashparni Ark', gu:'દશપર્ણી અર્ક'},
       {key:'agniastra',     label:'Agniastra',     gu:'અગ્નિઅસ્ત્ર'},
       {key:'ipm',           label:'IPM',           gu:'IPM (સંકલિત જીવાત નિયંત્રણ)'},
-      {key:'pheromoneTrap', label:'Pheromone Trap',gu:'ફેરોમોન સાપળા'},
+      {key:'pheromoneTrap', label:'Pheromone Trap',gu:'વિવિધ ફેરોમોન ટ્રેપ'},
     ],
   },
   B3: {
     label:'Does the farmer follow any seed treatment practice?',
-    gu:'ખેડૂત કોઈ બીજ પ્રક્રિયા અપનાવે છે?',
+    gu:'ખેડૂત રોપણી પહેલા કોઈ બીજ માવજત પ્રક્રિયા અપનાવે છે?',
     shortLabel:'Seed Treatment Practice',
     marks:5, threshold:1,
     practices:[
@@ -7414,7 +7414,7 @@ const CONV_SCORE_FRAMEWORK = {
     shortLabel:'Mulching',
     marks:5, threshold:1,
     practices:[
-      {key:'mulching', label:'Mulching', gu:'મલ્ચિંગ / આચ્છાદન'},
+      {key:'mulching', label:'Mulching', gu:'હા'},
     ],
   },
   /* v178 - C used to ask "did the chemical-free area grow since last season",
@@ -7604,10 +7604,10 @@ function openConvScoreModal(id){
      (ડાંગર)". Everything else is one search away. */
   const VS_COMMON_CROPS = ['paddy','wheat','okra','bottle gourd','maize','cotton','tomato','brinjal','tur /'];
   const EVIDENCE_OPTS = [
-    {key:'farmer',      label:'Farmer declaration',           gu:'ખેડૂતનું કથન'},
-    {key:'observation', label:'Field observation',            gu:'ખેતરમાં જોયું'},
-    {key:'inputs',      label:'Natural input usage evidence', gu:'પ્રાકૃતિક ઇનપુટના પુરાવા'},
-    {key:'judgement',   label:"FC professional judgement",    gu:'પોતાનો વ્યાવસાયિક મત'},
+    {key:'farmer',      label:'Farmer declaration',           gu:'ખેડૂત સાથેની વાતચીત'},
+    {key:'observation', label:'Field observation',            gu:'ખેતરમાં ચેક કર્યું'},
+    {key:'inputs',      label:'Natural input usage evidence', gu:'Visit માં પુરાવાના આધારે'},
+    {key:'judgement',   label:"FC professional judgement",    gu:'મારા મત પ્રમાણે'},
   ];
 
   function tempScore(){
@@ -7722,9 +7722,9 @@ function openConvScoreModal(id){
          fill as every other selected button, so once chosen "no chemicals" and
          "chemicals found" looked identical. */
       +   '<button type="button" class="btn ' + (noOn ? 'btn-primary a-clean' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="no">' + svg(I.check,2)
-      +     (key==='A1' ? 'રાસાયણિક ખાતર નથી' : 'રાસાયણિક દવા નથી') + ' (' + fw.marks + ')</button>'
+      +     (key==='A1' ? 'કોઈ પણ રાસાયણિક ખાતર વાપરતા નથી' : 'રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરતા નથી') + '</button>'
       +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="yes">✗ '
-      +     (key==='A1' ? 'ખાતર મળ્યું' : 'દવા મળી') + ' (0)</button>'
+      +     (key==='A1' ? 'રસાયણિક ખાતર વાપરે છે' : 'રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરે છે') + '</button>'
       + '</div>'
       // Evidence pills — separate row, larger touch targets
       /* v168 - the label used to sit INSIDE the wrapping pill row, so the first

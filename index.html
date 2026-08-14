@@ -580,7 +580,16 @@ tbody tr:last-child td{border-bottom:none}
 .modal.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
 .modal-head{padding:17px 22px;border-bottom:1px solid var(--line);
   display:flex;align-items:center;gap:11px;background:var(--panel);border-radius:var(--r-lg) var(--r-lg) 0 0}
-.modal-head h3{font-size:17px;flex:1;font-weight:700}
+.modal-head h3{font-size:17px;flex:1;font-weight:700;min-width:0}
+/* v187 - the running score, in the modal header beside the farmer's name. */
+#scoreLive{display:flex;align-items:baseline;gap:6px;flex-shrink:0}
+#scoreLive .n{font-size:21px;font-weight:800;line-height:1}
+#scoreLive .d{font-size:11.5px;color:var(--ink-faint);font-weight:600}
+@media(max-width:520px){
+  .modal-head{flex-wrap:wrap;gap:8px;padding:13px 16px}
+  .modal-head h3{flex:1 1 auto;font-size:15.5px}
+  #scoreLive .n{font-size:19px}
+}
 .modal-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
 .modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:9px;
   flex-wrap:wrap;justify-content:flex-end;background:var(--panel);border-radius:0 0 var(--r-lg) var(--r-lg)}
@@ -3245,7 +3254,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v186';
+const APP_VERSION = 'v187';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7633,23 +7642,31 @@ function openConvScoreModal(id){
     const st = CONV_SCORE_STATUS[s.status];
     const live = document.getElementById('scoreLive');
     if(!live) return;
-    const bBits = CONV_SCORE_B_KEYS.map(k => k + ' ' + s.bRes[k]).join(' · ');
     const mandatoryMissing = !s.a1Decided || !s.a2Decided;
     // v8 — show a clear "Pending FC decision" pill until A1/A2 are answered
     // rather than the misleading red "Not Adopted".
     const pillCls = mandatoryMissing ? 'grey' : st.cls;
-    const pillLabel = mandatoryMissing ? 'Pending FC decision' : st.label;
+    /* v187 - CONV_SCORE_STATUS has carried Gujarati labels all along and no FC
+       screen ever read them. Now that the verdict sits in the header of a form
+       used by FCs and mobilizers, use them. */
+    const pillLabel = mandatoryMissing ? 'જવાબ બાકી' : (st.gu || st.label);
+    /* v187 - Guru: "I dont need to share logic. A1, A2 etc." The old readout
+       spelled out the arithmetic - "A1 25 · A2 25 · B1 10 ... · C 20" - which
+       is the scoring scheme's internal wiring, not something a field
+       coordinator needs while standing in front of a farmer. The number and
+       the verdict are what matter; the per-section marks are still visible
+       beside each section as it is answered. */
     live.innerHTML =
-      '<div style="display:flex;align-items:baseline;gap:6px">'
-      + '<span style="font-size:22px;font-weight:800;line-height:1">' + s.total + '</span>'
-      + '<span style="font-size:12px;color:var(--ink-faint);font-weight:600">/ 100</span>'
-      + '<span class="tag ' + pillCls + '" style="font-size:11px;padding:2px 9px;margin-left:2px"><span class="d"></span>' + pillLabel + '</span>'
-      + '</div>'
-      + '<div style="font-size:10px;color:var(--ink-faint);margin-top:3px">A1 ' + s.a1 + ' · A2 ' + s.a2 + ' · ' + bBits + ' · C ' + s.c + '</div>'
+      '<span class="n">' + s.total + '</span>'
+      + '<span class="d">/ 100</span>'
+      + '<span class="tag ' + pillCls + '" style="font-size:11px;padding:2px 9px;margin-left:2px"><span class="d" style="font-size:inherit"></span>' + pillLabel + '</span>'
+      ;
+    const warn = document.getElementById('scoreWarn');
+    if(warn) warn.innerHTML = ''
       + (mandatoryMissing
-          ? '<div style="margin-top:5px;background:#fef3c7;border-radius:5px;padding:3px 8px;font-size:11px;color:#92400e">⚠️ Answer A1 and A2 before saving.</div>'
+          ? '<div style="margin-bottom:12px;background:#fef3c7;border:1px solid #fde68a;border-radius:7px;padding:8px 11px;font-size:12px;color:#92400e">⚠️ બન્ને રાસાયણિક સવાલોના જવાબ આપો — પછી જ સેવ થશે.<div style="font-size:11px;opacity:.8;margin-top:2px">Answer both chemical-use questions before saving.</div></div>'
           : !s.chemFree
-            ? '<div style="margin-top:5px;background:#fef2f2;border-radius:5px;padding:3px 8px;font-size:11px;color:#991b1b">⛔ A1 or A2 not confirmed — auto-classified as Not Adopted.</div>'
+            ? '<div style="margin-bottom:12px;background:#fef2f2;border:1px solid var(--red-line);border-radius:7px;padding:8px 11px;font-size:12px;color:#991b1b">⛔ રાસાયણિક વપરાશ મળ્યો — "નથી અપનાવ્યું" ગણાશે.<div style="font-size:11px;opacity:.8;margin-top:2px">Chemical use found — classified as Not Adopted.</div></div>'
             : '');
     // Disable Save while A1/A2 are undecided.
     const saveBtn = document.getElementById('scoreSave');
@@ -7657,7 +7674,7 @@ function openConvScoreModal(id){
       saveBtn.disabled = mandatoryMissing;
       saveBtn.style.opacity = mandatoryMissing ? '.5' : '1';
       saveBtn.style.pointerEvents = mandatoryMissing ? 'none' : 'auto';
-      saveBtn.title = mandatoryMissing ? 'Set A1 and A2 first' : '';
+      saveBtn.title = mandatoryMissing ? 'બન્ને રાસાયણિક સવાલોના જવાબ આપો' : '';
       const saveHint = document.getElementById('saveHint');
       if(saveHint) saveHint.style.display = mandatoryMissing ? 'block' : 'none';
     }
@@ -7689,7 +7706,7 @@ function openConvScoreModal(id){
     return '<div style="background:var(--panel-2);border:1px solid ' + (undecided ? 'var(--yellow-line)' : 'var(--line)') + ';border-left:3px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
       // Title row — question + system tag + dynamic earned/max badge
       + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:5px;flex-wrap:wrap">'
-      +   '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;line-height:1.5">' + key + '. ' + esc(fw.gu || fw.label) + ' <span class="tag red" style="font-size:9px;padding:1px 5px;margin-left:2px"><span class="d"></span>ફરજિયાત</span></div></div>'
+      +   '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;line-height:1.5">' + esc(fw.gu || fw.label) + ' <span class="tag red" style="font-size:9px;padding:1px 5px;margin-left:2px"><span class="d"></span>ફરજિયાત</span></div></div>'
       +   '<b data-earned="' + key + '" style="color:' + (earned ? 'var(--green)' : 'var(--red)') + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + earned + ' / ' + fw.marks + '</b></div>'
       // Decision buttons
       + '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">'
@@ -7732,7 +7749,7 @@ function openConvScoreModal(id){
         + (fw.threshold-1 > 1 ? 's' : '') + ' = <b>' + halfMarks + '</b> marks · <b>0</b> = 0 marks'
       : '📋 Adopt ≥ <b>' + fw.threshold + '</b> of the practices below to earn full <b>' + fw.marks + '</b> marks. Below that = 0.';
     return '<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--leaf);border-radius:8px;padding:12px 14px;margin-bottom:10px">'
-      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">' + key + '. ' + esc(fw.gu || fw.label) + '</div></div><b data-earned="' + key + '" style="color:' + earnedColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarned + ' / ' + fw.marks + '</b></div>'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">' + esc(fw.gu || fw.label) + '</div></div><b data-earned="' + key + '" style="color:' + earnedColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarned + ' / ' + fw.marks + '</b></div>'
       /* v174 - the admin: "I dont need scoring guide. Like Adopt>1 etc."
          The marks arithmetic is the app's job, and the running total at the top
          of the form already shows what it decided. It was a line of English in
@@ -7857,30 +7874,49 @@ function openConvScoreModal(id){
     + '</div></div>'
     // Farm-visit photos — multiple, stored as base64 in the visit record
     + '<div style="margin-top:10px">'
-    +   '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:5px">📷 Farm visit photos (optional)</label>'
+    +   '<label style="font-size:11px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:5px">\ud83d\udcf7 \u0a96\u0ac7\u0aa4\u0ab0\u0aa8\u0abe \u0aab\u0acb\u0a9f\u0abe <span id="vsPhotoCount" style="font-weight:700"></span> \u00b7 Farm visit photos (max 6)</label>'
     +   '<div id="vsPhotoGrid" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
-    +     '<label style="width:64px;height:64px;border:1.5px dashed var(--line-strong);border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff" title="Add photo">'
-    +       '<span style="font-size:22px;line-height:1">+</span>'
-    +       '<input type="file" id="vsPhotoInput" accept="image/*" multiple style="display:none">'
+    /* v187 - TWO tiles. On Android 13+ Chrome hands an accept="image/*" input to
+       the system Photo Picker, which offers the gallery and NO camera - so an FC
+       standing in the field could not photograph the farm they were standing on.
+       capture="environment" is what asks for the rear camera directly. The
+       gallery tile deliberately has no capture attribute, because a phone that
+       honours capture will otherwise never offer stored photos. */
+    +     '<label id="vsCamTile" style="width:64px;height:64px;border:1.5px dashed var(--line-strong);border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.1;text-align:center">'
+    +       '<span><span style="font-size:19px;display:block">\ud83d\udcf7</span><span style="font-size:8.5px;font-weight:700">\u0a95\u0ac7\u0aae\u0ac7\u0ab0\u0abe</span></span>'
+    +       '<input type="file" id="vsPhotoInput" accept="image/*" capture="environment" multiple style="display:none">'
+    +     '</label>'
+    +     '<label id="vsGalTile" style="width:64px;height:64px;border:1.5px dashed var(--line-strong);border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.1;text-align:center">'
+    +       '<span><span style="font-size:19px;display:block">\ud83d\uddbc\ufe0f</span><span style="font-size:8.5px;font-weight:700">\u0a97\u0ac7\u0ab2\u0ab0\u0ac0</span></span>'
+    +       '<input type="file" id="vsGalInput" accept="image/*" multiple style="display:none">'
     +     '</label>'
     +   '</div>'
     + '</div>'
     + '</div>';
   const body =
-    '<div id="scoreLive" style="position:sticky;top:0;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:12px"></div>'
+    /* v187 - the sticky score card that used to live here is now in the modal
+       header (see modalShell). A warning line still renders in the body when
+       the two mandatory questions are unanswered. */
+    '<div id="scoreWarn"></div>'
     + visitSection
-    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;background:#fffbeb;border-left:3px solid var(--yellow);padding:9px 12px;border-radius:0 7px 7px 0"><b>⛔ No-compromise rule:</b> A1 and A2 must BOTH be Confirmed for the farmer to be classified as Adopted. If either fails, the system auto-classifies as Not Adopted regardless of B/C scores.</div>'
-    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">A · Chemical-Free Compliance (50 marks)</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;background:#fffbeb;border-left:3px solid var(--yellow);padding:9px 12px;border-radius:0 7px 7px 0"><b>⛔ નિયમ:</b> બન્ને રાસાયણિક સવાલોમાં "ના" હોય તો જ ખેડૂત "અપનાવ્યું" ગણાય. કોઈ એકમાં રસાયણ મળે તો બાકીના ગુણ ગમે એટલા હોય, ખેડૂત "નથી અપનાવ્યું" ગણાશે.<div style="font-size:11px;opacity:.75;margin-top:3px">Both chemical questions must be "No". If either shows chemical use, the farmer is Not Adopted whatever the rest scores.</div></div>'
+    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">રસાયણ-મુક્ત ખાતરી (50 ગુણ)</div>'
     + aSection('A1') + aSection('A2')
-    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">B · Natural Farming System Adoption (' + CONV_SCORE_B_KEYS.reduce((s,k)=>s+(CONV_SCORE_FRAMEWORK[k]?CONV_SCORE_FRAMEWORK[k].marks:0),0) + ' marks)</div>'
+    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">પ્રાકૃતિક પદ્ધતિઓ (' + CONV_SCORE_B_KEYS.reduce((s,k)=>s+(CONV_SCORE_FRAMEWORK[k]?CONV_SCORE_FRAMEWORK[k].marks:0),0) + ' ગુણ)</div>'
     + CONV_SCORE_B_KEYS.map(k => bSection(k)).join('')
-    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">C · Share of Land under Poison-Free Farming (' + CONV_SCORE_FRAMEWORK.C.marks + ' marks)</div>'
+    + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">ઝેર-મુક્ત જમીનનો હિસ્સો (' + CONV_SCORE_FRAMEWORK.C.marks + ' ગુણ)</div>'
     + cSection();
 
-  modalShell('Log visit + score · ' + esc(f.name), body,
+  /* v187 - was "Log visit + score · <name>". The widest line in the dialog
+     spent itself on words the FC already knows - they tapped the button that
+     opened it. Just the farmer's name, with the score beside it. */
+  modalShell(esc(f.name), body,
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
     + '<button class="btn btn-primary" id="scoreSave">' + svg(I.check) + 'Save visit</button>'
-    + '<div id="saveHint" style="width:100%;text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:none">Answer A1 and A2 above to enable save</div>');
+    + '<div id="saveHint" style="width:100%;text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:none">બન્ને રાસાયણિક સવાલોના જવાબ આપો · Answer both chemical-use questions above</div>',
+    /* v187 - the running score rides in the modal header, beside the farmer's
+       name. See modalShell's 4th argument. */
+    '<div id="scoreLive"></div>');
   // === Visit-detail wiring (date sync + Other FC reveal + photo upload) ===
   const vsPhotos = [];                          // captured photos, base64
   const vsDateEl = document.getElementById('vsDate');
@@ -7910,13 +7946,45 @@ function openConvScoreModal(id){
     };
   }
   const vsPhotoInput = document.getElementById('vsPhotoInput');
+  const vsGalInput   = document.getElementById('vsGalInput');
   const vsPhotoGrid  = document.getElementById('vsPhotoGrid');
-  if(vsPhotoInput && vsPhotoGrid){
-    vsPhotoInput.onchange = ev => {
+  /* v187 - cap farm-visit photos at 6 per conversion visit.
+     _vsReserved is the load-bearing part: FileReader is ASYNC, so vsPhotos only
+     grows when each read RESOLVES. Checking vsPhotos.length alone would wave a
+     10-file selection straight through, because all ten are still pending when
+     the second one is checked. A slot is claimed synchronously per accepted
+     file and released on load or error. */
+  const VS_MAX_PHOTOS = 6;
+  let _vsReserved = 0;
+  const vsRoom = () => VS_MAX_PHOTOS - vsPhotos.length - _vsReserved;
+  function paintVsPhotoUI(){
+    const c = document.getElementById('vsPhotoCount');
+    if(c) c.textContent = '(' + (vsPhotos.length + _vsReserved) + '/' + VS_MAX_PHOTOS + ')';
+    const full = vsRoom() <= 0;
+    ['vsCamTile','vsGalTile'].forEach(id => {
+      const t = document.getElementById(id);
+      if(t) t.style.display = full ? 'none' : 'grid';
+    });
+  }
+  if(vsPhotoGrid){
+    const onPick = ev => {
       const files = [...(ev.target.files || [])];
-      files.forEach(file => {
+      const room  = vsRoom();
+      if(room <= 0){
+        toast('\u0ab5\u0aa7\u0ac1\u0aae\u0abe\u0a82 \u0ab5\u0aa7\u0ac1 6 \u0aab\u0acb\u0a9f\u0abe \u00b7 Maximum 6 photos');
+        ev.target.value = ''; return;
+      }
+      const take = files.slice(0, room);
+      if(files.length > take.length){
+        toast('\u0aab\u0a95\u0acd\u0aa4 6 \u0aab\u0acb\u0a9f\u0abe \u2014 ' + (files.length - take.length) + ' \u0a9b\u0acb\u0aa1\u0ac0 \u0aa6\u0ac0\u0aa7\u0abe \u00b7 Only 6 allowed');
+      }
+      _vsReserved += take.length;
+      paintVsPhotoUI();
+      take.forEach(file => {
         const rd = new FileReader();
+        rd.onerror = () => { _vsReserved = Math.max(0, _vsReserved - 1); paintVsPhotoUI(); };
         rd.onload = () => {
+          _vsReserved = Math.max(0, _vsReserved - 1);
           const photo = {name: file.name, type: file.type, data: rd.result};
           vsPhotos.push(photo);
           const thumb = document.createElement('div');
@@ -7927,14 +7995,21 @@ function openConvScoreModal(id){
             const i = vsPhotos.indexOf(photo);
             if(i>=0) vsPhotos.splice(i,1);
             thumb.remove();
+            paintVsPhotoUI();   // v187 - removing one frees a slot again
           };
           vsPhotoGrid.insertBefore(thumb, vsPhotoGrid.querySelector('label'));
+          paintVsPhotoUI();
         };
         rd.readAsDataURL(file);
       });
       // Reset so the same file can be re-picked.
       ev.target.value = '';
     };
+    /* v187 - both tiles share one handler: the only difference between them is
+       the capture attribute on the input, which the OS reads, not us. */
+    if(vsPhotoInput) vsPhotoInput.onchange = onPick;
+    if(vsGalInput)   vsGalInput.onchange   = onPick;
+    paintVsPhotoUI();
   }
   // Expose vsPhotos to the save handler via closure capture below.
   window._vsPhotosCapture = vsPhotos;
@@ -8035,7 +8110,7 @@ function openConvScoreModal(id){
   document.getElementById('scoreSave').onclick = async () => {
     // Mandatory check — A1 and A2 must have an explicit Confirmed/Not Confirmed value.
     if(W.A1.confirmed === null || W.A2.confirmed === null){
-      toast('A1 and A2 are mandatory. Please answer both before saving.');
+      toast('બન્ને રાસાયણિક સવાલોના જવાબ આપો · Answer both chemical-use questions');
       return;
     }
     // v9 process-fix #52 — must show evidence of work. If all B-sections are
@@ -8048,7 +8123,7 @@ function openConvScoreModal(id){
     const cCur  = parseFloat(W.C.currentArea) || 0;
     const anyC = (parseFloat(W.C.chemFreeLand) || 0) > 0 || cCur > 0 || cPrev > 0;
     if(!anyB && !anyC){
-      const ok = confirm('No practices ticked and chemical-free area is 0. This will save A1/A2 only (≤50/100).\n\nContinue anyway?');
+      const ok = confirm('કોઈ પદ્ધતિ પસંદ કરી નથી અને ઝેર-મુક્ત વિસ્તાર 0 છે.\n\nNo practices ticked and poison-free area is 0. Save anyway?');
       if(!ok) return;
     }
     const saveBtn = document.getElementById('scoreSave');
@@ -8310,7 +8385,7 @@ function convScoreCard(f){
     // Use shortLabel for the card row (more compact than the full question).
     const title = fw.shortLabel || fw.label;
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line-soft);gap:10px">'
-      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">' + key + '. ' + esc(title) + '</div>'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">' + esc(title) + '</div>'
       + (detail ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px">' + detail + '</div>' : '')
       + '</div>'
       + '<div style="text-align:right;flex-shrink:0"><b style="color:' + color + ';font-size:14px;font-variant-numeric:tabular-nums">' + gotMarks + '</b><span style="color:var(--ink-faint);font-size:11px"> / ' + max + '</span></div>'
@@ -13903,9 +13978,17 @@ function _sheetify(m){
 }
 function openModal(){$('#overlay').classList.add('show');const _m=$('#modal');_m.classList.add('show');_sheetify(_m);}
 function closeModal(){$('#overlay').classList.remove('show');$('#modal').classList.remove('show');$('#modal').classList.remove('wide');}
-function modalShell(title,bodyHtml,footHtml){
+/* v187 - optional 4th argument renders between the title and the close button.
+   Added for the conversion visit form, whose running score used to be a
+   `position:sticky` card INSIDE .modal-body. Sticky anchors to the scroll
+   container's padding edge, so the form scrolled up through the body's side
+   padding and appeared beside and behind that card - on a phone it read as a
+   broken, doubled-up header. The modal header sits outside the scroll
+   container, so nothing can overlap it. Every existing caller passes three
+   arguments and is untouched. */
+function modalShell(title,bodyHtml,footHtml,headHtml){
   $('#modal').innerHTML=`
-    <div class="modal-head"><h3>${title}</h3><button class="x-btn" onclick="closeModal()" aria-label="Close">${svg(I.x)}</button></div>
+    <div class="modal-head"><h3>${title}</h3>${headHtml||''}<button class="x-btn" onclick="closeModal()" aria-label="Close">${svg(I.x)}</button></div>
     <div class="modal-body">${bodyHtml}</div>
     <div class="modal-foot">${footHtml}</div>`;
   openModal();

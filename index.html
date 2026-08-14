@@ -3262,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v189';
+const APP_VERSION = 'v190';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7714,16 +7714,16 @@ function openConvScoreModal(id){
     return '<div style="background:var(--panel-2);border:1px solid ' + (undecided ? 'var(--yellow-line)' : 'var(--line)') + ';border-left:3px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
       // Title row — question + system tag + dynamic earned/max badge
       + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:5px;flex-wrap:wrap">'
-      +   '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;line-height:1.5">' + esc(fw.gu || fw.label) + ' <span class="tag red" style="font-size:9px;padding:1px 5px;margin-left:2px"><span class="d"></span>ફરજિયાત</span></div></div>'
+      +   '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;line-height:1.5">' + key + '. ' + esc(fw.gu || fw.label) + ' <span class="tag red" style="font-size:9px;padding:1px 5px;margin-left:2px"><span class="d"></span>ફરજિયાત</span></div></div>'
       +   '<b data-earned="' + key + '" style="color:' + (earned ? 'var(--green)' : 'var(--red)') + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + earned + ' / ' + fw.marks + '</b></div>'
       // Decision buttons
       + '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">'
       /* v168 - the clean answer is the GREEN one. It used to take the same clay
          fill as every other selected button, so once chosen "no chemicals" and
          "chemicals found" looked identical. */
-      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary a-clean' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="no">' + svg(I.check,2)
+      +   '<button type="button" class="btn ' + (noOn ? 'btn-primary a-clean' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left;white-space:normal;line-height:1.35;align-items:flex-start;height:auto" data-aset="' + key + '" data-av="no">' + svg(I.check,2)
       +     (key==='A1' ? 'કોઈ પણ રાસાયણિક ખાતર વાપરતા નથી' : 'રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરતા નથી') + '</button>'
-      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left" data-aset="' + key + '" data-av="yes">✗ '
+      +   '<button type="button" class="btn ' + (yesOn ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:150px;text-align:left;white-space:normal;line-height:1.35;align-items:flex-start;height:auto" data-aset="' + key + '" data-av="yes">✗ '
       +     (key==='A1' ? 'રસાયણિક ખાતર વાપરે છે' : 'રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરે છે') + '</button>'
       + '</div>'
       // Evidence pills — separate row, larger touch targets
@@ -7757,21 +7757,36 @@ function openConvScoreModal(id){
         + (fw.threshold-1 > 1 ? 's' : '') + ' = <b>' + halfMarks + '</b> marks · <b>0</b> = 0 marks'
       : '📋 Adopt ≥ <b>' + fw.threshold + '</b> of the practices below to earn full <b>' + fw.marks + '</b> marks. Below that = 0.';
     return '<div style="background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--leaf);border-radius:8px;padding:12px 14px;margin-bottom:10px">'
-      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">' + esc(fw.gu || fw.label) + '</div></div><b data-earned="' + key + '" style="color:' + earnedColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarned + ' / ' + fw.marks + '</b></div>'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;line-height:1.5">' + key + '. ' + esc(fw.gu || fw.label) + '</div></div><b data-earned="' + key + '" style="color:' + earnedColor + ';font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums">' + initEarned + ' / ' + fw.marks + '</b></div>'
       /* v174 - the admin: "I dont need scoring guide. Like Adopt>1 etc."
          The marks arithmetic is the app's job, and the running total at the top
          of the form already shows what it decided. It was a line of English in
          a Gujarati form telling the reader how to do a sum they never have to
          do. hintLine is left computed above and simply not rendered. */
       + '<div style="display:flex;flex-direction:column;gap:7px">'
-      + fw.practices.map(p => {
+      + (fw.practices.length === 1
+          /* v190 - one practice is a yes/no question, not a list to tick. A lone
+             checkbox reading "હા" gave an FC no way to answer "no" - they could
+             only leave it alone and hope that read as no. Same single key
+             underneath; these two buttons just set it true or false. */
+          ? (function(){
+              const p = fw.practices[0], w = W[key][p.key];
+              const yes = w.adopted === true, no = w.adopted === false || w.adopted == null;
+              return '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+                + '<button type="button" class="btn ' + (yes ? 'btn-primary a-clean' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:110px;text-align:left;white-space:normal;line-height:1.35;align-items:flex-start;height:auto" data-byn="' + key + ':' + p.key + '" data-bv="yes">'
+                + (yes ? svg(I.check,2) : '') + '\u0ab9\u0abe</button>'
+                + '<button type="button" class="btn ' + (!yes && w.adopted === false ? 'btn-clay' : 'btn-ghost') + ' btn-sm" style="font-size:12.5px;padding:9px 12px;flex:1;min-width:110px;text-align:left;white-space:normal;line-height:1.35;align-items:flex-start;height:auto" data-byn="' + key + ':' + p.key + '" data-bv="no">'
+                + '\u0aa8\u0abe</button>'
+                + '</div>';
+            })()
+          : fw.practices.map(p => {
           const w = W[key][p.key];
           return '<div style="background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 11px;display:flex;flex-direction:column;gap:6px">'
             + '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;flex:1;min-width:140px"><input type="checkbox" data-bp="' + key + ':' + p.key + '" ' + (w.adopted?'checked':'') + ' style="width:16px;height:16px"><div><div style="font-size:13px;font-weight:600;color:var(--ink);line-height:1.4">' + esc(p.gu || p.label) + '</div></div></label>'
             + (w.adopted ? '<span class="tag green" style="font-size:10px"><span class="d"></span>Adopted</span>' : '<span class="tag grey" style="font-size:10px"><span class="d"></span>Not Adopted</span>') + '</div>'
             + '<input type="text" data-bpr="' + key + ':' + p.key + '" placeholder="Remarks (optional)" value="' + esc(w.remarks||'') + '" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:5px;font-family:inherit;font-size:14px">'
             + '</div>';
-        }).join('')
+        }).join(''))
       + '</div></div>';
   }
 
@@ -8098,6 +8113,16 @@ function openConvScoreModal(id){
   // A1/A2 notes
   document.querySelectorAll('[data-anotes]').forEach(t => t.oninput = () => { W[t.dataset.anotes].notes = t.value; });
   // B1/B2/B3 practice toggles
+  /* v190 - the yes/no pair used by single-practice sections. */
+  document.querySelectorAll('[data-byn]').forEach(btn => btn.onclick = () => {
+    const [group, prac] = btn.dataset.byn.split(':');
+    W[group][prac].adopted = (btn.dataset.bv === 'yes');
+    btn.parentNode.querySelectorAll('[data-byn]').forEach(b => {
+      const on = (b.dataset.bv === 'yes') === W[group][prac].adopted;
+      b.className = 'btn btn-sm ' + (on ? (b.dataset.bv === 'yes' ? 'btn-primary a-clean' : 'btn-clay') : 'btn-ghost');
+    });
+    rebindAndPaint();
+  });
   document.querySelectorAll('[data-bp]').forEach(cb => cb.onchange = () => {
     const [group, prac] = cb.dataset.bp.split(':');
     W[group][prac].adopted = cb.checked;
@@ -8402,7 +8427,7 @@ function convScoreCard(f){
     // Use shortLabel for the card row (more compact than the full question).
     const title = fw.shortLabel || fw.label;
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line-soft);gap:10px">'
-      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">' + esc(title) + '</div>'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">' + key + '. ' + esc(title) + '</div>'
       + (detail ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px">' + detail + '</div>' : '')
       + '</div>'
       + '<div style="text-align:right;flex-shrink:0"><b style="color:' + color + ';font-size:14px;font-variant-numeric:tabular-nums">' + gotMarks + '</b><span style="color:var(--ink-faint);font-size:11px"> / ' + max + '</span></div>'

@@ -669,7 +669,7 @@ tbody tr:last-child td{border-bottom:none}
    #toast, so at equal z-index the opaque nav wins and covers the toast. Every
    confirmation, save result and error an FC or mobilizer sees was invisible to
    them. Lift it clear of the nav in FC mode only; admin is untouched. */
-body.fc-mode .toast{bottom:84px;z-index:210}
+body.fc-mode .toast{bottom:112px;z-index:210}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
   background:var(--navy);color:#fff;padding:11px 20px;border-radius:9px;font-size:13px;
   font-weight:600;box-shadow:var(--sh-3);z-index:200;opacity:0;
@@ -783,7 +783,26 @@ body.is-offline #offlineBanner{display:block}
 body.is-offline .topbar{margin-top:34px}
 /* ===== FC MOBILE UI ===== */
 body.fc-mode .sidebar{display:none}
-body.fc-mode .main{padding-bottom:68px}
+/* v186 - room for the bottom nav AND the sync strip above it. */
+body.fc-mode .main{padding-bottom:96px}
+/* v186 - FCs could not see whether their work had reached the office. The sync
+   pill exists, but it lives in .topbar, which fc-mode sets to display:none - so
+   the one control that answers "did my visit send?" was invisible to exactly the
+   people who need it, and updatePhotoBadge() gave up silently because it anchors
+   itself to that hidden pill. This strip sits above the bottom nav on every FC
+   screen. It is deliberately ALWAYS shown, including when everything is sent:
+   the calm green state is the point, so an FC leaving a village can glance once
+   and know. Counts come from queues the app already maintains - no new data and
+   no Firebase read. */
+#fcSync{display:none;position:fixed;left:0;right:0;bottom:62px;z-index:190;
+  align-items:center;justify-content:center;gap:7px;padding:5px 12px;
+  font-size:12px;font-weight:700;border-top:1px solid var(--line);
+  background:var(--panel);color:var(--ink)}
+body.fc-mode #fcSync{display:flex}
+#fcSync.ok{background:#ecfdf5;color:#065f46;border-top-color:#a7f3d0}
+#fcSync.wait{background:#fffbeb;color:#92400e;border-top-color:#fde68a}
+#fcSync.off{background:#fef2f2;color:#991b1b;border-top-color:#fecaca}
+#fcSync .en{font-weight:600;opacity:.75;font-size:10.5px}
 body.fc-mode .topbar{display:none}
 #fc-bnav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--panel);
   border-top:1px solid var(--line);z-index:200;
@@ -3226,7 +3245,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v185';
+const APP_VERSION = 'v186';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3276,7 +3295,55 @@ function fbConfigured(){
 function fbRef(path){return FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));}
 
 /* sync-status pill in the top bar */
+/* v186 - everything still waiting to reach the server, from the queues the app
+   already keeps. pendingSyncCount() is records saved but not confirmed; the three
+   IndexedDB stores are the durable retry queues the background pump drains. */
+async function fcPendingTotal(){
+  let photos=0, writes=0, forms=0;
+  try{ photos=(await idbAll('photoQueue')).length; }catch(e){}
+  try{ writes=(await idbAll('offlineWrites')).length; }catch(e){}
+  try{ forms =(await idbAll('formWrites')).length; }catch(e){}
+  let recs=0; try{ recs=pendingSyncCount(); }catch(e){}
+  return {total: recs+writes+forms+photos, photos: photos};
+}
+let _fcSyncBusy=false, _fcSyncAgain=false;
+async function updateFcSync(){
+  const el0=document.getElementById('fcSync');
+  if(!document.body.classList.contains('fc-mode')){ if(el0) el0.style.display='none'; return; }
+  if(_fcSyncBusy){ _fcSyncAgain=true; return; }   // never pile up behind the pump
+  _fcSyncBusy=true;
+  try{
+    let el=el0;
+    if(!el){ el=document.createElement('div'); el.id='fcSync'; document.body.appendChild(el); }
+    el.style.display='flex';
+    const {total, photos}=await fcPendingTotal();
+    const online=navigator.onLine;
+    let cls, gu, en;
+    if(total===0){
+      cls='ok';
+      gu='\u2713 \u0aac\u0aa7\u0ac1\u0a82 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82';           // everything sent
+      en='All sent';
+    } else if(!online){
+      cls='off';
+      gu='\u26a0 \u0a91\u0aab\u0ab2\u0abe\u0a87\u0aa8 \u2014 '+total+' \u0aac\u0abe\u0a95\u0ac0';                     // offline - N waiting
+      en=total+' waiting \u00b7 will send when you have signal';
+    } else {
+      cls='wait';
+      gu='\u2191 '+total+' \u0aac\u0abe\u0a95\u0ac0 \u2014 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0ab0\u0ab9\u0acd\u0aaf\u0ac1\u0a82 \u0a9b\u0ac7';   // N waiting - sending
+      en=photos? (photos+' photo'+(photos===1?'':'s')+' included') : 'Sending\u2026';
+    }
+    el.className=cls;
+    el.innerHTML='<span>'+gu+'</span><span class="en">'+esc(en)+'</span>';
+  } finally {
+    _fcSyncBusy=false;
+    if(_fcSyncAgain){ _fcSyncAgain=false; setTimeout(updateFcSync, 400); }
+  }
+}
 function setSyncPill(state){
+  // v186 - run BEFORE the early return below: in fc-mode #syncPill does not
+  // exist, so every sync event used to leave this function immediately and the
+  // FC strip would never have been told anything.
+  updateFcSync();
   const pill=$('#syncPill'); if(!pill)return;
   const map={
     synced:{cls:'',txt:'Synced'},
@@ -5745,7 +5812,10 @@ let _pumpsStarted = false;
 function startBackgroundPumps(){
   if(_pumpsStarted) return;
   _pumpsStarted = true;
-  const pump = ()=>{ flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); };
+  // v186 - refresh the FC strip on the same beat the queues are drained.
+  window.addEventListener('online',  updateFcSync);
+  window.addEventListener('offline', updateFcSync);
+  const pump = ()=>{ updateFcSync(); flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); };
   setInterval(pump, 30000 + Math.floor(Math.random()*10000));
   window.addEventListener('online', ()=>{ setTimeout(pump, 1500); });
   setTimeout(()=>{ pump(); updatePhotoBadge(); }, 2000);   // initial kick shortly after load
@@ -17104,6 +17174,7 @@ function render(){
      every FC screen, bounces to their own farmer list. */
   if(isMobilizerUser() && ['mob_farmers','fc_profile'].indexOf(ROUTE) < 0) ROUTE = 'mob_farmers';
   document.body.classList.toggle('fc-mode', !isAdminUser());
+  updateFcSync();   // v186 - the strip follows fc-mode on and off
   renderNav();
   if(isMobilizerUser()){
     renderMobBottomNav();
@@ -18579,13 +18650,25 @@ window.addEventListener('message',async ev=>{
       logActivity('visit',`Farm verification (Gujarati patrak) completed for <b>${esc(f.name)}</b> (${f.id})${s.verifierName?' by '+esc(s.verifierName):''}`);
       // v22 bug#5b — durable backstop: if the cloud write didn't land, queue the
       // 'verified' record so it re-syncs on reconnect instead of reverting to pending.
-      if(!(await saveDB(true))) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{});
+      /* v186 - remember whether this actually reached the server. The success
+         message is emitted by the separate 'farm-verification-closed' handler
+         below, which had no way to know, so it always said "recorded" - true on
+         the phone, but it reads as "sent to the office". */
+      const _verifSynced = await saveDB(true);
+      window._lastVerifSynced = !!_verifSynced;
+      if(!_verifSynced) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{});
+      updateFcSync();
     }
   }
   if(d.type==='farm-verification-closed'){
     closeVerificationForm();
     render();
-    toast('વેરિફિકેશન રેકોર્ડ થયું — Farmer moved to Visited & verified');
+    /* v186 - say which of the two actually happened. */
+    toast(window._lastVerifSynced === false
+      ? '\u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0ac7\u0ab5 \u0aa5\u0aaf\u0ac1\u0a82 \u2014 \u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0aae\u0ab3\u0aa4\u0abe\u0a82 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0ab6\u0ac7 \u00b7 Saved on your phone, will send when you have signal'
+      : '\u0ab5\u0ac7\u0ab0\u0abf\u0aab\u0abf\u0a95\u0ac7\u0ab6\u0aa8 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82 \u00b7 Verification sent');
+    window._lastVerifSynced = undefined;
+    updateFcSync();
   }
 });
 

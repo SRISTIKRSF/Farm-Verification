@@ -664,10 +664,23 @@ tbody tr:last-child td{border-bottom:none}
 .fc-stats .fs .l{font-size:9px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
 
 /* toast */
+/* v185 - .toast sits at bottom:24px z-index:200, and the FC bottom nav is
+   bottom:0, ~62px tall, ALSO z-index:200 - and is appended to <body> after
+   #toast, so at equal z-index the opaque nav wins and covers the toast. Every
+   confirmation, save result and error an FC or mobilizer sees was invisible to
+   them. Lift it clear of the nav in FC mode only; admin is untouched. */
+body.fc-mode .toast{bottom:84px;z-index:210}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
   background:var(--navy);color:#fff;padding:11px 20px;border-radius:9px;font-size:13px;
   font-weight:600;box-shadow:var(--sh-3);z-index:200;opacity:0;
-  transition:.28s cubic-bezier(.32,.85,.3,1);display:flex;align-items:center;gap:9px;max-width:420px;text-align:left}
+  /* v185 - was `transition:.28s ...`, i.e. transition-property:all, which
+     ANIMATES `bottom` too - and a live transition outranks author rules,
+     !important and inline !important while it owns a property. That is why
+     `body.fc-mode .toast{bottom:84px}` was parsed, matched the element, and
+     was still ignored: measured 24px with the transition on, 84px with it off.
+     Same trap as the v173 modal. The show/hide animation only ever needed
+     transform and opacity, so name them and leave `bottom` alone. */
+  transition:transform .28s cubic-bezier(.32,.85,.3,1),opacity .28s cubic-bezier(.32,.85,.3,1);display:flex;align-items:center;gap:9px;max-width:420px;text-align:left}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .toast svg{width:16px;height:16px;flex-shrink:0;color:#7fd68f}
 .toast.err{background:var(--red)}
@@ -3213,7 +3226,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v184';
+const APP_VERSION = 'v185';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3360,7 +3373,14 @@ async function loadDB(){
       await preCleanBlobsFromRTDB();
       attachLiveListener();
       attachQuestionSchemaLiveListener();   // Question Manager cross-device sync
-      subscribeUsers();
+      /* v185 - this ran unconditionally at boot, before any login and even in
+         PUBLIC_MODE, so a farmer opening the public enrolment link downloaded
+         every account record - including salt and passwordHash - and the app
+         wrote them to localStorage. _activeSyncKeys() carefully narrows public
+         mode to meta/fcs/fieldCoordinators; this listener walked straight past
+         that. The login screen does not need it: signIn() already awaits the
+         one-shot ensureUsersLoaded(). */
+      if (sessionStorage.getItem(USER_SESSION_KEY)) subscribeUsers();
       // v(scale-audit) — exclude any still-pending (never-confirmed-synced)
       // records from the baseline snapshot; see markPendingSync/saveDB for
       // why. Without this, a record created/edited entirely offline — whose
@@ -5038,7 +5058,19 @@ async function saveDB(silent){
       updates['activity/'+a.id]=null;
     });
   }
-  updates['meta']=sanitizeForFB({haats:DB.haats,crops:DB.crops,months:DB.months,states:DB.states,convParams:DB.convParams,settings:DB.settings||{}});
+  /* v185 - this used to be updates['meta'] = {...}. A multi-path update() keyed
+     on 'meta' REPLACES the entire meta subtree, so meta/blobsCleanedV2 - written
+     once by preCleanBlobsFromRTDB() to record "this database has been cleaned" -
+     was deleted by the very next save. Every farmer edit, every visit, every
+     archive wiped the flag, so the one-shot cleanup ran again on EVERY app open
+     on EVERY device: two shallow REST reads across all ~1,678 farmer keys plus a
+     root PATCH nulling ~3,356 already-null paths, and it is awaited before the
+     first paint. At 10,000 farmers that is ~20,000 null paths per launch.
+     Writing the children individually leaves sibling keys alone. It also removes
+     a stale-cache risk: replacing the node pushed this device's localStorage copy
+     of the haat/crop/month lists over the server's. */
+  ['haats','crops','months','states','convParams'].forEach(function(k){ updates['meta/'+k]=sanitizeForFB(DB[k]); });
+  updates['meta/settings']=sanitizeForFB(DB.settings||{});
   // shield in-flight records so the Firebase echo can't revert them mid-write
   dirty.forEach(([col,id])=>markLocalTouch(col,id));
   // v(scale-audit) — mark BEFORE the write attempt, not after: Firebase's
@@ -5891,7 +5923,15 @@ function saveSession(s){
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
 }
 let SESSION = loadSession();
-function isAdminUser(){ return !SESSION || SESSION.role === 'admin'; }
+/* v185 - was `!SESSION || SESSION.role === 'admin'`, i.e. NO SESSION MEANT
+   ADMIN. SESSION is null whenever loadSession() fails to parse the stored value,
+   while enterAdminMode()/detectPublicMode() gate on the raw presence of the
+   sessionStorage key - so an unparseable value plus #admin produced the full
+   admin UI, including Settings, Users and "Erase all farmer data".
+   Safe to tighten: the PUBLIC_MODE branch in render() returns before the
+   fc-mode toggle and before every caller of this, so the public landing page is
+   unaffected - verified before changing it. */
+function isAdminUser(){ return !!SESSION && SESSION.role === 'admin'; }
 function currentFcId(){ return SESSION && SESSION.role === 'fc' ? SESSION.userId : null; }
 /* v(district-scoping) — per-FC district assignment, applied ONLY to the FC's
    own mobile discovery screens (My Work queue, Haat Farmers reference list),
@@ -7324,7 +7364,15 @@ const CONV_C_BANDS = [
    Those SIX records keep the old formula for as long as they are untouched, so
    nobody's score moves under them because the question changed. The moment an
    FC re-visits and enters the land figures, it switches to the share rule. */
-function convCIsNew(C){ return !!(C && C.totalLand != null && C.totalLand !== ''); }
+/* v185 - keyed on totalLand, which v178 PRE-FILLS from f.landAcres. So a
+   pre-v178 farmer counted as "new" before the FC typed anything: opening the
+   modal and pressing Save wrote a totalLand with an empty chemFreeLand, and
+   Section C fell from up to 20 marks to 0 - enough to move a farmer from
+   Adopted to In Progress with no warning. My own v178 bug.
+   chemFreeLand is the answer the new rule actually needs, and nothing pre-fills
+   it (deliberately - it is the figure being verified), so it is the honest
+   signal that the new question has been answered. */
+function convCIsNew(C){ return !!(C && C.chemFreeLand != null && C.chemFreeLand !== ''); }
 function convCInvalid(total, chemFree){
   const t = parseFloat(total) || 0, c = parseFloat(chemFree) || 0;
   return t > 0 && c > t + 0.001;         // tolerance covers float noise only
@@ -18094,7 +18142,14 @@ function openVerificationForm(farmerId, farmFid){
       </div>
       <iframe id="verifyFrame" class="enroll-frame" title="Verification form"></iframe>`;
     document.body.appendChild(host);
-    $('#verifyClose').onclick=closeVerificationForm;
+    /* v185 - this closed a ~60-question verification instantly. The form has NO
+       draft autosave (the enrolment patrak has one; this does not), and the
+       in-iframe back button already confirms - so the big X in the outer bar was
+       the one way to lose an afternoon's work on a mis-tap. Same question the
+       in-form button asks. */
+    $('#verifyClose').onclick=function(){
+      if(confirm('\u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u0a9b\u0acb\u0aa1\u0ac0 \u0aa6\u0ac7\u0ab5\u0abe \u0aae\u0abe\u0a97\u0acb \u0a9b\u0acb? \u0aad\u0ab0\u0ac7\u0ab2\u0ac0 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0ab8\u0abe\u0a9a\u0ab5\u0abe\u0ab6\u0ac7 \u0aa8\u0ab9\u0abf.\n\nClose the form? Your answers will not be saved.')) closeVerificationForm();
+    };
   }
   // Build the prefill-injection script.
   const prefill = buildVerifPrefill(f);
@@ -19404,6 +19459,21 @@ function openUserModal(userId, opts) {
       } else if (existing) {
         record.salt = existing.salt;
         record.passwordHash = existing.passwordHash;
+      }
+      /* v185 - DATA LOSS. The write below is a .set(), which REPLACES the whole
+         account node. `record` is built from the form fields only, so anything
+         added to an account outside this screen was silently erased by an
+         unrelated edit. `farmers` (v165) is the list of conversion farmers
+         assigned to a mobilizer, and it is the ONLY thing _mobFarmerIds() reads
+         to decide what that mobilizer may see - so an admin correcting a
+         mobilizer's spelling left them staring at "No farmers have been
+         assigned to you yet", with nothing in the activity log to explain it.
+         mustChangePassword/passwordChangedAt were lost the same way, quietly
+         cancelling a pending forced password reset.
+         Carry through every field this screen does not own. */
+      if (existing) {
+        ['farmers','mustChangePassword','passwordChangedAt','lastLoginAt','migratedFrom']
+          .forEach(function(k){ if (existing[k] !== undefined && record[k] === undefined) record[k] = existing[k]; });
       }
       if (!isNew && origId && origId !== uid) {
         // ID changed — write to new key and delete old key atomically

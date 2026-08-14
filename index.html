@@ -586,8 +586,16 @@ tbody tr:last-child td{border-bottom:none}
 #scoreLive .n{font-size:21px;font-weight:800;line-height:1}
 #scoreLive .d{font-size:11.5px;color:var(--ink-faint);font-weight:600}
 @media(max-width:520px){
-  .modal-head{flex-wrap:wrap;gap:8px;padding:13px 16px}
-  .modal-head h3{flex:1 1 auto;font-size:15.5px}
+  /* v188 - no flex-wrap. In a wrapping flex row the browser moves an item to the
+     next line BEFORE it shrinks a sibling, so a long farmer name pushed the score
+     down and the header grew to 78px. Without wrap the title must shrink, and the
+     ellipsis rule below truncates it while the score stays beside it. */
+  .modal-head{gap:8px;padding:13px 16px}
+  /* v188 - flex:1 (grow, basis 0) made the title fill the row and pushed the
+     score onto a second line, so the header stood 97px tall for two items that
+     fit side by side in 343px. 0 1 auto sizes the title to its text and lets it
+     SHRINK with an ellipsis when a name is long, keeping the score beside it. */
+  .modal-head h3{flex:0 1 auto;min-width:0;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #scoreLive .n{font-size:19px}
 }
 .modal-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
@@ -3254,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v187';
+const APP_VERSION = 'v188';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7899,7 +7907,9 @@ function openConvScoreModal(id){
        the two mandatory questions are unanswered. */
     '<div id="scoreWarn"></div>'
     + visitSection
-    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;background:#fffbeb;border-left:3px solid var(--yellow);padding:9px 12px;border-radius:0 7px 7px 0"><b>⛔ નિયમ:</b> બન્ને રાસાયણિક સવાલોમાં "ના" હોય તો જ ખેડૂત "અપનાવ્યું" ગણાય. કોઈ એકમાં રસાયણ મળે તો બાકીના ગુણ ગમે એટલા હોય, ખેડૂત "નથી અપનાવ્યું" ગણાશે.<div style="font-size:11px;opacity:.75;margin-top:3px">Both chemical questions must be "No". If either shows chemical use, the farmer is Not Adopted whatever the rest scores.</div></div>'
+    /* v188 - the yellow rule box is gone. It restated in a paragraph what the
+       two chemical questions already ask, and what the red warning says the
+       moment either is answered wrong. Removed at Guru's request. */
     + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">રસાયણ-મુક્ત ખાતરી (50 ગુણ)</div>'
     + aSection('A1') + aSection('A2')
     + '<div style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">પ્રાકૃતિક પદ્ધતિઓ (' + CONV_SCORE_B_KEYS.reduce((s,k)=>s+(CONV_SCORE_FRAMEWORK[k]?CONV_SCORE_FRAMEWORK[k].marks:0),0) + ' ગુણ)</div>'
@@ -7917,6 +7927,13 @@ function openConvScoreModal(id){
     /* v187 - the running score rides in the modal header, beside the farmer's
        name. See modalShell's 4th argument. */
     '<div id="scoreLive"></div>');
+  /* v188 - this dialog has no X. With the score alongside the farmer's name the
+     header ran out of room and the X wrapped onto a second row, which read as a
+     stray button floating under the title. Cancel is in the footer, and the
+     footer is a sibling of the scrolling body - it is on screen at all times, no
+     matter how far down the form you are. Escape and the overlay still close it
+     too. Removed here rather than in modalShell so every other dialog keeps its X. */
+  (function(){ const x = document.querySelector('#modal .modal-head .x-btn'); if(x) x.remove(); })();
   // === Visit-detail wiring (date sync + Other FC reveal + photo upload) ===
   const vsPhotos = [];                          // captured photos, base64
   const vsDateEl = document.getElementById('vsDate');

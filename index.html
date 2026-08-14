@@ -3213,7 +3213,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v183';
+const APP_VERSION = 'v184';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13565,6 +13565,53 @@ function openHaatDrawer(id){
 }
 
 /* ============ DRAWER: CONVERSION FARMER ============ */
+/* v184 - the conversion drawer never showed the enrolment answers, and the
+   conversion PDF printed an empty form. Both looked for `enrollmentFormFull.claims`,
+   a Haat-style structure a conversion farmer has NEVER had: their answers are
+   stored on the record itself under `intake`. 1,185 of the 1,186 conversion
+   farmers have those answers on file, so an admin opening a farmer who had just
+   submitted the form saw the score, the visits and the details - and no sign of
+   the form. Nothing was ever missing from the database; it simply had no
+   renderer, and `loadForms()` searches DB.haatFarmers only, so it could never
+   have found one either.
+
+   Built from CONV_SBS - the same bilingual label/reader table the duplicate-merge
+   screen uses - so the two screens cannot disagree about what a field is called
+   or how a value is formatted. Every reader here reads a field already held in
+   memory on the farmer record, so this costs NO extra Firebase download. */
+function convClaimsFromIntake(f){
+  if(!f) return [];
+  return CONV_SBS.map(function(row){
+    var label = row[0], fromRecord = row[2], v = '';
+    try { v = _attnVal(fromRecord(f)); } catch(e) { v = ''; }
+    var parts = String(label).split(' \u00b7 ');
+    return { id:'', gu: parts[0] || label, en: parts[1] || '', answer: v };
+  }).filter(function(c){ return c.answer !== '' && c.answer != null; });
+}
+
+/* The card shown in the conversion drawer. */
+function convEnrolmentCard(f){
+  var claims = convClaimsFromIntake(f);
+  var when = (f.intake && f.intake.submittedAt) || f.submittedAt || f.publicSubmittedAt || '';
+  var via  = f.publicAppId ? '\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0ac7 \u0a9c\u0abe\u0aa4\u0ac7 \u0aad\u0ab0\u0ac7\u0ab2\u0ac1\u0a82 \u00b7 Self-submitted' : 'FC / admin';
+  var head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    + '<div style="font-size:13.5px;font-weight:700">\ud83d\udccb \u0aa8\u0acb\u0a82\u0aa7\u0aa3\u0ac0 \u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u00b7 Enrolment form'
+    + (claims.length ? ' <span style="font-weight:600;color:var(--ink-faint);font-size:11.5px">(' + claims.length + ')</span>' : '')
+    + '</div>'
+    + (when ? '<div style="font-size:11px;color:var(--ink-faint)">' + esc(fmtDate(when)) + ' \u00b7 ' + esc(via) + '</div>' : '')
+    + '</div>';
+  var body = claims.length
+    ? '<div class="detail-grid">' + claims.map(function(c){
+        var lbl = c.gu + (c.en ? ' \u00b7 ' + c.en : '');
+        var wide = String(c.answer).length > 38 ? ' full' : '';
+        return '<div class="detail-cell' + wide + '"><div class="k">' + esc(lbl) + '</div>'
+             + '<div class="v">' + esc(c.answer) + '</div></div>';
+      }).join('') + '</div>'
+    : '<div style="font-size:12.5px;color:var(--ink-soft)">\u0a86 \u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0aae\u0abe\u0a9f\u0ac7 \u0aa8\u0acb\u0a82\u0aa7\u0aa3\u0ac0 \u0aaa\u0aa4\u0acd\u0ab0\u0a95\u0aa8\u0abe \u0a9c\u0ab5\u0abe\u0aac \u0aae\u0ab3\u0acd\u0aaf\u0abe \u0aa8\u0aa5\u0ac0.'
+      + '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:3px">No enrolment answers recorded for this farmer.</div></div>';
+  return '<div class="card" style="padding:14px 16px;margin-bottom:14px;background:#fff;border:1px solid var(--line);box-shadow:var(--sh-1)">'
+    + head + body + '</div>';
+}
 function openConvDrawer(id){
   const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
   migrateConvFarmer(f);
@@ -13598,6 +13645,8 @@ function openConvDrawer(id){
     <div class="detail-cell full"><div class="k">Current crops</div>
       <div class="v">${(f.crops||[]).map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')||'<span class="pill">—</span>'}</div></div>
   </div>`;
+  // v184 - the answers the farmer actually submitted. Previously invisible.
+  h+=convEnrolmentCard(f);
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
     <button class="btn btn-primary btn-sm" data-d="score">${svg(I.check,2.2)}Log visit + score</button>
     ${!f.fcId?`<button class="btn btn-primary btn-sm" data-d="assign">${svg(I.fc,2.2)}Assign FC</button>`:''}
@@ -13706,6 +13755,10 @@ function openConvDrawer(id){
   if(drawerPdfBtnConv) drawerPdfBtnConv.onclick = async () => {
     let claims = f.enrollmentFormFull?.claims;
     if(!claims){ try { await loadForms(id); claims = f.enrollmentFormFull?.claims; } catch(e) {} }
+    // v184 - loadForms() only ever searches DB.haatFarmers, so for a conversion
+    // farmer the line above can never find anything and the PDF printed a form
+    // with no answers in it. Fall back to the answers held on the record.
+    if(!claims || !claims.length) claims = convClaimsFromIntake(f);
     await downloadFarmerPdfOuter(f, claims, 'કન્વર્ઝન નોંધણી પત્રક', drawerPdfBtnConv);
   };
   openDrawer();

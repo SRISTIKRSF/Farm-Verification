@@ -3265,7 +3265,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v194';
+const APP_VERSION = 'v195';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3468,6 +3468,11 @@ async function loadDB(){
          that. The login screen does not need it: signIn() already awaits the
          one-shot ensureUsersLoaded(). */
       if (sessionStorage.getItem(USER_SESSION_KEY)) subscribeUsers();
+      /* v195 - one small read of verifIndex (id -> timestamp, a couple of KB)
+         so Repair unfinished verifications can spot a lost row for free rather
+         than probing every pending farmer. Not awaited: nothing on screen
+         depends on it, and it must never delay boot. */
+      if (sessionStorage.getItem(USER_SESSION_KEY) && typeof loadVerifIndex === 'function') loadVerifIndex();
       // v(scale-audit) — exclude any still-pending (never-confirmed-synced)
       // records from the baseline snapshot; see markPendingSync/saveDB for
       // why. Without this, a record created/edited entirely offline — whose
@@ -7352,6 +7357,18 @@ function isAwaitingApproval(f){
   return !!((DB.verifIndex||{})[f.id]) || f.stage === 'verified';
 }
 /* Written the moment an FC submits, removed the moment an admin decides. */
+/* v195 - verifIndex is id -> ISO timestamp and nothing else, so the whole node
+   is a couple of KB even after years. Loaded once for a signed-in admin so
+   "Repair unfinished verifications" can spot a lost row instantly instead of
+   probing every pending farmer. Failure is silent on purpose: it is a
+   diagnostic aid, and nothing on screen depends on it. */
+async function loadVerifIndex(){
+  if(!(FB && FB.ready && navigator.onLine)) return;
+  try{
+    const snap = await fbRef('verifIndex').get();
+    DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
+  }catch(e){ /* diagnostic only */ }
+}
 function markVerificationSubmitted(farmerId, whenISO){
   if(!farmerId) return;
   DB.verifIndex = DB.verifIndex || {};
@@ -10850,6 +10867,13 @@ function viewVerification(){
   const isFc = SESSION && SESSION.role === 'fc';
   if(isFc && F.tab === 'awaiting') F.tab = 'new';
 
+  /* v195 - admin-only, and only shown when there is something to look at. */
+  if(!isFc){
+    const _rc = _repairCandidates();
+    h += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <button class="btn btn-ghost btn-sm" id="vqRepair">${svg(I.check,2.2)}Repair unfinished verifications${_rc.flagged.length?' ('+_rc.flagged.length+'?)':''}</button>
+    </div>`;
+  }
   h+=`<div class="tabs">
     <div class="tab ${F.tab==='new'?'on':''}" data-vt="new">
       🆕 New farmers (${newFarmers.length})
@@ -11192,6 +11216,8 @@ function viewVerification(){
   }
 
   v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{F.tab=t.dataset.vt;F.district='';F.selected={};F.page=0;paint();});
+  const _vqRepair = v.querySelector('#vqRepair');          // v195
+  if(_vqRepair) _vqRepair.onclick = openRepairVerificationsModal;
   paint();
 }
 
@@ -14572,6 +14598,128 @@ function openAssignFcModal(id){
     await saveDB();closeModal();render();
     if($('#drawer').classList.contains('show'))openConvDrawer(id);
     toast('Field Coordinator assigned');
+  };
+}
+
+/* ============ MODAL: REPAIR UNFINISHED VERIFICATIONS (v195) ============
+
+   Finds farmers whose verification form is on the server but whose own row was
+   never updated, and rebuilds the row from that form.
+
+   Candidates, cheapest signal first:
+     - verifIndex/<id> exists but the row has no verification date (free, and
+       from v195 on this catches every future case);
+     - the row still carries a verificationLock, which the submit handler
+       deletes on success, so a leftover one means the submit did not finish;
+     - failing both, every farmer still waiting for a field visit is probed for
+       forms/<id>/verif/submittedAt - one tiny scalar each, which is what finds
+       the three farmers stuck TODAY (verifIndex is empty for them, because the
+       marker never ran).
+
+   It only ever FILLS IN BLANKS. A farmer who already has a verification date is
+   skipped; a farmer past a decision is skipped; no answer is ever overwritten.
+   The visit it adds is reconstructed from the form's own summary, so the date,
+   the verifier and the score are the FC's, not today's. */
+const _REPAIR_POST_DECISION = ['onboarded','decided','verified-cleared'];
+function _repairCandidates(){
+  const live = (DB.haatFarmers||[]).filter(f =>
+    f && !f._archived && !_isSeededRecord(f)
+    && !f.verificationFormSubmittedAt
+    && !_REPAIR_POST_DECISION.includes(f.stage));
+  const idx = DB.verifIndex || {};
+  const flagged = live.filter(f => idx[f.id] || f.verificationLock);
+  return { live, flagged };
+}
+async function openRepairVerificationsModal(){
+  const { live, flagged } = _repairCandidates();
+  modalShell('Repair unfinished verifications',
+    '<div class="hint">Checking ' + live.length + ' farmer' + (live.length===1?'':'s')
+    + ' still waiting for a field visit\u2026<div id="rvProg" style="margin-top:8px;font-weight:700"></div></div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>');
+  const prog = () => document.getElementById('rvProg');
+  /* Probe forms/<id>/verif/submittedAt - a single timestamp, not the form. In
+     chunks so a slow phone connection does not open 476 sockets at once. */
+  const found = [];
+  const probe = async f => {
+    try{
+      const snap = await fbRef('forms/' + f.id + '/verif/submittedAt').get();
+      if(snap.exists() && snap.val()) found.push({ f: f, at: snap.val() });
+    }catch(e){}
+  };
+  const queue = flagged.length === live.length ? flagged : live;
+  for(let i = 0; i < queue.length; i += 25){
+    if(!document.getElementById('rvProg')) return;          // user closed it
+    await Promise.all(queue.slice(i, i + 25).map(probe));
+    if(prog()) prog().textContent = Math.min(i + 25, queue.length) + ' / ' + queue.length
+      + ' checked \u00b7 ' + found.length + ' unfinished found';
+  }
+  if(!document.getElementById('rvProg')) return;
+  if(!found.length){
+    modalShell('Repair unfinished verifications',
+      '<div class="hint">Every verification on the server has been recorded on its farmer. Nothing to repair.</div>',
+      '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
+    return;
+  }
+  /* Pull each full form so the preview can show the FC and the score. */
+  await Promise.all(found.map(async it => {
+    try{ await loadForms(it.f.id); }catch(e){}
+    const v = (FORMS_CACHE[it.f.id]||{}).verif || null;
+    it.verif = v; it.summary = (v && v.summary) || {};
+  }));
+  const usable = found.filter(it => it.verif);
+  const rows = usable.map(it =>
+    '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)">'
+    + '<div style="min-width:0"><div style="font-size:12.5px;font-weight:600">' + esc(it.f.name||it.f.id) + '</div>'
+    +   '<div style="font-size:11px;color:var(--ink-soft)">' + esc(it.f.id) + ' \u00b7 '
+    +   esc(it.summary.date || (it.at||'').slice(0,10)) + ' \u00b7 '
+    +   esc(it.summary.verifierName || 'FC not named') + '</div></div>'
+    + '<div style="text-align:right;white-space:nowrap;font-size:11.5px;color:var(--ink-soft)">'
+    +   (it.summary.verifiedCount != null
+          ? it.summary.verifiedCount + '/' + (it.summary.totalAsked||'?') + ' claims' : '')
+    +   (it.summary.score != null ? '<div><b style="color:var(--ink)">' + it.summary.score + '</b> / 100</div>' : '')
+    + '</div></div>').join('');
+  modalShell('Repair unfinished verifications',
+    '<div class="hint" style="margin-bottom:12px"><b>' + usable.length + '</b> verification'
+    + (usable.length===1?'':'s') + ' reached the server but were never recorded on the farmer, '
+    + 'so they never appeared in <b>Waiting for approval</b>. The answers below are already saved \u2014 '
+    + 'this only writes the missing date, visit and status onto each farmer.</div>'
+    + '<div style="background:#fff;border:1px solid var(--line);border-radius:9px;padding:2px 13px 6px">' + rows + '</div>'
+    + '<div class="hint" style="margin-top:12px;font-size:11.5px">The visit is rebuilt from the form\'s own '
+    + 'summary, so it keeps the original date and field coordinator \u2014 not today\'s.</div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" id="rvGo">' + svg(I.check) + 'Repair ' + usable.length + '</button>');
+  const go = document.getElementById('rvGo');
+  if(go) go.onclick = async () => {
+    let n = 0;
+    usable.forEach(it => {
+      const f = it.f, v = it.verif, s = it.summary || {};
+      if(f.verificationFormSubmittedAt) return;                     // filled in meanwhile
+      if(_REPAIR_POST_DECISION.includes(f.stage)) return;
+      const claims = Array.isArray(v.claims) ? v.claims : [];
+      f.verificationFormSubmittedAt = v.submittedAt || it.at;
+      f.visits = f.visits || [];
+      f.visits.push(stamp({
+        date: s.date || String(f.verificationFormSubmittedAt).slice(0,10),
+        fc: f.fcId || '',
+        verifierName: s.verifierName || '',
+        claimVerifications: claims.reduce((a,c)=>{a[c.id]={state:c.fcVerification||'na',fcNote:c.fcNote||''};return a;},{}),
+        comments: v.comments || '',
+        photos: (typeof countFcPhotos==='function' ? countFcPhotos(v.photos) : []),
+        notes: 'FC verification \u2014 ' + (s.verifiedCount||0) + '/' + (s.totalAsked||0)
+             + ' claims verified (recovered ' + todayISO() + ')',
+        score: s.score || 0,
+        livingFence:'\u2014', compost:'\u2014', soilHealth:'\u2014', pestControl:'\u2014',
+      }));
+      f.stage = 'verified';
+      delete f.verificationLock;
+      markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
+      markLocalTouch('haatFarmers', f.id);
+      n++;
+    });
+    logActivity('alert', '<b>' + n + '</b> unfinished verification' + (n===1?'':'s')
+      + ' recovered from the server and recorded on the farmer');
+    await saveDB(); closeModal(); render();
+    toast(n + ' verification' + (n===1?'':'s') + ' recovered');
   };
 }
 
@@ -19090,10 +19238,26 @@ window.addEventListener('message',async ev=>{
         } else {
           logActivity('alert',`⚠ Incomplete verification logged for <b>${esc(f.name)}</b> — only ${markedCount} claims marked. Stage stays "verification pending".`);
         }
-        // v22 bug#5b — durably queue the 'verified' record so a flaky/failed cloud
-        // write isn't lost and reverted to "pending" on reopen; flushOfflineWrites
-        // replays it on reconnect. Queued only on failure (no clobber when it lands).
-        saveDB(true).then(ok=>{ if(!ok) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{}); });
+        /* v195 - the durable "this verification exists" marker. It goes STRAIGHT
+           to Firebase on its own path, so if the row write below fails the
+           evidence still survives and Repair unfinished verifications can find
+           it. This call existed since v125 but sat in the `farm-verification-full`
+           handler, which the FC form never posts to - so verifIndex has never
+           held a single entry, and that is why HF394au534 sat unrecoverable. */
+        markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
+        /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.
+           The FC taps Close the instant they submit and the form is torn down;
+           if the promise had not settled, the row was never written and the
+           offline fallback never queued either. Three farmers carry exactly that
+           fingerprint - form on the server, row untouched. Awaiting it means the
+           queue-on-failure actually gets a chance to run. */
+        const _vSynced = await saveDB(true);
+        window._lastVerifSynced = !!_vSynced;
+        if(!_vSynced){
+          await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))})
+            .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); });
+        }
+        if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;
       }

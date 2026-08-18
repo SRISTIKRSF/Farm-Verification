@@ -3265,7 +3265,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v195';
+const APP_VERSION = 'v196';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14643,7 +14643,9 @@ async function openRepairVerificationsModal(){
   const probe = async f => {
     try{
       const snap = await fbRef('forms/' + f.id + '/verif/submittedAt').get();
-      if(snap.exists() && snap.val()) found.push({ f: f, at: snap.val() });
+      /* v196 - the ID, not the record. The record object this loop can see is
+         replaced wholesale by the live listener while the modal is open. */
+      if(snap.exists() && snap.val()) found.push({ id: f.id, name: f.name, f: f, at: snap.val() });
     }catch(e){}
   };
   const queue = flagged.length === live.length ? flagged : live;
@@ -14662,15 +14664,15 @@ async function openRepairVerificationsModal(){
   }
   /* Pull each full form so the preview can show the FC and the score. */
   await Promise.all(found.map(async it => {
-    try{ await loadForms(it.f.id); }catch(e){}
-    const v = (FORMS_CACHE[it.f.id]||{}).verif || null;
+    try{ await loadForms(it.id); }catch(e){}
+    const v = (FORMS_CACHE[it.id]||{}).verif || null;
     it.verif = v; it.summary = (v && v.summary) || {};
   }));
   const usable = found.filter(it => it.verif);
   const rows = usable.map(it =>
     '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)">'
-    + '<div style="min-width:0"><div style="font-size:12.5px;font-weight:600">' + esc(it.f.name||it.f.id) + '</div>'
-    +   '<div style="font-size:11px;color:var(--ink-soft)">' + esc(it.f.id) + ' \u00b7 '
+    + '<div style="min-width:0"><div style="font-size:12.5px;font-weight:600">' + esc(it.name||it.id) + '</div>'
+    +   '<div style="font-size:11px;color:var(--ink-soft)">' + esc(it.id) + ' \u00b7 '
     +   esc(it.summary.date || (it.at||'').slice(0,10)) + ' \u00b7 '
     +   esc(it.summary.verifierName || 'FC not named') + '</div></div>'
     + '<div style="text-align:right;white-space:nowrap;font-size:11.5px;color:var(--ink-soft)">'
@@ -14691,10 +14693,19 @@ async function openRepairVerificationsModal(){
   const go = document.getElementById('rvGo');
   if(go) go.onclick = async () => {
     let n = 0;
-    usable.forEach(it => {
-      const f = it.f, v = it.verif, s = it.summary || {};
-      if(f.verificationFormSubmittedAt) return;                     // filled in meanwhile
-      if(_REPAIR_POST_DECISION.includes(f.stage)) return;
+    const written = [];
+    for(const it of usable){
+      /* v196 - RE-RESOLVE. Between building this list and this click the live
+         listener will have rebuilt DB.haatFarmers from the server, and the
+         object captured earlier is an orphan nothing will ever save. */
+      const f = (DB.haatFarmers||[]).find(x => x && x.id === it.id);
+      const v = it.verif, s = it.summary || {};
+      if(!f || !v) continue;
+      if(f.verificationFormSubmittedAt) continue;                   // filled in meanwhile
+      if(_REPAIR_POST_DECISION.includes(f.stage)) continue;
+      /* Claim the 5-second protection BEFORE touching anything, so a listener
+         update landing mid-edit cannot revert what we are about to write. */
+      markLocalTouch('haatFarmers', f.id);
       const claims = Array.isArray(v.claims) ? v.claims : [];
       f.verificationFormSubmittedAt = v.submittedAt || it.at;
       f.visits = f.visits || [];
@@ -14713,13 +14724,31 @@ async function openRepairVerificationsModal(){
       f.stage = 'verified';
       delete f.verificationLock;
       markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
-      markLocalTouch('haatFarmers', f.id);
+      /* v196 - and write the three fields straight to this farmer's own path.
+         update() sets ONLY the keys named, so it cannot remove a thing, and it
+         does not depend on saveDB's diff noticing the change. This is the
+         guarantee; saveDB below keeps the rest of the app in step. */
+      if(FB && FB.ready){
+        try{
+          await fbRef('haatFarmers/' + f.id).update({
+            verificationFormSubmittedAt: f.verificationFormSubmittedAt,
+            stage: 'verified',
+            visits: sanitizeForFB(f.visits),
+            verificationLock: null
+          });
+          written.push(f.id);
+        }catch(e){ console.error('[Sristi] repair write failed for ' + f.id, e); }
+      }
       n++;
-    });
-    logActivity('alert', '<b>' + n + '</b> unfinished verification' + (n===1?'':'s')
+    }
+    if(n) logActivity('alert', '<b>' + n + '</b> unfinished verification' + (n===1?'':'s')
       + ' recovered from the server and recorded on the farmer');
     await saveDB(); closeModal(); render();
-    toast(n + ' verification' + (n===1?'':'s') + ' recovered');
+    /* v196 - say what actually happened. The old message claimed success even
+       when nothing had moved, which is how this went unnoticed. */
+    if(!n) toast('Nothing to repair \u2014 these were already recorded', 'error');
+    else if(written.length === n) toast(n + ' verification' + (n===1?'':'s') + ' recovered');
+    else toast(written.length + ' of ' + n + ' saved to the server \u2014 reopen this tool to retry the rest', 'error');
   };
 }
 
@@ -14753,10 +14782,13 @@ function _autoAssignPlan(){
   _autoAssignPool().forEach(f => {
     const codes = fcCodesCoveringDistrict(f.district);
     const d = _distEng(f.district);
-    if(codes.length === 1){ (perFc[codes[0]] = perFc[codes[0]] || []).push(f); }
-    else if(codes.length > 1){ (ambiguous[d] = ambiguous[d] || []).push(f); }
-    else if(d){ (uncovered[d] = uncovered[d] || []).push(f); }
-    else noDistrict.push(f);
+    /* v196 - ids, not record objects. The live listener replaces every record
+       in DB.convFarmers while this preview sits on screen; a captured object
+       becomes an orphan and assigning to it saves nothing. */
+    if(codes.length === 1){ (perFc[codes[0]] = perFc[codes[0]] || []).push(f.id); }
+    else if(codes.length > 1){ (ambiguous[d] = ambiguous[d] || []).push(f.id); }
+    else if(d){ (uncovered[d] = uncovered[d] || []).push(f.id); }
+    else noDistrict.push(f.id);
   });
   return { perFc, ambiguous, uncovered, noDistrict };
 }
@@ -14820,8 +14852,11 @@ function openAutoAssignFcModal(){
     const aB = actor(), nowIso = new Date().toISOString();
     let n = 0;
     Object.keys(plan.perFc).forEach(code => {
-      plan.perFc[code].forEach(f => {
+      plan.perFc[code].forEach(id => {
+        const f = (DB.convFarmers||[]).find(x => x && x.id === id);   // v196 - re-resolve
+        if(!f) return;
         if(f.fcId) return;                       // changed under us - skip
+        markLocalTouch('convFarmers', f.id);     // v196 - protect before editing
         f.fcPrevId       = f.fcId || '';         // reversible
         f.fcId           = code;
         f.assignedAt     = todayISO();
@@ -14830,7 +14865,6 @@ function openAutoAssignFcModal(){
         f.fcAssignedById = aB.id;
         f.fcAssignedAt   = nowIso;
         f.fcAutoAssignedAt = nowIso;             // marks this batch
-        markLocalTouch('convFarmers', f.id);
         n++;
       });
     });

@@ -24,3 +24,9 @@ docs/0*-*.docx
 
 # Firebase CLI deploy cache (hosting-redirect)
 hosting-redirect/.firebase/
+
+# FC/mobilizer training guide. Harmless in itself (no farmer data, mockups not
+# screenshots), but nothing in docs/ is published to a PUBLIC repo by default -
+# putting it on GitHub should be a deliberate decision, not a stray git add.
+docs/Khedut-Chakasani-Guide-GU.html
+docs/Khedut-Chakasani-Guide.pdf

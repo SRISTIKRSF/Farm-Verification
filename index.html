@@ -3262,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v190';
+const APP_VERSION = 'v191';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7490,6 +7490,16 @@ const CONV_SCORE_LOCKED_SECTIONS = ['A1','A2','C'];
 // All B-section keys (used by the scorer to iterate without hard-coding).
 const CONV_SCORE_B_KEYS = ['B1','B2','B3','B4'];
 
+/* v191 - the basis an FC recorded for the A1/A2 chemical calls. Lifted to
+   module scope so the admin drawer can name it too; openConvScoreModal keeps
+   referring to it by its old local name and is otherwise untouched. */
+const CONV_EVIDENCE_OPTS = [
+  {key:'farmer',      label:'Farmer declaration',           gu:'\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0ab8\u0abe\u0aa5\u0ac7\u0aa8\u0ac0 \u0ab5\u0abe\u0aa4\u0a9a\u0ac0\u0aa4'},
+  {key:'observation', label:'Field observation',            gu:'\u0a96\u0ac7\u0aa4\u0ab0\u0aae\u0abe\u0a82 \u0a9a\u0ac7\u0a95 \u0a95\u0ab0\u0acd\u0aaf\u0ac1\u0a82'},
+  {key:'inputs',      label:'Natural input usage evidence', gu:'Visit \u0aae\u0abe\u0a82 \u0aaa\u0ac1\u0ab0\u0abe\u0ab5\u0abe\u0aa8\u0abe \u0a86\u0aa7\u0abe\u0ab0\u0ac7'},
+  {key:'judgement',   label:"FC professional judgement",    gu:'\u0aae\u0abe\u0ab0\u0abe \u0aae\u0aa4 \u0aaa\u0acd\u0ab0\u0aae\u0abe\u0aa3\u0ac7'},
+];
+
 const CONV_SCORE_STATUS = {
   adopted:    { label:'Adopted',      gu:'અપનાવ્યું',         cls:'green', range:'80–100' },
   inProgress: { label:'In Progress',  gu:'પ્રગતિમાં',          cls:'yellow',range:'50–79'  },
@@ -7603,12 +7613,7 @@ function openConvScoreModal(id){
      substring so it works against catalogue entries like "Paddy / Rice
      (ડાંગર)". Everything else is one search away. */
   const VS_COMMON_CROPS = ['paddy','wheat','okra','bottle gourd','maize','cotton','tomato','brinjal','tur /'];
-  const EVIDENCE_OPTS = [
-    {key:'farmer',      label:'Farmer declaration',           gu:'ખેડૂત સાથેની વાતચીત'},
-    {key:'observation', label:'Field observation',            gu:'ખેતરમાં ચેક કર્યું'},
-    {key:'inputs',      label:'Natural input usage evidence', gu:'Visit માં પુરાવાના આધારે'},
-    {key:'judgement',   label:"FC professional judgement",    gu:'મારા મત પ્રમાણે'},
-  ];
+  const EVIDENCE_OPTS = CONV_EVIDENCE_OPTS;   // v191 - one table, module scope
 
   function tempScore(){
     const F = CONV_SCORE_FRAMEWORK;
@@ -8434,17 +8439,69 @@ function convScoreCard(f){
       + '</div>';
   };
   const F = CONV_SCORE_FRAMEWORK;
+  const SC = f.conversionScoring || {};
+  /* v191 - "2 of 5 practices adopted" is the arithmetic, not the farm. Which
+     five, and which two, is already on the record under
+     conversionScoring[section][practice].adopted - it simply had no renderer
+     here, so an admin could see a farmer scored 70 and not what earned it.
+     Reading a field already in memory costs no Firebase download. */
+  const practiceName = p => {
+    const en = p.label || p.key, gu = p.gu || '';
+    if(!gu || gu === en) return en;
+    // B2's IPM is stored gu:'IPM (સંકલિત જીવાત નિયંત્રણ)' - the Gujarati
+    // already opens with the English name, and wrapping it produced
+    // "IPM (IPM (સંકલિત ...))".
+    if(gu.indexOf(en) === 0) return gu;
+    return en + ' (' + gu + ')';
+  };
   const bDetail = (k, count) => {
     const fw = F[k];
     const tot = fw.practices.length;
+    const S = SC[k] || {};
+    const on = p => !!(S[p.key] && S[p.key].adopted);
+    const rem = p => (S[p.key] && S[p.key].remarks) || '';
+    /* A one-practice section (B4 mulching) is a yes/no question. Naming the
+       single practice back at you under a row already titled "B4. Mulching"
+       reads as a stutter - and since v189 its Gujarati label is literally
+       "હા" ("yes"), which would print as "Mulching (હા)". */
+    if(tot === 1){
+      const p = fw.practices[0];
+      return (on(p) ? '✓ Yes — practised' : '✗ No — not practised')
+           + (rem(p) ? ' · ' + esc(rem(p)) : '');
+    }
     const tierNote = (fw.halfThreshold != null && fw.halfThreshold < fw.threshold)
-      ? ' (need ≥ ' + fw.threshold + ' for full, ≥ ' + fw.halfThreshold + ' for half)'
-      : ' (need ≥ ' + fw.threshold + ')';
-    return count + ' of ' + tot + ' practice' + (tot===1?'':'s') + ' adopted' + tierNote;
+      ? ' · full marks need ' + fw.threshold + ', half marks need ' + fw.halfThreshold
+      : ' · needs ' + fw.threshold;
+    const yes = fw.practices.filter(on), no = fw.practices.filter(p => !on(p));
+    let html = count + ' of ' + tot + ' adopted' + tierNote;
+    if(yes.length){
+      html += '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">'
+        + yes.map(p => '<span class="pill" style="font-size:10.5px;background:var(--green-bg);color:var(--green);border-color:var(--green-line);white-space:normal;max-width:100%;line-height:1.4;text-align:left">✓ '
+            + esc(practiceName(p)) + (rem(p) ? ' — ' + esc(rem(p)) : '') + '</span>').join('')
+        + '</div>';
+    }
+    if(no.length){
+      html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">Not seen: '
+        + no.map(p => esc(practiceName(p))).join(' · ') + '</div>';
+    }
+    return html;
+  };
+  /* What the FC based the chemical-free call on. Stored since v7 under
+     conversionScoring.A1.evidence / .notes and never shown on any screen. */
+  const aDetail = (k, headline) => {
+    const S = SC[k] || {};
+    let html = headline;
+    const ev = (S.evidence || []).map(code => {
+      const o = CONV_EVIDENCE_OPTS.find(x => x.key === code);
+      return o ? o.label : code;
+    });
+    if(ev.length) html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">Basis: ' + esc(ev.join(' · ')) + '</div>';
+    if(S.notes)   html += '<div style="margin-top:3px;font-size:10.5px;color:var(--ink-soft);font-style:italic">“' + esc(S.notes) + '”</div>';
+    return html;
   };
   const breakdownRows =
-      rowHtml('A1', cs.A1, F.A1.marks, cs.A1 === F.A1.marks ? '✓ No chemical fertilizer used' : '✗ Chemical fertilizer found')
-    + rowHtml('A2', cs.A2, F.A2.marks, cs.A2 === F.A2.marks ? '✓ No chemical pesticide / herbicide used' : '✗ Chemical pesticide / herbicide found')
+      rowHtml('A1', cs.A1, F.A1.marks, aDetail('A1', cs.A1 === F.A1.marks ? '✓ None found at the visit' : '✗ Chemical fertilizer found'))
+    + rowHtml('A2', cs.A2, F.A2.marks, aDetail('A2', cs.A2 === F.A2.marks ? '✓ None found at the visit' : '✗ Chemical pesticide / herbicide found'))
     + rowHtml('B1', cs.B1, F.B1.marks, bDetail('B1', cs.b1Count))
     + rowHtml('B2', cs.B2, F.B2.marks, bDetail('B2', cs.b2Count))
     + rowHtml('B3', cs.B3, F.B3.marks, bDetail('B3', cs.b3Count))
@@ -10641,7 +10698,8 @@ function exportConvCSV(rows){
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
-    field_coordinator:(fcById(f.fcId)||{}).name||'',category:convCategory(f),
+    field_coordinator:(fcById(f.fcId)||{}).name||'',mobilizer:mobilizerNameById(f.mobilizerId),
+    category:convCategory(f),
     last_visit:f.lastVisitAt||'',next_visit_due:f.nextVisitDue||'',
     joined_month_year:farmerJoinedLabel(f),
   }));
@@ -11292,6 +11350,10 @@ function viewConversion(){
       <option value="__none__" ${F.fc==='__none__'?'selected':''}>— Unassigned —</option>
       ${DB.fcs.map(x=>`<option value="${x.id}" ${F.fc===x.id?'selected':''}>${x.name}</option>`).join('')}
     </select>
+    <select id="cMobF"><option value="">All mobilizers</option>
+      <option value="__none__" ${F.mob==='__none__'?'selected':''}>— No mobilizer —</option>
+      ${mobilizerChoices().map(m=>`<option value="${esc(m.id)}" ${F.mob===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}
+    </select>
     <button class="chip" id="cClear">Clear all filters</button>
   </div>`;
   // v8 — role filter: FC users see only their own farmers.
@@ -11304,6 +11366,8 @@ function viewConversion(){
   if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.fc==='__none__') rows=rows.filter(r=>!r.fcId);
   else if(F.fc) rows=rows.filter(r=>r.fcId===F.fc);
+  if(F.mob==='__none__') rows=rows.filter(r=>!r.mobilizerId);
+  else if(F.mob) rows=rows.filter(r=>r.mobilizerId===F.mob);
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
   if(window._q){const q=window._q.toLowerCase();
     rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q));}
@@ -11330,11 +11394,11 @@ function viewConversion(){
     <th style="width:34px"><input type="checkbox" id="archSelAll_conv" ${_convAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>
-    ${th('fcId','FC')}<th>Organic progress</th>
+    ${th('fcId','FC')}<th>Mobilizer</th><th>Organic progress</th>
     ${th('lastVisitAt','Last visit')}${th('nextVisitDue','Next visit')}${th('_sortTs','Joined')}<th>Action</th>
     ${ARCH_SHOW.conv?'<th></th>':''}
   </tr></thead><tbody>`;
-  if(!rows.length)h+=`<tr><td colspan="12"><div class="empty">${svg(I.convert)}<div>${archEmptyMsg('conv', !!(F.q||F.state||F.district||F.status))}</div></div></td></tr>`;
+  if(!rows.length)h+=`<tr><td colspan="13"><div class="empty">${svg(I.convert)}<div>${archEmptyMsg('conv', !!(F.q||F.state||F.district||F.status||F.mob))}</div></div></td></tr>`;
   const today=todayISO();
   pagedConvRows.forEach(r=>{
     const fc=fcById(r.fcId);
@@ -11357,6 +11421,7 @@ function viewConversion(){
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td style="max-width:180px">${cropsCell}</td>
       <td>${fc?esc(fc.name):'<span class="tag grey"><span class="d"></span>Unassigned</span>'}</td>
+      <td style="font-size:11.5px">${r.mobilizerId?esc(mobilizerNameById(r.mobilizerId)):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td>${convScoreCell(r)}</td>
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
@@ -11398,7 +11463,7 @@ function viewConversion(){
     if(b.dataset.act === 'score') openConvScoreModal(b.dataset.id);
   });
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
-  setF('state','cState');setF('district','cDistrict');setF('fc','cFc');
+  setF('state','cState');setF('district','cDistrict');setF('fc','cFc');setF('mob','cMobF');
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   const cMoveBtn=$('#cMove'); if(cMoveBtn) cMoveBtn.onclick=openReassignFcModal;
   const cMobBtn=$('#cMob'); if(cMobBtn) cMobBtn.onclick=openAssignMobilizerModal;
@@ -13851,6 +13916,7 @@ function openConvDrawer(id){
   const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
   migrateConvFarmer(f);
   const fc=fcById(f.fcId);
+  const mobName=mobilizerNameById(f.mobilizerId);   // v191
   const stKey=f.stage||suggestConvStage(f);
   const st=CONV_STATUS[stKey]||CONV_STATUS.enrolled;
   const visits=(f.visits&&f.visits.length)?f.visits:(f.observations||[]);
@@ -13858,7 +13924,23 @@ function openConvDrawer(id){
     <div><div class="meta">${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
       <span class="tag ${st.cls}"><span class="d"></span>${st.label}</span>
-      ${f.chemFreeFlag===false?'<span class="tag red"><span class="d"></span>Chemical-use flagged</span>':'<span class="tag green"><span class="d"></span>Chemical-free</span>'}
+      ${(function(){
+          /* v191 - see the note above openConvDrawer. */
+          const _cs = calculateConvScore(f);
+          if(_cs.assessed) return _cs.chemFree
+            ? '<span class="tag green"><span class="d"></span>Chemical-free at last visit</span>'
+            : '<span class="tag red"><span class="d"></span>Chemical use found at last visit</span>';
+          return f.chemFreeFlag===false
+            ? '<span class="tag red"><span class="d"></span>Chemical-use flagged</span>'
+            : '<span class="tag grey"><span class="d"></span>Chemical-free (as enrolled, not yet verified)</span>';
+        })()}
+    </div>
+    <!-- v191 - who is responsible for this farmer, at the top where it is read.
+         The FC was only in the detail grid, below two full cards; the mobilizer
+         was on no screen at all even though 65 farmers have one. -->
+    <div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap">
+      <span>FC: <b style="color:var(--ink)">${fc?esc(fc.name):'<span style="color:var(--red)">Unassigned</span>'}</b></span>
+      <span>Mobilizer: <b style="color:var(--ink)">${mobName?esc(mobName):'<span style="color:var(--ink-faint);font-weight:500">None assigned</span>'}</b></span>
     </div></div>
     <button class="x-btn" onclick="closeDrawer()" aria-label="Close">${svg(I.x)}</button>
   </div></div><div class="drawer-body">`;
@@ -13874,6 +13956,7 @@ function openConvDrawer(id){
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
+    <div class="detail-cell"><div class="k">Mobilizer</div><div class="v">${mobName?esc(mobName):'<span style="color:var(--ink-faint)">— None —</span>'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell"><div class="k">Last visit</div><div class="v">${f.lastVisitAt?fmtDate(f.lastVisitAt):'—'}</div></div>
     <div class="detail-cell"><div class="k">Next visit due</div><div class="v">${f.nextVisitDue?fmtDate(f.nextVisitDue):'—'}</div></div>
@@ -16335,6 +16418,32 @@ function mobilizerList(){
     .filter(u => u && u.role === 'mobilizer' && u.active !== false);
 }
 function mobilizerById(id){ return mobilizerList().find(u => u && u.id === id) || null; }
+/* v191 - a DISPLAY resolver, deliberately NOT mobilizerById(). That one returns
+   only accounts whose role is still 'mobilizer' AND active !== false, so a
+   farmer handed to someone who later left would have shown a blank where a
+   person's name belongs. Nothing in this app is ever hard-deleted, so that
+   record still points at a real person; falling back to the stored id means the
+   link is never invisible, only less pretty. */
+function mobilizerNameById(id){
+  if(!id) return '';
+  const u = (typeof getUsersList === 'function' ? getUsersList() : []).find(x => x && x.id === id);
+  if(!u || !u.name) return String(id);
+  return u.name + (u.active === false ? ' (inactive)' : '');
+}
+/* Filter choices: every active mobilizer, PLUS anyone still holding farmers
+   even though their account is switched off - leave them out and those farmers
+   become unfindable by mobilizer, which is exactly when you need to find them. */
+function mobilizerChoices(){
+  const list = mobilizerList().slice();
+  const seen = new Set(list.map(m => m.id));
+  (DB.convFarmers || []).forEach(f => {
+    if(f && f.mobilizerId && !seen.has(f.mobilizerId)){
+      seen.add(f.mobilizerId);
+      list.push({ id: f.mobilizerId, name: mobilizerNameById(f.mobilizerId) });
+    }
+  });
+  return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
 /* The hard scope. Archived and seeded records are never included, and an
    empty/unknown id yields nothing rather than everything — the failure mode
    of a scoping bug should be "sees nothing", never "sees everyone". */

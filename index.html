@@ -3262,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v192';
+const APP_VERSION = 'v193';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8349,7 +8349,7 @@ function convScoreHistoryCard(f){
   });
   const fmtDate = iso => { try { return new Date(iso).toLocaleDateString('en-GB'); } catch(e){ return iso; } };
   let html = '<div class="card" style="padding:11px 13px;margin-bottom:14px;background:var(--panel-2);border-left:3px solid var(--clay)">'
-    + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px">📈 \u0ab8\u0acd\u0a95\u0acb\u0ab0 \u0a87\u0aa4\u0abf\u0ab9\u0abe\u0ab8 \u00b7 Score trail (' + items.length + ')</div>';
+    + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px">📈 \u0ab8\u0acd\u0a95\u0acb\u0ab0 \u0a87\u0aa4\u0abf\u0ab9\u0abe\u0ab8 (' + items.length + ')</div>';
   // (The bar chart was removed — the per-assessment rows below carry all
   // the same information in a more readable form.)
   // Per-assessment rows
@@ -8359,9 +8359,14 @@ function convScoreHistoryCard(f){
     html += '<div style="background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 11px;margin-bottom:5px">'
       + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11.5px">'
       +   '<b style="color:var(--ink)">' + esc(fmtDate(it.at)) + '</b>'
-      +   (it.isCurrent ? '<span class="tag green" style="font-size:9.5px;padding:1px 6px"><span class="d"></span>Current</span>' : '')
-      +   '<span style="color:var(--ink-soft)">by <b>' + esc(it.by||'-') + '</b></span>'
-      +   '<span class="tag ' + cls + '" style="font-size:9.5px;padding:1px 6px;margin-left:auto"><span class="d"></span>' + esc(it.statusLabel || '') + '</span>'
+      +   (it.isCurrent ? '<span class="tag green" style="font-size:9.5px;padding:1px 6px"><span class="d"></span>હાલનું</span>' : '')
+      +   '<span style="color:var(--ink-soft)"><b>' + esc(it.by||'-') + '</b></span>'
+      /* v193 - the trail said "In Progress" while the card beside it said
+         "પ્રગતિમાં" for the very same status. statusLabel is what older
+         history rows have STORED, so the live status table is preferred and
+         the stored English is only the fallback. */
+      +   '<span class="tag ' + cls + '" style="font-size:9.5px;padding:1px 6px;margin-left:auto"><span class="d"></span>'
+      +     esc(((CONV_SCORE_STATUS[it.status]||{}).gu) || it.statusLabel || '') + '</span>'
       +   '<b style="font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums">' + it.total + '<span style="font-size:10.5px;color:var(--ink-faint);font-weight:500"> / 100</span></b>'
       + '</div>'
       + '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;font-size:10.5px;color:var(--ink-soft)">'
@@ -8408,7 +8413,7 @@ function convScoreCard(f){
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
       +   '<div><div style="font-size:11px;font-weight:700;color:var(--yellow);letter-spacing:.04em;margin-bottom:4px">⚠️ હજુ સ્કોર આપ્યો નથી</div>'
       +   '<div style="font-size:13px;color:var(--ink)">આ ખેડૂતનું 100-ગુણનું મૂલ્યાંકન હજુ થયું નથી.'
-      +   '<div style="font-size:11px;color:var(--ink-soft);margin-top:2px">Not yet assessed against the 100-mark framework.</div></div></div>'
+      +   '</div></div>'
       +   '<button class="btn btn-primary btn-sm" data-d="score">' + svg(I.check,2.2) + ' Score now</button>'
       + '</div></div>';
   }
@@ -8418,14 +8423,17 @@ function convScoreCard(f){
      that reports their answers back speaks Gujarati too, in the same words.
      English rides underneath in small type so the card still reads for a donor
      or a report. gu() is the one place that decides. */
-  const guLine = (g, en) => esc(g) + (en ? '<div style="font-size:10.5px;color:var(--ink-faint);font-weight:500;margin-top:1px">' + esc(en) + '</div>' : '');
+  /* v193 - Guru does not want the English echo. guLine keeps its second
+     argument so the callers below still read as "Gujarati, then English", and
+     turning it back on is this one line. */
+  const guLine = (g, _en) => esc(g);
   const head = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px">'
-    + '<div><div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.04em;margin-bottom:4px">⭐ કન્વર્ઝન સ્કોર · CONVERSION SCORE (100)</div>'
+    + '<div><div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.04em;margin-bottom:4px">⭐ કન્વર્ઝન સ્કોર (100 ગુણ)</div>'
     +   '<div style="font-size:28px;font-weight:800;color:var(--ink);line-height:1">' + cs.total + ' <span style="font-size:14px;font-weight:600;color:var(--ink-faint)">/ 100</span></div>'
     + '</div>'
     + '<div style="text-align:right">'
     +   '<span class="tag ' + status.cls + '" style="font-size:12.5px;padding:5px 12px"><span class="d"></span>' + esc(status.gu || status.label) + '</span>'
-    +   '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:4px">' + esc(status.label) + ' · ' + status.range + '</div>'
+    +   '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:4px">' + status.range + '</div>'
     + '</div>'
     + '</div>';
   const bar = '<div style="position:relative;background:var(--line);border-radius:6px;height:10px;overflow:hidden;margin-bottom:12px">'
@@ -8434,7 +8442,7 @@ function convScoreCard(f){
   const noCompRow = noCompromise
     ? '<div style="background:#fef2f2;border:1px solid var(--red-line);border-radius:7px;padding:9px 11px;margin-bottom:12px;font-size:12px;color:#991b1b">'
       + '<b>⛔ નિયમ:</b> A1 અથવા A2 માં રસાયણ મળ્યું છે, એટલે બાકીના ગુણ ગમે એટલા હોય, ખેડૂત “અપનાવ્યું” ગણાતા નથી.'
-      + '<div style="font-size:10.5px;opacity:.8;margin-top:3px">Chemical use found in A1 or A2 — the farmer cannot be Adopted whatever the rest scores.</div></div>'
+      + '</div>'
     : '';
   const rowHtml = (key, gotMarks, max, detail) => {
     const fw = CONV_SCORE_FRAMEWORK[key];
@@ -8466,7 +8474,7 @@ function convScoreCard(f){
     // already opens with the English name, and wrapping it produced
     // "IPM (IPM (સંકલિત ...))".
     if(gu.indexOf(en) === 0) return gu;   // B2's IPM already carries its English
-    return gu + ' (' + en + ')';
+    return gu;                             // v193 - no English tail
   };
   const bDetail = (k, count) => {
     const fw = F[k];
@@ -8481,7 +8489,7 @@ function convScoreCard(f){
     if(tot === 1){
       const p = fw.practices[0];
       // The form offers exactly હા / ના here (v190), so the card reports હા / ના.
-      return (on(p) ? '✓ હા · Yes' : '✗ ના · No')
+      return (on(p) ? '✓ હા' : '✗ ના')
            + (rem(p) ? ' · ' + esc(rem(p)) : '');
     }
     const tierNote = (fw.halfThreshold != null && fw.halfThreshold < fw.threshold)
@@ -8496,7 +8504,7 @@ function convScoreCard(f){
         + '</div>';
     }
     if(no.length){
-      html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">નથી અપનાવ્યું · Not seen: '
+      html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">નથી અપનાવ્યું: '
         + no.map(p => esc(practiceName(p))).join(' · ') + '</div>';
     }
     return html;
@@ -8511,7 +8519,7 @@ function convScoreCard(f){
       const o = CONV_EVIDENCE_OPTS.find(x => x.key === code);
       return o ? (o.gu || o.label) : code;
     });
-    if(ev.length) html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">આધાર · Basis: ' + esc(ev.join(' · ')) + '</div>';
+    if(ev.length) html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">આધાર: ' + esc(ev.join(' · ')) + '</div>';
     if(S.notes)   html += '<div style="margin-top:3px;font-size:10.5px;color:var(--ink-soft);font-style:italic">“' + esc(S.notes) + '”</div>';
     return html;
   };
@@ -8535,10 +8543,10 @@ function convScoreCard(f){
         !cs.cLegacy
           ? (convCInvalid(cs.totalLand, cs.chemFreeLand)
               ? '⚠ કુલ ' + esc(cs.totalLand) + ' એકર સામે ' + esc(cs.chemFreeLand) + ' એકર ઝેર-મુક્ત — આંકડા તપાસો'
-                + '<div style="font-size:10px;color:var(--ink-faint);margin-top:2px">More poison-free land than land — figures need checking</div>'
+
               : cs.cPercent > 0
                 ? 'કુલ ' + esc(cs.totalLand) + ' એકરમાંથી ' + esc(cs.chemFreeLand) + ' એકર ઝેર-મુક્ત (' + cs.cPercent.toFixed(1) + '%)'
-                : 'જમીનના આંકડા ભરેલા નથી · Land figures not entered')
+                : 'જમીનના આંકડા ભરેલા નથી')
           : (cs.areaDelta > 0 ? 'Expanded: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha (+' + cs.areaDelta.toFixed(2) + ') · scored before v178' :
              cs.areaDelta === 0 && cs.previousArea > 0 ? 'Maintained: ' + cs.currentArea + ' bigha · scored before v178' :
              cs.previousArea > 0 ? 'Reduced: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha · scored before v178' :
@@ -13919,14 +13927,14 @@ function convEnrolmentCard(f){
   var when = (f.intake && f.intake.submittedAt) || f.submittedAt || f.publicSubmittedAt || '';
   var via  = f.publicAppId ? '\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0ac7 \u0a9c\u0abe\u0aa4\u0ac7 \u0aad\u0ab0\u0ac7\u0ab2\u0ac1\u0a82 \u00b7 Self-submitted' : 'FC / admin';
   var head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
-    + '<div style="font-size:13.5px;font-weight:700">\ud83d\udccb \u0aa8\u0acb\u0a82\u0aa7\u0aa3\u0ac0 \u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u00b7 Enrolment form'
+    + '<div style="font-size:13.5px;font-weight:700">\ud83d\udccb \u0aa8\u0acb\u0a82\u0aa7\u0aa3\u0ac0 \u0aaa\u0aa4\u0acd\u0ab0\u0a95'
     + (claims.length ? ' <span style="font-weight:600;color:var(--ink-faint);font-size:11.5px">(' + claims.length + ')</span>' : '')
     + '</div>'
     + (when ? '<div style="font-size:11px;color:var(--ink-faint)">' + esc(fmtDate(when)) + ' \u00b7 ' + esc(via) + '</div>' : '')
     + '</div>';
   var body = claims.length
     ? '<div class="detail-grid">' + claims.map(function(c){
-        var lbl = c.gu + (c.en ? ' \u00b7 ' + c.en : '');
+        var lbl = c.gu || c.en;   // v193 - Gujarati only; the English echoed it
         var wide = String(c.answer).length > 38 ? ' full' : '';
         return '<div class="detail-cell' + wide + '"><div class="k">' + esc(lbl) + '</div>'
              + '<div class="v">' + esc(c.answer) + '</div></div>';
@@ -13947,12 +13955,12 @@ function openConvDrawer(id){
   let h=`<div class="drawer-head"><div class="row">
     <div><div class="meta">${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
-      <span class="tag ${st.cls}" style="white-space:normal"><span class="d"></span>${esc(st.gu||st.label)} · ${esc(st.label)}</span>
+      <span class="tag ${st.cls}" style="white-space:normal"><span class="d"></span>${esc(st.gu||st.label)}</span>
       ${(function(){
           /* v191 - see the note above openConvDrawer. */
           const _cs = calculateConvScore(f);
-          const _t = (cls, gu, en) => '<span class="tag ' + cls + '" style="white-space:normal">'
-            + '<span class="d"></span>' + gu + ' · ' + en + '</span>';
+          const _t = (cls, gu, _en) => '<span class="tag ' + cls + '" style="white-space:normal">'
+            + '<span class="d"></span>' + gu + '</span>';
           if(_cs.assessed) return _cs.chemFree
             ? _t('green', '\u0a9b\u0ac7\u0ab2\u0acd\u0ab2\u0ac0 \u0aae\u0ac1\u0ab2\u0abe\u0a95\u0abe\u0aa4\u0ac7 \u0a9d\u0ac7\u0ab0-\u0aae\u0ac1\u0a95\u0acd\u0aa4', 'Chemical-free at last visit')
             : _t('red',   '\u0a9b\u0ac7\u0ab2\u0acd\u0ab2\u0ac0 \u0aae\u0ac1\u0ab2\u0abe\u0a95\u0abe\u0aa4\u0ac7 \u0ab0\u0ab8\u0abe\u0aaf\u0aa3 \u0aae\u0ab3\u0acd\u0aaf\u0ac1\u0a82', 'Chemical use found at last visit');
@@ -13968,8 +13976,8 @@ function openConvDrawer(id){
          var(--ink-soft) and var(--ink) here, which are near-black, so both
          names were unreadable. Nothing in this header may use an --ink token. -->
     <div style="margin-top:8px;font-size:11.5px;color:rgba(255,255,255,.6);display:flex;gap:14px;flex-wrap:wrap">
-      <span>FC: <b style="color:#fff;font-weight:700">${fc?esc(fc.name):'<span style="color:#fca5a5">Unassigned \u00b7 \u0aa8\u0a95\u0acd\u0a95\u0ac0 \u0aa8\u0aa5\u0ac0</span>'}</b></span>
-      <span>Mobilizer: <b style="color:#fff;font-weight:700">${mobName?esc(mobName):'<span style="color:rgba(255,255,255,.55);font-weight:500">None assigned</span>'}</b></span>
+      <span>FC: <b style="color:#fff;font-weight:700">${fc?esc(fc.name):'<span style="color:#fca5a5">\u0ab8\u0acb\u0a82\u0aaa\u0abe\u0aaf\u0abe \u0aa8\u0aa5\u0ac0</span>'}</b></span>
+      <span>Mobilizer: <b style="color:#fff;font-weight:700">${mobName?esc(mobName):'<span style="color:rgba(255,255,255,.55);font-weight:500">\u0ab8\u0acb\u0a82\u0aaa\u0abe\u0aaf\u0abe \u0aa8\u0aa5\u0ac0</span>'}</b></span>
     </div></div>
     <button class="x-btn" onclick="closeDrawer()" aria-label="Close">${svg(I.x)}</button>
   </div></div><div class="drawer-body">`;

@@ -558,7 +558,7 @@ tbody tr:last-child td{border-bottom:none}
 .drawer-head{padding:20px 24px 16px;background:var(--navy);color:#fff}
 .drawer-head .row{display:flex;align-items:flex-start;gap:12px}
 .drawer-head h3{font-size:21px;flex:1;color:#fff;font-weight:700}
-.drawer-head .meta{font-size:10.5px;color:#9aa4c0;font-weight:600;
+.drawer-head .meta{font-size:10.5px;color:rgba(255,255,255,.66);font-weight:600;
   letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px}
 .drawer-body{padding:20px 24px 44px;overflow-y:auto;flex:1;overscroll-behavior:contain}
 .x-btn{width:32px;height:32px;border-radius:7px;background:rgba(255,255,255,.12);
@@ -3262,7 +3262,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v191';
+const APP_VERSION = 'v192';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6485,15 +6485,18 @@ window.DISTRICT_TALUKAS = {
 };
 
 
+/* v192 - `gu` added alongside every `label`. Purely additive: `label` is
+   untouched, so every existing reader of CONV_STATUS behaves exactly as before
+   and only the conversion drawer header opts into the Gujarati. */
 const CONV_STATUS={
-  enrolled:{label:'Enrolled',cls:'grey'},
-  assigned:{label:'FC Assigned',cls:'blue'},
-  inProgress:{label:'In progress',cls:'yellow'},
-  adopted:{label:'Adopted',cls:'green'},
-  red:{label:'Not yet adopting',cls:'red'},
-  yellow:{label:'Partially adopting',cls:'yellow'},
-  green:{label:'Fully adopting organic',cls:'green'},
-  dropped:{label:'Dropped out',cls:'grey'},
+  enrolled:{label:'Enrolled',cls:'grey',gu:'\u0aa8\u0acb\u0a82\u0aa7\u0abe\u0aaf\u0ac7\u0ab2'},
+  assigned:{label:'FC Assigned',cls:'blue',gu:'FC \u0ab8\u0acb\u0a82\u0aaa\u0abe\u0aaf\u0abe'},
+  inProgress:{label:'In progress',cls:'yellow',gu:'\u0aaa\u0acd\u0ab0\u0a97\u0aa4\u0abf\u0aae\u0abe\u0a82'},
+  adopted:{label:'Adopted',cls:'green',gu:'\u0a85\u0aaa\u0aa8\u0abe\u0ab5\u0acd\u0aaf\u0ac1\u0a82'},
+  red:{label:'Not yet adopting',cls:'red',gu:'\u0ab9\u0a9c\u0ac1 \u0a85\u0aaa\u0aa8\u0abe\u0ab5\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0'},
+  yellow:{label:'Partially adopting',cls:'yellow',gu:'\u0a86\u0a82\u0ab6\u0abf\u0a95 \u0a85\u0aaa\u0aa8\u0abe\u0ab5\u0acd\u0aaf\u0ac1\u0a82'},
+  green:{label:'Fully adopting organic',cls:'green',gu:'\u0ab8\u0a82\u0aaa\u0ac2\u0ab0\u0acd\u0aa3 \u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0'},
+  dropped:{label:'Dropped out',cls:'grey',gu:'\u0a9b\u0acb\u0aa1\u0ac0 \u0aa6\u0ac0\u0aa7\u0ac1\u0a82'},
 };
 
 /* ============================================================
@@ -8346,7 +8349,7 @@ function convScoreHistoryCard(f){
   });
   const fmtDate = iso => { try { return new Date(iso).toLocaleDateString('en-GB'); } catch(e){ return iso; } };
   let html = '<div class="card" style="padding:11px 13px;margin-bottom:14px;background:var(--panel-2);border-left:3px solid var(--clay)">'
-    + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px">📈 Score trail (' + items.length + ' assessment' + (items.length===1?'':'s') + ')</div>';
+    + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px">📈 \u0ab8\u0acd\u0a95\u0acb\u0ab0 \u0a87\u0aa4\u0abf\u0ab9\u0abe\u0ab8 \u00b7 Score trail (' + items.length + ')</div>';
   // (The bar chart was removed — the per-assessment rows below carry all
   // the same information in a more readable form.)
   // Per-assessment rows
@@ -8403,36 +8406,45 @@ function convScoreCard(f){
   if(!cs.assessed){
     return '<div class="card" style="padding:14px 16px;margin-bottom:14px;background:linear-gradient(135deg,#fef3c7,#fef9c3);border:1px solid var(--yellow-line)">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
-      +   '<div><div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">⚠️ Not yet scored</div>'
-      +   '<div style="font-size:13px;color:var(--ink)">This farmer has not been assessed against the 100-mark framework.</div></div>'
+      +   '<div><div style="font-size:11px;font-weight:700;color:var(--yellow);letter-spacing:.04em;margin-bottom:4px">⚠️ હજુ સ્કોર આપ્યો નથી</div>'
+      +   '<div style="font-size:13px;color:var(--ink)">આ ખેડૂતનું 100-ગુણનું મૂલ્યાંકન હજુ થયું નથી.'
+      +   '<div style="font-size:11px;color:var(--ink-soft);margin-top:2px">Not yet assessed against the 100-mark framework.</div></div></div>'
       +   '<button class="btn btn-primary btn-sm" data-d="score">' + svg(I.check,2.2) + ' Score now</button>'
       + '</div></div>';
   }
   const status = CONV_SCORE_STATUS[cs.status];
   const noCompromise = !cs.chemFree;
+  /* v192 - the FC and the mobilizer answer this form in Gujarati, so the card
+     that reports their answers back speaks Gujarati too, in the same words.
+     English rides underneath in small type so the card still reads for a donor
+     or a report. gu() is the one place that decides. */
+  const guLine = (g, en) => esc(g) + (en ? '<div style="font-size:10.5px;color:var(--ink-faint);font-weight:500;margin-top:1px">' + esc(en) + '</div>' : '');
   const head = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px">'
-    + '<div><div style="font-size:11px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">⭐ Conversion score (100-mark framework)</div>'
+    + '<div><div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.04em;margin-bottom:4px">⭐ કન્વર્ઝન સ્કોર · CONVERSION SCORE (100)</div>'
     +   '<div style="font-size:28px;font-weight:800;color:var(--ink);line-height:1">' + cs.total + ' <span style="font-size:14px;font-weight:600;color:var(--ink-faint)">/ 100</span></div>'
     + '</div>'
     + '<div style="text-align:right">'
-    +   '<span class="tag ' + status.cls + '" style="font-size:12.5px;padding:5px 12px"><span class="d"></span>' + status.label + '</span>'
-    +   '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:4px">' + status.range + '</div>'
+    +   '<span class="tag ' + status.cls + '" style="font-size:12.5px;padding:5px 12px"><span class="d"></span>' + esc(status.gu || status.label) + '</span>'
+    +   '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:4px">' + esc(status.label) + ' · ' + status.range + '</div>'
     + '</div>'
     + '</div>';
   const bar = '<div style="position:relative;background:var(--line);border-radius:6px;height:10px;overflow:hidden;margin-bottom:12px">'
     + '<div style="height:100%;width:' + cs.total + '%;background:var(--' + (cs.status==='adopted'?'green':cs.status==='inProgress'?'yellow':'red') + ');transition:width .3s"></div>'
     + '</div>';
   const noCompRow = noCompromise
-    ? '<div style="background:#fef2f2;border:1px solid var(--red-line);border-radius:7px;padding:9px 11px;margin-bottom:12px;font-size:12px;color:#991b1b"><b>⛔ Chemical-free compliance failed</b> — A1 or A2 not confirmed. Farmer cannot be classified as Adopted regardless of B/C scores.</div>'
+    ? '<div style="background:#fef2f2;border:1px solid var(--red-line);border-radius:7px;padding:9px 11px;margin-bottom:12px;font-size:12px;color:#991b1b">'
+      + '<b>⛔ નિયમ:</b> A1 અથવા A2 માં રસાયણ મળ્યું છે, એટલે બાકીના ગુણ ગમે એટલા હોય, ખેડૂત “અપનાવ્યું” ગણાતા નથી.'
+      + '<div style="font-size:10.5px;opacity:.8;margin-top:3px">Chemical use found in A1 or A2 — the farmer cannot be Adopted whatever the rest scores.</div></div>'
     : '';
   const rowHtml = (key, gotMarks, max, detail) => {
     const fw = CONV_SCORE_FRAMEWORK[key];
     const earned = gotMarks > 0;
     const color = earned ? (gotMarks === max ? 'var(--green)' : 'var(--yellow)') : 'var(--red)';
-    // Use shortLabel for the card row (more compact than the full question).
-    const title = fw.shortLabel || fw.label;
+    /* v192 - the row is titled with the QUESTION as it appears on the form the
+       FC filled in, not an English paraphrase of it. The English short label
+       stays underneath in small type. */
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line-soft);gap:10px">'
-      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">' + key + '. ' + esc(title) + '</div>'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.45">' + key + '. ' + guLine(fw.gu || fw.label, fw.shortLabel || '') + '</div>'
       + (detail ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px">' + detail + '</div>' : '')
       + '</div>'
       + '<div style="text-align:right;flex-shrink:0"><b style="color:' + color + ';font-size:14px;font-variant-numeric:tabular-nums">' + gotMarks + '</b><span style="color:var(--ink-faint);font-size:11px"> / ' + max + '</span></div>'
@@ -8445,14 +8457,16 @@ function convScoreCard(f){
      conversionScoring[section][practice].adopted - it simply had no renderer
      here, so an admin could see a farmer scored 70 and not what earned it.
      Reading a field already in memory costs no Firebase download. */
+  /* v192 - the FC ticks "જીવામૃત", so the card says "જીવામૃત" first and the
+     English second - v191 had it the other way round. */
   const practiceName = p => {
     const en = p.label || p.key, gu = p.gu || '';
     if(!gu || gu === en) return en;
     // B2's IPM is stored gu:'IPM (સંકલિત જીવાત નિયંત્રણ)' - the Gujarati
     // already opens with the English name, and wrapping it produced
     // "IPM (IPM (સંકલિત ...))".
-    if(gu.indexOf(en) === 0) return gu;
-    return en + ' (' + gu + ')';
+    if(gu.indexOf(en) === 0) return gu;   // B2's IPM already carries its English
+    return gu + ' (' + en + ')';
   };
   const bDetail = (k, count) => {
     const fw = F[k];
@@ -8466,14 +8480,15 @@ function convScoreCard(f){
        "હા" ("yes"), which would print as "Mulching (હા)". */
     if(tot === 1){
       const p = fw.practices[0];
-      return (on(p) ? '✓ Yes — practised' : '✗ No — not practised')
+      // The form offers exactly હા / ના here (v190), so the card reports હા / ના.
+      return (on(p) ? '✓ હા · Yes' : '✗ ના · No')
            + (rem(p) ? ' · ' + esc(rem(p)) : '');
     }
     const tierNote = (fw.halfThreshold != null && fw.halfThreshold < fw.threshold)
-      ? ' · full marks need ' + fw.threshold + ', half marks need ' + fw.halfThreshold
-      : ' · needs ' + fw.threshold;
+      ? ' · પૂરા ગુણ માટે ' + fw.threshold + ', અડધા માટે ' + fw.halfThreshold
+      : ' · ઓછામાં ઓછું ' + fw.threshold + ' જોઈએ';
     const yes = fw.practices.filter(on), no = fw.practices.filter(p => !on(p));
-    let html = count + ' of ' + tot + ' adopted' + tierNote;
+    let html = tot + ' માંથી ' + count + ' અપનાવેલ' + tierNote;
     if(yes.length){
       html += '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">'
         + yes.map(p => '<span class="pill" style="font-size:10.5px;background:var(--green-bg);color:var(--green);border-color:var(--green-line);white-space:normal;max-width:100%;line-height:1.4;text-align:left">✓ '
@@ -8481,7 +8496,7 @@ function convScoreCard(f){
         + '</div>';
     }
     if(no.length){
-      html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">Not seen: '
+      html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">નથી અપનાવ્યું · Not seen: '
         + no.map(p => esc(practiceName(p))).join(' · ') + '</div>';
     }
     return html;
@@ -8491,17 +8506,25 @@ function convScoreCard(f){
   const aDetail = (k, headline) => {
     const S = SC[k] || {};
     let html = headline;
+    /* The FC ticked the Gujarati phrase, so that is what is quoted back. */
     const ev = (S.evidence || []).map(code => {
       const o = CONV_EVIDENCE_OPTS.find(x => x.key === code);
-      return o ? o.label : code;
+      return o ? (o.gu || o.label) : code;
     });
-    if(ev.length) html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">Basis: ' + esc(ev.join(' · ')) + '</div>';
+    if(ev.length) html += '<div style="margin-top:4px;font-size:10.5px;color:var(--ink-faint)">આધાર · Basis: ' + esc(ev.join(' · ')) + '</div>';
     if(S.notes)   html += '<div style="margin-top:3px;font-size:10.5px;color:var(--ink-soft);font-style:italic">“' + esc(S.notes) + '”</div>';
     return html;
   };
   const breakdownRows =
-      rowHtml('A1', cs.A1, F.A1.marks, aDetail('A1', cs.A1 === F.A1.marks ? '✓ None found at the visit' : '✗ Chemical fertilizer found'))
-    + rowHtml('A2', cs.A2, F.A2.marks, aDetail('A2', cs.A2 === F.A2.marks ? '✓ None found at the visit' : '✗ Chemical pesticide / herbicide found'))
+    /* v192 - the four strings below are WORD FOR WORD the four answer buttons on
+       the visit form (v189). An FC who tapped "કોઈ પણ રાસાયણિક ખાતર
+       વાપરતા નથી" should read exactly that back here, not a translation of it. */
+      rowHtml('A1', cs.A1, F.A1.marks, aDetail('A1', cs.A1 === F.A1.marks
+        ? '✓ કોઈ પણ રાસાયણિક ખાતર વાપરતા નથી'
+        : '✗ રસાયણિક ખાતર વાપરે છે'))
+    + rowHtml('A2', cs.A2, F.A2.marks, aDetail('A2', cs.A2 === F.A2.marks
+        ? '✓ રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરતા નથી'
+        : '✗ રસાયણિક જંતુનાશક / નીંદામણની દવા વાપરે છે'))
     + rowHtml('B1', cs.B1, F.B1.marks, bDetail('B1', cs.b1Count))
     + rowHtml('B2', cs.B2, F.B2.marks, bDetail('B2', cs.b2Count))
     + rowHtml('B3', cs.B3, F.B3.marks, bDetail('B3', cs.b3Count))
@@ -8511,10 +8534,11 @@ function convScoreCard(f){
         // reading the way they were scored, labelled so nobody compares them.
         !cs.cLegacy
           ? (convCInvalid(cs.totalLand, cs.chemFreeLand)
-              ? '⚠ ' + cs.chemFreeLand + ' poison-free acres recorded against ' + cs.totalLand + ' total — figures need checking'
+              ? '⚠ કુલ ' + esc(cs.totalLand) + ' એકર સામે ' + esc(cs.chemFreeLand) + ' એકર ઝેર-મુક્ત — આંકડા તપાસો'
+                + '<div style="font-size:10px;color:var(--ink-faint);margin-top:2px">More poison-free land than land — figures need checking</div>'
               : cs.cPercent > 0
-                ? cs.chemFreeLand + ' of ' + cs.totalLand + ' acres poison-free (' + cs.cPercent.toFixed(1) + '%)'
-                : 'Land figures not entered')
+                ? 'કુલ ' + esc(cs.totalLand) + ' એકરમાંથી ' + esc(cs.chemFreeLand) + ' એકર ઝેર-મુક્ત (' + cs.cPercent.toFixed(1) + '%)'
+                : 'જમીનના આંકડા ભરેલા નથી · Land figures not entered')
           : (cs.areaDelta > 0 ? 'Expanded: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha (+' + cs.areaDelta.toFixed(2) + ') · scored before v178' :
              cs.areaDelta === 0 && cs.previousArea > 0 ? 'Maintained: ' + cs.currentArea + ' bigha · scored before v178' :
              cs.previousArea > 0 ? 'Reduced: ' + cs.previousArea + ' → ' + cs.currentArea + ' bigha · scored before v178' :
@@ -8522,7 +8546,7 @@ function convScoreCard(f){
   // Footer: just the last-scored stamp — the "Update visit" button at the
   // top of the drawer handles re-scoring, so no duplicate button here.
   const footer = (f.conversionScoring && f.conversionScoring.lastUpdated)
-    ? '<div style="margin-top:10px;font-size:11px;color:var(--ink-faint)">Last scored ' + esc(new Date(f.conversionScoring.lastUpdated).toLocaleDateString('en-GB')) + (f.conversionScoring.lastUpdatedBy?' by '+esc(f.conversionScoring.lastUpdatedBy):'') + '</div>'
+    ? '<div style="margin-top:10px;font-size:11px;color:var(--ink-faint)">છેલ્લું મૂલ્યાંકન ' + esc(new Date(f.conversionScoring.lastUpdated).toLocaleDateString('en-GB')) + (f.conversionScoring.lastUpdatedBy?' · '+esc(f.conversionScoring.lastUpdatedBy):'') + '</div>'
     : '';
   return '<div class="card" style="padding:14px 16px;margin-bottom:14px;background:#fff;border:1px solid var(--line);box-shadow:var(--sh-1)">'
     + head + bar + noCompRow + breakdownRows + footer
@@ -13923,24 +13947,29 @@ function openConvDrawer(id){
   let h=`<div class="drawer-head"><div class="row">
     <div><div class="meta">${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
-      <span class="tag ${st.cls}"><span class="d"></span>${st.label}</span>
+      <span class="tag ${st.cls}" style="white-space:normal"><span class="d"></span>${esc(st.gu||st.label)} · ${esc(st.label)}</span>
       ${(function(){
           /* v191 - see the note above openConvDrawer. */
           const _cs = calculateConvScore(f);
+          const _t = (cls, gu, en) => '<span class="tag ' + cls + '" style="white-space:normal">'
+            + '<span class="d"></span>' + gu + ' · ' + en + '</span>';
           if(_cs.assessed) return _cs.chemFree
-            ? '<span class="tag green"><span class="d"></span>Chemical-free at last visit</span>'
-            : '<span class="tag red"><span class="d"></span>Chemical use found at last visit</span>';
+            ? _t('green', '\u0a9b\u0ac7\u0ab2\u0acd\u0ab2\u0ac0 \u0aae\u0ac1\u0ab2\u0abe\u0a95\u0abe\u0aa4\u0ac7 \u0a9d\u0ac7\u0ab0-\u0aae\u0ac1\u0a95\u0acd\u0aa4', 'Chemical-free at last visit')
+            : _t('red',   '\u0a9b\u0ac7\u0ab2\u0acd\u0ab2\u0ac0 \u0aae\u0ac1\u0ab2\u0abe\u0a95\u0abe\u0aa4\u0ac7 \u0ab0\u0ab8\u0abe\u0aaf\u0aa3 \u0aae\u0ab3\u0acd\u0aaf\u0ac1\u0a82', 'Chemical use found at last visit');
           return f.chemFreeFlag===false
-            ? '<span class="tag red"><span class="d"></span>Chemical-use flagged</span>'
-            : '<span class="tag grey"><span class="d"></span>Chemical-free (as enrolled, not yet verified)</span>';
+            ? _t('red',  '\u0ab0\u0ab8\u0abe\u0aaf\u0aa3 \u0ab5\u0aaa\u0ab0\u0abe\u0ab6 \u0aa8\u0acb\u0a82\u0aa7\u0abe\u0aaf\u0ac7\u0ab2', 'Chemical-use flagged')
+            : _t('grey', '\u0aa8\u0acb\u0a82\u0aa7\u0aa3\u0ac0 \u0aae\u0ac1\u0a9c\u0aac \u0a9d\u0ac7\u0ab0-\u0aae\u0ac1\u0a95\u0acd\u0aa4, \u0ab9\u0a9c\u0ac1 \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', 'as enrolled, not yet verified');
         })()}
     </div>
     <!-- v191 - who is responsible for this farmer, at the top where it is read.
          The FC was only in the detail grid, below two full cards; the mobilizer
          was on no screen at all even though 65 farmers have one. -->
-    <div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap">
-      <span>FC: <b style="color:var(--ink)">${fc?esc(fc.name):'<span style="color:var(--red)">Unassigned</span>'}</b></span>
-      <span>Mobilizer: <b style="color:var(--ink)">${mobName?esc(mobName):'<span style="color:var(--ink-faint);font-weight:500">None assigned</span>'}</b></span>
+    <!-- v192 - .drawer-head is a DARK brown gradient with color:#fff. v191 put
+         var(--ink-soft) and var(--ink) here, which are near-black, so both
+         names were unreadable. Nothing in this header may use an --ink token. -->
+    <div style="margin-top:8px;font-size:11.5px;color:rgba(255,255,255,.6);display:flex;gap:14px;flex-wrap:wrap">
+      <span>FC: <b style="color:#fff;font-weight:700">${fc?esc(fc.name):'<span style="color:#fca5a5">Unassigned \u00b7 \u0aa8\u0a95\u0acd\u0a95\u0ac0 \u0aa8\u0aa5\u0ac0</span>'}</b></span>
+      <span>Mobilizer: <b style="color:#fff;font-weight:700">${mobName?esc(mobName):'<span style="color:rgba(255,255,255,.55);font-weight:500">None assigned</span>'}</b></span>
     </div></div>
     <button class="x-btn" onclick="closeDrawer()" aria-label="Close">${svg(I.x)}</button>
   </div></div><div class="drawer-body">`;

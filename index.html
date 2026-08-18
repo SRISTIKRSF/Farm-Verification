@@ -481,7 +481,10 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 /* ============ TABLE ============ */
-.table-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.table-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+/* v194 - .spacer{flex:1} pushes the buttons right on the first line; without
+   flex-wrap above, a header with enough buttons (Conversion now has seven)
+   simply ran off the right edge and scrolled the whole page sideways. */
 .table-head h3{font-size:14.5px;font-weight:700}
 .table-head .meta{font-size:11.5px;color:var(--ink-faint);font-weight:500}
 .table-head .spacer{flex:1}
@@ -3262,7 +3265,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v193';
+const APP_VERSION = 'v194';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6039,6 +6042,63 @@ function fcAssignedDistricts(){
   if(!myFcCode) return [];
   const u=(typeof getUsersList==='function'?getUsersList():[]).find(x=>x.role==='fc' && x.fcCode===myFcCode);
   return (u && Array.isArray(u.districts)) ? u.districts : [];
+}
+/* ============ v194 - WHICH COORDINATOR COVERS THIS DISTRICT? ============
+   District coverage lives on the USER account (config/users[].districts,
+   edited in Settings -> Users); the farmer carries a district of their own.
+   Both are normally stored bilingual - "Aravalli (અરવલ્લી)" - but 4 haat
+   farmers hold the English half only, so BOTH SIDES are reduced to the English
+   half before comparing. A raw === would drop those four without a word.
+
+   fcByDistrict returns a coordinator only when EXACTLY ONE covers the
+   district. Two coordinators covering one district is a real situation today
+   (Patan is on both Mayursinh's and "Demo FC"'s account), and guessing between
+   them would put 39 farmers on the wrong person's list. Ambiguity is reported,
+   never resolved silently.
+
+   Reads getUsersList(), which is already in memory or in the localStorage
+   cache - so this costs no Firebase download. */
+function _distEng(x){ return String(x == null ? '' : x).split(' (')[0].trim(); }
+function fcCodesCoveringDistrict(district){
+  const d = _distEng(district);
+  if(!d) return [];
+  return (typeof getUsersList === 'function' ? getUsersList() : [])
+    .filter(u => u && u.role === 'fc' && u.active !== false && Array.isArray(u.districts)
+              && u.districts.some(x => _distEng(x) === d))
+    .map(u => u.fcCode)
+    .filter(Boolean);
+}
+/* The coordinator for a district, or null when nobody - or more than one -
+   covers it. Callers that need to tell those two apart use the codes list. */
+function fcByDistrict(district){
+  const codes = fcCodesCoveringDistrict(district);
+  return codes.length === 1 ? (fcById(codes[0]) || null) : null;
+}
+/* What to show for one farmer: the coordinator stamped on the record if there
+   is one, otherwise the one their district implies. `derived` says which. */
+function farmerFcInfo(f){
+  if(!f) return { fc:null, derived:false, codes:[] };
+  const stamped = f.fcId ? fcById(f.fcId) : null;
+  if(stamped) return { fc:stamped, derived:false, codes:[f.fcId] };
+  const codes = fcCodesCoveringDistrict(f.district);
+  return { fc: codes.length === 1 ? (fcById(codes[0]) || null) : null, derived:true, codes:codes };
+}
+/* One cell / one line, used by the Haat table and the Haat drawer so they can
+   never disagree. A derived name is shown in italic with a "by district" hint,
+   because nobody has actually assigned this farmer to anyone. */
+function fcCellHtml(f, opts){
+  const o = opts || {};
+  const info = farmerFcInfo(f);
+  const light = o.onDark ? 'rgba(255,255,255,.55)' : 'var(--ink-faint)';
+  const strong = o.onDark ? '#fff' : 'var(--ink)';
+  if(info.fc && !info.derived)
+    return '<span style="color:' + strong + '">' + esc(info.fc.name) + '</span>';
+  if(info.fc)
+    return '<span style="color:' + strong + ';font-style:italic">' + esc(info.fc.name) + '</span>'
+         + '<div style="font-size:10px;color:' + light + '">by district</div>';
+  if(info.codes.length > 1)
+    return '<span style="color:' + light + '">' + info.codes.length + ' coordinators cover this district</span>';
+  return '<span style="color:' + light + '">\u2014</span>';
 }
 function _fcCanSeeFarmer(f){
   const ds=fcAssignedDistricts();
@@ -10470,6 +10530,10 @@ function viewHaat(){
     <select id="fDistrict"><option value="">All districts</option>
       ${haatDistricts.map(d=>`<option ${F.district===d?'selected':''}>${esc(d)}</option>`).join('')}
     </select>
+    <select id="fFc"><option value="">All field coordinators</option>
+      <option value="__none__" ${F.fc==='__none__'?'selected':''}>— No coordinator —</option>
+      ${activeFcs().map(x=>`<option value="${esc(x.id)}" ${F.fc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
+    </select>
     <select id="fCrop"><option value="">All crops</option>
       ${(window.CROPS_CATALOG||[]).filter(x=>x!=='Other (અન્ય)').map(x=>`<option ${F.crop===x?'selected':''}>${esc(x)}</option>`).join('')}
     </select>
@@ -10494,6 +10558,10 @@ function viewHaat(){
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
+  /* v194 - matches on the SAME rule the column shows: the stamped coordinator
+     if there is one, otherwise the district's. "No coordinator" means neither. */
+  if(F.fc==='__none__') rows=rows.filter(r=>!farmerFcInfo(r).fc);
+  else if(F.fc) rows=rows.filter(r=>{const i=farmerFcInfo(r); return i.fc && i.fc.id===F.fc;});
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
 
   if(F.active==='1') rows=rows.filter(r=>r.status==='green'&&r.active);
@@ -10520,12 +10588,12 @@ function viewHaat(){
   h+=`<div class="table-wrap"><table><thead><tr>
     <th style="width:34px"><input type="checkbox" id="archSelAll_haat" ${_haatAllSel?'checked':''} aria-label="Select all on this page"></th>
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
-    <th>Crops</th>${th('haat','Haat')}
+    <th>Crops</th>${th('haat','Haat')}<th>Field Coordinator</th>
     ${th('status','Status')}<th>Active</th><th>Last visit</th>${th('_sortTs','Joined')}
     ${ARCH_SHOW.haat?'<th></th>':''}
   </tr></thead><tbody>`;
   if(!rows.length){
-    h+=`<tr><td colspan="11"><div class="empty">${svg(I.haat)}<div>${archEmptyMsg('haat', !!(F.q||F.state||F.district||F.haat||F.crop||F.status))}</div></div></td></tr>`;
+    h+=`<tr><td colspan="12"><div class="empty">${svg(I.haat)}<div>${archEmptyMsg('haat', !!(F.q||F.state||F.district||F.haat||F.crop||F.status||F.fc))}</div></div></td></tr>`;
   }
   pagedRows.forEach(r=>{
     const lastV=(r.visits||[]).length?fmtDate(r.visits[r.visits.length-1].date):'—';
@@ -10554,6 +10622,7 @@ function viewHaat(){
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td class="crop-cell" style="max-width:260px">${cropsHtml}</td>
       <td>${r.haat?esc(r.haat):'<span style="color:var(--ink-faint)">—</span>'}</td>
+      <td style="font-size:11.5px">${fcCellHtml(r)}</td>
       <td><span class="tag ${st.cls}"><span class="d"></span>${st.label}</span></td>
       <td>${activeCell}</td>
       <td style="font-size:11.5px">${lastV}</td>
@@ -10592,7 +10661,7 @@ function viewHaat(){
   /* ---- secondary filter wiring ---- */
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('haat','fHaat');setF('state','fState');setF('district','fDistrict');
-  setF('crop','fCrop');setF('active','fActive');
+  setF('crop','fCrop');setF('active','fActive');setF('fc','fFc');
   $('#clearF').onclick=()=>{FILTERS.haat={};render();};
   $('#exportHaat').onclick=()=>exportHaatCSV(rows);
 }
@@ -10718,7 +10787,9 @@ function exportHaatCSV(rows){
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,
-    certification:f.certification||'',field_coordinator:(fcById(f.fcId)||{}).name||'',
+    certification:f.certification||'',
+    field_coordinator:((farmerFcInfo(f).fc)||{}).name||'',
+    fc_source:f.fcId?'assigned':(farmerFcInfo(f).fc?'by district':''),
     haat:f.haat||'',status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
@@ -11417,7 +11488,7 @@ function viewConversion(){
     <div class="spacer"></div>
     ${archToggleHtml('conv')}
     <button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>
-    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button><button class="btn btn-ghost btn-sm" id="cMob">${svg(I.user,2.2)}Assign to mobilizer</button>
+    ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cAuto">${svg(I.fc,2.2)}Auto-assign by district</button><button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button><button class="btn btn-ghost btn-sm" id="cMob">${svg(I.user,2.2)}Assign to mobilizer</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
   </div>`;
@@ -11496,6 +11567,7 @@ function viewConversion(){
   });
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('state','cState');setF('district','cDistrict');setF('fc','cFc');setF('mob','cMobF');
+  const cAutoBtn=$('#cAuto'); if(cAutoBtn) cAutoBtn.onclick=openAutoAssignFcModal;
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   const cMoveBtn=$('#cMove'); if(cMoveBtn) cMoveBtn.onclick=openReassignFcModal;
   const cMobBtn=$('#cMob'); if(cMobBtn) cMobBtn.onclick=openAssignMobilizerModal;
@@ -13721,6 +13793,12 @@ function openHaatDrawer(id){
         ${f.status==='green'?`<span class="tag ${f.active?'green':'grey'}">${f.active?'Active':'Inactive'}</span>`:''}
         <span class="tag blue">${esc(f.vertical)}</span>
       </div>
+      <!-- v194 - the coordinator at the top, matching the conversion drawer.
+           It was only in the detail grid below, and read "—" for 484 of the
+           495 haat farmers because almost none carry a stamped fcId. -->
+      <div style="margin-top:8px;font-size:11.5px;color:rgba(255,255,255,.6)">
+        FC: <b style="color:#fff;font-weight:700">${fcCellHtml(f,{onDark:true})}</b>
+      </div>
       ${decisionInfo}
       </div>
       <button class="x-btn" onclick="closeDrawer()" aria-label="Close">${svg(I.x)}</button>
@@ -13736,7 +13814,7 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres} acres</div></div>
     <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic} yrs</div></div>
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
-    <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'—'}</div></div>
+    <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fcCellHtml(f)}</div></div>
     <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
@@ -14494,6 +14572,124 @@ function openAssignFcModal(id){
     await saveDB();closeModal();render();
     if($('#drawer').classList.contains('show'))openConvDrawer(id);
     toast('Field Coordinator assigned');
+  };
+}
+
+/* ============ MODAL: AUTO-ASSIGN FC BY DISTRICT (v194) ============
+
+   787 live conversion farmers have no coordinator. Each coordinator's account
+   already lists the districts they cover, so for 746 of those farmers there is
+   exactly one right answer and no reason to pick it by hand.
+
+   Written to be boring, following openReassignFcModal:
+     - it shows the full count per coordinator BEFORE it writes anything;
+     - it writes fcId, the stage bump and the audit stamps, and NOTHING else -
+       no visit, no score, no mobilizer, no next-visit date (all 787 already
+       have one, and overwriting them would land 787 visits on one day);
+     - it never touches an archived or seeded record, and never a farmer who
+       already has a coordinator;
+     - it stores fcPrevId (empty) and fcAutoAssignedAt so the batch can be
+       identified and undone later;
+     - a district covered by TWO coordinators is left alone and reported.
+       Guessing there would put those farmers on the wrong person's list.
+
+   The stage bump matches openBulkAssignModal exactly: 'enrolled' becomes
+   'assigned' because that is now true, and every other stage is left as it is
+   ('verification_pending' is further along, not behind). */
+function _autoAssignPool(){
+  return (DB.convFarmers||[]).filter(f =>
+    f && !f._archived && !_isSeededRecord(f) && !f.fcId);
+}
+function _autoAssignPlan(){
+  const perFc = {}, ambiguous = {}, uncovered = {}, noDistrict = [];
+  _autoAssignPool().forEach(f => {
+    const codes = fcCodesCoveringDistrict(f.district);
+    const d = _distEng(f.district);
+    if(codes.length === 1){ (perFc[codes[0]] = perFc[codes[0]] || []).push(f); }
+    else if(codes.length > 1){ (ambiguous[d] = ambiguous[d] || []).push(f); }
+    else if(d){ (uncovered[d] = uncovered[d] || []).push(f); }
+    else noDistrict.push(f);
+  });
+  return { perFc, ambiguous, uncovered, noDistrict };
+}
+function openAutoAssignFcModal(){
+  const pool = _autoAssignPool();
+  if(!pool.length){
+    modalShell('Auto-assign by district',
+      '<div class="hint">Every conversion farmer already has a field coordinator.</div>',
+      '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
+    return;
+  }
+  const plan = _autoAssignPlan();
+  const willAssign = Object.keys(plan.perFc).reduce((n,k) => n + plan.perFc[k].length, 0);
+  const rows = Object.keys(plan.perFc)
+    .sort((a,b) => plan.perFc[b].length - plan.perFc[a].length)
+    .map(code => {
+      const fc = fcById(code) || { name: code };
+      const now = (DB.convFarmers||[]).filter(f => f && !f._archived && f.fcId === code).length;
+      return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft)">'
+        + '<div style="font-size:12.5px;font-weight:600">' + esc(fc.name) + '</div>'
+        + '<div style="font-size:12px;color:var(--ink-soft);white-space:nowrap">has ' + now
+        + ' \u00b7 <b style="color:var(--green);font-size:13px">+' + plan.perFc[code].length + '</b></div>'
+        + '</div>';
+    }).join('');
+  const leftover = (title, map, why) => {
+    const keys = Object.keys(map);
+    if(!keys.length) return '';
+    const n = keys.reduce((t,k) => t + map[k].length, 0);
+    return '<div style="margin-top:10px;background:var(--panel-2);border-left:3px solid var(--yellow);border-radius:0 7px 7px 0;padding:8px 11px">'
+      + '<div style="font-size:12px;font-weight:700">' + esc(title) + ' \u2014 ' + n + ' farmer' + (n===1?'':'s') + ' left as they are</div>'
+      + '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">'
+      + keys.sort().map(k => esc(k) + ' (' + map[k].length + ')').join(' \u00b7 ') + '</div>'
+      + '<div style="font-size:11px;color:var(--ink-faint);margin-top:3px">' + why + '</div></div>';
+  };
+  const body = '<div class="hint" style="margin-bottom:12px"><b>' + pool.length
+      + '</b> conversion farmers have no field coordinator. Each coordinator\'s account lists the '
+      + 'districts they cover, so <b>' + willAssign + '</b> of them have exactly one right answer.</div>'
+    + (rows ? '<div style="background:#fff;border:1px solid var(--line);border-radius:9px;padding:4px 13px 8px">' + rows + '</div>' : '')
+    + leftover('Two coordinators cover the same district', plan.ambiguous,
+        'Remove the district from one of the two accounts in Settings \u2192 Users, then run this again.')
+    + leftover('No coordinator covers the district', plan.uncovered,
+        'Add the district to a coordinator in Settings \u2192 Users, then run this again.')
+    + (plan.noDistrict.length
+        ? leftover('The farmer record has no district', {'\u2014': plan.noDistrict}, 'Set the district on the farmer first.')
+        : '')
+    + '<div class="hint" style="margin-top:12px;font-size:11.5px">This changes the coordinator and the stage only. '
+      + 'No visit, no score, no mobilizer and no visit-due date is touched.</div>';
+  modalShell('Auto-assign field coordinators by district', body,
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" id="aaGo"' + (willAssign ? '' : ' disabled') + '>'
+    + svg(I.check) + 'Assign ' + willAssign + ' farmer' + (willAssign===1?'':'s') + '</button>');
+  const go = $('#aaGo');
+  if(go) go.onclick = async () => {
+    const ok = await confirmModal({
+      title:'Assign ' + willAssign + ' farmers?',
+      message:'Each farmer goes to the one coordinator whose account covers their district.\n\n'
+        + 'Only the coordinator and the stage change. Nothing else on the record is touched, '
+        + 'and the ' + (pool.length - willAssign) + ' farmer(s) listed as needing a decision are left alone.',
+      confirmLabel:'Assign'});
+    if(!ok) return;
+    const aB = actor(), nowIso = new Date().toISOString();
+    let n = 0;
+    Object.keys(plan.perFc).forEach(code => {
+      plan.perFc[code].forEach(f => {
+        if(f.fcId) return;                       // changed under us - skip
+        f.fcPrevId       = f.fcId || '';         // reversible
+        f.fcId           = code;
+        f.assignedAt     = todayISO();
+        if(!f.stage || f.stage === 'enrolled') f.stage = 'assigned';
+        f.fcAssignedBy   = aB.name;
+        f.fcAssignedById = aB.id;
+        f.fcAssignedAt   = nowIso;
+        f.fcAutoAssignedAt = nowIso;             // marks this batch
+        markLocalTouch('convFarmers', f.id);
+        n++;
+      });
+    });
+    logActivity('status', '<b>' + n + '</b> conversion farmer' + (n===1?'':'s')
+      + ' auto-assigned to a field coordinator by district');
+    await saveDB(); closeModal(); render();
+    toast(n + ' farmer' + (n===1?'':'s') + ' assigned');
   };
 }
 

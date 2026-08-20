@@ -427,10 +427,22 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .mini-tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
 .mini-tbl td.num b{font-size:13.5px}
 .mini-tbl td.muted{color:var(--ink-faint)}
-.mini-tbl td.tot{color:var(--accent);background:var(--accent-soft)}
+/* v197 - the tinted band made this read as a highlighted strip rather than a
+   column of the table. The bold accent number is the emphasis; the cell is
+   plain, so the row hover reads across the whole row as it should. */
+.mini-tbl td.tot{color:var(--accent)}
 .mini-tbl td.strong{font-weight:600}
 .mini-tbl .mini-sub{font-size:10px;color:var(--ink-faint);font-weight:400;margin-top:1px}
 .mini-empty{text-align:center;color:var(--ink-faint);padding:24px 14px;font-size:12px}
+/* v197 - the totals row. Not in tbody, so it never picks up the row hover or
+   the click-to-filter cursor: there is nothing to filter by on a total. */
+.mini-tbl tfoot td{
+  padding:11px 14px;border-top:2px solid var(--line-strong);font-weight:700;
+  background:var(--panel-2);white-space:nowrap;
+}
+.mini-tbl tfoot td.num{text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+.mini-tbl tfoot td.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.mini-tbl tfoot td.tot{color:var(--accent)}
 
 /* activity feed (recent updates) */
 .act-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft)}
@@ -3265,7 +3277,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v196';
+const APP_VERSION = 'v197';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10076,7 +10088,13 @@ function viewDashboard(){
       ${r.monthly.map(x=>`<td class="num"><b>${x.n}</b></td>`).join('')}
     </tr>`;
   });
-  h+=`</tbody></table></div></div>
+  /* v197 - totals. Sums exactly the rows drawn above, so the row can never
+     disagree with the table it sits under. */
+  h+=`</tbody><tfoot><tr>
+    <td class="lbl" colspan="2">Total</td>
+    <td class="num">${haatRowsMo.reduce((t,r)=>t+(r.onboarded||0),0)}</td>
+    ${recent3M.map((m,i)=>`<td class="num">${haatRowsMo.reduce((t,r)=>t+((r.monthly[i]&&r.monthly[i].n)||0),0)}</td>`).join('')}
+  </tr></tfoot></table></div></div>
 
     <div class="card">
       <div class="mini-tbl-head">
@@ -10099,7 +10117,11 @@ function viewDashboard(){
       <td class="num tot"><b>${r.total}</b></td>
     </tr>`;
   });
-  h+=`</tbody></table></div></div>
+  h+=`</tbody><tfoot><tr>
+    <td class="lbl" colspan="2">Total</td>
+    ${recent3.map((m,i)=>`<td class="num">${fcRows.reduce((t,r)=>t+(r.perMonth[i]||0),0)}</td>`).join('')}
+    <td class="num tot">${fcRows.reduce((t,r)=>t+(r.total||0),0)}</td>
+  </tr></tfoot></table></div></div>
   </div>`;
 
   // v33 — the full Conversion funnel used to sit here as its own 5-box grid,

@@ -551,6 +551,12 @@ tbody tr:last-child td{border-bottom:none}
 .tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
   font-size:11px;font-weight:600;white-space:nowrap;border:1px solid transparent}
 .tag .d{width:5.5px;height:5.5px;border-radius:50%}
+/* v206 - inside a PDF document only. Hind Vadodara's line box is tall enough
+   for Gujarati matras, so a Latin word sits high in it and the pill reads
+   bottom-heavy on paper. Hugging the glyphs lets align-items:center centre
+   them. The pills on screen keep the app's own line-height. */
+.pdfdoc .tag{line-height:1;padding:4px 10px 6px}
+.pdfdoc .tag .d{margin-top:-1px}
 .tag.green{background:var(--green-bg);color:var(--green);border-color:var(--green-line)}
 .tag.yellow{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-line)}
 .tag.red{background:var(--red-bg);color:var(--red);border-color:var(--red-line)}
@@ -2672,7 +2678,7 @@ function verifStatusLabel(v){
    three columns hold their alignment whatever the page scale. */
 const PDF_W = 703;   /* px == 186mm == A4 portrait minus 12mm margins */
 function pdfLetterhead(){
-  return '<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #723e31">'
+  return '<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #723e31;page-break-inside:avoid">'
     + '<img src="' + PDF_LOGO_SRISTI + '" style="height:46px;width:auto;flex-shrink:0" alt="">'
     + '<div style="flex:1;text-align:center;min-width:0">'
     +   '<div style="font-size:19px;font-weight:700;letter-spacing:.02em;color:#2e1f16">Farm Verification Report</div>'
@@ -2695,7 +2701,7 @@ function buildVerificationPdfHtml(lastClaims, summary){
   CATEGORIES.forEach(cat => {
     const qs = QUESTIONS.filter(q => q.cat===cat.key);
     if(!qs.length) return;
-    rows.push('<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid">'+esc(cat.gu)+' <span style="font-weight:500;opacity:.8;font-size:11px">('+esc(cat.en)+')</span></div>');
+    rows.push('<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid;page-break-inside:avoid">'+esc(cat.gu)+' <span style="font-weight:500;opacity:.8;font-size:11px">('+esc(cat.en)+')</span></div>');
     rows.push('<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:2px">'
       + '<colgroup><col style="width:46%"><col style="width:31%"><col style="width:23%"></colgroup>'
       + '<tr style="background:#faf7f5">'
@@ -2747,7 +2753,7 @@ function buildVerificationPdfHtml(lastClaims, summary){
         + '<div style="font-size:9.5px;color:#8a7768">' + esc(dateStr) + '</div>'
       + '</div>'
     + '</div>'
-    + (GENERAL_COMMENTS ? '<div style="font-size:11.5px;line-height:1.6;margin:0 0 12px;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px"><b style="color:#8a6410">એકંદર નોંધ · Overall comments</b><div style="margin-top:3px">'+esc(GENERAL_COMMENTS)+'</div></div>' : '')
+    + (GENERAL_COMMENTS ? '<div style="font-size:11.5px;line-height:1.6;margin:0 0 12px;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px;page-break-inside:avoid"><b style="color:#8a6410">એકંદર નોંધ · Overall comments</b><div style="margin-top:3px">'+esc(GENERAL_COMMENTS)+'</div></div>' : '')
     + rows.join('')
     + '</div>';
 }
@@ -3357,7 +3363,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v205';
+const APP_VERSION = 'v206';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15897,7 +15903,7 @@ function openCompareFormsModal(id){
      something different from what is on screen. */
   function buildComparePdfHtml(){
     const cell = 'padding:6px 9px;border-bottom:1px solid #f0ebe7;vertical-align:top;overflow-wrap:anywhere';
-    let h = '<div style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
+    let h = '<div class="pdfdoc" style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
       + pdfLetterheadOuter('Farmer vs Field Verification',
           '\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0aa8\u0acb \u0aa6\u0abe\u0ab5\u0acb \u0a85\u0aa8\u0ac7 FC \u0aa8\u0ac0 \u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u2014 \u0ab8\u0abe\u0aae\u0ac7\u0ab8\u0abe\u0aae\u0ac7');
     /* who and when */
@@ -15930,7 +15936,7 @@ function openCompareFormsModal(id){
     cats.forEach(cat => {
       const catQs = qs.filter(q => q.cat === cat.key && !q.displayOnly);   /* v204 */
       if(!catQs.length) return;
-      h += '<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid">'
+      h += '<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid;page-break-inside:avoid">'
         + esc(cat.gu) + ' <span style="font-weight:500;opacity:.8;font-size:11px">(' + esc(cat.en) + ')</span></div>';
       h += '<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px">'
         + '<colgroup><col style="width:28%"><col style="width:30%"><col style="width:32%"><col style="width:10%"></colgroup>'
@@ -15964,7 +15970,7 @@ function openCompareFormsModal(id){
     });
     const gc = verif.comments || (verif.summary && verif.summary.comments);
     if(gc){
-      h += '<div style="font-size:11px;line-height:1.6;margin:12px 0 0;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px">'
+      h += '<div style="font-size:11px;line-height:1.6;margin:12px 0 0;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px;page-break-inside:avoid">'
         + '<b style="color:#8a6410">FC \u0aa8\u0ac0 \u0aa8\u0acb\u0a82\u0aa7 \u00b7 FC comments</b>'
         + '<div style="margin-top:3px">' + esc(gc) + '</div></div>';
     }
@@ -20901,7 +20907,7 @@ function pdfField(label, value){
     + '</div>';
 }
 function pdfLetterheadOuter(title, subtitle){
-  return '<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #723e31">'
+  return '<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #723e31;page-break-inside:avoid">'
     + '<img src="' + PDF_LOGO_SRISTI + '" style="height:46px;width:auto;flex-shrink:0" alt="">'
     + '<div style="flex:1;text-align:center;min-width:0">'
     +   '<div style="font-size:19px;font-weight:700;color:#2e1f16">' + esc(title) + '</div>'
@@ -20977,7 +20983,7 @@ function buildFarmerSummaryPdfHtml(f, claims, title){
   }
   const d = new Date();
   const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-  return '<div style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
+  return '<div class="pdfdoc" style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
     + pdfLetterheadOuter(title, 'સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ')
     + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px"><b>'+esc(f.name||'—')+'</b> · '+esc(f.phone||f.mobile||'—')+'<br><span style="color:#7a6a5c">જમા તારીખ: '+dateStr+'</span></div>'
     + (rowsHtml || '<div style="padding:20px;text-align:center;color:#94a3b8">No form data available.</div>')

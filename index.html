@@ -3355,7 +3355,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v203';
+const APP_VERSION = 'v204';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15852,7 +15852,12 @@ function openCompareFormsModal(id){
   /* One sub-section per category */
   body += '<div style="max-height:70vh;overflow:auto;border:1px solid var(--line);border-radius:8px">';
   cats.forEach(cat => {
-    const catQs = qs.filter(q => q.cat === cat.key);
+    /* v204 - displayOnly questions are the farmer's identity: name, father's
+       name, age, gender, mobile, Aadhaar. Nothing to compare on any of them -
+       the FC column and the match are a dash by definition - so they are six
+       rows of noise at the top of the page a decision is made from. The name
+       is already in the title. */
+    const catQs = qs.filter(q => q.cat === cat.key && !q.displayOnly);
     if(!catQs.length) return;
     body += '<div style="background:var(--panel-2);padding:9px 13px;font-weight:700;font-size:12px;color:var(--ink);border-top:1px solid var(--line);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2">' + esc(cat.gu) + ' <span style="font-size:11px;color:var(--ink-soft);font-weight:500;margin-left:6px">' + esc(cat.en) + '</span></div>';
     // v7 fix: table-layout:fixed forces the column widths below to be honored
@@ -15921,7 +15926,7 @@ function openCompareFormsModal(id){
       + '<span><b>\u2014</b> \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0 \u00b7 N/A</span>'
       + '</div>';
     cats.forEach(cat => {
-      const catQs = qs.filter(q => q.cat === cat.key);
+      const catQs = qs.filter(q => q.cat === cat.key && !q.displayOnly);   /* v204 */
       if(!catQs.length) return;
       h += '<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid">'
         + esc(cat.gu) + ' <span style="font-weight:500;opacity:.8;font-size:11px">(' + esc(cat.en) + ')</span></div>';

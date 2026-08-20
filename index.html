@@ -3287,7 +3287,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v199';
+const APP_VERSION = 'v200';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7389,7 +7389,96 @@ async function loadVerifIndex(){
   try{
     const snap = await fbRef('verifIndex').get();
     DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
+    /* v200 - and act on it. See autoHealVerifications. */
+    if(isAdminUser()) autoHealVerifications();
   }catch(e){ /* diagnostic only */ }
+}
+
+/* ============ v200 - SELF-HEALING VERIFICATIONS ============
+
+   A verification writes TWO things: the form to forms/<id>/verif, and the
+   farmer's own row. The row write is the fragile one - it has failed twice in a
+   week and cost eight farmers their recorded visit. verifIndex/<id> is written
+   straight to Firebase at submit and survives whatever happens to the row, so
+   a row that is missing while the marker exists is, by definition, a
+   verification that never finished being recorded.
+
+   This closes that gap without anyone pressing anything. It only ever FILLS
+   BLANKS: a farmer who already has a verification date is skipped, so is
+   anyone past a decision, so is anything archived. It never overwrites an
+   answer and never removes a thing. */
+const _HEAL_POST_DECISION = ['onboarded','decided','verified-cleared'];
+function _healCandidates(){
+  const idx = DB.verifIndex || {};
+  if(!Object.keys(idx).length) return [];
+  return (DB.haatFarmers||[]).filter(f =>
+    f && f.id && idx[f.id]
+    && !f._archived && !_isSeededRecord(f)
+    && !f.verificationFormSubmittedAt
+    && !_HEAL_POST_DECISION.includes(f.stage));
+}
+async function autoHealVerifications(){
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) return;
+  if(!isAdminUser()) return;
+  /* The farmer collections arrive on their own listener; wait for them rather
+     than concluding "nothing is broken" from an empty list. */
+  for(let waited = 0; waited < 30000 && !(DB.haatFarmers||[]).length; waited += 1000){
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  const first = _healCandidates();
+  if(!first.length) return;                       // the normal case: silent
+  console.warn('[Sristi] v200 - ' + first.length + ' verification(s) on the server were never '
+    + 'recorded on their farmer. Healing:', first.map(f => f.id));
+  const healed = [];
+  for(const cand of first){
+    const id = cand.id;
+    try{ await loadForms(id); }catch(e){ continue; }
+    const v = (FORMS_CACHE[id]||{}).verif;
+    if(!v || !v.submittedAt) continue;            // marker but no form - leave it alone
+    /* Re-resolve AFTER the await; the live listener replaces every record in
+       DB.haatFarmers and the object above is an orphan by now. This is the bug
+       that caused the very records being healed here. */
+    const f = (DB.haatFarmers||[]).find(x => x && x.id === id);
+    if(!f) continue;
+    if(f.verificationFormSubmittedAt) continue;   // healed elsewhere meanwhile
+    if(_HEAL_POST_DECISION.includes(f.stage)) continue;
+    markLocalTouch('haatFarmers', f.id);
+    const sm = v.summary || {};
+    const claims = Array.isArray(v.claims) ? v.claims : [];
+    f.verificationFormSubmittedAt = v.submittedAt;
+    f.visits = f.visits || [];
+    f.visits.push(stamp({
+      date: sm.date || String(v.submittedAt).slice(0,10),
+      fc: f.fcId || '',
+      verifierName: sm.verifierName || '',
+      claimVerifications: claims.reduce((a,c)=>{a[c.id]={state:c.fcVerification||'na',fcNote:c.fcNote||''};return a;},{}),
+      comments: v.comments || '',
+      photos: (typeof countFcPhotos==='function' ? countFcPhotos(v.photos) : []),
+      notes: 'FC verification \u2014 ' + (sm.verifiedCount||0) + '/' + (sm.totalAsked||0)
+           + ' claims verified (auto-recovered ' + todayISO() + ')',
+      score: sm.score || 0,
+      livingFence:'\u2014', compost:'\u2014', soilHealth:'\u2014', pestControl:'\u2014',
+    }));
+    f.stage = 'verified';
+    delete f.verificationLock;
+    if(FB && FB.ready){
+      try{
+        await fbRef('haatFarmers/' + f.id).update({
+          verificationFormSubmittedAt: f.verificationFormSubmittedAt,
+          stage: 'verified',
+          visits: sanitizeForFB(f.visits),
+          verificationLock: null
+        });
+        healed.push(f.id);
+      }catch(e){ console.error('[Sristi] auto-heal write failed for ' + f.id, e); }
+    }
+  }
+  if(!healed.length) return;
+  logActivity('alert', '<b>' + healed.length + '</b> verification' + (healed.length===1?'':'s')
+    + ' reached the server but were never recorded on the farmer \u2014 recovered automatically');
+  await saveDB();
+  if(typeof render === 'function') render();
+  toast(healed.length + ' unrecorded verification' + (healed.length===1?'':'s') + ' recovered automatically');
 }
 function markVerificationSubmitted(farmerId, whenISO){
   if(!farmerId) return;

@@ -3355,7 +3355,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v202';
+const APP_VERSION = 'v203';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15885,8 +15885,118 @@ function openCompareFormsModal(id){
     body += '</div>';
   }
 
+  /* v203 - the same comparison, as a document. Built here so it can reuse the
+     fmtAnswer / fmtFcVerif / matchIcon closures above and can never show
+     something different from what is on screen. */
+  function buildComparePdfHtml(){
+    const cell = 'padding:6px 9px;border-bottom:1px solid #f0ebe7;vertical-align:top;overflow-wrap:anywhere';
+    let h = '<div style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
+      + pdfLetterheadOuter('Farmer vs Field Verification',
+          '\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0aa8\u0acb \u0aa6\u0abe\u0ab5\u0acb \u0a85\u0aa8\u0ac7 FC \u0aa8\u0ac0 \u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u2014 \u0ab8\u0abe\u0aae\u0ac7\u0ab8\u0abe\u0aae\u0ac7');
+    /* who and when */
+    h += '<div style="display:flex;gap:14px;align-items:stretch;margin:14px 0 12px">'
+      + '<div style="flex:1;min-width:0;border:1px solid #e6dcd4;border-radius:8px;padding:11px 14px">'
+      +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 16px">'
+      +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u00b7 Farmer', '<span style="font-size:13.5px">' + esc(f.name||'\u2014') + '</span>')
+      +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 ID', esc(f.id||'\u2014'))
+      +     pdfField('\u0a97\u0abe\u0aae \u00b7 Village', esc(f.village||'\u2014'))
+      +     pdfField('\u0a9c\u0abf\u0ab2\u0acd\u0ab2\u0acb \u00b7 District', esc(districtDisplayName(f.district)||'\u2014'))
+      +     pdfField('\u0a9a\u0a95\u0abe\u0ab8\u0aa8\u0abe\u0ab0 \u00b7 Verified by', esc(fcName))
+      +     pdfField('\u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u0aa4\u0abe\u0ab0\u0ac0\u0a96',
+                    f.verificationFormSubmittedAt ? esc(fmtDate(f.verificationFormSubmittedAt)) : '\u2014')
+      +   '</div>'
+      + '</div>';
+    if(verif.summary && verif.summary.score != null){
+      h += '<div style="width:132px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:11px 10px;text-align:center;background:#faf7f5;display:flex;flex-direction:column;justify-content:center">'
+        + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700">\u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u0ab8\u0acd\u0a95\u0acb\u0ab0</div>'
+        + '<div style="font-size:30px;font-weight:800;color:#723e31;line-height:1.15">' + verif.summary.score + '<span style="font-size:15px">%</span></div>'
+        + '</div>';
+    }
+    h += '</div>';
+    /* the legend, because the marks are the whole point of the page */
+    h += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;color:#5b4638;margin:0 0 12px;padding:8px 12px;background:#faf7f5;border:1px solid #e6dcd4;border-radius:7px">'
+      + '<span><b style="color:#3f6b3a">\u2713</b> \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa4\u0acd\u0ab0\u0ac0 \u00b7 Verified</span>'
+      + '<span><b style="color:#9b2c24">\u2717</b> \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0 \u00b7 Not verified</span>'
+      + '<span><b style="color:#a4560c">?</b> \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0 \u00b7 Not checked</span>'
+      + '<span><b>\u2014</b> \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0 \u00b7 N/A</span>'
+      + '</div>';
+    cats.forEach(cat => {
+      const catQs = qs.filter(q => q.cat === cat.key);
+      if(!catQs.length) return;
+      h += '<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid">'
+        + esc(cat.gu) + ' <span style="font-weight:500;opacity:.8;font-size:11px">(' + esc(cat.en) + ')</span></div>';
+      h += '<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px">'
+        + '<colgroup><col style="width:28%"><col style="width:30%"><col style="width:32%"><col style="width:10%"></colgroup>'
+        + '<tr style="background:#faf7f5">'
+        +   '<th style="text-align:left;padding:5px 9px;font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e6dcd4">\u0aaa\u0acd\u0ab0\u0ab6\u0acd\u0aa8 \u00b7 Question</th>'
+        +   '<th style="text-align:left;padding:5px 9px;font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e6dcd4">\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0aa8\u0acb \u0aa6\u0abe\u0ab5\u0acb \u00b7 Farmer</th>'
+        +   '<th style="text-align:left;padding:5px 9px;font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e6dcd4">FC \u0aa8\u0ac7 \u0ab6\u0ac1\u0a82 \u0aae\u0ab3\u0acd\u0aaf\u0ac1\u0a82 \u00b7 FC found</th>'
+        +   '<th style="text-align:center;padding:5px 4px;font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e6dcd4">\u0aae\u0ac7\u0ab3</th>'
+        + '</tr>';
+      catQs.forEach(q => {
+        const farmerC = farmerClaims[q.id], fcC = fcVerifs[q.id];
+        /* photos become a count - see the note on this function */
+        const photoCount = arr => Array.isArray(arr) && arr.length
+          ? '<span style="color:#5b4638">' + arr.length + ' \u0aab\u0acb\u0a9f\u0abe</span>'
+          : '<span style="color:#a1968d">\u2014</span>';
+        const farmerCell = (q.type === 'photo')
+          ? photoCount((enroll.photos && enroll.photos[q.id]) || [])
+          : fmtAnswer(q, farmerC);
+        const fcCell = (q.type === 'photo')
+          ? photoCount((verif.photos && verif.photos[q.id]) || [])
+          : fmtFcVerif(q, fcC);
+        h += '<tr style="page-break-inside:avoid">'
+          + '<td style="' + cell + '"><div style="font-weight:600;line-height:1.4">' + esc(q.gu) + '</div>'
+          +   '<div style="font-size:9px;color:#a1968d;line-height:1.3">' + esc(q.en||'') + '</div></td>'
+          + '<td style="' + cell + '">' + farmerCell + '</td>'
+          + '<td style="' + cell + '">' + fcCell + '</td>'
+          + '<td style="' + cell + ';text-align:center;font-size:13px">' + matchIcon(q, farmerC, fcC) + '</td>'
+          + '</tr>';
+      });
+      h += '</table>';
+    });
+    const gc = verif.comments || (verif.summary && verif.summary.comments);
+    if(gc){
+      h += '<div style="font-size:11px;line-height:1.6;margin:12px 0 0;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px">'
+        + '<b style="color:#8a6410">FC \u0aa8\u0ac0 \u0aa8\u0acb\u0a82\u0aa7 \u00b7 FC comments</b>'
+        + '<div style="margin-top:3px">' + esc(gc) + '</div></div>';
+    }
+    return h + '</div>';
+  }
+
   modalShell('Side-by-side comparison · ' + esc(f.name), body,
-    '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
+    '<button class="btn btn-ghost" onclick="closeModal()">Close</button>'
+    + '<button class="btn btn-primary" id="cmpPdfBtn">' + svg(I.download) + 'Download PDF</button>');
+  const cmpBtn = document.getElementById('cmpPdfBtn');
+  if(cmpBtn) cmpBtn.onclick = async () => {
+    const orig = cmpBtn.innerHTML;
+    cmpBtn.disabled = true; cmpBtn.innerHTML = '⏳ Preparing…';
+    try{
+      await loadHtml2PdfOuter();
+      await pdfWaitForFont();
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'height:0;overflow:hidden';
+      const el = document.createElement('div');
+      el.innerHTML = buildComparePdfHtml();
+      wrap.appendChild(el);
+      document.body.appendChild(wrap);
+      await window.html2pdf().set({
+        filename: pdfFileNameOuter((f.name||'Farmer') + ' Comparison'),
+        margin: [12, 12, 16, 12],
+        image: {type:'jpeg', quality:0.94},
+        html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff'},
+        jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
+        pagebreak: {mode:['css','legacy']},
+      }).from(el).toPdf().get('pdf')
+        .then(pdf => pdfStampFooters(pdf, 'Sristi Prakrutik Khedut Haat  ·  Farmer vs Field Verification'))
+        .save();
+      wrap.remove();
+    }catch(e){
+      toast('Could not build the PDF — try again', 'error');
+    }finally{
+      cmpBtn.disabled = false; cmpBtn.innerHTML = orig;
+    }
+  };
   // Expand the modal to the wide variant so 4-column comparison + multi-pill
   // FC notes don't get cropped on the right.
   const modalEl = document.getElementById('modal');
@@ -20773,6 +20883,15 @@ const PDF_LOGOS_JS = 'const PDF_LOGO_KRSF = ' + JSON.stringify(PDF_LOGO_KRSF) + 
 /* The document furniture, shared by both PDFs so they cannot drift apart. */
 const PDF_FONT = "'Hind Vadodara','Noto Sans Gujarati',system-ui,sans-serif";
 const PDF_PAGE_W = 703;   /* px == 186mm == A4 portrait minus 12mm margins */
+/* v203 - the app's own copy. The one added in v201 lives inside the
+   VERIF_FORM_HTML template and is only reachable from the iframe; the
+   comparison PDF is built in the main app and would have thrown on it. */
+function pdfField(label, value){
+  return '<div style="min-width:0">'
+    + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.09em;font-weight:700">' + esc(label) + '</div>'
+    + '<div style="font-size:12px;color:#2e1f16;font-weight:600;margin-top:1px;word-break:break-word">' + (value || '—') + '</div>'
+    + '</div>';
+}
 function pdfLetterheadOuter(title, subtitle){
   return '<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #723e31">'
     + '<img src="' + PDF_LOGO_SRISTI + '" style="height:46px;width:auto;flex-shrink:0" alt="">'

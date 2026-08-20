@@ -1537,16 +1537,17 @@ function downloadEnrollmentPdf(){
     // A plain div in normal document flow, clipped by a height:0;
     // overflow:hidden wrapper, captures correctly.
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'height:0;overflow:hidden';
+    wrap.style.cssText = 'position:absolute;left:-10000px;top:0;overflow:hidden';   /* v205 - see the note on this version */
     const el = document.createElement('div');
     el.innerHTML = buildEnrollmentPdfHtml();
+    el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
     return window.html2pdf().set({
       filename: pdfFileName(ANSWERS.farmer_name),
       margin: 8,
       image: {type:'jpeg', quality:0.92},
-      html2canvas: {scale:2, useCORS:true},
+      html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['avoid-all','css','legacy']},
     }).from(el).save().then(() => wrap.remove());
@@ -2761,9 +2762,10 @@ function downloadVerificationPdf(claims, summary){
     // no error). Normal document flow inside a height:0 clipping wrapper
     // captures correctly.
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'height:0;overflow:hidden';
+    wrap.style.cssText = 'position:absolute;left:-10000px;top:0;overflow:hidden';   /* v205 - see the note on this version */
     const el = document.createElement('div');
     el.innerHTML = buildVerificationPdfHtml(claims, summary);
+    el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
     /* v201 - portrait, and the element is built at exactly the printable width
@@ -2776,7 +2778,7 @@ function downloadVerificationPdf(claims, summary){
       filename: pdfFileName(FARMER.name, 'Verification'),
       margin: [12, 12, 16, 12],
       image: {type:'jpeg', quality:0.94},
-      html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff'},
+      html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['css','legacy']},
     }).from(el).toPdf().get('pdf').then(function(pdf){
@@ -3355,7 +3357,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v204';
+const APP_VERSION = 'v205';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15980,16 +15982,17 @@ function openCompareFormsModal(id){
       await loadHtml2PdfOuter();
       await pdfWaitForFont();
       const wrap = document.createElement('div');
-      wrap.style.cssText = 'height:0;overflow:hidden';
+      wrap.style.cssText = 'position:absolute;left:-10000px;top:0;overflow:hidden';   /* v205 - see the note on this version */
       const el = document.createElement('div');
       el.innerHTML = buildComparePdfHtml();
+    el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
       wrap.appendChild(el);
       document.body.appendChild(wrap);
       await window.html2pdf().set({
         filename: pdfFileNameOuter((f.name||'Farmer') + ' Comparison'),
         margin: [12, 12, 16, 12],
         image: {type:'jpeg', quality:0.94},
-        html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff'},
+        html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
         jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
         pagebreak: {mode:['css','legacy']},
       }).from(el).toPdf().get('pdf')
@@ -20993,9 +20996,10 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
     // position:fixed; a real, content-sized PDF once switched to a plain
     // div in normal document flow, clipped by a height:0 wrapper.
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'height:0;overflow:hidden';
+    wrap.style.cssText = 'position:absolute;left:-10000px;top:0;overflow:hidden';   /* v205 - see the note on this version */
     const el = document.createElement('div');
     el.innerHTML = buildFarmerSummaryPdfHtml(f, claims, title);
+    el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
     await pdfWaitForFont();
@@ -21003,7 +21007,7 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
       filename: pdfFileNameOuter(f.name),
       margin: [12, 12, 16, 12],
       image: {type:'jpeg', quality:0.94},
-      html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff'},
+      html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['css','legacy']},
     }).from(el).toPdf().get('pdf')

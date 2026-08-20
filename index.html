@@ -443,6 +443,16 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .mini-tbl tfoot td.num{text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
 .mini-tbl tfoot td.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
 .mini-tbl tfoot td.tot{color:var(--accent)}
+/* v198 - stretch the table to the card so both Total rows land on the same
+   line. A table set to height:100% hands its slack to whichever row asks for
+   it; tr.tfill is that row, so the data rows keep their natural height instead
+   of being stretched apart. */
+.mini-card{display:flex;flex-direction:column}
+.mini-card .mini-tbl-wrap{flex:1}
+.mini-card .mini-tbl{height:100%}
+.mini-tbl tbody tr.tfill{height:100%;cursor:default}
+.mini-tbl tbody tr.tfill:hover{background:none}
+.mini-tbl tbody tr.tfill td{border-bottom:none;padding:0}
 
 /* activity feed (recent updates) */
 .act-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft)}
@@ -3277,7 +3287,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v197';
+const APP_VERSION = 'v198';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10068,7 +10078,7 @@ function viewDashboard(){
   }).sort((a,b)=>b.active-a.active);
 
   h+=`<div class="panel-grid two-eq" style="margin-top:18px">
-    <div class="card">
+    <div class="card mini-card">
       <div class="mini-tbl-head">
         <h3>Haat-wise Active Farmers</h3>
         <span class="mini-tbl-sub">monthly active = farmers who came to the haat that month</span>
@@ -10089,14 +10099,17 @@ function viewDashboard(){
     </tr>`;
   });
   /* v197 - totals. Sums exactly the rows drawn above, so the row can never
-     disagree with the table it sits under. */
-  h+=`</tbody><tfoot><tr>
+     disagree with the table it sits under.
+     v198 - tfill absorbs any leftover card height so the Total row sits at the
+     bottom, level with the Total row of the table beside it. */
+  h+=`<tr class="tfill"><td colspan="${3+recent3M.length}"></td></tr>
+    </tbody><tfoot><tr>
     <td class="lbl" colspan="2">Total</td>
     <td class="num">${haatRowsMo.reduce((t,r)=>t+(r.onboarded||0),0)}</td>
     ${recent3M.map((m,i)=>`<td class="num">${haatRowsMo.reduce((t,r)=>t+((r.monthly[i]&&r.monthly[i].n)||0),0)}</td>`).join('')}
   </tr></tfoot></table></div></div>
 
-    <div class="card">
+    <div class="card mini-card">
       <div class="mini-tbl-head">
         <h3>Field Coordinator — Farm Verifications</h3>
         <span class="mini-tbl-sub">last 3 months &amp; total — click a row to filter</span>
@@ -10117,7 +10130,8 @@ function viewDashboard(){
       <td class="num tot"><b>${r.total}</b></td>
     </tr>`;
   });
-  h+=`</tbody><tfoot><tr>
+  h+=`<tr class="tfill"><td colspan="${recent3.length+3}"></td></tr>
+    </tbody><tfoot><tr>
     <td class="lbl" colspan="2">Total</td>
     ${recent3.map((m,i)=>`<td class="num">${fcRows.reduce((t,r)=>t+(r.perMonth[i]||0),0)}</td>`).join('')}
     <td class="num tot">${fcRows.reduce((t,r)=>t+(r.total||0),0)}</td>

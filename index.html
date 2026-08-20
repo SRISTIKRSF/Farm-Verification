@@ -3287,7 +3287,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v198';
+const APP_VERSION = 'v199';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18490,13 +18490,13 @@ window.addEventListener('message',async ev=>{
     return;
   }
   if(d.type==='farm-verification-full' && d.data && _verifyTargetId){
-    const f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);
+    let f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);   // v199 - re-resolved below
     // v132 — when a second farm is being verified, the visit and the result
     // belong to THAT farm, not to the farmer. _tgt is the farm when one was
     // named and the farmer otherwise, so the code below is unchanged for the
     // 99.5% of farmers who have a single farm.
-    const _farmTgt = (f && window._verifyTargetFarmFid) ? farmOf(f, window._verifyTargetFarmFid) : null;
-    const _tgt = _farmTgt || f;
+    let _farmTgt = (f && window._verifyTargetFarmFid) ? farmOf(f, window._verifyTargetFarmFid) : null;
+    let _tgt = _farmTgt || f;
     if(f){
       // (countFcPhotos is defined below, next to the farm-verification-done
       // handler — function declarations hoist, so it's available here.)
@@ -18511,6 +18511,16 @@ window.addEventListener('message',async ev=>{
       // v11 — photos to upload queue, form text to forms/{id}.
       await extractPhotos(d.data, {program:'haat', farmerId: f.id});
       setForms(f.id, 'verif', d.data);
+      /* v199 - RE-RESOLVE after the await; see the farm-verification-done
+         handler for the full story. The second-farm target is derived from the
+         farmer, so it has to be recomputed from the fresh record too. */
+      const _fresh2 = (DB.haatFarmers||[]).find(x => x && x.id === _verifyTargetId);
+      if(_fresh2){
+        f = _fresh2;
+        _farmTgt = window._verifyTargetFarmFid ? farmOf(f, window._verifyTargetFarmFid) : null;
+        _tgt = _farmTgt || f;
+      }
+      markLocalTouch('haatFarmers', f.id);
       _tgt.verificationFormSubmittedAt = d.data._submittedAt || todayISO();
       _tgt.visits = _tgt.visits || [];
       _tgt.visits.push(stamp({
@@ -18534,7 +18544,20 @@ window.addEventListener('message',async ev=>{
       if(enoughEvidence && !POST_DECISION.includes(_tgt.stage)) _tgt.stage='verified';
       // v125 — durable record that this verification exists, independent of
       // anything on the farmer's own row.
-      if(enoughEvidence) markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
+      if(enoughEvidence) markVerificationSubmitted(f.id, _tgt.verificationFormSubmittedAt);
+      /* v199 - the row's own fields, written directly. Only the farmer record
+         is written here; a second farm lives inside it and rides along in the
+         saveDB batch below. */
+      if(FB && FB.ready && !_farmTgt){
+        try{
+          await fbRef('haatFarmers/' + f.id).update({
+            verificationFormSubmittedAt: f.verificationFormSubmittedAt,
+            stage: f.stage,
+            visits: sanitizeForFB(f.visits),
+            verificationLock: null
+          });
+        }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
+      }
       delete f.verificationLock;
       // v(fc-redesign) — retire the matching plan (see farm-verification-done handler below).
       _fcAutoCompletePlan(f.id, 'haat', (d.data.summary&&d.data.summary.date)||todayISO(), currentFcId()||f.fcId||'');
@@ -19254,7 +19277,9 @@ window.addEventListener('message',async ev=>{
   const d=ev.data;
   if(!d||typeof d!=='object')return;
   if(d.type==='farm-verification-done' && _verifyTargetId){
-    const f=DB.haatFarmers.find(x=>x.id===_verifyTargetId);
+    /* v199 - `let`, not `const`: this is re-resolved after the awaits below.
+       See the note at the re-resolve for why. */
+    let f=DB.haatFarmers.find(x=>x.id===_verifyTargetId);
     if(f){
       /* v4 — new payload shape: {claims, comments, photos, summary} */
       if(Array.isArray(d.claims)){
@@ -19268,6 +19293,16 @@ window.addEventListener('message',async ev=>{
         // v11 — photos to upload queue, form text to forms/{id}.
         await extractPhotos(d, {program:'haat', farmerId: f.id});
         setForms(f.id, 'verif', d);
+        /* v199 - RE-RESOLVE. extractPhotos is awaited and takes seconds on a
+           field phone; _processLiveSnapshot() replaces every object in
+           DB.haatFarmers in that window, and the `f` captured above is then an
+           orphan that nothing will ever save. Five farmers were lost this way
+           on 19-20 Aug: form on the server, row untouched, lock never cleared.
+           markLocalTouch first, so a listener update landing mid-edit cannot
+           revert what we are about to write. */
+        const _fresh = (DB.haatFarmers||[]).find(x => x && x.id === _verifyTargetId);
+        if(_fresh) f = _fresh;
+        markLocalTouch('haatFarmers', f.id);
         f.verificationFormSubmittedAt = d.submittedAt || todayISO();
         f.visits = f.visits || [];
         // v9 audit-fix #3 — stamp the iframe verification visit so the
@@ -19315,6 +19350,20 @@ window.addEventListener('message',async ev=>{
            handler, which the FC form never posts to - so verifIndex has never
            held a single entry, and that is why HF394au534 sat unrecoverable. */
         markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
+        /* v199 - and write the row's own fields straight to its path. update()
+           sets ONLY these keys, so it can never remove anything, and unlike the
+           batch below it does not depend on the diff seeing the change. This is
+           the guarantee; saveDB keeps the rest of the app in step. */
+        if(FB && FB.ready){
+          try{
+            await fbRef('haatFarmers/' + f.id).update({
+              verificationFormSubmittedAt: f.verificationFormSubmittedAt,
+              stage: f.stage,
+              visits: sanitizeForFB(f.visits),
+              verificationLock: null
+            });
+          }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
+        }
         /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.
            The FC taps Close the instant they submit and the form is torn down;
            if the promise had not settled, the row was never written and the

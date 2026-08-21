@@ -1607,6 +1607,56 @@ function pdfFixIndicSpacing(root){
   }
   return fixed;
 }
+/* v214 - html2canvas splits a text node into words and positions each one with
+   a Range. That holds while every word fits on a line. A long token - a Google
+   Maps link, a farmer ID - does not fit, so the BROWSER breaks it mid-word;
+   the Range for that one word is then the UNION of two lines, and html2canvas
+   paints the whole word once at that union. Two runs of text land on top of
+   each other, which is what Guru photographed.
+   Measured against a correct rendering of the identical two lines: the
+   wrapping cell agreed on only 48.4% of its ink, 1543 pixels in the wrong
+   place. With a zero-width space every 8 characters inside long tokens, the
+   browser and html2canvas break in the same places and the same test scores
+   100%.
+   Tokens containing Indic characters are left alone - never cut a Gujarati
+   cluster to solve a Latin problem, and Gujarati wraps at its spaces. */
+function pdfBreakLongTokens(root, maxRun){
+  if(!root || !root.ownerDocument) return 0;
+  var RUN = maxRun || 8, MIN = 14;
+  var ZW = String.fromCharCode(0x200B);
+  var LO = 0x0900, HI = 0x0D7F;
+  var SPACES = [32, 160, 9, 10, 13, 12];
+  var walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], n;
+  while((n = walker.nextNode())) nodes.push(n);
+  var changed = 0;
+  for(var i = 0; i < nodes.length; i++){
+    var t = nodes[i].textContent || '';
+    if(t.length < MIN || t.indexOf(ZW) >= 0) continue;
+    var out = '', tok = '', indic = false;
+    for(var j = 0; j <= t.length; j++){
+      var c = (j < t.length) ? t.charCodeAt(j) : 32;
+      var isEnd = (j === t.length) || SPACES.indexOf(c) >= 0;
+      if(!isEnd){
+        tok += t.charAt(j);
+        if(c >= LO && c <= HI) indic = true;
+        continue;
+      }
+      if(tok.length >= MIN && !indic){
+        for(var k = 0; k < tok.length; k += RUN){
+          out += tok.substr(k, RUN);
+          if(k + RUN < tok.length) out += ZW;
+        }
+      } else {
+        out += tok;
+      }
+      tok = ''; indic = false;
+      if(j < t.length) out += t.charAt(j);
+    }
+    if(out !== t){ nodes[i].textContent = out; changed++; }
+  }
+  return changed;
+}
 function buildEnrollmentPdfHtml(){
   const rows = [];
   CATEGORIES.forEach(cat => {
@@ -1652,6 +1702,7 @@ function downloadEnrollmentPdf(){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfBreakLongTokens(el);   /* v214 - see the note on this function */
     pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     return window.html2pdf().set({
       filename: pdfFileName(ANSWERS.farmer_name),
@@ -2888,6 +2939,56 @@ function pdfFixIndicSpacing(root){
   }
   return fixed;
 }
+/* v214 - html2canvas splits a text node into words and positions each one with
+   a Range. That holds while every word fits on a line. A long token - a Google
+   Maps link, a farmer ID - does not fit, so the BROWSER breaks it mid-word;
+   the Range for that one word is then the UNION of two lines, and html2canvas
+   paints the whole word once at that union. Two runs of text land on top of
+   each other, which is what Guru photographed.
+   Measured against a correct rendering of the identical two lines: the
+   wrapping cell agreed on only 48.4% of its ink, 1543 pixels in the wrong
+   place. With a zero-width space every 8 characters inside long tokens, the
+   browser and html2canvas break in the same places and the same test scores
+   100%.
+   Tokens containing Indic characters are left alone - never cut a Gujarati
+   cluster to solve a Latin problem, and Gujarati wraps at its spaces. */
+function pdfBreakLongTokens(root, maxRun){
+  if(!root || !root.ownerDocument) return 0;
+  var RUN = maxRun || 8, MIN = 14;
+  var ZW = String.fromCharCode(0x200B);
+  var LO = 0x0900, HI = 0x0D7F;
+  var SPACES = [32, 160, 9, 10, 13, 12];
+  var walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], n;
+  while((n = walker.nextNode())) nodes.push(n);
+  var changed = 0;
+  for(var i = 0; i < nodes.length; i++){
+    var t = nodes[i].textContent || '';
+    if(t.length < MIN || t.indexOf(ZW) >= 0) continue;
+    var out = '', tok = '', indic = false;
+    for(var j = 0; j <= t.length; j++){
+      var c = (j < t.length) ? t.charCodeAt(j) : 32;
+      var isEnd = (j === t.length) || SPACES.indexOf(c) >= 0;
+      if(!isEnd){
+        tok += t.charAt(j);
+        if(c >= LO && c <= HI) indic = true;
+        continue;
+      }
+      if(tok.length >= MIN && !indic){
+        for(var k = 0; k < tok.length; k += RUN){
+          out += tok.substr(k, RUN);
+          if(k + RUN < tok.length) out += ZW;
+        }
+      } else {
+        out += tok;
+      }
+      tok = ''; indic = false;
+      if(j < t.length) out += t.charAt(j);
+    }
+    if(out !== t){ nodes[i].textContent = out; changed++; }
+  }
+  return changed;
+}
 function buildVerificationPdfHtml(lastClaims, summary){
   const rows = [];
   const byId = {};
@@ -2968,6 +3069,7 @@ function downloadVerificationPdf(claims, summary){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfBreakLongTokens(el);   /* v214 - see the note on this function */
     pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     /* v201 - portrait, and the element is built at exactly the printable width
        so the canvas fills the paper. 'avoid-all' is dropped: it refuses to break
@@ -3691,7 +3793,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v213';
+const APP_VERSION = 'v214';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16853,6 +16955,7 @@ function openCompareFormsModal(id, opts){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
       wrap.appendChild(el);
       document.body.appendChild(wrap);
+      pdfBreakLongTokens(el);   /* v214 - see the note on this function */
       pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
       /* v209 - render, read the page height off that canvas, rebuild, push
          anything that would be sawn through clear of the cut, render again.
@@ -21995,6 +22098,56 @@ function pdfFixIndicSpacing(root){
   }
   return fixed;
 }
+/* v214 - html2canvas splits a text node into words and positions each one with
+   a Range. That holds while every word fits on a line. A long token - a Google
+   Maps link, a farmer ID - does not fit, so the BROWSER breaks it mid-word;
+   the Range for that one word is then the UNION of two lines, and html2canvas
+   paints the whole word once at that union. Two runs of text land on top of
+   each other, which is what Guru photographed.
+   Measured against a correct rendering of the identical two lines: the
+   wrapping cell agreed on only 48.4% of its ink, 1543 pixels in the wrong
+   place. With a zero-width space every 8 characters inside long tokens, the
+   browser and html2canvas break in the same places and the same test scores
+   100%.
+   Tokens containing Indic characters are left alone - never cut a Gujarati
+   cluster to solve a Latin problem, and Gujarati wraps at its spaces. */
+function pdfBreakLongTokens(root, maxRun){
+  if(!root || !root.ownerDocument) return 0;
+  var RUN = maxRun || 8, MIN = 14;
+  var ZW = String.fromCharCode(0x200B);
+  var LO = 0x0900, HI = 0x0D7F;
+  var SPACES = [32, 160, 9, 10, 13, 12];
+  var walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], n;
+  while((n = walker.nextNode())) nodes.push(n);
+  var changed = 0;
+  for(var i = 0; i < nodes.length; i++){
+    var t = nodes[i].textContent || '';
+    if(t.length < MIN || t.indexOf(ZW) >= 0) continue;
+    var out = '', tok = '', indic = false;
+    for(var j = 0; j <= t.length; j++){
+      var c = (j < t.length) ? t.charCodeAt(j) : 32;
+      var isEnd = (j === t.length) || SPACES.indexOf(c) >= 0;
+      if(!isEnd){
+        tok += t.charAt(j);
+        if(c >= LO && c <= HI) indic = true;
+        continue;
+      }
+      if(tok.length >= MIN && !indic){
+        for(var k = 0; k < tok.length; k += RUN){
+          out += tok.substr(k, RUN);
+          if(k + RUN < tok.length) out += ZW;
+        }
+      } else {
+        out += tok;
+      }
+      tok = ''; indic = false;
+      if(j < t.length) out += t.charAt(j);
+    }
+    if(out !== t){ nodes[i].textContent = out; changed++; }
+  }
+  return changed;
+}
 async function pdfWaitForFont(){
   try{
     if(document.fonts && document.fonts.load){
@@ -22067,6 +22220,7 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfBreakLongTokens(el);   /* v214 - see the note on this function */
     pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     await pdfWaitForFont();
     let _pageH = 0;   /* v209 - see the note on pdfAvoidSplits */

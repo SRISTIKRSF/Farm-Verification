@@ -3793,7 +3793,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v214';
+const APP_VERSION = 'v215';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5821,6 +5821,10 @@ function idbPut(store, val){ return idbOpen().then(db => new Promise((res,rej)=>
 function idbGet(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).get(key); rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>rej(rq.error); })); }
 function idbAll(store){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
 function idbDel(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
+/* v215 - keys only. idbAll('forms') would drag every cached answer sheet back
+   into memory (~23 KB each) just to answer "which farmers do we already
+   have?"; at 10,000 farmers that is hundreds of megabytes for a count. */
+function idbKeys(store){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAllKeys(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
 
 /* ---------- photo render helpers — accept every shape we've ever stored ----------
    Legacy: plain dataURL string, or {name, type, data: dataURL}.
@@ -6118,6 +6122,52 @@ function _attachFormsToRecord(farmerId){
   if(fc.enrol) rec.enrollmentFormFull   = fc.enrol;
   if(fc.verif) rec.verificationFormFull = fc.verif;
 }
+/* v215 - is the copy already on this phone still the right one?
+
+   Before this, opening a farmer downloaded their answer sheet from Firebase
+   again every single session, even though IndexedDB had it: FORMS_CACHE
+   ._complete only lives in memory, so a page reload always paid for it a
+   second time. Across a team browsing the same applications day after day
+   that is the largest avoidable download in the app, and removing it is what
+   pays for the pre-download in prefetchFcForms().
+
+   The check is free. Every write to forms/{id} stamps a revision number
+   inside the node (_rev) and the same number onto the farmer record
+   (formsRev). The record is downloaded anyway as part of the normal sync, so
+   comparing the two costs nothing.
+
+   Records written before v215 have no formsRev and their nodes no _rev, so
+   both read as 0 and match - a phone that has already saved such a form
+   stops re-downloading it immediately, which is the point.
+
+   The 7-day ceiling is deliberate insurance, not caution about the revision
+   scheme itself: if some future path ever writes the form without bumping
+   the number, the worst case is a week, not forever. */
+const FORMS_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+function _formsCropsKey(rec){
+  const c = (rec && rec.crops) || [];
+  return Array.isArray(c) ? c.join('|') : String(c);
+}
+function _formsCacheIsFresh(fc, rec){
+  if(!fc || fc._rev === undefined || fc._rev === null) return false;
+  if(!(fc.enrol || fc.verif)) return false;          /* nothing worth keeping */
+  if(fc._rev !== ((rec && rec.formsRev) || 0)) return false;
+  /* A phone still on v214 rewrites the form without bumping the revision, so
+     the revision alone cannot be trusted while both versions are in the
+     field. The crop table is the only field-editable part of an enrolment
+     form and that edit rewrites rec.crops too, which is downloaded anyway. */
+  if(fc._cropsKey === undefined || fc._cropsKey !== _formsCropsKey(rec)) return false;
+  if(!fc._cachedAt || (Date.now() - fc._cachedAt) > FORMS_CACHE_MAX_AGE_MS) return false;
+  /* Attached forms (v130) live in their own node and are fetched separately.
+     If the record says there are some and this phone is missing even one, the
+     cached copy is not complete and the drawer would silently lose a form. */
+  const want = ((rec && rec.extraForms) || []).map(x => x && x.id).filter(Boolean);
+  if(want.length){
+    const have = fc.extra || {};
+    for(let i = 0; i < want.length; i++){ if(!have[want[i]]) return false; }
+  }
+  return true;
+}
 async function loadForms(farmerId){
   if(!farmerId) return null;
   const rec = (DB.haatFarmers||[]).find(x => x.id === farmerId);
@@ -6136,8 +6186,20 @@ async function loadForms(farmerId){
       if(cached.enrol && !fc.enrol) fc.enrol = cached.enrol;
       if(cached.verif && !fc.verif) fc.verif = cached.verif;
       if(cached.extra) fc.extra = Object.assign({}, cached.extra, fc.extra || {});
+      /* v215 - what this phone believes it has, and when it got it. */
+      if(cached.rev !== undefined && cached.rev !== null && fc._rev === undefined) fc._rev = cached.rev;
+      if(cached.cachedAt && !fc._cachedAt) fc._cachedAt = cached.cachedAt;
+      if(cached.cropsKey !== undefined && fc._cropsKey === undefined) fc._cropsKey = cached.cropsKey;
     }
   }catch(e){}
+  /* v215 - if the phone's copy is still good, stop here and do not spend a
+     Firebase download on it. See _formsCacheIsFresh for how that is decided. */
+  if(_formsCacheIsFresh(fc, rec)){
+    fc._complete = true;
+    fc._attempted = true;
+    _attachFormsToRecord(farmerId);
+    return fc;
+  }
   // cloud — authoritative
   if(FB && FB.ready && navigator.onLine){
     try{
@@ -6146,8 +6208,19 @@ async function loadForms(farmerId){
         const v = snap.val() || {};
         if(v.enrol) fc.enrol = v.enrol;
         if(v.verif) fc.verif = v.verif;
-
+        /* v215 - take the revision from the NODE WE JUST READ, never from the
+           farmer record. If the record's bump reached this device before the
+           form write landed, the two disagree and we simply fetch again next
+           time. Reading it from the record instead would file old answers
+           under a new number and never correct itself. */
+        fc._rev = v._rev || 0;
+      } else {
+        /* no form on the server for this farmer - that is a settled fact, not
+           a failed download, so record it or every open re-asks. */
+        fc._rev = 0;
       }
+      fc._cachedAt = Date.now();
+      fc._cropsKey = _formsCropsKey(rec);
       // v130 — attached forms (repeat submissions) live in their own node so
       // an older build can never overwrite them. Only fetched when the record
       // says there are some, so this costs nothing for the 99% with one form.
@@ -6158,7 +6231,17 @@ async function loadForms(farmerId){
         }catch(e){ console.warn('[Sristi] attached forms load failed:', e); }
       }
       fc._complete = true;
-      idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null, extra: fc.extra||null}).catch(()=>{});
+      /* v215 - only write a row when there is something in it. An empty row
+         would be counted as "this farmer is ready to verify offline" on the
+         Profile screen while the coordinator still gets blocked in the field.
+         Leaving it out costs one tiny re-ask per run for the 2.4% of farmers
+         whose form has not been filed yet, and means the phone picks the form
+         up by itself the day the office adds one. */
+      if(fc.enrol || fc.verif){
+        idbPut('forms', {farmerId, enrol: fc.enrol||null, verif: fc.verif||null, extra: fc.extra||null,
+                         rev: fc._rev || 0, cachedAt: fc._cachedAt || Date.now(),
+                         cropsKey: fc._cropsKey || ''}).catch(()=>{});
+      }
     }catch(e){ console.warn('[Sristi] forms load failed:', e); }
   }
   fc._attempted = true;
@@ -6168,9 +6251,23 @@ async function loadForms(farmerId){
 function setForms(farmerId, kind, data){   // kind: 'enrol' | 'verif'
   FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
   FORMS_CACHE[farmerId][kind] = data;
-  _attachFormsToRecord(farmerId);
+  /* v215 - the form just changed, so every other phone holding a copy has to
+     be told. Bump the revision on the farmer record (which they all download
+     anyway) and carry the same number into the node itself in persistForms.
+     Only haat records take part: loadForms resolves against DB.haatFarmers
+     and conversion forms live in a different node entirely. */
+  const _rec = (DB.haatFarmers||[]).find(x => x && x.id === farmerId);
+  if(_rec){
+    _rec.formsRev = (_rec.formsRev || 0) + 1;
+    FORMS_CACHE[farmerId]._rev = _rec.formsRev;
+    markLocalTouch('haatFarmers', farmerId);
+  }
+  FORMS_CACHE[farmerId]._cachedAt = Date.now();
+  FORMS_CACHE[farmerId]._cropsKey = _formsCropsKey(_rec);
   idbPut('forms', {farmerId, enrol: FORMS_CACHE[farmerId].enrol||null, verif: FORMS_CACHE[farmerId].verif||null,
-                   extra: FORMS_CACHE[farmerId].extra||null}).catch(()=>{});
+                   extra: FORMS_CACHE[farmerId].extra||null,
+                   rev: FORMS_CACHE[farmerId]._rev || 0, cachedAt: FORMS_CACHE[farmerId]._cachedAt,
+                   cropsKey: FORMS_CACHE[farmerId]._cropsKey || ''}).catch(()=>{});
   persistForms(farmerId);
 }
 /* v130 — attach a repeat submission to the farmer who already holds the
@@ -6208,7 +6305,11 @@ function persistForms(farmerId){
   // replaces the whole node, and a device on an older build writes only
   // {enrol, verif}; if attached forms lived here they would be wiped by any
   // stale client saving a verification. They live in formsExtra/ instead.
-  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null});
+  /* v215 - _rev rides inside the node so a reader can tell which version it
+     just fetched without trusting the record it came with. An older build
+     writing {enrol, verif} drops it, which reads as revision 0, disagrees
+     with the record and simply causes one more fetch - the safe direction. */
+  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
   // durable write queue — survives offline AND closing the tab
   idbPut('formWrites', {key: farmerId, farmerId, payload, at: Date.now()})
     .then(()=>flushFormWrites())
@@ -10363,6 +10464,10 @@ function viewFcQueue(){
   const dd=$('#fcQDist'); if(dd) dd.onchange=e=>{F.district=e.target.value;F.taluka='';viewFcQueue();};
   const td=$('#fcQTaluka'); if(td) td.onchange=e=>{F.taluka=e.target.value;viewFcQueue();};
   _fcQueueRender(groups,F);
+  /* v215 - top up the offline copies AFTER the screen is on it, never before.
+     A queue that paints a second late to save a download later is a bad
+     trade for someone standing in a field. */
+  setTimeout(()=>{ try{ prefetchFcForms(); }catch(e){} }, 1500);
 }
 
 /* ===== v(fc-redesign) Phase 2 — Monthly Planning module =====
@@ -10608,6 +10713,102 @@ function viewFcVisits(){
 /* v(fc-redesign) Phase 6 — Monthly Planned/Completed/Pending, computed via
    the same fcMonthlyPlanStats() the Planning module uses, so the two
    screens always agree with each other. */
+/* v215 - carry the paperwork to the field.
+
+   A farmer's 88 answers live at forms/{id}, apart from the record, so that
+   10,000 farmers' answers do not ride on every sync. Nothing fetched them
+   until the coordinator tapped Verify Now - which in the field is precisely
+   the moment they have no signal. The block in the verif-ready handler then
+   fired and the visit could not be done at all.
+
+   This fills the gap quietly while they still have a signal: the farmers
+   already in their own queue, planned visits first, only the ones this phone
+   has never saved, a few at a time, stopping the instant the signal goes or
+   the coordinator leaves the screen.
+
+   It never REFRESHES anything, only fills gaps, so a phone pays for each
+   farmer once and the total is bounded by the size of that coordinator's
+   queue. Paired with the cache check in _formsCacheIsFresh, which removes a
+   per-session re-download of the very same bytes, the net traffic goes down. */
+let _fcPrefetchRun = 0, _fcPrefetchBusy = false;
+const FC_PREFETCH_CAP = 60;          /* per automatic run; the button lifts it */
+function _fcPrefetchQueueIds(){
+  if(!currentFcId()) return [];
+  let groups;
+  try{ groups = getFcQueueLists(); }catch(e){ return []; }
+  const items = [].concat(groups.newApplications || [], groups.seasonalVerifications || []);
+  return items
+    .filter(i => i.program === 'haat')   /* conversion scoring reads convForms */
+    .sort((a,b) => (a.plannedDate ? 0 : 1) - (b.plannedDate ? 0 : 1)
+                || String(a.plannedDate||'').localeCompare(String(b.plannedDate||''))
+                || String(a.applicationDate||'').localeCompare(String(b.applicationDate||'')))
+    .map(i => i.id);
+}
+/* v215 - which farmers this phone already holds, read once as keys. */
+async function _fcFormsOnPhone(){
+  const have = new Set();
+  try{ (await idbKeys('forms')).forEach(k => have.add(k)); }catch(e){}
+  Object.keys(FORMS_CACHE).forEach(id => { if(FORMS_CACHE[id] && FORMS_CACHE[id].enrol) have.add(id); });
+  return have;
+}
+async function fcOfflineReadiness(){
+  const ids = _fcPrefetchQueueIds();
+  const have = await _fcFormsOnPhone();
+  let ready = 0;
+  for(let i = 0; i < ids.length; i++){ if(have.has(ids[i])) ready++; }
+  return {total: ids.length, ready: ready};
+}
+async function prefetchFcForms(opts){
+  opts = opts || {};
+  if(_fcPrefetchBusy) return 0;
+  if(!currentFcId()) return 0;
+  if(!(FB && FB.ready) || !navigator.onLine) return 0;
+  const run = ++_fcPrefetchRun;
+  _fcPrefetchBusy = true;
+  let got = 0;
+  try{
+    const ids = _fcPrefetchQueueIds();
+    const have = await _fcFormsOnPhone();
+    const cap = opts.cap || FC_PREFETCH_CAP;
+    for(let i = 0; i < ids.length; i++){
+      if(run !== _fcPrefetchRun) break;      /* a newer run took over */
+      if(!navigator.onLine) break;           /* signal gone - stop, do not thrash */
+      if(got >= cap) break;
+      if(have.has(ids[i])) continue;
+      try{ await loadForms(ids[i]); got++; }catch(e){}
+      /* deliberately unhurried: this must never compete with the screen the
+         coordinator is actually using. */
+      await new Promise(r => setTimeout(r, 120));
+    }
+  } finally { _fcPrefetchBusy = false; }
+  if(got) { try{ _fcPaintOfflineReady(); }catch(e){} }
+  return got;
+}
+async function _fcPaintOfflineReady(){
+  const el = document.getElementById('fcOffReady');
+  if(!el) return;
+  const r = await fcOfflineReadiness();
+  const done = !r.total || r.ready >= r.total;
+  el.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+    +   '<span style="color:var(--ink-soft)">Ready to work offline</span>'
+    +   '<span style="font-weight:700;color:' + (done ? 'var(--green)' : 'var(--orange)') + '">'
+    +     r.ready + ' / ' + r.total + '</span>'
+    + '</div>'
+    + '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5">'
+    +   (done ? '\u0aa4\u0aae\u0abe\u0ab0\u0abe \u0aac\u0aa7\u0abe \u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0acb\u0aa8\u0ac0 \u0a85\u0ab0\u0a9c\u0ac0 \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0aa5\u0a88 \u0a97\u0a88 \u0a9b\u0ac7 \u00b7 every farmer in your list is saved on this phone'
+            : '\u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0ab9\u0acb\u0aaf \u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0aac\u0abe\u0a95\u0ac0\u0aa8\u0abe \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb \u00b7 download the rest while you have signal')
+    + '</div>'
+    + (done ? '' : '<button class="btn btn-ghost" id="fcOffReadyBtn" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;font-size:12.5px">Download the rest</button>');
+  const b = document.getElementById('fcOffReadyBtn');
+  if(b) b.onclick = async () => {
+    if(!navigator.onLine || !(FB && FB.ready)){ toast('No connection right now \u2014 try again when you have signal', 'error'); return; }
+    b.disabled = true; b.textContent = 'Downloading\u2026';
+    const n = await prefetchFcForms({cap: 2000});
+    toast(n ? (n + ' farmer' + (n === 1 ? '' : 's') + ' saved for offline use') : 'Nothing new to download');
+    _fcPaintOfflineReady();
+  };
+}
 function viewFcProfile(){
   const v=$('#view');
   const fcId=SESSION&&SESSION.userId;
@@ -10633,10 +10834,18 @@ function viewFcProfile(){
           <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">FC ID</span><span class="fc-idchip">${esc(fcId||'—')}</span></div>
         </div>
       </div>
+      <div class="fc-card" style="cursor:default;margin-top:12px">
+        <div id="fcOffReady" style="font-size:13px">
+          <div style="color:var(--ink-soft)">Ready to work offline</div>
+          <div style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">Checking\u2026</div>
+        </div>
+      </div>
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
         <button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;font-size:13px;color:var(--red)" onclick="try{sessionStorage.removeItem(USER_SESSION_KEY);localStorage.removeItem(USER_SESSION_KEY);}catch(e){}SESSION=null;location.hash='';location.reload();">Sign out</button>
       </div>
     </div>`;
+  /* v215 - the count needs IndexedDB, so it lands a moment after the paint. */
+  _fcPaintOfflineReady();
 }
 
 const TITLES={
@@ -19599,7 +19808,7 @@ window.addEventListener('message',async ev=>{
       // silently opening a hollow form.
       const _fc = FORMS_CACHE[f.id] || {};
       if(_fc._attempted && !_fc._complete && !_fc.enrol){
-        toast('⚠ આ ખેડૂતની અરજીની વિગતો આ ડિવાઇસ પર હજુ ડાઉનલોડ થઈ નથી — ઇન્ટરનેટ કનેક્ટ કરી ફરી પ્રયત્ન કરો. (This farmer\'s enrollment details haven\'t downloaded to this device yet — reconnect and try again.)', 'error');
+        toast('⚠ આ ખેડૂતની અરજીની વિગતો આ ડિવાઇસ પર હજુ ડાઉનલોડ થઈ નથી — ઇન્ટરનેટ કનેક્ટ કરી ફરી પ્રયત્ન કરો. (This farmer\'s enrollment details haven\'t downloaded to this device yet — reconnect and try again.) \u00b7 \u0aaa\u0acd\u0ab0\u0acb\u0aab\u0abe\u0a87\u0ab2\u0aae\u0abe\u0a82\u0aa5\u0ac0 \u0a86\u0a97\u0ab3\u0aa5\u0ac0 \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb. (Tip: download your farmers from Profile before you go.)', 'error');
         closeVerificationForm();
         return;
       }

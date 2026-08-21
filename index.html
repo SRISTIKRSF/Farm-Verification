@@ -3389,7 +3389,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v207';
+const APP_VERSION = 'v208';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15791,22 +15791,22 @@ function openCompareFormsModal(id){
       return photos.length ? renderPhotos(photos) : '<span style="color:var(--ink-faint)">No photo</span>';
     }
     if(q.type === 'multi') return Array.isArray(a) && a.length
-      ? pillRow(a.map(x=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(x)+'</span>').join(''))
+      ? pillRow(a.map(x=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(x)+'</span>').join(''))
       : '<span style="color:var(--ink-faint)">None</span>';
     if(q.type === 'multi_count') return Array.isArray(a) && a.length
       ? pillRow(a.map(x => {
-          if(x && typeof x==='object') return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(x.type||'')+' × <b>'+esc(String(x.count||'?'))+'</b></span>';
-          return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(String(x))+'</span>';
+          if(x && typeof x==='object') return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(x.type||'')+' × <b>'+esc(String(x.count||'?'))+'</b></span>';
+          return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(String(x))+'</span>';
         }).join(''))
       : '<span style="color:var(--ink-faint)">None</span>';
     if(q.type === 'yn') return a==='yes' ? '<b style="color:var(--green)">Yes</b>' : a==='no' ? '<b style="color:var(--red)">No</b>' : '—';
     if(q.type === 'crops_table') return Array.isArray(a) && a.length
-      ? pillRow(a.map(r=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.name||'')+(r.area?' · '+esc(r.area)+' એકર':'')+'</span>').join(''))
+      ? pillRow(a.map(r=>'<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(r.name||'')+(r.area?' · '+esc(r.area)+' એકર':'')+'</span>').join(''))
       : '—';
     if(q.type === 'stat_cards') return Array.isArray(a) && a.length
       ? pillRow(a.map(r => {
           const parts = (q.fields||[]).map(f => (r[f.key]!=null && r[f.key]!=='') ? (f.gu+': '+esc(String(r[f.key]))) : null).filter(Boolean).join(' · ');
-          return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere">'+esc(r.item||'')+(parts?' — '+parts:'')+'</span>';
+          return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(r.item||'')+(parts?' — '+parts:'')+'</span>';
         }).join(''))
       : '—';
     if(a == null || a === '') return '<span style="color:var(--ink-faint)">—</span>';
@@ -15825,14 +15825,14 @@ function openCompareFormsModal(id){
       // v7 fix: flex-wrap container so each pill drops to the next line cleanly
       // instead of overflowing the column.
       h += '<div style="margin-top:5px;font-size:11px;color:var(--ink-soft)"><b>Observed:</b><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'
-        + fcC.fcRetick.map(x=>'<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere">'+esc(x)+'</span>').join('')
+        + fcC.fcRetick.map(x=>'<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(x)+'</span>').join('')
         + '</div></div>';
     }
     if(q.type === 'multi_count' && Array.isArray(fcC.fcRetick) && fcC.fcRetick.length){
       h += '<div style="margin-top:5px;font-size:11px;color:var(--ink-soft)"><b>FC observed:</b><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'
         + fcC.fcRetick.map(x => {
-            if(x && typeof x==='object') return '<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere">'+esc(x.type||'')+' × <b>'+esc(String(x.count||'?'))+'</b></span>';
-            return '<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere">'+esc(String(x))+'</span>';
+            if(x && typeof x==='object') return '<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(x.type||'')+' × <b>'+esc(String(x.count||'?'))+'</b></span>';
+            return '<span class="pill" style="font-size:10.5px;max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(String(x))+'</span>';
           }).join('')
         + '</div></div>';
     }

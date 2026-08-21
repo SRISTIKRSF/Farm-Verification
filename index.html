@@ -3446,7 +3446,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v209';
+const APP_VERSION = 'v210';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7606,7 +7606,7 @@ async function autoHealVerifications(){
     const claims = Array.isArray(v.claims) ? v.claims : [];
     f.verificationFormSubmittedAt = v.submittedAt;
     f.visits = f.visits || [];
-    f.visits.push(stamp({
+    f.visits.push(stampAsVerifier(stamp({   /* v210 - credit the coordinator, not the admin running the recovery */
       date: sm.date || String(v.submittedAt).slice(0,10),
       fc: f.fcId || '',
       verifierName: sm.verifierName || '',
@@ -7617,7 +7617,7 @@ async function autoHealVerifications(){
            + ' claims verified (auto-recovered ' + todayISO() + ')',
       score: sm.score || 0,
       livingFence:'\u2014', compost:'\u2014', soilHealth:'\u2014', pestControl:'\u2014',
-    }));
+    }), sm.verifierName, f.fcId));
     f.stage = 'verified';
     delete f.verificationLock;
     if(FB && FB.ready){
@@ -9441,7 +9441,9 @@ function _fcActMatch(f,q){
       || (f.village||'').toLowerCase().includes(q) || farmerCropsMatch(f.crops,q);
 }
 function _fcActCards(rows,F,program){
-  const list=rows.filter(r=>_fcActMatch(r.f,F.q));
+  /* v210 - the status buttons above narrow this list. */
+  let list=rows.filter(r=>_fcActMatch(r.f,F.q));
+  if(program==='haat' && F.status) list=list.filter(r=>r.status && r.status.label===F.status);
   const ce=document.getElementById('fcACount');
   if(ce) ce.textContent=list.length+' farmer'+(list.length===1?'':'s');
   const el=document.getElementById('fcACards'); if(!el) return;
@@ -9475,7 +9477,7 @@ function _fcActCards(rows,F,program){
 function viewFcActivity(){
   const v=$('#view');
   const name=_fcMyName();
-  if(!FILTERS.fcAct) FILTERS.fcAct={prog:'haat',haatSub:'new',convSub:'',q:'',lim:50};
+  if(!FILTERS.fcAct) FILTERS.fcAct={prog:'haat',haatSub:'new',convSub:'',q:'',lim:50,status:''};
   const F=FILTERS.fcAct;
   const D=fcActivityData();
 
@@ -9518,10 +9520,13 @@ function viewFcActivity(){
       <div class="fc-pills" style="padding-top:0;flex-wrap:wrap;overflow-x:visible">${subChips}</div>
     </div>
     ${F.prog==='haat'?`<div class="fc-stats">
-      <div class="fc-stat"><span class="sv" style="color:var(--grey)">${statCounts['Pending Approval']}</span><span class="sl">Pending approval</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--green)">${statCounts['Onboarded']}</span><span class="sl">Onboarded</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--orange)">${statCounts['On Hold']}</span><span class="sl">On hold</span></div>
-      <div class="fc-stat"><span class="sv" style="color:var(--red)">${statCounts['Rejected']}</span><span class="sl">Rejected</span></div>
+      <!-- v210 - these were counts you could not act on: "On hold 1" with no way
+           to see WHICH farmer. Tapping one narrows the list below; tapping the
+           same one again clears it. -->
+      <div class="fc-stat fc-stat-click${F.status==='Pending Approval'?' active':''}" data-astat="Pending Approval"><span class="sv" style="color:var(--grey)">${statCounts['Pending Approval']}</span><span class="sl">Pending approval</span></div>
+      <div class="fc-stat fc-stat-click${F.status==='Onboarded'?' active':''}" data-astat="Onboarded"><span class="sv" style="color:var(--green)">${statCounts['Onboarded']}</span><span class="sl">Onboarded</span></div>
+      <div class="fc-stat fc-stat-click${F.status==='On Hold'?' active':''}" data-astat="On Hold"><span class="sv" style="color:var(--orange)">${statCounts['On Hold']}</span><span class="sl">On hold</span></div>
+      <div class="fc-stat fc-stat-click${F.status==='Rejected'?' active':''}" data-astat="Rejected"><span class="sv" style="color:var(--red)">${statCounts['Rejected']}</span><span class="sl">Rejected</span></div>
     </div>`:`<div class="fc-stats">
       <div class="fc-stat"><span class="sv">${rows.length}</span><span class="sl">${esc((FC_CONV_GROUPS.find(g=>g.k===F.convSub)||FC_CONV_GROUPS[0]).label)}</span></div>
       <div class="fc-stat"><span class="sv" style="color:var(--blue)">${assessed.length?avgPct+'%':'—'}</span><span class="sl">Average score</span></div>
@@ -9535,9 +9540,12 @@ function viewFcActivity(){
     <div class="fc-slbl" id="fcACount"></div>
     <div class="fc-cards" id="fcACards"></div>`;
 
-  v.querySelectorAll('[data-prog]').forEach(p=>{p.onclick=()=>{F.prog=p.dataset.prog;F.q='';F.lim=50;render();};});
-  v.querySelectorAll('[data-hsub]').forEach(p=>{p.onclick=()=>{F.haatSub=p.dataset.hsub;F.q='';F.lim=50;render();};});
-  v.querySelectorAll('[data-csub]').forEach(p=>{p.onclick=()=>{F.convSub=p.dataset.csub;F.q='';F.lim=50;render();};});
+  v.querySelectorAll('[data-prog]').forEach(p=>{p.onclick=()=>{F.prog=p.dataset.prog;F.q='';F.status='';F.lim=50;render();};});
+  v.querySelectorAll('[data-hsub]').forEach(p=>{p.onclick=()=>{F.haatSub=p.dataset.hsub;F.q='';F.status='';F.lim=50;render();};});
+  v.querySelectorAll('[data-csub]').forEach(p=>{p.onclick=()=>{F.convSub=p.dataset.csub;F.q='';F.status='';F.lim=50;render();};});
+  /* v210 - a second tap on the same one clears it, so there is always a way back
+     to the whole list without hunting for a Clear button. */
+  v.querySelectorAll('[data-astat]').forEach(p=>{p.onclick=()=>{F.status=(F.status===p.dataset.astat?'':p.dataset.astat);F.lim=50;render();};});
   const si=$('#fcASrch');if(si)si.oninput=e=>{F.q=e.target.value;F.lim=50;_fcActCards(rows,F,F.prog);};
   _fcActCards(rows,F,F.prog);
 }
@@ -14993,7 +15001,7 @@ async function openRepairVerificationsModal(){
       const claims = Array.isArray(v.claims) ? v.claims : [];
       f.verificationFormSubmittedAt = v.submittedAt || it.at;
       f.visits = f.visits || [];
-      f.visits.push(stamp({
+      f.visits.push(stampAsVerifier(stamp({   /* v210 - credit the coordinator, not the admin running the repair */
         date: s.date || String(f.verificationFormSubmittedAt).slice(0,10),
         fc: f.fcId || '',
         verifierName: s.verifierName || '',
@@ -15004,7 +15012,7 @@ async function openRepairVerificationsModal(){
              + ' claims verified (recovered ' + todayISO() + ')',
         score: s.score || 0,
         livingFence:'\u2014', compost:'\u2014', soilHealth:'\u2014', pestControl:'\u2014',
-      }));
+      }), s.verifierName, f.fcId));
       f.stage = 'verified';
       delete f.verificationLock;
       markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
@@ -15728,6 +15736,35 @@ function viewFieldCoordinators(){
   v.querySelectorAll('[data-react-ffc]').forEach(b=>b.onclick=e=>{e.stopPropagation();setCoordinatorActive(b.dataset.reactFfc,true);});
 }
 
+/* v210 - a recovered verification knows WHO did it only as a name, saved on
+   the visit as verifierName. Map that back to their code. Only an unambiguous
+   match counts: one exact name, or one whose name starts with what we have
+   (the oldest records hold just "Maheshbhai"). Anything else returns nothing
+   and the caller falls back. */
+function fcCodeByVerifierName(name){
+  const n = String(name||'').trim().toLowerCase();
+  if(!n) return '';
+  const list = (typeof getUsersList==='function'?getUsersList():[]).filter(u=>u&&u.role==='fc'&&u.fcCode);
+  const exact = list.filter(u=>String(u.name||'').trim().toLowerCase()===n);
+  if(exact.length===1) return exact[0].fcCode;
+  const starts = list.filter(u=>String(u.name||'').trim().toLowerCase().indexOf(n)===0);
+  return starts.length===1 ? starts[0].fcCode : '';
+}
+/* v210 - stamp() writes whoever is signed in, which for a recovery is the
+   admin running it. The visit then belongs to nobody: it shows in the office
+   screens (they read the farmer row) but in no coordinator's My Activity,
+   which matches on recordedById. Credit it to the coordinator instead. */
+function stampAsVerifier(vis, verifierName, fallbackFcId){
+  if(!vis) return vis;
+  const code = fcCodeByVerifierName(verifierName) || fallbackFcId || '';
+  if(!code) return vis;
+  const u = userForFcCode(code);
+  vis.fc = code;
+  vis.recordedById = code;
+  vis.recordedByRole = 'fc';
+  vis.recordedBy = (u && u.name) || verifierName || vis.recordedBy;
+  return vis;
+}
 /* v120 — the roster is keyed by FC code, the account by username; bridge them. */
 function userForFcCode(code){
   return (typeof getUsersList==='function'?getUsersList():[]).find(u=>u&&u.role==='fc'&&u.fcCode===code)||null;

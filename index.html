@@ -907,6 +907,56 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .fc-nm{font-size:14px;font-weight:600;color:var(--ink);margin:0}
 .fc-lc{font-size:11px;color:var(--ink-soft);margin:2px 0 0;display:flex;align-items:center;gap:3px}
 .fc-cm{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+/* v211 - the three things an FC wants to do with work they have finished, on
+   the card itself. 38px tall because these are pressed with a thumb. */
+.fc-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding-top:9px;border-top:1px solid var(--line-soft)}
+.fc-actbtn{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  font-size:11.5px;font-weight:600;padding:9px 8px;border-radius:9px;border:1px solid var(--line-strong);
+  background:var(--panel);color:var(--ink);cursor:pointer;font-family:inherit;min-height:38px}
+.fc-actbtn:active{background:var(--panel-2)}
+.fc-actbtn.pri{border-color:var(--accent);color:var(--accent)}
+.fc-actbtn[disabled]{opacity:.45;cursor:default}
+.fc-edited{font-size:10.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5}
+/* v211 - the edit history in the farmer's file. */
+.vedit{margin-top:8px;padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px}
+.vedit-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px}
+.vedit-row{padding:6px 0;border-top:1px solid var(--line)}
+.vedit-row:first-of-type{border-top:none;padding-top:0}
+.vedit-who{font-size:11.5px;font-weight:600;color:var(--ink)}
+.vedit-what{font-size:11px;color:var(--ink-soft);line-height:1.55;margin-top:1px}
+.vedit-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+.vedit-btn{font-size:10.5px;font-weight:600;padding:5px 10px;border-radius:7px;border:1px solid var(--line-strong);
+  background:var(--panel);color:var(--ink);cursor:pointer;font-family:inherit;min-height:30px}
+.vedit-btn[disabled]{opacity:.5;cursor:default}
+.vedit-btn.undo{border-color:var(--orange);color:var(--orange)}
+.vedit-tag{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:8px;
+  background:var(--grey-bg);color:var(--grey);margin-left:5px}
+.vedit-detail:empty{display:none}
+.vedit-d{margin-top:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel);overflow:hidden}
+.vedit-d table{width:100%;min-width:0;border-collapse:collapse;font-size:11px;table-layout:fixed}
+.vedit-d td{padding:5px 8px;border-bottom:1px solid var(--line-soft);vertical-align:top;overflow-wrap:anywhere;white-space:normal}
+.vedit-d td.k{width:34%;color:var(--ink-faint);font-weight:600}
+.vedit-d .was{color:var(--red)}
+.vedit-d .now{color:var(--green)}
+.vedit-d .qh{padding:5px 8px;background:var(--panel-2);font-weight:700;font-size:10px;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--ink-faint)}
+/* v211 - the comparison table was built for the admin's desktop drawer. The FC
+   now opens the same table on a 375px phone, where a 4-column grid squeezes the
+   match mark into nothing. Below 720px each row becomes a stack, with the column
+   name printed above the value so the layout still says which side is which. */
+@media(max-width:720px){
+  /* min-width:0 is load-bearing. The global table rule sets min-width:840px for
+     the admin's wide tables; without this the stacked table stays 840px inside a
+     350px modal and every value is clipped off the right. */
+  .cmp-tbl{min-width:0 !important;width:100% !important;table-layout:auto !important}
+  .cmp-tbl,.cmp-tbl tbody,.cmp-tbl tr,.cmp-tbl td{display:block;width:auto}
+  .cmp-tbl thead{display:none}
+  .cmp-tbl tr{border-bottom:1px solid var(--line);padding:6px 0}
+  .cmp-tbl tr:last-child{border-bottom:none}
+  .cmp-tbl td{border-left:none !important;border-bottom:none !important;padding:3px 10px !important;text-align:left !important}
+  .cmp-tbl td[data-l]::before{content:attr(data-l);display:block;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--ink-faint);font-weight:700;margin-bottom:2px}
+}
 .fc-idchip{font-size:10px;color:var(--ink-soft);background:var(--grey-bg);
   border:1px solid var(--line);border-radius:4px;padding:2px 6px;font-family:monospace;flex-shrink:0}
 .fc-b{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;flex-shrink:0}
@@ -2560,6 +2610,10 @@ let FARMER_PHOTOS = {};     /* qid -> [{name,type,data}] (uploaded by farmer at 
 let PREV_VERIF_BY_ID = {};  /* qid -> {fcVerification, fcRetick, fcNote, fcAnswer} */
 let PREV_VERIF_META  = null;/* {submittedAt, byName} */
 const VERIFICATIONS = {};   /* qid -> 'verified' | 'not_verified' | 'na' (for askedOf:'both' questions) */
+/* v211 - set when the parent re-opens this form to CORRECT a verification that
+   was already submitted. Holds the FC's own previous answers, notes, photos,
+   remarks and visit date. Null for a normal verification. */
+var EDIT_MODE = null;
 const RETICK = {};          /* qid -> array (FC's observed items for multi) */
 const FC_ANSWERS = {};      /* qid -> FC's own answer for fc-only questions */
 const FC_NOTES = {};        /* qid -> text comment on a both-question */
@@ -3097,12 +3151,25 @@ function buildSections(){
   final.dataset.sec = secIdx;
   final.innerHTML =
     '<div class="card"><div class="section-title"><div class="num">'+(secIdx+1)+'</div><div><div class="h"><span class="tgu">સામાન્ય ટિપ્પણી અને ઘોષણા</span><span class="thi">सामान्य टिप्पणी और घोषणा</span><span class="ten">Overall comments &amp; submission</span></div></div></div>'
+    /* v211 - the visit date and time were captured silently at submit and could
+       never be corrected. They are a field now, prefilled with today, so a
+       verification written up the next morning can carry the day it happened. */
+    + '<div class="q-block"><div class="q-label"><span class="tgu">મુલાકાત તારીખ અને સમય</span><span class="thi">मुलाकात की तारीख और समय</span><span class="ten">Visit date &amp; time</span></div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +   '<input type="date" id="visitDate" style="flex:1 1 150px;min-width:0;padding:10px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:14px">'
+    +   '<input type="time" id="visitTime" style="flex:1 1 120px;min-width:0;padding:10px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:14px">'
+    + '</div></div>'
     + '<div class="q-block"><div class="q-label"><span class="tgu">સામાન્ય ટિપ્પણી</span><span class="thi">सामान्य टिप्पणी</span><span class="ten">Overall comments</span></div><textarea id="generalCmt" style="width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:7px;min-height:80px;font-family:inherit;resize:vertical" placeholder="Any final notes about the visit…"></textarea></div>'
     + '<div class="q-block"><div class="q-label"><span class="tgu">સારાંશ</span><span class="thi">सारांश</span><span class="ten">Summary</span></div><div id="summaryBox" style="background:var(--leaf-light);padding:12px;border-radius:8px;font-size:13px;color:var(--leaf-dark);font-weight:600">Loading summary…</div></div>'
     + '<button type="button" id="bigSubmitBtn" style="display:block;width:100%;margin-top:14px;padding:18px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">✓ <span class="tgu">ચકાસણી જમા કરો</span><span class="thi">सत्यापन जमा करें</span><span class="ten">Submit Verification</span></button>'
     + '<div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--ink-soft)"><span class="tgu">તમે સ્ક્રીનની નીચે લીલા બટન પર પણ ટેપ કરી શકો છો.</span><span class="thi">आप स्क्रीन के नीचे हरे बटन पर भी टैप कर सकते हैं।</span><span class="ten">You can also tap the green button at the bottom of the screen.</span></div>'
     + '</div>';
   sectionsEl.appendChild(final);
+  /* v211 - default the new date/time to now, so an FC who does not touch them
+     gets exactly what the form used to capture on its own. */
+  var _vd = document.getElementById('visitDate'), _vt = document.getElementById('visitTime'), _now = new Date();
+  if(_vd && !_vd.value) _vd.value = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
+  if(_vt && !_vt.value) _vt.value = _now.toTimeString().slice(0,5);
   wireFcControls();
   buildDots();
   const big = document.getElementById('bigSubmitBtn');
@@ -3217,6 +3284,110 @@ function wireFcControls(){
   const gc = $('#generalCmt'); if(gc) gc.oninput = () => { GENERAL_COMMENTS = gc.value; };
 }
 
+/* v211 - puts a submitted verification back into the form so it can be
+   corrected. Everything the FC entered comes back: the verified / not verified
+   / N/A marks, their per-question notes, their own answers on FC-only
+   questions, the re-ticked lists and counts, the photos they took, the general
+   remarks, and the visit date and time.
+
+   The photos come back as the STORED references (they already live on
+   Cloudinary), each carrying a __src the browser can display. Handing those
+   same references back at submit is what stops an edit re-uploading photos
+   that never changed - extractPhotos skips any leaf that already has a
+   photoId. */
+function applyEditPrefill(){
+  var E = EDIT_MODE;
+  if(!E) return;
+  (E.claims || []).forEach(function(c){
+    if(!c || !c.id) return;
+    var qid = c.id;
+    if(c.fcVerification){
+      VERIFICATIONS[qid] = c.fcVerification;
+      var r = document.querySelector('input[name="v_' + qid + '"][value="' + c.fcVerification + '"]');
+      if(r) r.checked = true;
+    }
+    if(c.fcNote){
+      FC_NOTES[qid] = c.fcNote;
+      var t = document.querySelector('textarea[data-note="' + qid + '"]');
+      if(t) t.value = c.fcNote;
+    }
+    if(c.fcAnswer !== null && c.fcAnswer !== undefined && !Array.isArray(c.fcAnswer) && String(c.fcAnswer) !== ''){
+      FC_ANSWERS[qid] = c.fcAnswer;
+      var a = document.querySelector('[data-fc-ans="' + qid + '"]');
+      if(a) a.value = c.fcAnswer;
+      var yn = document.querySelector('[data-fc-yn="' + qid + '"]');
+      if(yn){
+        var yb = yn.querySelector('.ynbtn[data-v="' + c.fcAnswer + '"]');
+        if(yb) yb.click();
+      }
+    }
+    if(Array.isArray(c.fcRetick)){
+      RETICK[qid] = c.fcRetick.slice();
+      var ch = document.querySelector('.chips[data-retick="' + qid + '"]');
+      if(ch){
+        ch.querySelectorAll('.chip').forEach(function(x){
+          x.classList.toggle('fc-obs', c.fcRetick.indexOf(x.dataset.v) >= 0);
+        });
+      }
+      var mc = document.querySelector('[data-retick-mc="' + qid + '"]');
+      if(mc){
+        var map = {};
+        c.fcRetick.forEach(function(x){ if(x && typeof x === 'object') map[x.type] = x.count; });
+        mc.querySelectorAll('.mc-row').forEach(function(row){
+          var on = Object.prototype.hasOwnProperty.call(map, row.dataset.mc);
+          var btn = row.querySelector('.mc-toggle'), inp = row.querySelector('.mc-count');
+          btn.classList.toggle('fc-obs', on);
+          inp.style.display = on ? 'inline-block' : 'none';
+          inp.value = on ? (map[row.dataset.mc] || '') : '';
+        });
+      }
+    }
+  });
+  Object.keys(E.photos || {}).forEach(function(qid){
+    var arr = E.photos[qid] || [];
+    var grid = document.querySelector('[data-fc-photogrid="' + qid + '"]');
+    if(!grid || !arr.length) return;
+    FC_PHOTOS[qid] = FC_PHOTOS[qid] || [];
+    arr.forEach(function(ref){
+      FC_PHOTOS[qid].push(ref);
+      var tile = document.createElement('div');
+      tile.style.cssText = 'width:74px;height:74px;border-radius:8px;overflow:hidden;background:#e9edf2;position:relative';
+      var img = document.createElement('img');
+      img.src = ref.__src || '';
+      img.alt = '';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+      var x = document.createElement('span');
+      x.textContent = '×';
+      x.style.cssText = 'position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(220,38,38,.9);color:#fff;display:grid;place-items:center;font-size:11px;cursor:pointer';
+      x.onclick = function(){
+        var i = FC_PHOTOS[qid].indexOf(ref);
+        if(i >= 0) FC_PHOTOS[qid].splice(i, 1);
+        tile.remove();
+      };
+      tile.appendChild(img);
+      tile.appendChild(x);
+      grid.insertBefore(tile, grid.querySelector('label'));
+    });
+  });
+  var gc = document.getElementById('generalCmt');
+  if(gc && E.comments){ gc.value = E.comments; GENERAL_COMMENTS = E.comments; }
+  var vd = document.getElementById('visitDate');
+  if(vd && E.date) vd.value = String(E.date).slice(0,10);
+  var vt = document.getElementById('visitTime');
+  if(vt && E.time) vt.value = String(E.time).slice(0,5);
+  var big = document.getElementById('bigSubmitBtn');
+  if(big) big.textContent = '✓ Save changes to this verification';
+  var old = document.getElementById('editBanner');
+  if(old) old.remove();
+  var banner = document.createElement('div');
+  banner.id = 'editBanner';
+  banner.style.cssText = 'background:#fffbeb;border:1px solid #f5d98b;border-radius:10px;padding:12px 16px;margin:14px 0';
+  banner.innerHTML = '<div style="font-size:11px;font-weight:700;color:#8a6410;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">✏️ Editing a submitted verification</div>'
+    + '<div style="font-size:13px;color:#451a03;line-height:1.5">Your answers from <b>' + esc(E.date ? String(E.date).slice(0,10).split('-').reverse().join('-') : 'the visit') + '</b> are already filled in. Change what needs changing and save.<br>This updates the same verification — it does not create a second one, and the farmer does not go back to pending.</div>';
+  var sectionsEl = document.getElementById('sections');
+  if(sectionsEl && sectionsEl.parentNode) sectionsEl.parentNode.insertBefore(banner, sectionsEl);
+}
+
 function paintFarmer(){
   $('#fName').textContent = FARMER.name || '—';
   $('#fId').textContent = FARMER.id || '—';
@@ -3289,7 +3460,7 @@ function goto(i){
   $$('#dotsWrap .dot').forEach((d, j) => d.className = 'dot' + (j<cur?' done':'') + (j===cur?' current':''));
   $('#prevBtn').disabled = cur===0;
   const next = $('#nextBtn');
-  if(cur === ss.length-1){ next.textContent = '✓ Submit verification'; updateSummary(); }
+  if(cur === ss.length-1){ next.textContent = EDIT_MODE ? '✓ Save changes' : '✓ Submit verification'; updateSummary(); }   /* v211 */
   else { next.textContent = 'Next →'; }
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -3345,8 +3516,9 @@ function submit(){
       type: 'farm-verification-done',
       summary: {
         farmerId: FARMER.id,
-        date: new Date().toISOString().slice(0,10),
-        time: new Date().toTimeString().slice(0,5),
+        /* v211 - the FC's own date and time, not the moment they pressed save. */
+        date: (document.getElementById('visitDate') || {}).value || new Date().toISOString().slice(0,10),
+        time: (document.getElementById('visitTime') || {}).value || new Date().toTimeString().slice(0,5),
         verifiedCount: verified,
         totalAsked,
         score,
@@ -3358,6 +3530,7 @@ function submit(){
       comments: GENERAL_COMMENTS,
       photos: FC_PHOTOS,
       gps,
+      editing: !!EDIT_MODE,   /* v211 */
       submittedAt: new Date().toISOString()
     };
     if(window.parent && window.parent !== window){
@@ -3407,6 +3580,10 @@ window.addEventListener('message', ev => {
     /* H2 — seasonal re-verification: store previous FC observation. The
        PREV_VERIF_BY_ID map is consulted in renderQuestion to draw a blue
        "Previous FC observation" box above the current FC controls. */
+    /* v211 - an edit is not a seasonal re-check: the previous answers go INTO
+       the form, not into a blue box beside it. The parent sends one or the
+       other, never both. */
+    EDIT_MODE = d.editVerif || null;
     PREV_VERIF_BY_ID = {};
     PREV_VERIF_META = null;
     if(d.prevVerif){
@@ -3415,6 +3592,7 @@ window.addEventListener('message', ev => {
     }
     paintFarmer();
     buildSections();
+    if(EDIT_MODE) applyEditPrefill();   /* v211 - after the DOM exists */
   }
 });
 
@@ -3446,7 +3624,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v210';
+const APP_VERSION = 'v211';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7481,6 +7659,14 @@ function fmtDate(iso){
   if(s.length>=10){const [y,m,d]=s.slice(0,10).split('-');return d+'-'+m+'-'+y;}
   return s;
 }
+/* v211 - date AND clock time, for the edit log. fmtDate deliberately drops the
+   time; an edit trail without it cannot say which change came last. */
+function fmtStamp(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return fmtDate(iso);
+  return fmtDate(d.toISOString().slice(0,10)) + ' ' + d.toTimeString().slice(0,5);
+}
 /* Seasonal verification: an onboarded (green) farmer whose last verification
    visit was more than VERIF_INTERVAL_DAYS ago. */
 const VERIF_INTERVAL_DAYS = 180;
@@ -9332,12 +9518,51 @@ function openFcRefModal(program, id){
     h += '<div class="timeline">' + visits.map(vis=>{
       const vfc=(DB.fcs||[]).find(x=>x.id===vis.fc);
       return `<div class="tl-item"><div class="tl-card">
-        <div class="tl-date">${esc(fmtDate(vis.date||''))}</div>
+        <div class="tl-date">${esc(fmtDate(vis.date||''))}${vis.time?' · '+esc(vis.time):''}</div>
         <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${vis.score!=null?' · Score '+vis.score:''}</div>
+        ${_verifEditLogHtml(vis, {farmerId: f.id})}
       </div></div>`;
     }).join('') + '</div>';
   }
+  /* v211 - the same three actions the card carries, for an FC who tapped the
+     card open first. Only for a farmer they have actually verified. */
+  if(program!=='conv' && f.verificationFormSubmittedAt && _fcVerifActions){
+    h += _fcVerifActions(f, _fcLatestRealVisit(f));
+  }
   modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h, `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
+  _wireVerifActions(document.getElementById('modal'));
+  _wireVerifEditLog(document.getElementById('modal'));   /* v211 */
+}
+/* v211 - the FC corrects a verification they have already submitted. The same
+   form re-opens with their own answers in it; saving updates that verification
+   in place. Only the newest one, and only their own - see _fcCanEditVisit. */
+async function openFcEditVerification(id){
+  const f = (DB.haatFarmers||[]).find(x=>x.id===id);
+  if(!f) return;
+  const visit = _fcLatestRealVisit(f);
+  if(!_fcCanEditVisit(f, visit)){
+    toast('Only your own most recent verification for this farmer can be edited', 'error');
+    return;
+  }
+  await loadForms(id);
+  const stored = f.verificationFormFull;
+  if(!stored || !Array.isArray(stored.claims) || !stored.claims.length){
+    /* Same guard the form itself uses before opening: without the stored answer
+       sheet the form would come up blank and saving it would erase the real
+       verification. */
+    toast('This verification has not downloaded to this device yet — connect to the internet and try again', 'error');
+    return;
+  }
+  const ok = await confirmModal({
+    title: 'Edit this verification',
+    message: 'Your answers, notes and photos will open exactly as you submitted them on '
+           + (fmtDate(visit.date||'') || 'the visit') + '.'
+           + '\n\nSaving updates this same verification. It does not create a second one, and it does not send the farmer back to pending.'
+           + '\n\nEvery change is recorded with the date, the time and your name.',
+    confirmLabel: 'Open the form',
+  });
+  if(!ok) return;
+  openVerificationForm(id, '', {editVisit: visit});
 }
 /* ===== v140 — MY ACTIVITY (was "Haat Farmers") =====
    The old screen was a reference list of approved farmers with no verify
@@ -9419,7 +9644,9 @@ function fcActivityData(){
   (DB.haatFarmers||[]).filter(f=>!f._archived).forEach(f=>{
     _fcOwnVisits(f).forEach(v=>{
       const kind=_fcVisitKind(f,v);
-      const row={f, visit:v, date:v.date||'', kind, status:fcAdminDecision(f,kind,v.date)};
+      /* v211 - the gate compares against when the verification ARRIVED, not the
+         visit date the FC can now edit. Identical for every record on file. */
+      const row={f, visit:v, date:v.date||'', kind, status:fcAdminDecision(f,kind,String(v.recordedAt||v.date||'').slice(0,10))};
       (kind==='new'?haatNew:haatSeasonal).push(row);
     });
   });
@@ -9433,6 +9660,37 @@ function fcActivityData(){
   });
   Object.keys(conv).forEach(k=>conv[k].sort((a,b)=>(b.pct==null?-1:b.pct)-(a.pct==null?-1:a.pct)||String(a.f.name||'').localeCompare(String(b.f.name||''))));
   return {me, haatNew, haatSeasonal, conv};
+}
+/* v211 - ONLY the newest verification can be edited. forms/{id} holds ONE
+   verification form; an earlier visit kept its per-claim marks on the visit row
+   but its answer sheet was overwritten by the next submission, so there is
+   nothing to re-open. Offering Edit on an older row would silently load the
+   newest form and save it over the top. */
+function _fcLatestRealVisit(f){
+  const all=_fcRealVisitsAll(f);
+  return all.length?all[all.length-1]:null;
+}
+function _fcCanEditVisit(f,visit){
+  if(!f || !visit) return false;
+  if(!f.verificationFormSubmittedAt) return false;
+  const me=currentFcId();
+  if(!me) return false;
+  if(visit.recordedById ? visit.recordedById!==me : visit.fc!==me) return false;
+  return _fcLatestRealVisit(f)===visit;
+}
+function _fcEditNote(visit){
+  const eds=(visit&&Array.isArray(visit.edits))?visit.edits:[];
+  if(!eds.length) return '';
+  const last=eds[eds.length-1];
+  return `<div class="fc-edited">\u270f\ufe0f Edited ${esc(fmtStamp(last.at))}${last.by?' by '+esc(last.by):''}${eds.length>1?' \u00b7 '+eds.length+' edits':''}</div>`;
+}
+function _fcVerifActions(f,visit){
+  const canEdit=_fcCanEditVisit(f,visit);
+  return `<div class="fc-acts">
+    <button type="button" class="fc-actbtn" data-vact="view" data-id="${esc(f.id)}">\ud83d\udcc4 Details</button>
+    <button type="button" class="fc-actbtn" data-vact="pdf" data-id="${esc(f.id)}">\u2b07 PDF</button>
+    ${canEdit?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit</button>`:''}
+  </div>`;
 }
 function _fcActMatch(f,q){
   if(!q) return true;
@@ -9467,12 +9725,22 @@ function _fcActCards(rows,F,program){
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">${meta}</div>
       ${bar}
       <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span></div>
+      ${program==='haat'?_fcEditNote(r.visit)+_fcVerifActions(f,r.visit):''}
     </div>`;
   }).join(''):`<div class="fc-empty">${F.q?'Nothing matches that search':'Nothing here yet'}</div>`}
   ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcAMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
   const mb=document.getElementById('fcAMore');
   if(mb) mb.onclick=()=>{F.lim+=50;_fcActCards(rows,F,program);};
   el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=()=>{openFcRefModal(program==='conv'?'conv':'haat',c.dataset.id);};});
+  /* v211 - stopPropagation, or every button press also opens the card modal
+     behind it. */
+  el.querySelectorAll('[data-vact]').forEach(b=>{b.onclick=ev=>{
+    ev.stopPropagation();
+    const fid=b.dataset.id, act=b.dataset.vact;
+    if(act==='view') openCompareFormsModal(fid);
+    else if(act==='pdf') openCompareFormsModal(fid,{pdf:true});
+    else if(act==='edit') openFcEditVerification(fid);
+  };});
 }
 function viewFcActivity(){
   const v=$('#view');
@@ -14243,7 +14511,7 @@ function openHaatDrawer(id){
       // v9 Batch 3 — show "Recorded by X · DD MMM HH:MM" if available
       const recBy = fmtRecordedBy(vis);
       h+=`<div class="tl-item"><div class="tl-card">
-        <div class="tl-date">${vis.date}</div>
+        <div class="tl-date">${vis.date}${vis.time?' \u00b7 '+esc(vis.time):''}</div>
         <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${recBy?' <span style="color:var(--ink-faint);font-size:10.5px;margin-left:6px">· '+esc(recBy)+'</span>':''}</div>
         ${paramsHtml}
         <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 2px">Verification score: <b>${vis.score}</b>/100</div>
@@ -14251,12 +14519,14 @@ function openHaatDrawer(id){
         ${fcObsHtml}
         ${observations?`<div class="tl-note" style="margin-top:7px">"${esc(observations)}"</div>`:''}
         ${vis.notes&&!isNew?`<div class="tl-note" style="margin-top:7px">"${esc(vis.notes)}"</div>`:''}
+        ${_verifEditLogHtml(vis, {farmerId: f.id, canUndo: isAdminUser()})}
       </div></div>`;
     });
     h+='</div>';
   }
   h+='</div>';
   $('#drawer').innerHTML=h;
+  _wireVerifEditLog($('#drawer'));   /* v211 */
   $('#drawer').querySelectorAll('[data-d]').forEach(b=>{
     b.onclick=async(ev)=>{
       const a=b.dataset.d;
@@ -15754,6 +16024,332 @@ function fcCodeByVerifierName(name){
    admin running it. The visit then belongs to nobody: it shows in the office
    screens (they read the farmer row) but in no coordinator's My Activity,
    which matches on recordedById. Credit it to the coordinator instead. */
+/* v211 - the change history of one verification, rendered the same way
+   everywhere it is read: the farmer's file in the office, the FC's own card,
+   and the comparison view. Oldest first, so it reads as a sequence. */
+/* v211 - the change history of one verification, newest first, wherever that
+   verification is read. The summary line costs nothing: it is already on the
+   visit. "What changed" fetches the field-by-field diff for that one edit, and
+   only when it is pressed. Undo is offered on the most recent change only, and
+   only where opts.canUndo says so - the office. */
+function _verifEditLogHtml(vis, opts){
+  opts = opts || {};
+  const eds = (vis && Array.isArray(vis.edits)) ? vis.edits : [];
+  if(!eds.length) return '';
+  const undoneIds = {};
+  eds.forEach(e => { if(e && e.undoOf) undoneIds[e.undoOf] = 1; });
+  const rows = eds.slice().reverse();
+  return `<div class="vedit">
+    <div class="vedit-h">Edit history (${eds.length})</div>
+    ${rows.map((e,i)=>{
+      const newest = (i === 0);
+      const tag = e.undoOf ? '<span class="vedit-tag">undo</span>'
+                : (undoneIds[e.id] ? '<span class="vedit-tag">undone</span>' : '');
+      const canUndo = opts.canUndo && newest && e.id && opts.farmerId;
+      return `<div class="vedit-row">
+        <div class="vedit-who">\u270f\ufe0f ${esc(fmtStamp(e.at))}${e.by?' \u00b7 '+esc(e.by):''}${tag}</div>
+        <div class="vedit-what">${esc((e.what||[]).join(' \u00b7 '))}</div>
+        ${e.id && opts.farmerId ? `<div class="vedit-btns">
+          <button type="button" class="vedit-btn" data-vedit="detail" data-fid="${esc(opts.farmerId)}" data-eid="${esc(e.id)}">What changed</button>
+          ${canUndo ? `<button type="button" class="vedit-btn undo" data-vedit="undo" data-fid="${esc(opts.farmerId)}" data-eid="${esc(e.id)}">\u21a9 Undo this change</button>` : ''}
+        </div>
+        <div class="vedit-detail" data-detail="${esc(e.id)}"></div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+const _VSTATE_LABEL = {verified:'\u2713 Verified', not_verified:'\u2717 Not verified', na:'N/A'};
+function _vStateLabel(v){ return _VSTATE_LABEL[v] || (v ? String(v) : 'not answered'); }
+function _vShow(x){
+  if(x == null || x === '') return '<i style="color:var(--ink-faint)">empty</i>';
+  if(Array.isArray(x)) return x.length
+    ? esc(x.map(i => (i && typeof i === 'object') ? ((i.type||'') + (i.count!=null?' \u00d7 '+i.count:'')) : String(i)).join(', '))
+    : '<i style="color:var(--ink-faint)">none</i>';
+  if(typeof x === 'object') return esc(JSON.stringify(x));
+  return esc(String(x));
+}
+function _vRow(label, o, fmt){
+  if(!o) return '';
+  const F = fmt || (x => _vShow(x));
+  return '<tr><td class="k">' + esc(label) + '</td>'
+       + '<td><span class="was">' + F(o.f) + '</span><br><span class="now">' + F(o.t) + '</span></td></tr>';
+}
+function _verifEditDetailHtml(rec){
+  if(!rec) return '';
+  const V = rec.visit || {};
+  let h = '<div class="vedit-d"><table>';
+  h += _vRow('Visit date', V.date, x => x ? esc(fmtDate(x)) : '<i style="color:var(--ink-faint)">not set</i>');
+  h += _vRow('Visit time', V.time);
+  h += _vRow('Remarks', V.comments);
+  h += _vRow('Score', V.score);
+  h += _vRow('Photos on the visit', V.photos);
+  const ph = Object.keys(rec.photos||{});
+  if(ph.length){
+    h += '<tr><td class="k">Photo files</td><td>'
+       + ph.map(qid => {
+           const o = rec.photos[qid] || {};
+           const n = a => (Array.isArray(a) ? a.length : 0);
+           return esc(qid) + ': <span class="was">' + n(o.f) + '</span> \u2192 <span class="now">' + n(o.t) + '</span>';
+         }).join('<br>')
+       + '</td></tr>';
+  }
+  h += '</table>';
+  const cs = rec.claims || [];
+  if(cs.length){
+    h += '<div class="qh">' + cs.length + ' answer' + (cs.length===1?'':'s') + ' changed</div><table>';
+    cs.forEach(c => {
+      h += '<tr><td class="k">' + esc(c.gu || c.en || c.id)
+         + (c.en && c.gu ? '<div style="font-weight:400;font-size:10px">' + esc(c.en) + '</div>' : '')
+         + '</td><td>';
+      const bits = [];
+      if(c.state)  bits.push('<span class="was">' + esc(_vStateLabel(c.state.f)) + '</span> \u2192 <span class="now">' + esc(_vStateLabel(c.state.t)) + '</span>');
+      if(c.note)   bits.push('note: <span class="was">' + _vShow(c.note.f) + '</span> \u2192 <span class="now">' + _vShow(c.note.t) + '</span>');
+      if(c.retick) bits.push('observed: <span class="was">' + _vShow(c.retick.f) + '</span> \u2192 <span class="now">' + _vShow(c.retick.t) + '</span>');
+      if(c.answer) bits.push('answer: <span class="was">' + _vShow(c.answer.f) + '</span> \u2192 <span class="now">' + _vShow(c.answer.t) + '</span>');
+      h += bits.join('<br>') + '</td></tr>';
+    });
+    h += '</table>';
+  }
+  h += '<div style="padding:5px 8px;font-size:10px;color:var(--ink-faint)">Red is what it was, green is what it became.</div>';
+  return h + '</div>';
+}
+function _wireVerifEditLog(root){
+  if(!root) return;
+  root.querySelectorAll('[data-vedit="detail"]').forEach(b => { b.onclick = async ev => {
+    if(ev && ev.stopPropagation) ev.stopPropagation();
+    const host = root.querySelector('[data-detail="' + b.dataset.eid + '"]');
+    if(!host) return;
+    if(host.innerHTML){ host.innerHTML = ''; b.textContent = 'What changed'; return; }
+    b.disabled = true; b.textContent = 'Loading\u2026';
+    const recs = await loadVerifEdits(b.dataset.fid);
+    const rec = recs && recs[b.dataset.eid];
+    host.innerHTML = rec ? _verifEditDetailHtml(rec)
+      : '<div class="vedit-d" style="padding:7px 9px;font-size:11px;color:var(--ink-soft);line-height:1.5">'
+        + 'The field-by-field record of this change is not on the server \u2014 it was made on a phone that had no signal, and only the summary above reached us. It cannot be undone.</div>';
+    b.disabled = false; b.textContent = 'Hide';
+  };});
+  root.querySelectorAll('[data-vedit="undo"]').forEach(b => { b.onclick = ev => {
+    if(ev && ev.stopPropagation) ev.stopPropagation();
+    undoVerifEdit(b.dataset.fid, b.dataset.eid);
+  };});
+}
+/* v211 - Details / PDF / Edit, wherever they are rendered. */
+function _wireVerifActions(root){
+  if(!root) return;
+  root.querySelectorAll('[data-vact]').forEach(b=>{b.onclick=ev=>{
+    if(ev && ev.stopPropagation) ev.stopPropagation();
+    const fid=b.dataset.id, act=b.dataset.vact;
+    if(act==='view') openCompareFormsModal(fid);
+    else if(act==='pdf') openCompareFormsModal(fid,{pdf:true});
+    else if(act==='edit') openFcEditVerification(fid);
+  };});
+}
+/* v211 - the before and after of everything an edit touched.
+   Returns {what, detail}: `what` is the short summary that goes on the visit
+   row and is readable with no extra fetch; `detail` is the field-by-field diff
+   that goes to verifEdits/ and is fetched only on demand. See the note on this
+   version for why they are stored apart.
+   The claims are compared id by id, never as JSON of the whole array: the
+   stored copy comes back from Firebase in alphabetical order and the new one
+   is in schema order, so a whole-object compare would report "answers changed"
+   on every save. */
+function _diffVerification(oldVisit, newVisit, oldForm, newForm){
+  const what = [], detail = {visit:{}, claims:[], photos:{}};
+  const S = x => (x==null ? '' : String(x));
+  const J = x => JSON.stringify(x==null ? null : x);
+  oldVisit = oldVisit || {}; newVisit = newVisit || {};
+
+  const dChanged = S(oldVisit.date) !== S(newVisit.date);
+  const tChanged = S(oldVisit.time) !== S(newVisit.time);
+  if(dChanged) detail.visit.date = {f: oldVisit.date||'', t: newVisit.date||''};
+  if(tChanged) detail.visit.time = {f: oldVisit.time||'', t: newVisit.time||''};
+  if(dChanged || tChanged){
+    what.push([
+      dChanged ? 'Visit date ' + (fmtDate(oldVisit.date)||'not set') + ' \u2192 ' + (fmtDate(newVisit.date)||'not set') : '',
+      tChanged ? (dChanged?'time ':'Visit time ') + (oldVisit.time||'not set') + ' \u2192 ' + (newVisit.time||'not set') : ''
+    ].filter(Boolean).join(', '));
+  }
+  if(S(oldVisit.comments) !== S(newVisit.comments)){
+    detail.visit.comments = {f: oldVisit.comments||'', t: newVisit.comments||''};
+    what.push(!S(oldVisit.comments) ? 'Remarks added' : (!S(newVisit.comments) ? 'Remarks removed' : 'Remarks rewritten'));
+  }
+  if((oldVisit.photos||0) !== (newVisit.photos||0)){
+    detail.visit.photos = {f: oldVisit.photos||0, t: newVisit.photos||0};
+    what.push('Photos ' + (oldVisit.photos||0) + ' \u2192 ' + (newVisit.photos||0));
+  }
+  if((oldVisit.score||0) !== (newVisit.score||0)){
+    detail.visit.score = {f: oldVisit.score||0, t: newVisit.score||0};
+    what.push('Score ' + (oldVisit.score||0) + ' \u2192 ' + (newVisit.score||0));
+  }
+  if(S(oldVisit.notes) !== S(newVisit.notes)) detail.visit.notes = {f: oldVisit.notes||'', t: newVisit.notes||''};
+
+  const om = {};
+  ((oldForm && Array.isArray(oldForm.claims)) ? oldForm.claims : []).forEach(c => { if(c && c.id) om[c.id] = c; });
+  ((newForm && Array.isArray(newForm.claims)) ? newForm.claims : []).forEach(c => {
+    if(!c || !c.id) return;
+    const o = om[c.id] || {};
+    const row = {id: c.id, gu: c.gu||'', en: c.en||''};
+    let moved = false;
+    if(S(o.fcVerification) !== S(c.fcVerification)){ row.state  = {f: o.fcVerification||null, t: c.fcVerification||null}; moved = true; }
+    if(S(o.fcNote)         !== S(c.fcNote))        { row.note   = {f: o.fcNote||'',           t: c.fcNote||''};           moved = true; }
+    if(J(o.fcRetick)       !== J(c.fcRetick))      { row.retick = {f: o.fcRetick||null,       t: c.fcRetick||null};       moved = true; }
+    if(J(o.fcAnswer)       !== J(c.fcAnswer))      { row.answer = {f: o.fcAnswer==null?null:o.fcAnswer, t: c.fcAnswer==null?null:c.fcAnswer}; moved = true; }
+    if(moved) detail.claims.push(row);
+  });
+  if(detail.claims.length) what.push(detail.claims.length + ' answer' + (detail.claims.length===1?'':'s') + ' changed');
+
+  const op = (oldForm && oldForm.photos) || {}, np = (newForm && newForm.photos) || {};
+  Object.keys(op).concat(Object.keys(np)).forEach(qid => {
+    if(detail.photos[qid]) return;
+    if(J(op[qid]||[]) !== J(np[qid]||[])) detail.photos[qid] = {f: op[qid]||[], t: np[qid]||[]};
+  });
+  const os = (oldForm && oldForm.summary) || null, ns = (newForm && newForm.summary) || null;
+  if(J(os) !== J(ns)) detail.summary = {f: os, t: ns};
+
+  if(!what.length) what.push('Re-saved with no visible change');
+  return {what, detail};
+}
+function _verifEditId(){
+  return 'VE' + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36);
+}
+/* The field-by-field diffs, keyed by farmer. Loaded on demand only. */
+const VERIF_EDITS_CACHE = {};
+function _verifEditList(map){
+  return Object.keys(map||{}).filter(k => k !== '_loaded').map(k => map[k]).filter(Boolean);
+}
+async function loadVerifEdits(farmerId){
+  if(!farmerId) return {};
+  const out = VERIF_EDITS_CACHE[farmerId] = VERIF_EDITS_CACHE[farmerId] || {};
+  if(out._loaded) return out;
+  if(FB && FB.ready && navigator.onLine){
+    try{
+      const snap = await fbRef('verifEdits/' + farmerId).get();
+      if(snap.exists()) Object.assign(out, snap.val() || {});
+      out._loaded = true;
+    }catch(e){ console.warn('[Sristi] edit history load failed:', e); }
+  }
+  return out;
+}
+/* Writes one diff, and drops any diff the visit no longer lists - the visit's
+   own edits[] is capped at 10, so this node can never outgrow it. Uses the same
+   durable queue as the forms, so an edit made with no signal still lands. */
+function saveVerifEditRecord(farmerId, rec, keepList){
+  if(!farmerId || !rec || !rec.id) return;
+  const store = VERIF_EDITS_CACHE[farmerId] = VERIF_EDITS_CACHE[farmerId] || {};
+  store[rec.id] = rec;
+  const payload = sanitizeForFB(rec);
+  idbPut('formWrites', {key: 'edit:' + farmerId + ':' + rec.id, farmerId,
+                        path: 'verifEdits/' + farmerId + '/' + rec.id, payload, at: Date.now()})
+    .then(()=>flushFormWrites())
+    .catch(()=>{ if(FB && FB.ready) fbRef('verifEdits/' + farmerId + '/' + rec.id).set(payload).catch(e=>console.warn('verif edit write:', e)); });
+  const keep = {};
+  (keepList||[]).forEach(e => { if(e && e.id) keep[e.id] = 1; });
+  if(!Object.keys(keep).length) return;
+  Object.keys(store).forEach(k => {
+    if(k === '_loaded' || keep[k]) return;
+    delete store[k];
+    if(FB && FB.ready) fbRef('verifEdits/' + farmerId + '/' + k).remove().catch(()=>{});
+  });
+}
+/* v211 - put an edit back. Restores the previous values into BOTH the stored
+   answer sheet and the visit row, then logs the undo as its own entry - the
+   history is never rewritten, only added to. Deliberately narrow: only the most
+   recent change can be undone, and only from the office. */
+async function undoVerifEdit(farmerId, editId){
+  if(!isAdminUser()){ toast('Only an admin can undo a change', 'error'); return; }
+  let f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  if(!f || !editId) return;
+  const recs = await loadVerifEdits(farmerId);
+  const rec = recs && recs[editId];
+  if(!rec){
+    toast('The details of that change were never saved to the server, so it cannot be undone', 'error');
+    return;
+  }
+  await loadForms(farmerId);
+  /* v199/v211 - re-resolve after the awaits. The live listener replaces every
+     record object every few seconds; the `f` captured above may be an orphan
+     that nothing will ever save. */
+  f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  if(!f){ toast('That farmer is no longer loaded \u2014 reopen and try again', 'error'); return; }
+  const form = f.verificationFormFull;
+  if(!form || !Array.isArray(form.claims)){
+    toast('This verification has not downloaded to this device yet \u2014 connect and try again', 'error');
+    return;
+  }
+  const ok = await confirmModal({
+    title: 'Undo this change',
+    message: 'This puts back what was there before ' + (rec.by || 'the coordinator') + ' changed it on ' + fmtStamp(rec.at) + ':'
+           + '\n\n' + (rec.what||[]).join('\n')
+           + '\n\nThe verification stays where it is \u2014 no farmer moves back to pending, and nothing is deleted. The undo itself is recorded in the history.',
+    confirmLabel: 'Put it back',
+  });
+  if(!ok) return;
+  f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  if(!f) return;
+  const byId = {};
+  form.claims.forEach(c => { if(c && c.id) byId[c.id] = c; });
+  (rec.claims||[]).forEach(c => {
+    const q = byId[c.id];
+    if(!q) return;
+    if(c.state)  q.fcVerification = c.state.f;
+    if(c.note)   q.fcNote         = c.note.f || '';
+    if(c.retick) q.fcRetick       = c.retick.f;
+    if(c.answer) q.fcAnswer       = c.answer.f;
+  });
+  if(rec.visit && rec.visit.comments) form.comments = rec.visit.comments.f || '';
+  if(rec.summary) form.summary = rec.summary.f || form.summary;
+  Object.keys(rec.photos||{}).forEach(qid => {
+    form.photos = form.photos || {};
+    const arr = rec.photos[qid].f;
+    if(Array.isArray(arr) && arr.length) form.photos[qid] = arr; else delete form.photos[qid];
+  });
+  setForms(farmerId, 'verif', form);
+  /* the visit row */
+  const real = (f.visits||[]).filter(v => v && !isImportedVisit(v));
+  let visit = rec.visitAt ? real.find(v => v.recordedAt === rec.visitAt) : null;
+  if(!visit && rec.visitDate) visit = real.find(v => v.date === rec.visitDate);
+  if(!visit && real.length === 1) visit = real[0];
+  if(!visit){ toast('Could not find the verification this change belongs to', 'error'); return; }
+  markLocalTouch('haatFarmers', f.id);
+  ['date','time','comments','score','photos','notes'].forEach(k => {
+    if(rec.visit && rec.visit[k]) visit[k] = rec.visit[k].f;
+  });
+  visit.claimVerifications = form.claims.reduce((a,c) => {
+    a[c.id] = {state: c.fcVerification || 'na', fcNote: c.fcNote || ''};
+    return a;
+  }, {});
+  const a = actor();
+  visit.edits = (Array.isArray(visit.edits) ? visit.edits : []).slice(-9);
+  const undoRec = {
+    id: _verifEditId(), at: new Date().toISOString(), by: a.name, byId: a.id, role: a.role,
+    undoOf: editId,
+    what: ['Undo of the change made ' + fmtStamp(rec.at) + (rec.by ? ' by ' + rec.by : '')],
+  };
+  visit.edits.push({id: undoRec.id, at: undoRec.at, by: undoRec.by, byId: undoRec.byId, role: undoRec.role,
+                    undoOf: editId, what: undoRec.what});
+  /* the undo's own diff is the original one read backwards, so pressing Undo on
+     the undo puts the change back again. */
+  const flip = o => (o ? {f: o.t, t: o.f} : o);
+  undoRec.visit = {};
+  Object.keys((rec.visit)||{}).forEach(k => { undoRec.visit[k] = flip(rec.visit[k]); });
+  undoRec.claims = (rec.claims||[]).map(c => ({id: c.id, gu: c.gu, en: c.en,
+    state: flip(c.state), note: flip(c.note), retick: flip(c.retick), answer: flip(c.answer)}));
+  undoRec.photos = {};
+  Object.keys(rec.photos||{}).forEach(qid => { undoRec.photos[qid] = flip(rec.photos[qid]); });
+  if(rec.summary) undoRec.summary = flip(rec.summary);
+  undoRec.visitAt = rec.visitAt || visit.recordedAt || '';
+  undoRec.visitDate = visit.date || '';
+  saveVerifEditRecord(farmerId, undoRec, visit.edits);
+  logActivity('visit', `Verification change undone for <b>${esc(f.name)}</b> \u2014 ${esc((rec.what||[]).join(', '))}`);
+  if(FB && FB.ready){
+    try{ await fbRef('haatFarmers/' + f.id).update({visits: sanitizeForFB(f.visits)}); }
+    catch(e){ console.error('[Sristi] undo row write failed for ' + f.id, e); }
+  }
+  await saveDB(true);
+  toast('Put back \u00b7 the change is recorded in the history');
+  if(typeof render === 'function') render();
+  if($('#drawer') && $('#drawer').classList.contains('show')) openHaatDrawer(farmerId);
+}
 function stampAsVerifier(vis, verifierName, fallbackFcId){
   if(!vis) return vis;
   const code = fcCodeByVerifierName(verifierName) || fallbackFcId || '';
@@ -15825,11 +16421,12 @@ async function setCoordinatorActive(code, makeActive){
 /* ============ MODAL: v5 — SIDE-BY-SIDE FORM COMPARISON ============
    Reads the v5 schema + farmer's claims + FC's verification to render a per-question
    side-by-side review (like the screenshot, but for all ~55 questions, grouped by category). */
-function openCompareFormsModal(id){
+function openCompareFormsModal(id, opts){
+  opts = opts || {};   /* v211 - {pdf:true} starts the download as soon as it opens */
   const f = DB.haatFarmers.find(x=>x.id===id); if(!f) return;
   // v11 — fetch the on-demand forms first (one retry, then render whatever exists).
   if(!f.enrollmentFormFull && !f.verificationFormFull && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted)){
-    loadForms(id).then(()=>openCompareFormsModal(id));
+    loadForms(id).then(()=>openCompareFormsModal(id, opts));
     return;
   }
   const cats = window.CATEGORIES_V5 || [];
@@ -15991,7 +16588,7 @@ function openCompareFormsModal(id){
     // v7 fix: table-layout:fixed forces the column widths below to be honored
     // (was content-driven before, which caused FC verification pills to overflow
     // right off the modal). word-wrap on cells lets long pills/notes wrap.
-    body += '<table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12.5px">';
+    body += '<table class="cmp-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12.5px">';   /* v211 - cmp-tbl stacks it on a phone */
     body += '<colgroup>'
       + '<col style="width:28%"><col style="width:32%"><col style="width:34%"><col style="width:6%">'
       + '</colgroup>';
@@ -16001,10 +16598,12 @@ function openCompareFormsModal(id){
       const farmerC = farmerClaims[q.id];
       const fcC = fcVerifs[q.id];
       body += '<tr>';
+      /* v211 - data-l is the column name, printed above the value once the table
+         stacks on a phone. Invisible on a desktop, where the header row shows. */
       body += '<td style="'+cellStyle+'"><div style="font-weight:600;color:var(--ink)">' + esc(q.gu) + '</div><div style="font-size:11px;color:var(--ink-soft);margin-top:1px">' + esc(q.en) + '</div></td>';
-      body += '<td style="'+cellStyle+';border-left:1px solid var(--line)">' + fmtAnswer(q, farmerC) + '</td>';
-      body += '<td style="'+cellStyle+';border-left:1px solid var(--line)">' + fmtFcVerif(q, fcC) + '</td>';
-      body += '<td style="padding:9px 6px;border-bottom:1px solid var(--line-soft);border-left:1px solid var(--line);text-align:center;vertical-align:top">' + matchIcon(q, farmerC, fcC) + '</td>';
+      body += '<td data-l="Farmer\'s claim" style="'+cellStyle+';border-left:1px solid var(--line)">' + fmtAnswer(q, farmerC) + '</td>';
+      body += '<td data-l="FC verification" style="'+cellStyle+';border-left:1px solid var(--line)">' + fmtFcVerif(q, fcC) + '</td>';
+      body += '<td data-l="Match" style="padding:9px 6px;border-bottom:1px solid var(--line-soft);border-left:1px solid var(--line);text-align:center;vertical-align:top">' + matchIcon(q, farmerC, fcC) + '</td>';
       body += '</tr>';
     });
     body += '</tbody></table>';
@@ -16018,11 +16617,33 @@ function openCompareFormsModal(id){
     body += '</div>';
   }
 
+  /* v211 - which verification is this? Only the newest answer sheet is stored,
+     so on a farmer verified more than once this page is always the newest one -
+     say so rather than letting it read as whichever row was tapped. */
+  const _cmpVisits = _fcRealVisitsAll(f);
+  const _cmpLastVisit = _cmpVisits.slice(-1)[0] || null;
+  if(_cmpVisits.length > 1){
+    body += '<div style="margin-top:12px;background:var(--blue-bg);border:1px solid var(--blue);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--ink);line-height:1.55">'
+      + '<b>This farmer has ' + _cmpVisits.length + ' verifications on file.</b> The answers below are the most recent one'
+      + (_cmpLastVisit && _cmpLastVisit.date ? ', from ' + esc(fmtDate(_cmpLastVisit.date)) : '')
+      + '. Earlier verifications keep their date, score and per-question marks in the farmer\'s visit history, but only the newest full answer sheet is stored.'
+      + '</div>';
+  }
+  /* v211 - the change history, on screen as well as on the sheet. */
+  const _cmpLog = _verifEditLogHtml(_cmpLastVisit, {farmerId: id});
+  if(_cmpLog) body += '<div style="margin-top:12px">' + _cmpLog + '</div>';
+
   /* v203 - the same comparison, as a document. Built here so it can reuse the
      fmtAnswer / fmtFcVerif / matchIcon closures above and can never show
      something different from what is on screen. */
   function buildComparePdfHtml(){
     const cell = 'padding:6px 9px;border-bottom:1px solid #f0ebe7;vertical-align:top;overflow-wrap:anywhere';
+    /* v211 - the verification this sheet describes, so the page can print the
+       real visit date and say if it has been corrected since. */
+    const _cmpAll = _fcRealVisitsAll(f);
+    const _cmpVisit = _cmpAll.slice(-1)[0] || null;
+    const _cmpVisitDate = (_cmpVisit && _cmpVisit.date) || f.verificationFormSubmittedAt || '';
+    const _cmpEdits = (_cmpVisit && Array.isArray(_cmpVisit.edits)) ? _cmpVisit.edits : [];
     let h = '<div class="pdfdoc" style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
       + pdfLetterheadOuter('Farmer vs Field Verification',
           '\u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0aa8\u0acb \u0aa6\u0abe\u0ab5\u0acb \u0a85\u0aa8\u0ac7 FC \u0aa8\u0ac0 \u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u2014 \u0ab8\u0abe\u0aae\u0ac7\u0ab8\u0abe\u0aae\u0ac7');
@@ -16035,8 +16656,11 @@ function openCompareFormsModal(id){
       +     pdfField('\u0a97\u0abe\u0aae \u00b7 Village', esc(f.village||'\u2014'))
       +     pdfField('\u0a9c\u0abf\u0ab2\u0acd\u0ab2\u0acb \u00b7 District', esc(districtDisplayName(f.district)||'\u2014'))
       +     pdfField('\u0a9a\u0a95\u0abe\u0ab8\u0aa8\u0abe\u0ab0 \u00b7 Verified by', esc(fcName))
+      /* v211 - the VISIT date, which the FC can now correct, not the moment the
+         office received the form. Falls back to the submission date for every
+         record written before the visit date was a field. */
       +     pdfField('\u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u0aa4\u0abe\u0ab0\u0ac0\u0a96',
-                    f.verificationFormSubmittedAt ? esc(fmtDate(f.verificationFormSubmittedAt)) : '\u2014')
+                    _cmpVisitDate ? esc(fmtDate(_cmpVisitDate)) : '\u2014')
       +   '</div>'
       + '</div>';
     if(verif.summary && verif.summary.score != null){
@@ -16053,6 +16677,21 @@ function openCompareFormsModal(id){
       + '<span><b style="color:#a4560c">?</b> \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0 \u00b7 Not checked</span>'
       + '<span><b>\u2014</b> \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0 \u00b7 N/A</span>'
       + '</div>';
+    /* v211 - if this verification has been corrected since it was submitted,
+       the sheet says so. A reader comparing two printouts of the same farmer
+       needs to know which one is later. */
+    if(_cmpAll.length > 1){
+      h += '<div style="font-size:10px;color:#8a7768;margin:0 0 6px;padding:0 2px">'
+         + _cmpAll.length + ' verifications on file for this farmer \u00b7 this sheet is the most recent one</div>';
+    }
+    if(_cmpEdits.length){
+      const _le = _cmpEdits[_cmpEdits.length-1];
+      h += '<div style="font-size:10px;color:#8a7768;margin:0 0 10px;padding:0 2px">Last edited ' + esc(fmtStamp(_le.at))
+         + (_le.by ? ' by ' + esc(_le.by) : '')
+         + ((_le.what && _le.what.length) ? ' \u00b7 ' + esc(_le.what.join(', ')) : '')
+         + (_cmpEdits.length > 1 ? ' \u00b7 ' + _cmpEdits.length + ' edits in total' : '')
+         + '</div>';
+    }
     /* v209 - the FC's note is the first thing a reader wants, so it goes at the
        top: under the legend, above the first section. It used to be the last
        thing in the document. */
@@ -16150,6 +16789,11 @@ function openCompareFormsModal(id){
   // FC notes don't get cropped on the right.
   const modalEl = document.getElementById('modal');
   if(modalEl) modalEl.classList.add('wide');
+  _wireVerifEditLog(modalEl);   /* v211 */
+  /* v211 - the PDF button on the FC's card opens this same modal and presses
+     its own download button. One builder, so the sheet and the page can never
+     drift apart. */
+  if(opts.pdf && cmpBtn) setTimeout(()=>{ if(document.getElementById('cmpPdfBtn')) cmpBtn.click(); }, 80);
 }
 
 /* ============ VIEW: SETTINGS ============
@@ -18787,12 +19431,40 @@ window.addEventListener('message',async ev=>{
         const arr = Array.isArray(prevPhotosRaw[qid]) ? prevPhotosRaw[qid] : [];
         prevPhotos[qid] = arr.map(p => ({ name:(p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder(p):'') })).filter(p => p.data);
       });
-      const prevVerif = prevV ? {
+      /* v211 - editing and seasonal re-verification are opposites, and the form
+         must be told which one this is. A seasonal re-check shows the previous
+         answers BESIDE the questions, read-only, and starts blank. An edit puts
+         them INTO the questions. Sending both would show the FC their own
+         answers twice, once uneditable. */
+      const _editing = (window._verifyEditing && window._verifyEditing.farmerId === f.id) ? window._verifyEditing : null;
+      const prevVerif = (prevV && !_editing) ? {
         submittedAt: f.verificationFormSubmittedAt || '',
         byName: (prevV._submittedByName) || ((DB.fcs||[]).find(x=>x.id===f.fcId)||{}).name || '',
         claims: Array.isArray(prevV.claims) ? prevV.claims : [],
         photos: prevPhotos
       } : null;
+      let editVerif = null;
+      if(prevV && _editing){
+        /* The photos go back as the STORED references, each carrying a __src
+           only for display. Handing the same references back at save is what
+           stops an edit re-uploading photos that never changed. */
+        const _editPhotos = {};
+        Object.keys(prevPhotosRaw).forEach(qid => {
+          const arr = Array.isArray(prevPhotosRaw[qid]) ? prevPhotosRaw[qid] : [];
+          const withSrc = arr.map(x => Object.assign({}, x, {__src: photoSrc(x) || photoPendingPlaceholder(x) || ''}))
+                             .filter(x => x.__src);
+          if(withSrc.length) _editPhotos[qid] = withSrc;
+        });
+        const _v = (f.visits||[]).find(x => x && _editing.visitAt && x.recordedAt === _editing.visitAt)
+                || (f.visits||[]).find(x => x && x.date === _editing.visitDate) || null;
+        editVerif = {
+          claims: Array.isArray(prevV.claims) ? prevV.claims : [],
+          photos: _editPhotos,
+          comments: prevV.comments || (prevV.summary && prevV.summary.comments) || '',
+          date: (_v && _v.date) || (prevV.summary && prevV.summary.date) || '',
+          time: (_v && _v.time) || (prevV.summary && prevV.summary.time) || '',
+        };
+      }
       const frame = document.getElementById('verifyFrame');
       if(frame && frame.contentWindow){
         // v(fc-redesign) — verifierName used to be sent as '' and never
@@ -18800,7 +19472,7 @@ window.addEventListener('message',async ev=>{
         // set it from SESSION.userName). It's a real fallback for "who
         // verified this" display (farmer drawer timeline, activity log) when
         // the primary fc-id lookup fails, so send the real name every time.
-        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema, prevVerif, verifierName: actor().name}, '*');
+        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema, prevVerif, editVerif, verifierName: actor().name}, '*');
       }
     }
     return;
@@ -19294,10 +19966,22 @@ function buildVerifPrefill(f){
   };
 }
 
-function openVerificationForm(farmerId, farmFid){
+function openVerificationForm(farmerId, farmFid, opts){
   // v132 — farmFid names WHICH farm is being verified. Empty/absent means the
   // farmer's main farm, i.e. exactly the behaviour before second farms existed.
   window._verifyTargetFarmFid = farmFid || '';
+  /* v211 - {editVisit} re-opens a submitted verification for correction. It
+     lives on window because the message handlers that do the work run outside
+     this call, and it is cleared the moment the form closes. The visit is
+     identified by its recordedAt, not by its position: the live listener
+     replaces every record object every few seconds, so an index would be
+     pointing at a different array by the time the FC presses save. */
+  opts = opts || {};
+  window._verifyEditing = opts.editVisit ? {
+    farmerId: farmerId,
+    visitAt: opts.editVisit.recordedAt || '',
+    visitDate: opts.editVisit.date || '',
+  } : null;
   const f = DB.haatFarmers.find(x=>x.id===farmerId);
   // v9 process-fix H2 — verification concurrency lock. If another FC opened
   // the form for this farmer < 30 min ago and hasn't submitted, warn before
@@ -19658,6 +20342,7 @@ function openVerificationForm(farmerId, farmFid){
   document.body.style.overflow='hidden';
 }
 function closeVerificationForm(){
+  window._verifyEditing = null;   /* v211 - never outlive the form */
   // Release lock so other FCs aren't blocked after X-close (no submit).
   if(_verifyTargetId){
     const _lkF=DB.haatFarmers.find(x=>x.id===_verifyTargetId);
@@ -19708,6 +20393,16 @@ window.addEventListener('message',async ev=>{
         const markedCount = (d.claims||[]).filter(c => c.fcVerification && c.fcVerification!=='na' && c.fcVerification!=='not_specified').length;
         // v9 — threshold removed per user instruction. Any submit transitions.
         const enoughEvidence = true;
+        /* v211 - see the note on this version: __src is for the screen only. */
+        Object.keys(d.photos||{}).forEach(qid=>{
+          const arr = d.photos[qid];
+          if(Array.isArray(arr)) arr.forEach(x=>{ if(x && typeof x==='object') delete x.__src; });
+        });
+        /* v211 - the sheet as it stands BEFORE setForms overwrites it. Without
+           this copy there is nothing to compare the edit against, and nothing
+           to put back. Only taken when an edit is actually in progress. */
+        const _oldForm = (window._verifyEditing && window._verifyEditing.farmerId === f.id && f.verificationFormFull)
+          ? JSON.parse(JSON.stringify(f.verificationFormFull)) : null;
         // v11 — photos to upload queue, form text to forms/{id}.
         await extractPhotos(d, {program:'haat', farmerId: f.id});
         setForms(f.id, 'verif', d);
@@ -19721,12 +20416,21 @@ window.addEventListener('message',async ev=>{
         const _fresh = (DB.haatFarmers||[]).find(x => x && x.id === _verifyTargetId);
         if(_fresh) f = _fresh;
         markLocalTouch('haatFarmers', f.id);
-        f.verificationFormSubmittedAt = d.submittedAt || todayISO();
+        /* v211 - is this a correction of a verification already on file? */
+        const _ed = (window._verifyEditing && window._verifyEditing.farmerId === f.id) ? window._verifyEditing : null;
+        /* An edit does not change WHEN the office received the verification.
+           The visit date is the field the FC can correct, and the comparison
+           sheet prints that. Leaving this alone keeps every downstream date -
+           the durable verifIndex marker, the drawer, seasonal timing - exactly
+           where it was. */
+        if(!_ed) f.verificationFormSubmittedAt = d.submittedAt || todayISO();
+        if(!f.verificationFormSubmittedAt) f.verificationFormSubmittedAt = d.submittedAt || todayISO();
         f.visits = f.visits || [];
         // v9 audit-fix #3 — stamp the iframe verification visit so the
         // drawer timeline + activity feed know who/when this happened.
-        f.visits.push(stamp({
+        const _vFields = {
           date: (d.summary?.date) || todayISO(),
+          time: d.summary?.time || '',   /* v211 - the FC can set this now */
           fc: currentFcId() || f.fcId || '',  // v22 bug#2 — stamp the actual verifying FC, not the farmer's (usually empty) assigned fcId, so "Visits (90d)" counts it
           verifierName: d.summary?.verifierName || '',
           // v6 fix: form sends fcVerification (not fcVerified), and a per-claim fcNote.
@@ -19739,7 +20443,46 @@ window.addEventListener('message',async ev=>{
           livingFence:'—',compost:'—',soilHealth:'—',pestControl:'—',
           markedCount,
           incomplete: !enoughEvidence,
-        }));
+        };
+        let _editedVisit = null;
+        if(_ed){
+          /* Find the visit AGAIN on the record we re-resolved above. Matching on
+             recordedAt, which is the submission instant and unique; then on the
+             date; then, only if the farmer has exactly one real visit, on that. */
+          const _real = (f.visits||[]).filter(v => v && !isImportedVisit(v));
+          let _hit = _ed.visitAt ? _real.find(v => v.recordedAt === _ed.visitAt) : null;
+          if(!_hit && _ed.visitDate) _hit = _real.find(v => v.date === _ed.visitDate);
+          if(!_hit && _real.length === 1) _hit = _real[0];
+          if(_hit){
+            /* Built BEFORE the assignment below, or there is nothing left to
+               compare against. */
+            const _diff = _diffVerification(_hit, _vFields, _oldForm, d);
+            const _keepFc = _hit.fc;
+            /* NO stamp() here. stamp() writes whoever is signed in now, and the
+               person editing may not be the person who did the verification -
+               that is the v210 bug, and this is the obvious place to repeat it.
+               recordedBy / recordedById / recordedByRole / recordedAt are left
+               untouched, so the work stays credited to whoever did it. */
+            Object.assign(_hit, _vFields);
+            _hit.fc = _keepFc || _vFields.fc;
+            const _a = actor();
+            const _eid = _verifEditId(), _eat = new Date().toISOString();
+            /* Ten on the row is the cap; verifEdits is pruned to match, so the
+               history can never grow without bound on a record every
+               coordinator downloads. */
+            _hit.edits = (Array.isArray(_hit.edits) ? _hit.edits : []).slice(-9);
+            _hit.edits.push({id: _eid, at: _eat, by: _a.name, byId: _a.id, role: _a.role, what: _diff.what});
+            saveVerifEditRecord(f.id, Object.assign({
+              id: _eid, at: _eat, by: _a.name, byId: _a.id, role: _a.role,
+              visitAt: _hit.recordedAt || '', visitDate: _hit.date || '', what: _diff.what,
+            }, _diff.detail), _hit.edits);
+            _editedVisit = _hit;
+          }
+        }
+        if(!_editedVisit){
+          if(_ed) logActivity('alert', '⚠ Could not match the verification being edited for <b>' + esc(f.name) + '</b> — saved as a new visit instead');
+          f.visits.push(stamp(_vFields));
+        }
         // v9 process-fix #38 — only advance to "verified" if the FC actually
         // verified things. Otherwise keep it as verification_pending and tell
         // the FC to come back with more evidence.
@@ -19756,7 +20499,10 @@ window.addEventListener('message',async ev=>{
         // Tracks in a session-local Map; NOT persisted to Firebase.
         markLocalTouch('haatFarmers', f.id);
         if(f._localTouchAt) delete f._localTouchAt;
-        if(enoughEvidence){
+        if(_editedVisit){
+          const _lastEd = _editedVisit.edits[_editedVisit.edits.length-1];
+          logActivity('visit',`Verification edited for <b>${esc(f.name)}</b> — ${esc((_lastEd.what||[]).join(', '))}`);
+        } else if(enoughEvidence){
           logActivity('visit',`Verification submitted for <b>${esc(f.name)}</b> — ${d.summary?.verifiedCount||0}/${d.summary?.totalAsked||0} claims verified`);
         } else {
           logActivity('alert',`⚠ Incomplete verification logged for <b>${esc(f.name)}</b> — only ${markedCount} claims marked. Stage stays "verification pending".`);
@@ -19794,6 +20540,7 @@ window.addEventListener('message',async ev=>{
           await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))})
             .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); });
         }
+        window._verifyEditing = null;   /* v211 - one edit, one save */
         if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;

@@ -557,6 +557,18 @@ tbody tr:last-child td{border-bottom:none}
    them. The pills on screen keep the app's own line-height. */
 .pdfdoc .tag{line-height:1;padding:4px 10px 6px}
 .pdfdoc .tag .d{margin-top:-1px}
+/* v207 - the global table rule above carries min-width:840px for the wide
+   admin lists. A PDF document is 703px, so that floor pushed the whole match
+   column off the right-hand edge of the page and cut every FC answer short.
+   No table inside a PDF document has a floor. */
+.pdfdoc table{min-width:0}
+/* v207 - html2pdf stages the capture in .html2pdf__container and centres it
+   with margin:auto. html2canvas renders that inside a clone of the document
+   whose window is not exactly as wide as the real one, so the centred element
+   lands at a different x in the clone than the crop taken from the real page,
+   and a few pixels are shaved off the right of every PDF. Anchored left, it is
+   at x=0 in both, and nothing is lost. */
+.html2pdf__container{margin:0 !important;left:0 !important;right:auto !important}
 .tag.green{background:var(--green-bg);color:var(--green);border-color:var(--green-line)}
 .tag.yellow{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-line)}
 .tag.red{background:var(--red-bg);color:var(--red);border-color:var(--red-line)}
@@ -1104,6 +1116,13 @@ const KISAN_FORM_HTML = `<!DOCTYPE html>
   --green:#16a34a;--red:#dc2626;--amber:#d97706;
 }
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Hind Vadodara','Nirmala UI',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Arial,sans-serif}
+/* v207 - html2pdf stages the capture in .html2pdf__container and centres it
+   with margin:auto. html2canvas renders that inside a clone of the document
+   whose window is not exactly as wide as the real one, so the centred element
+   lands at a different x in the clone than the crop taken from the real page,
+   and a few pixels are shaved off the right of every PDF. Anchored left, it is
+   at x=0 in both, and nothing is lost. */
+.html2pdf__container{margin:0 !important;left:0 !important;right:auto !important}
 body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;padding-bottom:140px;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
 .head{background:var(--leaf);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:14px}
 .head h1{font-size:18px;font-weight:700;line-height:1.2}
@@ -1551,7 +1570,7 @@ function downloadEnrollmentPdf(){
     document.body.appendChild(wrap);
     return window.html2pdf().set({
       filename: pdfFileName(ANSWERS.farmer_name),
-      margin: 8,
+      margin: 4.4,   /* v207 - 210mm less 2x4.4 = 201mm = 760px, the width of this sheet. At 8mm the paper was 733px and the right-hand padding was cut off. */
       image: {type:'jpeg', quality:0.92},
       html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
@@ -2378,6 +2397,13 @@ const VERIF_FORM_HTML = `<!DOCTYPE html>
   --green-bg:#dcfce7;--red-bg:#fee2e2;--grey-bg:#f1f5f9;--amber-bg:#fef3c7;
 }
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Hind Vadodara','Nirmala UI',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Arial,sans-serif}
+/* v207 - html2pdf stages the capture in .html2pdf__container and centres it
+   with margin:auto. html2canvas renders that inside a clone of the document
+   whose window is not exactly as wide as the real one, so the centred element
+   lands at a different x in the clone than the crop taken from the real page,
+   and a few pixels are shaved off the right of every PDF. Anchored left, it is
+   at x=0 in both, and nothing is lost. */
+.html2pdf__container{margin:0 !important;left:0 !important;right:auto !important}
 body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;padding-bottom:140px;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
 .head{background:var(--leaf);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:14px}
 .head .back{font-size:20px;cursor:pointer;color:#fff;background:none;border:none;padding:5px}
@@ -3363,7 +3389,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v206';
+const APP_VERSION = 'v207';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15938,7 +15964,7 @@ function openCompareFormsModal(id){
       if(!catQs.length) return;
       h += '<div style="font-size:13px;font-weight:700;color:#fff;background:#723e31;margin:14px 0 0;padding:6px 10px;border-radius:5px 5px 0 0;page-break-after:avoid;page-break-inside:avoid">'
         + esc(cat.gu) + ' <span style="font-weight:500;opacity:.8;font-size:11px">(' + esc(cat.en) + ')</span></div>';
-      h += '<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px">'
+      h += '<table style="width:100%;min-width:0;border-collapse:collapse;table-layout:fixed;font-size:11px">'   /* v207 - min-width:0, see the note on this version */
         + '<colgroup><col style="width:28%"><col style="width:30%"><col style="width:32%"><col style="width:10%"></colgroup>'
         + '<tr style="background:#faf7f5">'
         +   '<th style="text-align:left;padding:5px 9px;font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e6dcd4">\u0aaa\u0acd\u0ab0\u0ab6\u0acd\u0aa8 \u00b7 Question</th>'

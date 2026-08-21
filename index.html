@@ -3793,7 +3793,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v216';
+const APP_VERSION = 'v217';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -3847,12 +3847,16 @@ function fbRef(path){return FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));}
    already keeps. pendingSyncCount() is records saved but not confirmed; the three
    IndexedDB stores are the durable retry queues the background pump drains. */
 async function fcPendingTotal(){
-  let photos=0, writes=0, forms=0;
+  let photos=0, forms=0;
+  /* v217b - a record saved offline is in BOTH lists: saveDB marked it pending
+     and the durable queue holds the same col/id. Adding the two counted one
+     visit as two things waiting. Count distinct keys. */
+  const keys = new Set();
   try{ photos=(await idbAll('photoQueue')).length; }catch(e){}
-  try{ writes=(await idbAll('offlineWrites')).length; }catch(e){}
+  try{ (await idbAll('offlineWrites')).forEach(x=>{ if(x && x.key) keys.add(String(x.key)); }); }catch(e){}
   try{ forms =(await idbAll('formWrites')).length; }catch(e){}
-  let recs=0; try{ recs=pendingSyncCount(); }catch(e){}
-  return {total: recs+writes+forms+photos, photos: photos};
+  try{ _readPendingSync().forEach(k=>keys.add(String(k))); }catch(e){}
+  return {total: keys.size+forms+photos, photos: photos};
 }
 let _fcSyncBusy=false, _fcSyncAgain=false;
 async function updateFcSync(){
@@ -8434,7 +8438,9 @@ function calculateConvScore(f){
 /* Assessment modal — FC fills A1/A2/B1/B2/B3/C, sees live score + status,
    then saves to f.conversionScoring. */
 function openConvScoreModal(id){
-  const f = DB.convFarmers.find(x => x.id === id); if(!f) return;
+  /* v217 - `let`, not `const`: re-resolved after the awaits in the save
+     handler. See the note there for why holding this object is unsafe. */
+  let f = DB.convFarmers.find(x => x.id === id); if(!f) return;
   // Working copy — initialised from existing scoring or sensible defaults.
   const existing = f.conversionScoring || {};
   const W = {
@@ -9102,6 +9108,23 @@ function openConvScoreModal(id){
     const vphotos = (window._vsPhotosCapture || []).slice();
     // v11 — compress + queue the visit photos; the visit keeps tiny {photoId/url} stubs.
     await extractPhotos(vphotos, {program:'conv', farmerId: f.id});
+    /* v217 - RE-RESOLVE. `f` was captured when the modal opened, possibly
+       minutes ago, and compressing photos on a field phone takes seconds more.
+       _processLiveSnapshot() replaces every object in DB.convFarmers whenever
+       the server copy differs, so the `f` we have been writing the score onto
+       can already be an orphan that nothing will ever save. The scoring fields
+       were set above, so carry them onto the live record rather than losing
+       them; the visit itself is pushed below, onto whichever object this ends
+       up being. Same fault as v199 on the haat side, which cost five farmers.
+       markLocalTouch after, so a listener update landing mid-save cannot
+       revert what we are about to write. */
+    const _cvFresh = (DB.convFarmers||[]).find(x => x && x.id === id);
+    if(_cvFresh && _cvFresh !== f){
+      ['conversionScoringHistory','conversionScoring','chemFreeFlag','stage','transitionStatus']
+        .forEach(k => { _cvFresh[k] = f[k]; });
+      f = _cvFresh;
+    }
+    markLocalTouch('convFarmers', f.id);
     // Snapshot the adopted practices (per B-section) so the visit log can
     // show "Jeevamrut, Vermicompost, Beejamrut adopted" later.
     const adoptedBySection = {};
@@ -9161,11 +9184,34 @@ function openConvScoreModal(id){
     if(typeof logActivity === 'function'){
       logActivity('status', 'Visit updated for <b>' + esc(f.name) + '</b> — ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label);
     }
-    await saveDB(true);
+    /* v217 - snapshot BEFORE the await, not after. saveDB can take seconds and
+       the live listener may replace the record while it runs; queueing a copy
+       read afterwards could queue the server's version and quietly drop the
+       visit we just wrote. */
+    const _cvRow = sanitizeForFB(_stripEphemeral(f));
+    const _cvSynced = await saveDB(true);
+    if(!_cvSynced){
+      /* Did not reach the server. Park the whole record in the durable queue -
+         it survives the tab closing, which the Firebase SDK's own in-memory
+         queue does not, and flushOfflineWrites replays and deletes it on
+         reconnect.
+         Firebase cost, measured: an online visit is one write of 15,139 bytes;
+         offline-then-synced is 16,447 across two, because the reconnect
+         catch-up save and this queue both carry the record. 1,308 bytes, once,
+         per visit done without signal. Deduplicating them would mean teaching
+         the durable queue to skip rows another path had already sent, and
+         getting that wrong loses the visit - which is the thing this exists to
+         prevent. Not worth 1.3 KB. */
+      await idbPut('offlineWrites', {key:'convFarmers/'+f.id, col:'convFarmers', id:f.id, rec:_cvRow})
+        .catch(() => { try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); }catch(e){} });
+    }
     closeModal();
     if(typeof render === 'function') render();
     if(typeof openConvDrawer === 'function' && !document.body.classList.contains('fc-mode')) openConvDrawer(f.id);
-    toast('Visit updated · ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label);
+    if(typeof updateFcSync === 'function') updateFcSync();
+    toast(_cvSynced
+      ? ('Visit updated · ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label)
+      : ('ફોનમાં સેવ થયું · Saved on your phone, will send when you have signal'));
     } catch(e) {
       saveBtn.disabled = false; saveBtn.textContent = 'Save visit';
       toast('Save failed — please try again.');

@@ -1576,6 +1576,37 @@ function pdfAnswerHtml(q, val){
   }
   return esc(String(val));
 }
+/* v213 - html2canvas draws text ONE CODE POINT AT A TIME whenever
+   letter-spacing is not zero (its renderTextWithLetterSpacing branches on
+   "0 === letterSpacing"). Latin survives that. Gujarati does not: a matra has
+   no advance of its own and must sit on its base, the i-vowel is stored after
+   its consonant but drawn before it, and a conjunct is one shaped glyph made
+   of several code points. Drawn separately they scatter.
+   Measured through the real pipeline: the word for "farmer" rendered 86x61
+   with 915 ink pixels at letter-spacing 0, and 95x58 with 1227 at .09em - the
+   same text cannot need 34% more ink unless different glyphs are drawn.
+   On screen it is correct, because the browser shapes properly and applies
+   tracking per cluster; only the capture is wrong.
+   So: drop the tracking on every element holding Indic text before capture.
+   Those labels lose a little letter-spacing and become readable; Latin-only
+   labels keep theirs. Call this on the document element of EVERY sheet. */
+function pdfFixIndicSpacing(root){
+  if(!root || !root.querySelectorAll) return 0;
+  var INDIC = new RegExp('[' + String.fromCharCode(0x0900) + '-' + String.fromCharCode(0x0D7F) + ']');
+  var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+  var fixed = 0;
+  for(var i = 0; i < all.length; i++){
+    var el = all[i], own = '';
+    for(var k = 0; k < el.childNodes.length; k++){
+      if(el.childNodes[k].nodeType === 3) own += el.childNodes[k].textContent;
+    }
+    if(!INDIC.test(own)) continue;
+    var ls = NaN;
+    try { ls = parseFloat(window.getComputedStyle(el).letterSpacing); } catch(e){ ls = NaN; }
+    if(isFinite(ls) && ls !== 0){ el.style.letterSpacing = 'normal'; fixed++; }
+  }
+  return fixed;
+}
 function buildEnrollmentPdfHtml(){
   const rows = [];
   CATEGORIES.forEach(cat => {
@@ -1621,6 +1652,7 @@ function downloadEnrollmentPdf(){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     return window.html2pdf().set({
       filename: pdfFileName(ANSWERS.farmer_name),
       margin: 4.4,   /* v207 - 210mm less 2x4.4 = 201mm = 760px, the width of this sheet. At 8mm the paper was 733px and the right-hand padding was cut off. */
@@ -2825,6 +2857,37 @@ function pdfAvoidSplits(container, pageH){
   }
   return total;
 }
+/* v213 - html2canvas draws text ONE CODE POINT AT A TIME whenever
+   letter-spacing is not zero (its renderTextWithLetterSpacing branches on
+   "0 === letterSpacing"). Latin survives that. Gujarati does not: a matra has
+   no advance of its own and must sit on its base, the i-vowel is stored after
+   its consonant but drawn before it, and a conjunct is one shaped glyph made
+   of several code points. Drawn separately they scatter.
+   Measured through the real pipeline: the word for "farmer" rendered 86x61
+   with 915 ink pixels at letter-spacing 0, and 95x58 with 1227 at .09em - the
+   same text cannot need 34% more ink unless different glyphs are drawn.
+   On screen it is correct, because the browser shapes properly and applies
+   tracking per cluster; only the capture is wrong.
+   So: drop the tracking on every element holding Indic text before capture.
+   Those labels lose a little letter-spacing and become readable; Latin-only
+   labels keep theirs. Call this on the document element of EVERY sheet. */
+function pdfFixIndicSpacing(root){
+  if(!root || !root.querySelectorAll) return 0;
+  var INDIC = new RegExp('[' + String.fromCharCode(0x0900) + '-' + String.fromCharCode(0x0D7F) + ']');
+  var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+  var fixed = 0;
+  for(var i = 0; i < all.length; i++){
+    var el = all[i], own = '';
+    for(var k = 0; k < el.childNodes.length; k++){
+      if(el.childNodes[k].nodeType === 3) own += el.childNodes[k].textContent;
+    }
+    if(!INDIC.test(own)) continue;
+    var ls = NaN;
+    try { ls = parseFloat(window.getComputedStyle(el).letterSpacing); } catch(e){ ls = NaN; }
+    if(isFinite(ls) && ls !== 0){ el.style.letterSpacing = 'normal'; fixed++; }
+  }
+  return fixed;
+}
 function buildVerificationPdfHtml(lastClaims, summary){
   const rows = [];
   const byId = {};
@@ -2905,6 +2968,7 @@ function downloadVerificationPdf(claims, summary){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     /* v201 - portrait, and the element is built at exactly the printable width
        so the canvas fills the paper. 'avoid-all' is dropped: it refuses to break
        inside ANY element, which with a full-page table pushed whole sections to
@@ -3627,7 +3691,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v212';
+const APP_VERSION = 'v213';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16789,6 +16853,7 @@ function openCompareFormsModal(id, opts){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
       wrap.appendChild(el);
       document.body.appendChild(wrap);
+      pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
       /* v209 - render, read the page height off that canvas, rebuild, push
          anything that would be sawn through clear of the cut, render again.
          See the note on pdfAvoidSplits. */
@@ -21899,6 +21964,37 @@ function pdfAvoidSplits(container, pageH){
 /* html2canvas photographs the element as it stands. If the Gujarati face has
    not arrived, the picture is taken in the fallback font and nothing later can
    fix it. */
+/* v213 - html2canvas draws text ONE CODE POINT AT A TIME whenever
+   letter-spacing is not zero (its renderTextWithLetterSpacing branches on
+   "0 === letterSpacing"). Latin survives that. Gujarati does not: a matra has
+   no advance of its own and must sit on its base, the i-vowel is stored after
+   its consonant but drawn before it, and a conjunct is one shaped glyph made
+   of several code points. Drawn separately they scatter.
+   Measured through the real pipeline: the word for "farmer" rendered 86x61
+   with 915 ink pixels at letter-spacing 0, and 95x58 with 1227 at .09em - the
+   same text cannot need 34% more ink unless different glyphs are drawn.
+   On screen it is correct, because the browser shapes properly and applies
+   tracking per cluster; only the capture is wrong.
+   So: drop the tracking on every element holding Indic text before capture.
+   Those labels lose a little letter-spacing and become readable; Latin-only
+   labels keep theirs. Call this on the document element of EVERY sheet. */
+function pdfFixIndicSpacing(root){
+  if(!root || !root.querySelectorAll) return 0;
+  var INDIC = new RegExp('[' + String.fromCharCode(0x0900) + '-' + String.fromCharCode(0x0D7F) + ']');
+  var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+  var fixed = 0;
+  for(var i = 0; i < all.length; i++){
+    var el = all[i], own = '';
+    for(var k = 0; k < el.childNodes.length; k++){
+      if(el.childNodes[k].nodeType === 3) own += el.childNodes[k].textContent;
+    }
+    if(!INDIC.test(own)) continue;
+    var ls = NaN;
+    try { ls = parseFloat(window.getComputedStyle(el).letterSpacing); } catch(e){ ls = NaN; }
+    if(isFinite(ls) && ls !== 0){ el.style.letterSpacing = 'normal'; fixed++; }
+  }
+  return fixed;
+}
 async function pdfWaitForFont(){
   try{
     if(document.fonts && document.fonts.load){
@@ -21971,6 +22067,7 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
     wrap.appendChild(el);
     document.body.appendChild(wrap);
+    pdfFixIndicSpacing(el);   /* v213 - see the note on this function */
     await pdfWaitForFont();
     let _pageH = 0;   /* v209 - see the note on pdfAvoidSplits */
     await window.html2pdf().set({

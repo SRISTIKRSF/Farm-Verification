@@ -3793,7 +3793,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v215';
+const APP_VERSION = 'v216';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5531,6 +5531,35 @@ let _lastSnap=null;
    nobody asked for. Entries are cleared once the write succeeds. */
 const _explicitDeletes = new Set();
 let _saveRetryCount=0;
+/* v216 - a Firebase write that cannot hang the caller.
+
+   A RTDB write promise settles only when the server acknowledges it. With no
+   signal it does neither: the SDK queues the write in memory and the promise
+   stays pending for as long as the page is open. Any `await` on it stops the
+   function dead - which is how a verification done in a village with no bars
+   lost its visit record. The line after the await was the durable fallback.
+
+   Weak signal is the same shape and worse: navigator.onLine is TRUE while the
+   socket is dead, so the wait is unbounded with no hint anything is wrong.
+
+   Resolves {timedOut:true} instead of waiting forever. The write is NOT
+   cancelled - the SDK still delivers it if the connection comes back inside
+   this page load - so the worst case is the same data written twice, once by
+   the SDK and once by the durable queue. That is a trade worth making. */
+function _fbWriteGuard(p, ms){
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const t = setTimeout(() => { if(!settled){ settled = true; resolve({timedOut:true}); } }, ms);
+    Promise.resolve(p).then(
+      v => { if(!settled){ settled = true; clearTimeout(t); resolve({timedOut:false, value:v}); } },
+      e => { if(!settled){ settled = true; clearTimeout(t); reject(e); } }
+    );
+  });
+}
+/* Offline we already know the answer, so do not make the coordinator wait for
+   it. Online, be generous: a slow but real connection must be allowed to win,
+   because a spurious timeout writes the same record twice. */
+function _fbWriteWaitMs(){ return navigator.onLine ? 8000 : 1500; }
 async function saveDB(silent){
   cacheLocal();
   /* v113 SAFETY — public mode must never run the whole-database sync.
@@ -5702,8 +5731,31 @@ async function saveDB(silent){
   // only once we're actually confident (see below), is what lets a fresh
   // boot recognize this record still needs to go out.
   dirty.forEach(([col,id])=>markPendingSync(col,id));
+  /* v216b - with no signal this write cannot land. Issuing it anyway parks a
+     copy in the SDK's in-memory queue, which then sends on reconnect - and the
+     durable IndexedDB queue sends the same record a second time. _lastSnap is
+     not advanced and the pending markers stay, so the reconnect catch-up
+     re-diffs and sends it once, properly. Measured saving: the whole offline
+     duplicate. */
+  if(!navigator.onLine){
+    setSyncPill('offline');
+    dirty.forEach(([col,id])=>markLocalTouch(col,id,20000));
+    return false;
+  }
   try{
-    await fbRef('').update(updates);     // atomic multi-path update
+    /* v216 - guarded. This await used to hang for the whole page load with no
+       signal, so every caller that depended on its return value - above all
+       the verification handler's durable fallback - never ran. */
+    const _g = await _fbWriteGuard(fbRef('').update(updates), _fbWriteWaitMs());
+    if(_g.timedOut){
+      /* Deliberately NOT advancing _lastSnap and NOT clearing the pending
+         markers: the same records must re-diff as changed on the next attempt.
+         No toast and no retry storm when we know we are offline - the FC strip
+         already says so, and reconnect re-runs the catch-up save. */
+      setSyncPill(navigator.onLine ? 'error' : 'offline');
+      dirty.forEach(([col,id])=>markLocalTouch(col,id,20000));
+      return false;
+    }
     // v121 — the authorised deletions are on the server now; stop tracking them.
     // Cleared ONLY on success: if the write threw, they stay registered so the
     // retry still bypasses the cap instead of silently falling back under it.
@@ -8099,7 +8151,10 @@ function markVerificationSubmitted(farmerId, whenISO){
   if(!farmerId) return;
   DB.verifIndex = DB.verifIndex || {};
   DB.verifIndex[farmerId] = whenISO || new Date().toISOString();
-  if(FB && FB.ready){ fbRef('verifIndex/'+farmerId).set(DB.verifIndex[farmerId]).catch(()=>{}); }
+  /* v216b - offline this only fills the SDK's in-memory queue, and the
+     submission handler stores the same marker in the durable offlineWrites
+     queue instead, which survives the tab closing. */
+  if(FB && FB.ready && navigator.onLine){ fbRef('verifIndex/'+farmerId).set(DB.verifIndex[farmerId]).catch(()=>{}); }
 }
 function clearVerificationSubmitted(farmerId){
   if(!farmerId) return;
@@ -20928,14 +20983,24 @@ window.addEventListener('message',async ev=>{
            sets ONLY these keys, so it can never remove anything, and unlike the
            batch below it does not depend on the diff seeing the change. This is
            the guarantee; saveDB keeps the rest of the app in step. */
-        if(FB && FB.ready){
+        /* v216b - `navigator.onLine` as well as FB.ready: FB.ready only means
+           the SDK started, not that it can reach anything, and writing into a
+           queue that cannot flush just duplicates what idbPut below stores
+           durably. */
+        if(FB && FB.ready && navigator.onLine){
           try{
-            await fbRef('haatFarmers/' + f.id).update({
+            /* v216 - GUARDED. Unguarded, this is where an offline submission
+               stopped for good: FB.ready is true when the SDK is merely
+               disconnected, the promise never settles, and the durable
+               fallback fifteen lines below was unreachable. Measured on both
+               v214 and v215 - the form reached the server and the farmer's own
+               row went back to "verification pending" with zero visits. */
+            await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
               verificationFormSubmittedAt: f.verificationFormSubmittedAt,
               stage: f.stage,
               visits: sanitizeForFB(f.visits),
               verificationLock: null
-            });
+            }), _fbWriteWaitMs());
           }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
         }
         /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.
@@ -20949,6 +21014,16 @@ window.addEventListener('message',async ev=>{
         if(!_vSynced){
           await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))})
             .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); });
+          /* v216 - and make the durable marker actually durable. verifIndex is
+             not in SYNC_COLS, so saveDB never carries it; markVerificationSubmitted
+             writes it straight to Firebase, which offline means it lives only in
+             the SDK's in-memory queue and dies with the tab. The one record whose
+             entire purpose is to let a lost verification be found again was itself
+             lost exactly when it was needed. */
+          if(f.verificationFormSubmittedAt){
+            await idbPut('offlineWrites', {key:'verifIndex/'+f.id, col:'verifIndex', id:f.id,
+                                           rec: f.verificationFormSubmittedAt}).catch(()=>{});
+          }
         }
         window._verifyEditing = null;   /* v211 - one edit, one save */
         if(typeof updateFcSync==='function') updateFcSync();

@@ -917,6 +917,9 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .fc-actbtn.pri{border-color:var(--accent);color:var(--accent)}
 .fc-actbtn[disabled]{opacity:.45;cursor:default}
 .fc-edited{font-size:10.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5}
+/* v212 - why Edit is not offered. */
+.fc-lockmsg{margin-top:8px;padding:8px 11px;border-radius:8px;background:var(--grey-bg);border:1px solid var(--line);
+  font-size:11.5px;line-height:1.55;color:var(--ink-soft)}
 /* v211 - the edit history in the farmer's file. */
 .vedit{margin-top:8px;padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px}
 .vedit-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px}
@@ -3624,7 +3627,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v211';
+const APP_VERSION = 'v212';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9527,7 +9530,7 @@ function openFcRefModal(program, id){
   /* v211 - the same three actions the card carries, for an FC who tapped the
      card open first. Only for a farmer they have actually verified. */
   if(program!=='conv' && f.verificationFormSubmittedAt && _fcVerifActions){
-    h += _fcVerifActions(f, _fcLatestRealVisit(f));
+    h += _fcVerifActions(f, _fcLatestRealVisit(f), {explain:true});   /* v212 */
   }
   modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h, `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
   _wireVerifActions(document.getElementById('modal'));
@@ -9540,8 +9543,13 @@ async function openFcEditVerification(id){
   const f = (DB.haatFarmers||[]).find(x=>x.id===id);
   if(!f) return;
   const visit = _fcLatestRealVisit(f);
-  if(!_fcCanEditVisit(f, visit)){
-    toast('Only your own most recent verification for this farmer can be edited', 'error');
+  const why = _fcEditBlockReason(f, visit);
+  if(why){
+    /* v212 - name the rule. "You cannot do that" with no reason is how a
+       coordinator ends up phoning the office to ask what broke. */
+    toast(why === 'no-verification' ? 'There is no verification on file for this farmer yet'
+        : why === 'not-fc' ? 'Only the coordinator who did the verification can change it'
+        : why, 'error');
     return;
   }
   await loadForms(id);
@@ -9670,27 +9678,52 @@ function _fcLatestRealVisit(f){
   const all=_fcRealVisitsAll(f);
   return all.length?all[all.length-1]:null;
 }
-function _fcCanEditVisit(f,visit){
-  if(!f || !visit) return false;
-  if(!f.verificationFormSubmittedAt) return false;
+/* v212 - the single rule for whether a coordinator may still change a
+   verification, and the sentence explaining why not. Returns '' when they may.
+   Everything that offers or refuses Edit goes through here, so the button, the
+   card modal and the refusal message can never say different things. */
+function _fcEditBlockReason(f,visit){
+  if(!f || !visit || !f.verificationFormSubmittedAt) return 'no-verification';
   const me=currentFcId();
-  if(!me) return false;
-  if(visit.recordedById ? visit.recordedById!==me : visit.fc!==me) return false;
-  return _fcLatestRealVisit(f)===visit;
+  if(!me) return 'not-fc';
+  if(visit.recordedById ? visit.recordedById!==me : visit.fc!==me){
+    return 'This verification was recorded by another coordinator, so only they or the office can change it.';
+  }
+  if(_fcLatestRealVisit(f)!==visit){
+    return 'Only the most recent verification can be changed. This one is an earlier visit.';
+  }
+  /* v212 - the office has ruled. Read through fcAdminDecision, the same
+     function that paints the status on the card, so the two cannot disagree. */
+  const dec = fcAdminDecision(f, _fcVisitKind(f,visit), String(visit.recordedAt||visit.date||'').slice(0,10));
+  if(dec && dec.label !== 'Pending Approval'){
+    const kind = _fcVisitKind(f,visit);
+    const when = kind==='seasonal' ? (f.seasonalDecisionAt||f.lastSeasonalReviewAt||'') : (f.decisionAt||'');
+    return 'The office has recorded its decision on this farmer \u2014 ' + dec.label
+         + (when ? ' on ' + fmtDate(when) : '')
+         + '. The verification is locked now, because that decision was taken on these answers. Tell the office if something needs correcting.';
+  }
+  return '';
 }
+function _fcCanEditVisit(f,visit){ return !_fcEditBlockReason(f,visit); }
 function _fcEditNote(visit){
   const eds=(visit&&Array.isArray(visit.edits))?visit.edits:[];
   if(!eds.length) return '';
   const last=eds[eds.length-1];
   return `<div class="fc-edited">\u270f\ufe0f Edited ${esc(fmtStamp(last.at))}${last.by?' by '+esc(last.by):''}${eds.length>1?' \u00b7 '+eds.length+' edits':''}</div>`;
 }
-function _fcVerifActions(f,visit){
-  const canEdit=_fcCanEditVisit(f,visit);
+function _fcVerifActions(f,visit,opts){
+  opts = opts || {};
+  const why = _fcEditBlockReason(f,visit);
+  /* v212 - on the card the missing button is enough; in the modal, where there
+     is room, the coordinator is told which rule stopped them. 'no-verification'
+     and 'not-fc' are structural, not decisions, so they say nothing. */
+  const note = (opts.explain && why && why !== 'no-verification' && why !== 'not-fc')
+    ? `<div class="fc-lockmsg">\ud83d\udd12 ${esc(why)}</div>` : '';
   return `<div class="fc-acts">
     <button type="button" class="fc-actbtn" data-vact="view" data-id="${esc(f.id)}">\ud83d\udcc4 Details</button>
     <button type="button" class="fc-actbtn" data-vact="pdf" data-id="${esc(f.id)}">\u2b07 PDF</button>
-    ${canEdit?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit</button>`:''}
-  </div>`;
+    ${!why?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit</button>`:''}
+  </div>${note}`;
 }
 function _fcActMatch(f,q){
   if(!q) return true;

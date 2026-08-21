@@ -2720,6 +2720,54 @@ function pdfField(label, value){
     + '<div style="font-size:12px;color:#2e1f16;font-weight:600;margin-top:1px;word-break:break-word">' + (value || '—') + '</div>'
     + '</div>';
 }
+/* v209 - html2pdf marks an element "do not split" and then pushes it to the
+   next page with a spacer of height (pageHeight - top % pageHeight), working
+   to pageSize.inner.px.height = 1016. The slicer actually cuts at
+   floor(canvasWidth * ratio) / scale = 1016.5, and every spacer rounds down to
+   a whole device pixel besides, so elements land a little ABOVE the cut and
+   the error grows about half a pixel a page. The top of the row is left behind
+   on the page before - a sliver of text under the footer.
+
+   This runs after that pass, re-measures, and pushes anything still straddling
+   clear of the cut with CLEAR px to spare. It repeats until nothing moves,
+   since its own spacers round too. Inside a table the spacer must be a row. */
+function pdfAvoidSplits(container, pageH){
+  if(!container || !(pageH > 0)) return 0;
+  var CLEAR = 4, total = 0;
+  for(var pass = 0; pass < 4; pass++){
+    var top0 = container.getBoundingClientRect().top;
+    var nodes = container.querySelectorAll('tr:not([data-pdfpad]), div[style*="page-break-inside"]');
+    var moved = 0;
+    for(var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      var r = n.getBoundingClientRect();
+      var top = r.top - top0, h = r.height;
+      if(h <= 0 || h > pageH) continue;   /* taller than a page: it has to break somewhere */
+      if(Math.floor(top / pageH) === Math.floor((top + h - 0.6) / pageH)) continue;
+      var push = (Math.floor(top / pageH) + 1) * pageH - top + CLEAR;
+      var sp;
+      if(n.tagName === 'TR'){
+        sp = document.createElement('tr');
+        var td = document.createElement('td');
+        td.colSpan = n.children.length || 1;
+        td.style.cssText = 'padding:0;border:none';
+        var inner = document.createElement('div');
+        inner.style.height = push + 'px';
+        td.appendChild(inner);
+        sp.appendChild(td);
+      } else {
+        sp = document.createElement('div');
+        sp.style.cssText = 'display:block;height:' + push + 'px';
+      }
+      sp.setAttribute('data-pdfpad', '1');
+      n.parentNode.insertBefore(sp, n);
+      moved++;
+    }
+    total += moved;
+    if(!moved) break;
+  }
+  return total;
+}
 function buildVerificationPdfHtml(lastClaims, summary){
   const rows = [];
   const byId = {};
@@ -2805,6 +2853,7 @@ function downloadVerificationPdf(claims, summary){
        inside ANY element, which with a full-page table pushed whole sections to
        the next page and left half-empty pages. css+legacy honours the
        page-break-inside:avoid on each row, which is what we actually want. */
+    var _pageH = 0;   /* v209 - see the note on pdfAvoidSplits */
     return Promise.resolve(document.fonts && document.fonts.ready).then(function(){
     return window.html2pdf().set({
       filename: pdfFileName(FARMER.name, 'Verification'),
@@ -2813,7 +2862,15 @@ function downloadVerificationPdf(claims, summary){
       html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['css','legacy']},
-    }).from(el).toPdf().get('pdf').then(function(pdf){
+    }).from(el)
+      .toContainer().toCanvas()
+      .then(function(){
+        var _sc = (this.opt.html2canvas && this.opt.html2canvas.scale) || 1;
+        _pageH = Math.floor(this.prop.canvas.width * this.prop.pageSize.inner.ratio) / _sc;
+      })
+      .toContainer()
+      .then(function(){ pdfAvoidSplits(this.prop.container, _pageH); })
+      .toCanvas().toPdf().get('pdf').then(function(pdf){
       /* html2canvas slices ONE tall canvas across the pages, so a footer in the
          HTML would print once. Draw it per page once the pages exist. */
       const total = pdf.internal.getNumberOfPages();
@@ -3389,7 +3446,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v208';
+const APP_VERSION = 'v209';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15959,6 +16016,15 @@ function openCompareFormsModal(id){
       + '<span><b style="color:#a4560c">?</b> \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0 \u00b7 Not checked</span>'
       + '<span><b>\u2014</b> \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0 \u00b7 N/A</span>'
       + '</div>';
+    /* v209 - the FC's note is the first thing a reader wants, so it goes at the
+       top: under the legend, above the first section. It used to be the last
+       thing in the document. */
+    const gc = verif.comments || (verif.summary && verif.summary.comments);
+    if(gc){
+      h += '<div style="font-size:11px;line-height:1.6;margin:0 0 12px;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px;page-break-inside:avoid">'
+        + '<b style="color:#8a6410">FC \u0aa8\u0ac0 \u0aa8\u0acb\u0a82\u0aa7 \u00b7 FC comments</b>'
+        + '<div style="margin-top:3px">' + esc(gc) + '</div></div>';
+    }
     cats.forEach(cat => {
       const catQs = qs.filter(q => q.cat === cat.key && !q.displayOnly);   /* v204 */
       if(!catQs.length) return;
@@ -15994,12 +16060,6 @@ function openCompareFormsModal(id){
       });
       h += '</table>';
     });
-    const gc = verif.comments || (verif.summary && verif.summary.comments);
-    if(gc){
-      h += '<div style="font-size:11px;line-height:1.6;margin:12px 0 0;padding:10px 13px;background:#fffbeb;border:1px solid #f0e0b8;border-radius:7px;page-break-inside:avoid">'
-        + '<b style="color:#8a6410">FC \u0aa8\u0ac0 \u0aa8\u0acb\u0a82\u0aa7 \u00b7 FC comments</b>'
-        + '<div style="margin-top:3px">' + esc(gc) + '</div></div>';
-    }
     return h + '</div>';
   }
 
@@ -16020,6 +16080,10 @@ function openCompareFormsModal(id){
     el.style.width = 'fit-content';   /* v205 - the document's OWN width: 703px for three of these, 760px for the enrolment sheet */
       wrap.appendChild(el);
       document.body.appendChild(wrap);
+      /* v209 - render, read the page height off that canvas, rebuild, push
+         anything that would be sawn through clear of the cut, render again.
+         See the note on pdfAvoidSplits. */
+      let _pageH = 0;
       await window.html2pdf().set({
         filename: pdfFileNameOuter((f.name||'Farmer') + ' Comparison'),
         margin: [12, 12, 16, 12],
@@ -16027,7 +16091,15 @@ function openCompareFormsModal(id){
         html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
         jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
         pagebreak: {mode:['css','legacy']},
-      }).from(el).toPdf().get('pdf')
+      }).from(el)
+        .toContainer().toCanvas()
+        .then(function(){
+          const _sc = (this.opt.html2canvas && this.opt.html2canvas.scale) || 1;
+          _pageH = Math.floor(this.prop.canvas.width * this.prop.pageSize.inner.ratio) / _sc;
+        })
+        .toContainer()
+        .then(function(){ pdfAvoidSplits(this.prop.container, _pageH); })
+        .toCanvas().toPdf().get('pdf')
         .then(pdf => pdfStampFooters(pdf, 'Sristi Prakrutik Khedut Haat  ·  Farmer vs Field Verification'))
         .save();
       wrap.remove();
@@ -20959,6 +21031,54 @@ function pdfStampFooters(pdf, label){
   }
   return pdf;
 }
+/* v209 - html2pdf marks an element "do not split" and then pushes it to the
+   next page with a spacer of height (pageHeight - top % pageHeight), working
+   to pageSize.inner.px.height = 1016. The slicer actually cuts at
+   floor(canvasWidth * ratio) / scale = 1016.5, and every spacer rounds down to
+   a whole device pixel besides, so elements land a little ABOVE the cut and
+   the error grows about half a pixel a page. The top of the row is left behind
+   on the page before - a sliver of text under the footer.
+
+   This runs after that pass, re-measures, and pushes anything still straddling
+   clear of the cut with CLEAR px to spare. It repeats until nothing moves,
+   since its own spacers round too. Inside a table the spacer must be a row. */
+function pdfAvoidSplits(container, pageH){
+  if(!container || !(pageH > 0)) return 0;
+  var CLEAR = 4, total = 0;
+  for(var pass = 0; pass < 4; pass++){
+    var top0 = container.getBoundingClientRect().top;
+    var nodes = container.querySelectorAll('tr:not([data-pdfpad]), div[style*="page-break-inside"]');
+    var moved = 0;
+    for(var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      var r = n.getBoundingClientRect();
+      var top = r.top - top0, h = r.height;
+      if(h <= 0 || h > pageH) continue;   /* taller than a page: it has to break somewhere */
+      if(Math.floor(top / pageH) === Math.floor((top + h - 0.6) / pageH)) continue;
+      var push = (Math.floor(top / pageH) + 1) * pageH - top + CLEAR;
+      var sp;
+      if(n.tagName === 'TR'){
+        sp = document.createElement('tr');
+        var td = document.createElement('td');
+        td.colSpan = n.children.length || 1;
+        td.style.cssText = 'padding:0;border:none';
+        var inner = document.createElement('div');
+        inner.style.height = push + 'px';
+        td.appendChild(inner);
+        sp.appendChild(td);
+      } else {
+        sp = document.createElement('div');
+        sp.style.cssText = 'display:block;height:' + push + 'px';
+      }
+      sp.setAttribute('data-pdfpad', '1');
+      n.parentNode.insertBefore(sp, n);
+      moved++;
+    }
+    total += moved;
+    if(!moved) break;
+  }
+  return total;
+}
 /* html2canvas photographs the element as it stands. If the Gujarati face has
    not arrived, the picture is taken in the fallback font and nothing later can
    fix it. */
@@ -21035,6 +21155,7 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
     wrap.appendChild(el);
     document.body.appendChild(wrap);
     await pdfWaitForFont();
+    let _pageH = 0;   /* v209 - see the note on pdfAvoidSplits */
     await window.html2pdf().set({
       filename: pdfFileNameOuter(f.name),
       margin: [12, 12, 16, 12],
@@ -21042,7 +21163,15 @@ async function downloadFarmerPdfOuter(f, claims, title, btnEl){
       html2canvas: {scale:2, useCORS:true, backgroundColor:'#ffffff', scrollX:0, scrollY:0},
       jsPDF: {unit:'mm', format:'a4', orientation:'portrait'},
       pagebreak: {mode:['css','legacy']},
-    }).from(el).toPdf().get('pdf')
+    }).from(el)
+      .toContainer().toCanvas()
+      .then(function(){
+        const _sc = (this.opt.html2canvas && this.opt.html2canvas.scale) || 1;
+        _pageH = Math.floor(this.prop.canvas.width * this.prop.pageSize.inner.ratio) / _sc;
+      })
+      .toContainer()
+      .then(function(){ pdfAvoidSplits(this.prop.container, _pageH); })
+      .toCanvas().toPdf().get('pdf')
       .then(pdf => pdfStampFooters(pdf, 'Sristi Prakrutik Khedut Haat  \u00b7  ' + title))
       .save();
     wrap.remove();

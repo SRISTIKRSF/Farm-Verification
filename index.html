@@ -3793,7 +3793,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v217';
+const APP_VERSION = 'v218';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5426,6 +5426,12 @@ const isAttention   = x => !!(x && x._attention);
    the farmer stayed at verification_pending on every other device. Storing
    JSON strings makes the snapshot immune to mutation. */
 const SYNC_COLS=['haatFarmers','convFarmers','fcs','incomeRecords','pendingEnrolments','verificationPlans'];
+/* v218 - fields only the office may set. A device sending work it did while it
+   could not reach the server must never write these: its copy of them is, by
+   definition, from before whatever the office decided in the meantime. Used by
+   both saveDB (v218b) and flushOfflineWrites (v218a). */
+const OFFICE_OWNED_FIELDS = ['status','haat','active','stage',
+  'decisionAt','decisionBy','decisionById','decisionByRole','decisionNote','decisionHistory'];
 function snapCol(arr){const m={};(arr||[]).forEach(r=>{if(r&&r.id)m[r.id]=JSON.stringify(_stripEphemeral(r));});return m;}
 function snapAll(){const s={};SYNC_COLS.forEach(col=>{s[col]=snapCol(DB[col]||[]);});return s;}
 /* v(scale-audit) — durable "not yet confirmed synced to Firebase" tracker.
@@ -5564,6 +5570,35 @@ function _fbWriteGuard(p, ms){
    it. Online, be generous: a slow but real connection must be allowed to win,
    because a spurious timeout writes the same record twice. */
 function _fbWriteWaitMs(){ return navigator.onLine ? 8000 : 1500; }
+/* v218e - what does the SERVER say about this farmer's decision?
+
+   Deliberately REST and not fbRef(...).get(). With a listener attached to an
+   ancestor path - and this app listens to haatFarmers - the SDK answers get()
+   from its own in-memory cache. Asking it whether our copy is stale returns
+   our copy. That circularity is why an onboarding was still being overwritten
+   two attempts into fixing this.
+
+   Returns {ok:false} when it could not find out, and the caller must treat
+   that as "do not touch the office's fields", never as "there is no decision". */
+async function _serverDecisionAt(col, id){
+  try{
+    if(!navigator.onLine) return {ok:false};
+    const u = (firebase.auth && firebase.auth().currentUser) || null;
+    if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return {ok:false};
+    const tok = await u.getIdToken();
+    const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    let res;
+    try{
+      res = await fetch(base + '/' + col + '/' + id + '/decisionAt.json?auth=' + encodeURIComponent(tok),
+                        {signal: ctrl.signal, cache: 'no-store'});
+    } finally { clearTimeout(timer); }
+    if(!res || !res.ok) return {ok:false};
+    const v = await res.json();
+    return {ok:true, at: (v === null || v === undefined) ? null : String(v)};
+  }catch(e){ return {ok:false}; }
+}
 async function saveDB(silent){
   cacheLocal();
   /* v113 SAFETY — public mode must never run the whole-database sync.
@@ -5589,6 +5624,9 @@ async function saveDB(silent){
   const updates={};
   const snap={};
   const dirty=[];
+  /* v218b - farmer records with no baseline, resolved against the server just
+     before the write. See the note in the diff below. */
+  const _officeCheck=[];
   // v105 — safety net alongside the _lastSnap live-sync fix above: even with
   // that root cause closed, a diff-based delete is a blunt instrument — ANY
   // future bug that leaves DB[col] smaller than _lastSnap thinks it should be
@@ -5643,10 +5681,44 @@ async function saveDB(silent){
     Object.keys(cur).forEach(id=>{
       const s=JSON.stringify(cur[id]);
       sc[id]=s;
-      if(prev[id]!==s){
-        updates[col+'/'+id]=JSON.parse(s);   // parse(s) == deep copy with undefined stripped
-        dirty.push([col,id]);
+      if(prev[id]===s) return;
+      /* v218b - express the change as FIELDS, not as a whole node.
+         `updates['haatFarmers/'+id] = rec` replaces the entire node, so any
+         field this device happens to hold an old value for is overwritten -
+         which is how an onboarding decided in the office was deleted by a
+         coordinator's device minutes later. */
+      const curObj = JSON.parse(s);          // deep copy with undefined stripped
+      let prevObj = null;
+      if(prev[id] !== undefined){ try{ prevObj = JSON.parse(prev[id]); }catch(e){ prevObj = null; } }
+      /* Firebase paths cannot contain . # $ [ ] / - if any key would build an
+         illegal path, fall back to the old whole-node write rather than
+         silently dropping the field. */
+      const _pathSafe = o => Object.keys(o||{}).every(k => !/[.#$\[\]/]/.test(k));
+      const _isFarmerCol = (col==='haatFarmers'||col==='convFarmers');
+      if(prevObj && typeof prevObj === 'object' && _pathSafe(curObj) && _pathSafe(prevObj)){
+        /* v218c - a verification legitimately changes `stage`, and so does the
+           office's decision. Both authors are real, so ownership cannot settle
+           it - time does. Office-owned fields go through the same server check
+           as the no-baseline case below; everything else goes straight out. */
+        const _off = {};
+        Object.keys(curObj).forEach(k=>{
+          if(JSON.stringify(curObj[k]) === JSON.stringify(prevObj[k])) return;
+          if(_isFarmerCol && OFFICE_OWNED_FIELDS.indexOf(k) >= 0) _off[k]=curObj[k];
+          else updates[col+'/'+id+'/'+k]=curObj[k];
+        });
+        Object.keys(prevObj).forEach(k=>{
+          if(!(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
+        });
+        if(Object.keys(_off).length) _officeCheck.push({col:col, id:id, obj:_off, mine:curObj.decisionAt||null});
+      } else if(_isFarmerCol && _pathSafe(curObj)){
+        /* No baseline: either a brand-new record, or one _excludePendingFromSnap
+           dropped so offline work would re-send. Whether the office-owned fields
+           may go out is decided against the server, below. */
+        _officeCheck.push({col:col, id:id, obj:curObj, mine:curObj.decisionAt||null});
+      } else {
+        updates[col+'/'+id]=curObj;
       }
+      dirty.push([col,id]);
     });
     // deleted records
     const allMissing = Object.keys(prev).filter(id=>!cur[id]);
@@ -5724,6 +5796,42 @@ async function saveDB(silent){
      of the haat/crop/month lists over the server's. */
   ['haats','crops','months','states','convParams'].forEach(function(k){ updates['meta/'+k]=sanitizeForFB(DB[k]); });
   updates['meta/settings']=sanitizeForFB(DB.settings||{});
+  /* v218b - for each farmer record we have no baseline for, ask the server one
+     question: has anyone recorded a decision on this farmer, and is it newer
+     than mine? If so this device is carrying a stale copy of the office's work
+     and must not send those fields. If not - a new enrolment, or this device IS
+     the one that decided - everything goes. One field, a few bytes, and only
+     for records that are actually in this state. */
+  const _officeRetry=[];
+  for(let _i=0;_i<_officeCheck.length;_i++){
+    const _it=_officeCheck[_i];
+    /* v218d - CONFIRMED means the read came back, not merely that it was
+       attempted; v218e - and it must come from the SERVER, not from the SDK's
+       cache of what this device already believes. */
+    const _sd = await _serverDecisionAt(_it.col, _it.id);
+    const _confirmed = !!_sd.ok;
+    const _srvDec = _sd.ok ? _sd.at : null;
+    const _mine=_it.mine||null;
+    const _iDecided = _confirmed && (!_srvDec || (_mine && new Date(_mine).getTime() >= new Date(_srvDec).getTime()));
+    if(!_iDecided){
+      if(_confirmed){
+        console.warn('[Sristi] v218 - '+_it.id+' was decided in the office after this copy was taken; '
+                   + 'sending this device\'s field work only, leaving the decision alone.');
+      } else {
+        /* Could not check. Hold those fields back and make sure we come again:
+           drop the record from the new snapshot so it re-diffs, and keep it
+           marked pending so a reconnect actually triggers that save. */
+        if(snap[_it.col]) delete snap[_it.col][_it.id];
+        _officeRetry.push([_it.col,_it.id]);
+        console.warn('[Sristi] v218 - could not read the office decision for '+_it.id
+                   + '; holding those fields back and retrying on the next save.');
+      }
+    }
+    Object.keys(_it.obj).forEach(k=>{
+      if(!_iDecided && OFFICE_OWNED_FIELDS.indexOf(k) >= 0) return;
+      updates[_it.col+'/'+_it.id+'/'+k]=_it.obj[k];
+    });
+  }
   // shield in-flight records so the Firebase echo can't revert them mid-write
   dirty.forEach(([col,id])=>markLocalTouch(col,id));
   // v(scale-audit) — mark BEFORE the write attempt, not after: Firebase's
@@ -5772,6 +5880,9 @@ async function saveDB(silent){
     // If we're still offline when this resolves, leave it marked pending so
     // a reload before reconnecting doesn't lose track of it.
     if(navigator.onLine) dirty.forEach(([col,id])=>clearPendingSync(col,id));
+    /* v218d - except the ones whose office fields we could not check: they are
+       not finished, and clearing them would strand an admin's offline decision. */
+    _officeRetry.forEach(([col,id])=>markPendingSync(col,id));
   }catch(e){
     console.error('[Sristi] cloud save failed:',e);
     setSyncPill('error');
@@ -6508,7 +6619,42 @@ async function flushOfflineWrites(){
     for(const it of items){
       try{
         markLocalTouch(it.col, it.id, 10000);
-        await fbRef(it.col+'/'+it.id).set(it.rec);
+        /* Anything that is not a farmer record - the verifIndex marker, for
+           one - is a single value the device genuinely owns. Unchanged. */
+        if(it.col !== 'haatFarmers' && it.col !== 'convFarmers'){
+          await fbRef(it.col+'/'+it.id).set(it.rec);
+          await idbDel('offlineWrites', it.key);
+          continue;
+        }
+        /* v218 - has the office ruled on this farmer since the copy was taken?
+           Reading one field costs a few bytes and decides whether this replay
+           is allowed near the decision at all. */
+        let _decAt = null;
+        try{
+          const _g = await _fbWriteGuard(fbRef(it.col+'/'+it.id+'/decisionAt').get(), _fbWriteWaitMs());
+          if(!_g.timedOut && _g.value && _g.value.exists()) _decAt = _g.value.val();
+        }catch(e){}
+        const _officeRuledLater = !!(_decAt && (!it.at || new Date(_decAt).getTime() > Number(it.at)));
+
+        let patch;
+        if(Array.isArray(it.fields) && it.fields.length){
+          /* Queued by a visit or a verification: write ONLY what that action
+             changed. A field the action removed (the verification lock) is
+             sent as null so it is removed here too. */
+          patch = {};
+          it.fields.forEach(k => { patch[k] = (it.rec && it.rec[k] !== undefined) ? it.rec[k] : null; });
+        } else {
+          /* Queued before v218, or by an enrolment. Send the record, but as an
+             update, never a set: fields this device never knew about survive. */
+          patch = Object.assign({}, it.rec);
+          delete patch.id;
+        }
+        if(_officeRuledLater){
+          OFFICE_OWNED_FIELDS.forEach(k => { delete patch[k]; });
+          console.warn('[Sristi] v218 - the office ruled on ' + it.id + ' after this copy was taken; '
+                     + 'replaying the field work only, leaving the decision alone.');
+        }
+        if(Object.keys(patch).length) await fbRef(it.col+'/'+it.id).update(patch);
         await idbDel('offlineWrites', it.key);
       }catch(e){ console.warn('[Sristi] offline write flush failed (will retry):', e); }
     }
@@ -9179,7 +9325,10 @@ function openConvScoreModal(id){
     _fcAutoCompletePlan(f.id, 'conv', vdate, vfc);
     f.lastVisitAt = vdate;
     f.nextVisitDue = vnext;
-    if(!f.fcId && vfc){ f.fcId = vfc; f.assignedAt = vdate; }
+    /* v218 - remember whether this save is what assigned the coordinator, so
+       the replay only claims that field when it genuinely set it. */
+    let _cvSetFc = false;
+    if(!f.fcId && vfc){ f.fcId = vfc; f.assignedAt = vdate; _cvSetFc = true; }
     window._vsPhotosCapture = null;
     if(typeof logActivity === 'function'){
       logActivity('status', 'Visit updated for <b>' + esc(f.name) + '</b> — ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label);
@@ -9202,7 +9351,11 @@ function openConvScoreModal(id){
          the durable queue to skip rows another path had already sent, and
          getting that wrong loses the visit - which is the thing this exists to
          prevent. Not worth 1.3 KB. */
-      await idbPut('offlineWrites', {key:'convFarmers/'+f.id, col:'convFarmers', id:f.id, rec:_cvRow})
+      const _cvFields = ['visits','conversionScoring','conversionScoringHistory','chemFreeFlag',
+                         'stage','transitionStatus','lastVisitAt','nextVisitDue']
+                        .concat(_cvSetFc ? ['fcId','assignedAt'] : []);
+      await idbPut('offlineWrites', {key:'convFarmers/'+f.id, col:'convFarmers', id:f.id,
+                                     at: Date.now(), fields: _cvFields, rec:_cvRow})
         .catch(() => { try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); }catch(e){} });
     }
     closeModal();
@@ -21058,7 +21211,13 @@ window.addEventListener('message',async ev=>{
         const _vSynced = await saveDB(true);
         window._lastVerifSynced = !!_vSynced;
         if(!_vSynced){
-          await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))})
+          /* v218 - name what this verification actually changed, so the replay
+             cannot carry a stale copy of anything else (an onboarding decided
+             while this sat in the queue, above all). */
+          await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id,
+                                         at: Date.now(),
+                                         fields: ['verificationFormSubmittedAt','visits','stage','verificationLock','formsRev'],
+                                         rec:sanitizeForFB(_stripEphemeral(f))})
             .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); });
           /* v216 - and make the durable marker actually durable. verifIndex is
              not in SYNC_COLS, so saveDB never carries it; markVerificationSubmitted

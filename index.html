@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v221';
+const APP_VERSION = 'v222';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5071,6 +5071,12 @@ function normaliseDB(d){
   try{
     const now = new Date().toISOString().slice(0,7);
     if(Array.isArray(d.months) && d.months.length && !d.months.includes(now)){
+      /* v222 - COPY first. This array is the snapshot's own object, and
+         _metaNoteFromServer has already recorded it as what the server holds.
+         Pushing onto it in place meant the next snapshot recorded this app's
+         own extension as server truth, so meta/months could never be written
+         again. */
+      d.months = d.months.slice();
       let [y,m] = String(d.months[d.months.length-1]).split('-').map(Number);
       let guard = 0;
       while(guard++ < 240){
@@ -5095,6 +5101,9 @@ function normaliseDB(d){
   }
   // back-compat: if someone has only batteryWeights stored, fold weights into practices
   if(d.settings.batteryWeights){
+    /* v222 - copy before dropping the legacy key, for the same reason as
+       d.months above: this object is the snapshot's own. */
+    d.settings = Object.assign({}, d.settings);
     const w=d.settings.batteryWeights;
     d.settings.practices.forEach(p=>{ if(p.key in w) p.weight=+w[p.key]||0; });
     delete d.settings.batteryWeights;
@@ -5188,7 +5197,12 @@ function mapToArr(m){
   if(!m) return [];
   return Object.keys(m).map(k => {
     const r = m[k];
-    if(r && typeof r === 'object' && !r.id) r.id = k;
+    /* v222 - COPY rather than stamp the id onto the snapshot's own object.
+       _activityNoteFromServer records what the server reported straight off
+       this map; mutating it here meant the app's own correction was recorded
+       as server truth on the next fire, and could then never be written.
+       Only the rare id-less record allocates - the normal path is untouched. */
+    if(r && typeof r === 'object' && !r.id) return Object.assign({}, r, {id: k});
     return r;
   });
 }
@@ -5219,15 +5233,76 @@ let _blobCleanupDone=false;
    tell a real edit from a re-send. Keyed the same as the meta children. */
 const _metaSeenFromServer = {};
 const META_LISTS = ['haats','crops','months','states','convParams','juths'];
+/* v222 - key-SORTED serialisation. Both baselines below compare what we hold
+   against what the server reported, and plain JSON.stringify is key-order
+   sensitive: Firebase hands objects back in whatever order they arrived on the
+   wire, which need not match the order this device builds them in. Getting
+   that wrong does not lose anything - the value is simply written again and
+   the baseline then agrees - but it would quietly undo the saving for anything
+   another device had written. */
+function _stableJson(v){
+  /* Returns undefined if it cannot serialise, and every caller treats that as
+     "cannot compare, so write it" - the safe direction. It must not throw: the
+     meta comparisons run OUTSIDE saveDB's try block, so an exception here would
+     kill a save with no toast, no retry and no pending marker. The replacer
+     hands back a fresh object each time, which also defeats JSON.stringify's
+     own cycle detection - a cyclic value blows the stack rather than raising
+     the catchable TypeError. */
+  try{
+    return JSON.stringify(v, function(k, val){
+      if(val && typeof val === 'object' && !Array.isArray(val)){
+        const out = {};
+        Object.keys(val).sort().forEach(function(kk){ out[kk] = val[kk]; });
+        return out;
+      }
+      return val;
+    });
+  }catch(e){ return undefined; }
+}
 function _metaNoteFromServer(meta){
   if(!meta || typeof meta !== 'object') return;
   META_LISTS.forEach(function(k){
-    if(meta[k] !== undefined) _metaSeenFromServer[k] = JSON.stringify(meta[k]);
+    if(meta[k] === undefined) return;
+    const j = _stableJson(meta[k]);
+    if(j !== undefined) _metaSeenFromServer[k] = j;
   });
-  if(meta.settings !== undefined) _metaSeenFromServer.settings = JSON.stringify(meta.settings);
+  if(meta.settings !== undefined){
+    const j = _stableJson(meta.settings);
+    if(j !== undefined) _metaSeenFromServer.settings = j;
+  }
+}
+/* v222 - what the server last reported for each activity entry, so a save can
+   tell a new line from one it has already sent. Entries are append-only, so in
+   practice each is written exactly once. */
+const _activitySeenFromServer = {};
+/* v222 - only ever set from what the SERVER reported. Nothing a save writes is
+   folded in here optimistically.
+
+   The first cut did fold it in as soon as update() resolved. saveDB gates
+   clearPendingSync on navigator.onLine twelve lines above with the note
+   "update() can resolve optimistically while offline" - so the file held two
+   contradictory beliefs about a resolved write and this was the one that could
+   lose an entry. v216's finding (a write promise never settles with no signal)
+   says the latch was in fact safe, but it buys almost nothing: without it an
+   entry is re-sent only until the listener echoes it back, one round trip, and
+   every save after that is unchanged at zero. This way no argument about SDK
+   semantics is needed to see that an entry cannot be lost. */
+let _activityLastMap = null;
+function _activityNoteFromServer(map){
+  if(!map || typeof map !== 'object') return;
+  /* The same snapshot object arrives again whenever ANY other collection
+     fires. Walking 300 entries each time is real work on a cheap phone. */
+  if(map === _activityLastMap) return;
+  _activityLastMap = map;
+  Object.keys(map).forEach(function(id){
+    if(!map[id]) return;
+    const j = _stableJson(map[id]);
+    if(j !== undefined) _activitySeenFromServer[id] = j;
+  });
 }
 function cloudToDB(c){
   _metaNoteFromServer(c && c.meta);
+  _activityNoteFromServer(c && c.activity);   /* v222 */
   // v18c — if any RTDB farmer records still have large form blobs (enrollmentFormFull /
   // verificationFormFull), delete them in a single multi-path update so future downloads
   // are lean. This is the permanent fix for the renderer-freeze caused by FB downloading
@@ -6036,7 +6111,32 @@ async function saveDB(silent){
   // node, so two devices saving within the same window don't clobber each other's
   // just-added log lines. Entries have stable ids; the listener rebuilds the array
   // from the keyed map (sorted by ts).
-  (DB.activity||[]).forEach(a=>{ if(a&&a.id) updates['activity/'+a.id]=sanitizeForFB(a); });
+  /* v222 - only the entries the server has not already got. This used to write
+     every entry on every save: measured at 4,773 bytes for 22 entries, three
+     consecutive saves byte-identical, against a farmer edit of about 45 bytes.
+     At the 300-entry live cap it is roughly 65KB per save.
+     Log entries are append-only - logActivity() creates them and nothing edits
+     one afterwards - so each is written once and never again. A changed entry
+     would still be caught, because this compares content, not just presence. */
+  /* v222 - which entries are about to be archived out of activity/. Worked out
+     BEFORE the write loop, because an entry leaving activity/ must not be
+     written to activity/ first. Doing it the other way round cost 1,750 bytes
+     on every save of a full log: the value went in, and the null two blocks
+     below overwrote it in the same update. */
+  const _actSorted = (DB.activity||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const _actLeaving = {};
+  if(_actSorted.length > ACTIVITY_LIVE_CAP){
+    _actSorted.slice(ACTIVITY_LIVE_CAP).forEach(a=>{ if(a && a.id) _actLeaving[a.id] = 1; });
+  }
+  (DB.activity||[]).forEach(a=>{
+    if(!a || !a.id) return;
+    if(_actLeaving[a.id]) return;
+    const clean = sanitizeForFB(a);
+    const j = _stableJson(clean);
+    /* undefined means it could not be serialised for comparison - write it. */
+    if(j !== undefined && _activitySeenFromServer[a.id] === j) return;
+    updates['activity/'+a.id] = clean;
+  });
   // v(scale-audit) — the live activity/ node used to grow unbounded in the
   // cloud (each client only capped its OWN in-memory view; nothing ever
   // deleted from Firebase). Every device's live listener downloads the full
@@ -6046,12 +6146,16 @@ async function saveDB(silent){
   // NOT subscribed to by the live listener, so it costs nothing day-to-day —
   // rather than deleted outright, so the accountability trail (actorName/
   // actorId/actorRole stamped on every entry) survives.
-  const sortedActivity = (DB.activity||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const sortedActivity = _actSorted;   /* v222 - sorted once, above */
   if(sortedActivity.length > ACTIVITY_LIVE_CAP){
     sortedActivity.slice(ACTIVITY_LIVE_CAP).forEach(a=>{
       if(!a || !a.id) return;
       updates['activityArchive/'+a.id]=sanitizeForFB(a);
       updates['activity/'+a.id]=null;
+      /* v222 - this id is leaving activity/, so forget what the server held for
+         it. Re-archiving stops as soon as the listener trims DB.activity; until
+         then it repeats, which is what v221 did anyway. */
+      delete _activitySeenFromServer[a.id];
     });
   }
   /* v185 - this used to be updates['meta'] = {...}. A multi-path update() keyed
@@ -6071,19 +6175,17 @@ async function saveDB(silent){
      Compared against what the server last reported, not against the last thing
      this device sent, so a device that never edits a list never writes it and
      therefore cannot push its own stale copy over someone else's edit. */
-  const _metaWrote = {};
   META_LISTS.forEach(function(k){
     if(DB[k] === undefined) return;
-    const j = JSON.stringify(DB[k]);
-    if(_metaSeenFromServer[k] === j) return;
+    const j = _stableJson(DB[k]);
+    /* undefined means it could not be serialised for comparison - write it. */
+    if(j !== undefined && _metaSeenFromServer[k] === j) return;
     updates['meta/'+k] = sanitizeForFB(DB[k]);
-    _metaWrote[k] = j;
   });
   (function(){
-    const j = JSON.stringify(DB.settings||{});
-    if(_metaSeenFromServer.settings !== j){
+    const j = _stableJson(DB.settings||{});
+    if(j === undefined || _metaSeenFromServer.settings !== j){
       updates['meta/settings'] = sanitizeForFB(DB.settings||{});
-      _metaWrote.settings = j;
     }
   })();
   /* v218b - for each farmer record we have no baseline for, ask the server one
@@ -6170,9 +6272,17 @@ async function saveDB(silent){
     // If we're still offline when this resolves, leave it marked pending so
     // a reload before reconnecting doesn't lose track of it.
     if(navigator.onLine) dirty.forEach(([col,id])=>clearPendingSync(col,id));
-    /* v220 - the lists we just sent are now what the server holds, so the next
-       save has nothing to say about them. */
-    Object.keys(_metaWrote).forEach(function(k){ _metaSeenFromServer[k] = _metaWrote[k]; });
+    /* v222 - nothing this save wrote is folded into either baseline. Both are
+       set only from what the SERVER reports, which arrives on the live listener
+       a moment later; until it does, the entry is simply written again. See the
+       note on _activitySeenFromServer for why that is worth a round trip.
+       The baselines are still PRUNED here: ids no longer in the live log would
+       otherwise accumulate over a long session. */
+    (function(){
+      const live = {};
+      (DB.activity||[]).forEach(function(a){ if(a && a.id) live[a.id] = 1; });
+      Object.keys(_activitySeenFromServer).forEach(function(id){ if(!live[id]) delete _activitySeenFromServer[id]; });
+    })();
     /* v218d - except the ones whose office fields we could not check: they are
        not finished, and clearing them would strand an admin's offline decision. */
     _officeRetry.forEach(([col,id])=>markPendingSync(col,id));

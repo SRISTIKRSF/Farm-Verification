@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v219';
+const APP_VERSION = 'v220';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5215,7 +5215,19 @@ function _stripEphemeral(r){
 function _stripReplacer(k, v){ return FORM_FIELDS.includes(k) ? undefined : v; }
 function arrToMap(a){const m={};(a||[]).forEach(r=>{if(r&&r.id)m[r.id]=_stripEphemeral(r);});return m;}
 let _blobCleanupDone=false;
+/* v220 - the reference lists as the SERVER last reported them, so saveDB can
+   tell a real edit from a re-send. Keyed the same as the meta children. */
+const _metaSeenFromServer = {};
+const META_LISTS = ['haats','crops','months','states','convParams','juths'];
+function _metaNoteFromServer(meta){
+  if(!meta || typeof meta !== 'object') return;
+  META_LISTS.forEach(function(k){
+    if(meta[k] !== undefined) _metaSeenFromServer[k] = JSON.stringify(meta[k]);
+  });
+  if(meta.settings !== undefined) _metaSeenFromServer.settings = JSON.stringify(meta.settings);
+}
 function cloudToDB(c){
+  _metaNoteFromServer(c && c.meta);
   // v18c — if any RTDB farmer records still have large form blobs (enrollmentFormFull /
   // verificationFormFull), delete them in a single multi-path update so future downloads
   // are lean. This is the permanent fix for the renderer-freeze caused by FB downloading
@@ -5248,6 +5260,11 @@ function cloudToDB(c){
     haats:c.meta&&c.meta.haats, crops:c.meta&&c.meta.crops,
     months:c.meta&&c.meta.months, states:c.meta&&c.meta.states,
     convParams:c.meta&&c.meta.convParams,
+    /* v220 - the farmer groups / FPCs a farmer can belong to. A list rather
+       than free text: typed by hand it fragments into "Mithi Virdi Juth",
+       "Mithi virdi juth" and "MithiVirdi", and then the filter finds a third
+       of the farmers and looks broken. */
+    juths:(c.meta&&c.meta.juths)||[],
     settings:(c.meta&&c.meta.settings)||{},
     activity:mapToArr(c.activity).sort((a,b)=>b.ts-a.ts),
     // v8.1 fix: income records were not being read from Firebase, so on every
@@ -6048,8 +6065,27 @@ async function saveDB(silent){
      Writing the children individually leaves sibling keys alone. It also removes
      a stale-cache risk: replacing the node pushed this device's localStorage copy
      of the haat/crop/month lists over the server's. */
-  ['haats','crops','months','states','convParams'].forEach(function(k){ updates['meta/'+k]=sanitizeForFB(DB[k]); });
-  updates['meta/settings']=sanitizeForFB(DB.settings||{});
+  /* v220 - and only when they have actually changed. Measured on the live
+     database, re-sending them unconditionally cost 12,976 bytes on EVERY save
+     - the crop list alone is 8,020 - for lists that change a few times a year.
+     Compared against what the server last reported, not against the last thing
+     this device sent, so a device that never edits a list never writes it and
+     therefore cannot push its own stale copy over someone else's edit. */
+  const _metaWrote = {};
+  META_LISTS.forEach(function(k){
+    if(DB[k] === undefined) return;
+    const j = JSON.stringify(DB[k]);
+    if(_metaSeenFromServer[k] === j) return;
+    updates['meta/'+k] = sanitizeForFB(DB[k]);
+    _metaWrote[k] = j;
+  });
+  (function(){
+    const j = JSON.stringify(DB.settings||{});
+    if(_metaSeenFromServer.settings !== j){
+      updates['meta/settings'] = sanitizeForFB(DB.settings||{});
+      _metaWrote.settings = j;
+    }
+  })();
   /* v218b - for each farmer record we have no baseline for, ask the server one
      question: has anyone recorded a decision on this farmer, and is it newer
      than mine? If so this device is carrying a stale copy of the office's work
@@ -6134,6 +6170,9 @@ async function saveDB(silent){
     // If we're still offline when this resolves, leave it marked pending so
     // a reload before reconnecting doesn't lose track of it.
     if(navigator.onLine) dirty.forEach(([col,id])=>clearPendingSync(col,id));
+    /* v220 - the lists we just sent are now what the server holds, so the next
+       save has nothing to say about them. */
+    Object.keys(_metaWrote).forEach(function(k){ _metaSeenFromServer[k] = _metaWrote[k]; });
     /* v218d - except the ones whose office fields we could not check: they are
        not finished, and clearing them would strand an admin's offline decision. */
     _officeRetry.forEach(([col,id])=>markPendingSync(col,id));
@@ -12615,6 +12654,10 @@ function viewHaat(){
     <select id="fCrop"><option value="">All crops</option>
       ${(window.CROPS_CATALOG||[]).filter(x=>x!=='Other (અન્ય)').map(x=>`<option ${F.crop===x?'selected':''}>${esc(x)}</option>`).join('')}
     </select>
+    ${getJuthList().length?`<select id="fJuth"><option value="">All juths / FPCs</option>
+      <option value="__none__" ${F.juth==='__none__'?'selected':''}>— No juth —</option>
+      ${getJuthList().map(j=>`<option value="${esc(j)}" ${F.juth===j?'selected':''}>${esc(j)}</option>`).join('')}
+    </select>`:''}
     <select id="fActive"><option value="">Active & inactive</option>
       <option value="1" ${F.active==='1'?'selected':''}>Active only</option>
       <option value="0" ${F.active==='0'?'selected':''}>Inactive only</option>
@@ -12636,6 +12679,10 @@ function viewHaat(){
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
+  /* v220 - "no juth" is the one people ask for first: which farmers have I not
+     put into a group yet. */
+  if(F.juth==='__none__') rows=rows.filter(r=>!String(r.juth||'').trim());
+  else if(F.juth) rows=rows.filter(r=>String(r.juth||'')===F.juth);
   /* v194 - matches on the SAME rule the column shows: the stamped coordinator
      if there is one, otherwise the district's. "No coordinator" means neither. */
   if(F.fc==='__none__') rows=rows.filter(r=>!farmerFcInfo(r).fc);
@@ -12739,7 +12786,7 @@ function viewHaat(){
   /* ---- secondary filter wiring ---- */
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
   setF('haat','fHaat');setF('state','fState');setF('district','fDistrict');
-  setF('crop','fCrop');setF('active','fActive');setF('fc','fFc');
+  setF('crop','fCrop');setF('active','fActive');setF('fc','fFc');setF('juth','fJuth');
   $('#clearF').onclick=()=>{FILTERS.haat={};render();};
   $('#exportHaat').onclick=()=>exportHaatCSV(rows);
 }
@@ -12868,7 +12915,7 @@ function exportHaatCSV(rows){
     certification:f.certification||'',
     field_coordinator:((farmerFcInfo(f).fc)||{}).name||'',
     fc_source:f.fcId?'assigned':(farmerFcInfo(f).fc?'by district':''),
-    haat:f.haat||'',status:haatStatusMeta(f).label,
+    haat:f.haat||'',juth:f.juth||'',status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
   }));
@@ -12880,6 +12927,7 @@ function exportConvCSV(rows){
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
     field_coordinator:(fcById(f.fcId)||{}).name||'',mobilizer:mobilizerNameById(f.mobilizerId),
+    juth:f.juth||'',
     category:convCategory(f),
     last_visit:f.lastVisitAt||'',next_visit_due:f.nextVisitDue||'',
     joined_month_year:farmerJoinedLabel(f),
@@ -13544,6 +13592,10 @@ function viewConversion(){
       <option value="__none__" ${F.mob==='__none__'?'selected':''}>— No mobilizer —</option>
       ${mobilizerChoices().map(m=>`<option value="${esc(m.id)}" ${F.mob===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}
     </select>
+    ${getJuthList().length?`<select id="cJuth"><option value="">All juths / FPCs</option>
+      <option value="__none__" ${F.juth==='__none__'?'selected':''}>— No juth —</option>
+      ${getJuthList().map(j=>`<option value="${esc(j)}" ${F.juth===j?'selected':''}>${esc(j)}</option>`).join('')}
+    </select>`:''}
     <button class="chip" id="cClear">Clear all filters</button>
   </div>`;
   // v8 — role filter: FC users see only their own farmers.
@@ -13558,6 +13610,9 @@ function viewConversion(){
   else if(F.fc) rows=rows.filter(r=>r.fcId===F.fc);
   if(F.mob==='__none__') rows=rows.filter(r=>!r.mobilizerId);
   else if(F.mob) rows=rows.filter(r=>r.mobilizerId===F.mob);
+  /* v220 */
+  if(F.juth==='__none__') rows=rows.filter(r=>!String(r.juth||'').trim());
+  else if(F.juth) rows=rows.filter(r=>String(r.juth||'')===F.juth);
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
   if(window._q){const q=window._q.toLowerCase();
     rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q));}
@@ -13653,7 +13708,7 @@ function viewConversion(){
     if(b.dataset.act === 'score') openConvScoreModal(b.dataset.id);
   });
   const setF=(k,id)=>{const el=$('#'+id);if(el)el.onchange=e=>{F[k]=e.target.value;F.page=0;render();};};
-  setF('state','cState');setF('district','cDistrict');setF('fc','cFc');setF('mob','cMobF');
+  setF('state','cState');setF('district','cDistrict');setF('fc','cFc');setF('mob','cMobF');setF('juth','cJuth');
   const cAutoBtn=$('#cAuto'); if(cAutoBtn) cAutoBtn.onclick=openAutoAssignFcModal;
   const cBulkBtn=$('#cBulk'); if(cBulkBtn) cBulkBtn.onclick=openBulkAssignModal;
   const cMoveBtn=$('#cMove'); if(cMoveBtn) cMoveBtn.onclick=openReassignFcModal;
@@ -15903,6 +15958,7 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fcCellHtml(f)}</div></div>
     <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
+    <div class="detail-cell"><div class="k">Juth / FPC</div><div class="v">${f.juth?esc(f.juth):'<span style="color:var(--ink-faint)">—</span>'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
       <div class="v">${f.crops.map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')}</div></div>
@@ -16161,6 +16217,7 @@ function openConvDrawer(id){
     <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
     <div class="detail-cell"><div class="k">Mobilizer</div><div class="v">${mobName?esc(mobName):'<span style="color:var(--ink-faint)">— None —</span>'}</div></div>
+    <div class="detail-cell"><div class="k">Juth / FPC</div><div class="v">${f.juth?esc(f.juth):'<span style="color:var(--ink-faint)">—</span>'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell"><div class="k">Last visit</div><div class="v">${f.lastVisitAt?fmtDate(f.lastVisitAt):'—'}</div></div>
     <div class="detail-cell"><div class="k">Next visit due</div><div class="v">${f.nextVisitDue?fmtDate(f.nextVisitDue):'—'}</div></div>
@@ -17243,6 +17300,13 @@ function openFarmerModal(program,id){
     ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
     }${program==='haat'?fld('Field Coordinator',sel('ffFc',fcChoices(f.fcId).map(x=>[x.id,x.name]),f.fcId),true):''}
   </div>`;
+  /* v220 - the farmer's juth or FPC. Outside the program branches below
+     because both programmes have farmers who belong to one. */
+  body += fld('Juth / FPC',
+    '<div style="display:flex;gap:6px;align-items:stretch">'
+    + juthSelectHtml('ffJuth', f.juth)
+    + (isAdminUser() ? '<button type="button" class="btn btn-ghost btn-sm" id="ffJuthAdd" style="white-space:nowrap">+ New</button>' : '')
+    + '</div>');
   if(program==='haat'){
     body+=`<div class="field-row">
       ${fld('Years doing organic',`<input type="number" id="ffYears" value="${f.yearsOrganic||''}">`)}
@@ -17278,6 +17342,23 @@ function openFarmerModal(program,id){
     if($('#ffTalukaList')) $('#ffTalukaList').innerHTML=((window.DISTRICT_TALUKAS||{})[$('#ffDistrict').value]||[]).map(t=>`<option value="${esc(t)}">`).join('');
   };
 
+  /* v220 - admins can add a juth without leaving the farmer they are editing.
+     Saved to the shared list straight away: if it only went in when the farmer
+     was saved, cancelling the dialog would lose a name the admin had already
+     been shown in the dropdown. */
+  if($('#ffJuthAdd')) $('#ffJuthAdd').onclick = () => {
+    const raw = prompt('New juth / FPC name\n\ne.g. Mithi Virdi Juth, Aranya Juth');
+    if(raw === null) return;
+    const name = juthAddName(raw);
+    if(!name){ toast('Enter a name for the juth'); return; }
+    const sel = $('#ffJuth');
+    if(sel){
+      if(![...sel.options].some(o => o.value === name)){
+        sel.insertAdjacentHTML('beforeend', '<option value="' + esc(name) + '">' + esc(name) + '</option>');
+      }
+      sel.value = name;
+    }
+  };
   if($('#ffCropSearch')) $('#ffCropSearch').oninput=e=>{
     const q=e.target.value.trim().toLowerCase();
     $('#ffCrops').querySelectorAll('label').forEach(lbl=>{
@@ -17319,6 +17400,7 @@ function openFarmerModal(program,id){
       village:$('#ffVillage').value.trim(), taluka:talukaDisplayName($('#ffTaluka').value.trim(),$('#ffDistrict').value),
       state:$('#ffState').value, district:$('#ffDistrict').value,
       landAcres:_land, fcId:$('#ffFc')?.value||(f.fcId||''), crops,
+      juth: ($('#ffJuth') ? $('#ffJuth').value : (f.juth || '')) || '',   /* v220 */
     };
     if(editing){
       // v9 process-fix #45 — FC reassignment is a sensitive operation
@@ -18867,6 +18949,55 @@ function normHaat(h){
   };
 }
 function getHaatList(){ return (DB.haats || []).map(normHaat); }
+
+/* ---- v220 - juth / FPC ---------------------------------------------------
+   The farmer group or producer company a farmer belongs to: Mithi Virdi Juth,
+   Aranya Juth, and so on. Held as a shared list rather than free text so the
+   filter has something exact to match; see the note in cloudToDB.
+
+   Any value already sitting on a farmer is folded in, so a name cannot drop
+   out of the picker and strand the farmers carrying it - which is what would
+   happen the first time somebody deleted a juth from the list by mistake. */
+function getJuthList(){
+  const seen = {}, out = [];
+  const add = v => {
+    const t = String(v == null ? '' : v).trim();
+    if(!t) return;
+    const k = t.toLowerCase();
+    if(seen[k]) return;
+    seen[k] = 1; out.push(t);
+  };
+  (DB.juths || []).forEach(add);
+  (DB.haatFarmers || []).forEach(f => add(f && f.juth));
+  (DB.convFarmers || []).forEach(f => add(f && f.juth));
+  return out.sort((a,b) => a.localeCompare(b));
+}
+function juthFarmerCount(name){
+  const k = String(name||'').toLowerCase();
+  const hit = f => f && String(f.juth||'').toLowerCase() === k;
+  return (DB.haatFarmers||[]).filter(hit).length + (DB.convFarmers||[]).filter(hit).length;
+}
+/* Returns the name to select. Adds it to the shared list when it is new, and
+   matches case-insensitively so "aranya juth" does not become a second entry
+   beside "Aranya Juth". */
+function juthAddName(raw){
+  const t = String(raw == null ? '' : raw).trim();
+  if(!t) return '';
+  const existing = getJuthList().find(x => x.toLowerCase() === t.toLowerCase());
+  if(existing) return existing;
+  DB.juths = (DB.juths || []).concat([t]);
+  cacheLocal();
+  saveDB(true).catch(() => {});
+  logActivity('status', 'Juth / FPC <b>' + esc(t) + '</b> added to the list');
+  return t;
+}
+function juthSelectHtml(elId, current){
+  const cur = String(current || '');
+  const opts = ['<option value="">\u2014 None \u2014</option>'].concat(
+    getJuthList().map(j => '<option value="' + esc(j) + '"' + (cur === j ? ' selected' : '') + '>' + esc(j) + '</option>')
+  ).join('');
+  return '<select id="' + elId + '" style="flex:1;min-width:0">' + opts + '</select>';
+}
 function getHaatByName(name){
   if(!name) return null;
   const list = getHaatList();
@@ -18931,7 +19062,11 @@ function renderHaatManager(v){
   const cityOpts = [...new Set(haats.map(x=>x.city).filter(Boolean))].sort();
   const visibleHaats = cityFilter ? haats.filter(x=>x.city===cityFilter) : haats;
   const visibleNames = new Set(visibleHaats.map(x=>x.name));
-  let h = `<div class="toolbar" style="margin-bottom:14px">
+  /* v220 - the juth / FPC list lives here too: it is the other list farmers
+     are assigned to, and giving it its own screen for four names would be
+     silly. */
+  let h = juthManagerHtml();
+  h += `<div class="toolbar" style="margin-bottom:14px">
     <span style="font-size:12.5px;color:var(--ink-soft)">Tip: parent haats with sub-locations are expandable. Add GPS coordinates so we can measure farm-to-haat distance.</span>
     <div style="flex:1"></div>
     ${cityOpts.length?`<select id="haatCityF"><option value="">All cities</option>${cityOpts.map(c=>`<option value="${esc(c)}" ${cityFilter===c?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
@@ -19003,6 +19138,84 @@ function renderHaatManager(v){
     saveDB().catch(()=>{}); render();
   });
   $('#haatAdd').onclick = () => openHaatEditModal(null);
+  wireJuthManager();
+}
+
+/* ---- v220 - juth / FPC list manager ------------------------------------- */
+function juthManagerHtml(){
+  const list = getJuthList();
+  const rows = list.map(j => {
+    const n = juthFarmerCount(j);
+    return '<tr>'
+      + '<td style="font-weight:600">' + esc(j) + '</td>'
+      + '<td style="text-align:right">' + n + '</td>'
+      + '<td><button class="btn btn-ghost btn-sm" data-juth-ren="' + esc(j) + '">Rename</button>'
+      + (n === 0 ? ' <button class="btn btn-ghost btn-sm" data-juth-del="' + esc(j) + '">Delete</button>'
+                 : ' <span style="font-size:11px;color:var(--ink-faint)">in use</span>')
+      + '</td></tr>';
+  }).join('');
+  return '<div class="card" style="padding:14px 16px;margin-bottom:16px">'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:' + (list.length ? '10px' : '0') + '">'
+    + '<div style="font-size:13.5px;font-weight:700">Juths / FPCs</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);flex:1">The farmer groups and producer companies a farmer can belong to. Set one on a farmer under <b>Edit details</b>.</div>'
+    + (isAdminUser() ? '<button class="btn btn-primary btn-sm" id="juthAdd">+ Add juth</button>' : '')
+    + '</div>'
+    + (list.length
+        ? '<div class="table-wrap"><table style="min-width:420px"><thead><tr><th>Name</th><th style="text-align:right">Farmers</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '')
+    + '</div>';
+}
+function wireJuthManager(){
+  const add = document.getElementById('juthAdd');
+  if(add) add.onclick = () => {
+    const raw = prompt('New juth / FPC name\n\ne.g. Mithi Virdi Juth, Aranya Juth');
+    if(raw === null) return;
+    if(!juthAddName(raw)){ toast('Enter a name for the juth'); return; }
+    render();
+  };
+  document.querySelectorAll('[data-juth-ren]').forEach(b => b.onclick = () => {
+    const old = b.dataset.juthRen;
+    const raw = prompt('Rename this juth / FPC.\n\nEvery farmer in it moves across too.', old);
+    if(raw === null) return;
+    const name = String(raw).trim();
+    if(!name){ toast('Enter a name'); return; }
+    if(name === old) return;
+    const clash = getJuthList().find(x => x.toLowerCase() === name.toLowerCase() && x !== old);
+    if(clash && !confirm('"' + clash + '" already exists. Merge the two, moving every farmer into it?')) return;
+    const target = clash || name;
+    /* The farmers move in the same action. A rename that left them behind
+       would strand them under a name nothing points at any more. */
+    let moved = 0;
+    ['haatFarmers','convFarmers'].forEach(col => {
+      (DB[col]||[]).forEach(f => {
+        if(f && String(f.juth||'') === old){ f.juth = target; markLocalTouch(col, f.id); moved++; }
+      });
+    });
+    DB.juths = (DB.juths||[]).filter(x => String(x) !== old);
+    /* Ask DB.juths, NOT getJuthList(): the farmers have already been moved to
+       the new name above, so getJuthList() folds it in and reports it present
+       when the actual list does not contain it. The name would then survive
+       only while a farmer carried it. */
+    if(!DB.juths.some(x => String(x).toLowerCase() === target.toLowerCase())) DB.juths = DB.juths.concat([target]);
+    cacheLocal();
+    saveDB(true).catch(()=>{});
+    logActivity('status', 'Juth <b>' + esc(old) + '</b> renamed to <b>' + esc(target) + '</b> — ' + moved + ' farmer' + (moved===1?'':'s') + ' moved');
+    toast('Renamed · ' + moved + ' farmer' + (moved===1?'':'s') + ' moved');
+    render();
+  });
+  document.querySelectorAll('[data-juth-del]').forEach(b => b.onclick = () => {
+    const name = b.dataset.juthDel;
+    /* Re-checked here, not just when the button was drawn: the live listener
+       may have brought in a farmer tagged with it since the screen painted. */
+    const n = juthFarmerCount(name);
+    if(n){ toast(n + ' farmer' + (n===1?' is':'s are') + ' still in "' + name + '"', 'error'); render(); return; }
+    if(!confirm('Delete the juth "' + name + '"?\n\nNo farmer is in it, so nothing else changes.')) return;
+    DB.juths = (DB.juths||[]).filter(x => String(x) !== name);
+    cacheLocal();
+    saveDB(true).catch(()=>{});
+    logActivity('status', 'Juth <b>' + esc(name) + '</b> removed from the list');
+    render();
+  });
 }
 const HAAT_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function openHaatEditModal(name){
@@ -20324,7 +20537,7 @@ function viewData(){
   $('#expHaat').onclick=()=>download('haat-farmers.csv',toCSV(DB.haatFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,certification:f.certification||'',
-    field_coordinator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',
+    field_coordinator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',juth:f.juth||'',
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
     status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
@@ -20333,6 +20546,7 @@ function viewData(){
   $('#expConv').onclick=()=>download('conversion-farmers.csv',toCSV(DB.convFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,field_coordinator:(fcById(f.fcId)||{}).name||'',
+    juth:f.juth||'',
     // v8 bug fix: transitionStatus may be undefined for never-scored farmers
     status:(CONV_STATUS[f.transitionStatus]||{label:''}).label,
     observations:(f.observations||[]).length,

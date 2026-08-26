@@ -2642,6 +2642,8 @@ body.lang-hi .thi{display:inline}
 </div>
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
 <div class="dots" id="dotsWrap"></div>
+<!-- v219 - hidden until the first save, so it never disturbs the opening screen -->
+<div id="draftTick" style="display:none;text-align:center;font-size:11.5px;font-weight:600;padding:3px 10px 7px;transition:opacity .4s"></div>
 
 <div class="langbar" id="langBar">
   <label class="on" data-v="gu"><input type="radio" name="uiLang" value="gu" checked>ગુજરાતી</label>
@@ -3373,6 +3375,9 @@ function wireFcControls(){
       const rd = new FileReader();
       rd.onload = () => {
         FC_PHOTOS[qid].push({name:f.name, type:f.type, data:rd.result});
+        /* v219 - the change event already fired, before FileReader finished.
+           Only here does the picture actually exist. */
+        _photoRev++; scheduleDraftSave();
         const t = document.createElement('div');
         t.style.cssText = 'width:74px;height:74px;border-radius:8px;overflow:hidden;background:#e9edf2;position:relative';
         t.innerHTML = '<img src="'+rd.result+'" style="width:100%;height:100%;object-fit:cover"><span style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(220,38,38,.9);color:#fff;display:grid;place-items:center;font-size:11px;cursor:pointer">×</span>';
@@ -3381,6 +3386,7 @@ function wireFcControls(){
           const idx = FC_PHOTOS[qid].findIndex(p => p.data === rd.result);
           if(idx>=0) FC_PHOTOS[qid].splice(idx,1);
           t.remove();
+          _photoRev++; scheduleDraftSave();   /* v219 */
         };
         grid.insertBefore(t, grid.querySelector('label'));
       };
@@ -3451,6 +3457,17 @@ function wireFcControls(){
   /* FC notes */
   $$('textarea[data-note]').forEach(t => t.oninput = () => { FC_NOTES[t.dataset.note] = t.value; });
   const gc = $('#generalCmt'); if(gc) gc.oninput = () => { GENERAL_COMMENTS = gc.value; };
+  /* v219 - one place that notices every change, instead of ten handlers each
+     remembering to call the draft. BUBBLE phase, not capture: a listener on
+     document fires after the target's own onclick has already written to
+     VERIFICATIONS / RETICK / FC_ANSWERS, so what the draft collects is the
+     state after the change rather than before it. Registered once. */
+  if(!window.__draftWatch){
+    window.__draftWatch = true;
+    document.addEventListener("input",  scheduleDraftSave, false);
+    document.addEventListener("change", scheduleDraftSave, false);
+    document.addEventListener("click",  scheduleDraftSave, false);
+  }
 }
 
 /* v211 - puts a submitted verification back into the form so it can be
@@ -3464,8 +3481,11 @@ function wireFcControls(){
    same references back at submit is what stops an edit re-uploading photos
    that never changed - extractPhotos skips any leaf that already has a
    photoId. */
-function applyEditPrefill(){
-  var E = EDIT_MODE;
+function applyEditPrefill(src, isDraft){
+  /* v219 - the 'src' argument lets a DRAFT come back through the same door
+     as an edit.
+     Called with no arguments it behaves exactly as it did in v211. */
+  var E = src || EDIT_MODE;
   if(!E) return;
   (E.claims || []).forEach(function(c){
     if(!c || !c.id) return;
@@ -3522,7 +3542,9 @@ function applyEditPrefill(){
       var tile = document.createElement('div');
       tile.style.cssText = 'width:74px;height:74px;border-radius:8px;overflow:hidden;background:#e9edf2;position:relative';
       var img = document.createElement('img');
-      img.src = ref.__src || '';
+      /* v219 - an edit's photos are Cloudinary references carrying a __src;
+         a draft's are the raw base64 the FC just took, still unuploaded. */
+      img.src = ref.__src || ref.data || '';
       img.alt = '';
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
       var x = document.createElement('span');
@@ -3544,6 +3566,10 @@ function applyEditPrefill(){
   if(vd && E.date) vd.value = String(E.date).slice(0,10);
   var vt = document.getElementById('visitTime');
   if(vt && E.time) vt.value = String(E.time).slice(0,5);
+  /* v219 - the furniture below belongs to an edit only. A restored draft is
+     still an ordinary, unsubmitted verification: it must not relabel the
+     submit button or claim the FC is correcting something already sent. */
+  if(isDraft) return;
   var big = document.getElementById('bigSubmitBtn');
   if(big) big.textContent = '✓ Save changes to this verification';
   var old = document.getElementById('editBanner');
@@ -3555,6 +3581,70 @@ function applyEditPrefill(){
     + '<div style="font-size:13px;color:#451a03;line-height:1.5">Your answers from <b>' + esc(E.date ? String(E.date).slice(0,10).split('-').reverse().join('-') : 'the visit') + '</b> are already filled in. Change what needs changing and save.<br>This updates the same verification — it does not create a second one, and the farmer does not go back to pending.</div>';
   var sectionsEl = document.getElementById('sections');
   if(sectionsEl && sectionsEl.parentNode) sectionsEl.parentNode.insertBefore(banner, sectionsEl);
+}
+
+/* v219 - shown when work has been brought back. Says plainly what happened,
+   when it was last held, and - only when it is true - that the pictures did
+   not survive and need taking again. */
+/* v219 - called when the draft's pictures failed to come back. Appended to the
+   banner rather than baked into it, because at the moment the banner is drawn
+   nobody knows yet. */
+function markDraftPhotosLost(){
+  var b = document.getElementById('draftRestoreBanner');
+  if(!b || document.getElementById('draftPhotoLost')) return;
+  var w = document.createElement('div');
+  w.id = 'draftPhotoLost';
+  w.style.cssText = 'font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;margin-top:8px';
+  w.innerHTML = '⚠ <span class="tgu">ફોટા સાચવી શકાયા નથી — ફરીથી લેવા પડશે.</span>'
+              + '<span class="thi">फोटो सहेज नहीं सके — फिर से लेने होंगे।</span>'
+              + '<span class="ten">The photos could not be kept — please take them again.</span>';
+  var btn = document.getElementById('draftFreshBtn');
+  if(btn && btn.parentNode === b) b.insertBefore(w, btn); else b.appendChild(w);
+}
+function showDraftBanner(dr){
+  var old = document.getElementById('draftRestoreBanner');
+  if(old) old.remove();
+  var stamp = '';
+  try{
+    var w = dr && dr.at ? new Date(dr.at) : null;
+    if(w && !isNaN(w.getTime())){
+      stamp = String(w.getDate()).padStart(2,'0') + '-' + String(w.getMonth()+1).padStart(2,'0')
+            + '-' + w.getFullYear() + ', ' + w.toTimeString().slice(0,5);
+    }
+  }catch(e){}
+  var b = document.createElement('div');
+  b.id = 'draftRestoreBanner';
+  b.style.cssText = 'background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:12px 16px;margin:14px 0';
+  var h = '<div style="font-size:11px;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">'
+        + '✓ <span class="tgu">અધૂરું પત્રક પાછું આવ્યું</span>'
+        + '<span class="thi">अधूरा फॉर्म वापस आया</span>'
+        + '<span class="ten">Unfinished form brought back</span></div>'
+        + '<div style="font-size:13px;color:#064e3b;line-height:1.5">'
+        + '<span class="tgu">તમે જ્યાં છોડ્યું હતું ત્યાંથી બધા જવાબ ફરી ભરાઈ ગયા છે. જોઈને આગળ વધો.</span>'
+        + '<span class="thi">आपने जहां छोड़ा था वहां से सभी जवाब फिर भर दिए गए हैं।</span>'
+        + '<span class="ten">Every answer you had entered has been filled back in. Check it and carry on.</span>'
+        + (stamp ? ' <b>' + esc(stamp) + '</b>' : '') + '</div>';
+  /* The photo warning is NOT decided here. The pictures live in IndexedDB and
+     arrive in their own message a moment later; markDraftPhotosLost adds the
+     line only if they genuinely did not come back. A banner that says the work
+     is all here while the photo slots sit empty is worse than no banner. */
+  h += '<button type="button" id="draftFreshBtn" style="margin-top:10px;background:#fff;border:1px solid #059669;color:#065f46;border-radius:8px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">'
+     + '<span class="tgu">નવેસરથી શરૂ કરો</span>'
+     + '<span class="thi">नए सिरे से शुरू करें</span>'
+     + '<span class="ten">Start fresh</span></button>';
+  b.innerHTML = h;
+  var sectionsEl = document.getElementById('sections');
+  if(sectionsEl && sectionsEl.parentNode) sectionsEl.parentNode.insertBefore(b, sectionsEl);
+  var fresh = document.getElementById('draftFreshBtn');
+  if(fresh) fresh.onclick = function(){
+    if(!confirm('ભરેલા બધા જવાબ કાઢી નાખવા છે? આ પાછું નહી મળે.\\n\\nDiscard the answers that were brought back and start this verification again? This cannot be undone.')) return;
+    /* Cancel first: a debounced save still in flight would write the draft
+       straight back after the parent had cleared it. That exact mistake is
+       what sent 88 duplicate answers from the enrolment patrak in v141. */
+    cancelDraftSave();
+    _draftClosed = true;
+    if(window.parent && window.parent !== window) window.parent.postMessage({type:'verif-draft-discard'}, '*');
+  };
 }
 
 function paintFarmer(){
@@ -3584,6 +3674,123 @@ function paintFarmer(){
     if(sectionsEl && sectionsEl.parentNode) sectionsEl.parentNode.insertBefore(banner, sectionsEl);
   }
 }
+
+/* ---- v219 - DRAFT AUTOSAVE ---------------------------------------------
+   Six pages, ninety questions, and until v219 not one answer existed anywhere
+   until Submit was pressed. Anything that restarted the page - a new build
+   being published, or Android reclaiming the tab while the FC was in the
+   camera - threw the whole visit away.
+
+   This form does not write storage itself. It posts the draft to the parent
+   app, which owns the stores. A blob-URL iframe's access to localStorage and
+   IndexedDB depends on how the page was served, and an FC's afternoon must not
+   rest on that. */
+let _draftTimer = null;
+let _draftClosed = false;       /* true once submitted; nothing may be written after */
+let _draftReady  = false;       /* true once the form is built and the baseline taken */
+let _draftBaseline = null;      /* the form as built - anything equal to this is "untouched" */
+let _draftSigPosted = null;
+let _photoRev = 0, _photoRevPosted = 0;
+const DRAFT_DEBOUNCE_MS = 1500;
+
+function _vdVal(){ const e = document.getElementById("visitDate"); return e ? e.value : ""; }
+function _vtVal(){ const e = document.getElementById("visitTime"); return e ? e.value : ""; }
+
+/* Only the FC's own contribution. The farmer's claims are not carried: the
+   parent re-sends those on every open, and copying ninety of them into the
+   draft would bloat it for nothing. Empty rows are dropped for the same
+   reason. The shape is exactly what applyEditPrefill already consumes. */
+function buildDraftClaims(){
+  const out = [];
+  QUESTIONS.forEach(q => {
+    const isMulti = (q.type === "multi" || q.type === "multi_count");
+    const ans = FC_ANSWERS[q.id];
+    const row = {
+      id: q.id,
+      fcVerification: VERIFICATIONS[q.id] || null,
+      fcRetick: isMulti ? (RETICK[q.id] || []) : null,
+      /* an array here means photos, which travel separately */
+      fcAnswer: (ans === undefined || ans === null || Array.isArray(ans)) ? null : ans,
+      fcNote: FC_NOTES[q.id] || "",
+    };
+    if(row.fcVerification || row.fcNote || (row.fcAnswer !== null && row.fcAnswer !== "")
+       || (row.fcRetick && row.fcRetick.length)) out.push(row);
+  });
+  return out;
+}
+function _draftSignature(claims){
+  return JSON.stringify(claims) + "|" + GENERAL_COMMENTS + "|" + _vdVal() + "|" + _vtVal();
+}
+function _draftPhotoCount(){
+  let n = 0;
+  Object.keys(FC_PHOTOS).forEach(k => { n += (FC_PHOTOS[k] || []).length; });
+  return n;
+}
+function postDraft(force){
+  if(_draftClosed || !_draftReady) return;
+  /* v219 - never while correcting a verification that has already been sent.
+     Guarded here as well as in the parent because the very last flush of all
+     comes from pagehide, when the form is being torn down. */
+  if(EDIT_MODE) return;
+  if(!FARMER || !FARMER.id) return;
+  const claims = buildDraftClaims();
+  const sig = _draftSignature(claims);
+  const photosChanged = (_photoRev !== _photoRevPosted);
+  /* Nothing the FC has actually done yet. buildSections pre-ticks defaults
+     from the farmer's own claims, so without this line every form merely
+     opened would come back next time as unfinished work. */
+  if(sig === _draftBaseline && !_draftPhotoCount()) return;
+  if(!force && sig === _draftSigPosted && !photosChanged) return;
+  const msg = {
+    type: "verif-draft",
+    farmerId: FARMER.id,
+    photosChanged: photosChanged,
+    data: { claims: claims, comments: GENERAL_COMMENTS, date: _vdVal(), time: _vtVal(), page: cur },
+  };
+  /* Pictures are only sent when they changed. Structured-cloning twenty
+     megabytes every time someone types a letter would stall the phone. */
+  if(photosChanged) msg.photos = FC_PHOTOS;
+  if(window.parent && window.parent !== window) window.parent.postMessage(msg, "*");
+  _draftSigPosted = sig;
+  if(photosChanged) _photoRevPosted = _photoRev;
+}
+function scheduleDraftSave(){
+  if(_draftClosed || !_draftReady) return;
+  if(_draftTimer) clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(() => { _draftTimer = null; postDraft(false); }, DRAFT_DEBOUNCE_MS);
+}
+/* v141's lesson from the enrolment patrak, which this form must not repeat: a
+   debounced save still in flight when the form was cleared wrote the draft
+   straight back, and the next open offered to restore a verification that had
+   already been sent. One tap to restore and one to submit sent all 88 answers
+   a second time. Cancel first, then close. */
+function cancelDraftSave(){ if(_draftTimer){ clearTimeout(_draftTimer); _draftTimer = null; } }
+function flushDraftNow(){ cancelDraftSave(); postDraft(false); }
+
+function showDraftTick(ok){
+  const t = document.getElementById("draftTick");
+  if(!t) return;
+  t.style.display = "block";
+  t.style.opacity = "1";
+  if(!ok){
+    t.style.color = "#b45309";
+    t.innerHTML = '<span class="tgu">⚠ આ ફોનમાં સાચવી શકાયું નથી</span>'
+                + '<span class="thi">⚠ इस फोन में सहेज नहीं सका</span>'
+                + '<span class="ten">⚠ Could not save on this phone</span>';
+    return;
+  }
+  t.style.color = "var(--leaf)";
+  t.innerHTML = '<span class="tgu">✓ સાચવ્યું — આ ફોનમાં સુરક્ષિત છે</span>'
+              + '<span class="thi">✓ सहेजा गया — इस फोन में सुरक्षित</span>'
+              + '<span class="ten">✓ Saved on this phone</span>';
+  setTimeout(() => { if(t) t.style.opacity = "0.6"; }, 1400);
+}
+
+/* Force a save the moment the phone takes the screen away - opening the camera
+   is exactly when Android is most likely to reclaim the tab, and it is also
+   exactly what an FC does in the middle of a verification. */
+document.addEventListener("visibilitychange", () => { if(document.hidden) flushDraftNow(); });
+window.addEventListener("pagehide", () => { flushDraftNow(); });
 
 /* navigation */
 let cur = 0;
@@ -3646,6 +3853,11 @@ let _verifSubmitting = false;
 function submit(){
   if(_verifSubmitting) return;   // guard a second tap while GPS is still resolving
   _verifSubmitting = true;
+  /* v219 - tell the parent NOW, not when the payload is ready. GPS is asked
+     for first and can take eight seconds; until this message the parent has no
+     idea a submission is running, and a version update queued earlier could
+     reload the page in the middle of it. */
+  if(window.parent && window.parent !== window) window.parent.postMessage({type:'verif-submitting'}, '*');
   let verified = 0, totalAsked = 0;
   const claims = QUESTIONS.map(q => {
     const c = CLAIMS_BY_ID[q.id];
@@ -3702,6 +3914,14 @@ function submit(){
       editing: !!EDIT_MODE,   /* v211 */
       submittedAt: new Date().toISOString()
     };
+    /* v219 - the point of no return. Cancel the pending save BEFORE handing
+       the payload over: a debounced write landing after the parent clears the
+       draft would resurrect a verification that has already been sent, and one
+       tap on restore plus one on submit would send it all a second time. That
+       is exactly how the enrolment patrak produced five duplicate submissions
+       on 31 July before v141. */
+    cancelDraftSave();
+    _draftClosed = true;
     if(window.parent && window.parent !== window){
       window.parent.postMessage(payload, '*');
     }
@@ -3762,6 +3982,40 @@ window.addEventListener('message', ev => {
     paintFarmer();
     buildSections();
     if(EDIT_MODE) applyEditPrefill();   /* v211 - after the DOM exists */
+    /* v219 - unfinished work from a previous run of this form. Applied
+       automatically, not offered behind a question: the default must be the
+       one that keeps the work. "Start fresh" is one deliberate tap away. */
+    if(d.draftVerif && Array.isArray(d.draftVerif.claims) && !EDIT_MODE){
+      try{
+        applyEditPrefill(d.draftVerif, true);
+        showDraftBanner(d.draftVerif);
+        var _dp = +(d.draftVerif.page || 0);
+        if(_dp > 0) setTimeout(function(){ try{ goto(_dp); }catch(e){} }, 0);
+      }catch(e){ console.warn('[v219] could not restore the draft:', e); }
+    }
+    /* The baseline is taken AFTER everything above, so neither the pre-ticked
+       defaults nor a just-restored draft reads as a change the FC made. Until
+       the form differs from this, nothing is written. */
+    _photoRev = _draftPhotoCount();
+    _photoRevPosted = _photoRev;
+    _draftBaseline  = _draftSignature(buildDraftClaims());
+    _draftSigPosted = _draftBaseline;
+    _draftReady = true;
+  }
+  /* v219 - the tick only appears once the parent confirms the answers are
+     actually stored, so it never claims something that did not happen. */
+  if(d.type === 'verif-draft-saved'){ showDraftTick(!!d.ok); }
+  /* v219 - the restored draft's pictures, which come from IndexedDB and so
+     arrive after the form is already on screen. */
+  if(d.type === 'verif-draft-photos'){
+    try{
+      if(d.photos && Object.keys(d.photos).length){
+        applyEditPrefill({claims: [], photos: d.photos}, true);
+      }
+      if(d.lost) markDraftPhotosLost();
+      _photoRev = _draftPhotoCount();
+      _photoRevPosted = _photoRev;
+    }catch(e){ console.warn('[v219] draft photos:', e); }
   }
 });
 
@@ -3793,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v218';
+const APP_VERSION = 'v219';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5992,6 +6246,323 @@ function idbDel(store, key){ return idbOpen().then(db => new Promise((res,rej)=>
    into memory (~23 KB each) just to answer "which farmers do we already
    have?"; at 10,000 farmers that is hundreds of megabytes for a count. */
 function idbKeys(store){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAllKeys(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
+
+/* ---------- v219 - DRAFT AUTOSAVE ----------------------------------------
+   An FC fills a 6-page, 90-question verification standing in a field. Until
+   v219 none of it existed anywhere until they pressed Submit, so anything that
+   restarted the page threw the whole visit away. Two things restart it: a new
+   version being published (the app reloads itself the moment it notices - see
+   _reloadWhenSafe below), and Android evicting the tab while the FC is in the
+   camera app.
+
+   Everything here is local to the phone. No draft is ever written to Firebase,
+   nothing is added to boot, and the store is only touched when a form opens,
+   when an answer changes, or when a form is submitted.
+
+   Split storage, on purpose:
+     - localStorage for the TEXT. Synchronous, so it is committed the moment the
+       FC answers - it cannot be caught half-written by a kill. Measured at
+       1.2KB for a part-filled 90-question sheet, because only the FC's own
+       answers are carried and empty rows are dropped.
+     - a SEPARATE IndexedDB database for the PHOTOS. One camera photo as base64
+       is several MB and would exceed localStorage's quota on the first snap.
+
+   The photos live in their own database rather than a sixth store inside
+   sristi_v11_local because adding a store there requires bumping that
+   database's version, and a connection held by another tab makes that upgrade
+   block indefinitely. A separate database cannot do that to the app.
+
+   The halves fail independently and that is the point: if photos cannot be
+   held, the FC still gets all 90 answers back and only re-takes pictures. */
+const DRAFT_LS_KEY     = 'sristi_fv_drafts_v1';
+const DRAFT_MAX_AGE_MS = 7*24*60*60*1000;   /* a visit is finished long before this */
+const DRAFT_MAX_KEEP   = 4;                 /* newest N farmers; older ones drop */
+/* Per draft. Four of these is the worst case, and it shares an origin quota
+   with sristi_v11_local - where offlineWrites parks the durable copy of a
+   verification that has not reached the server. Filling that quota would make
+   the last line of defence for an unsent visit fail, so the ceiling is set well
+   below what the phone will give us rather than as high as it will allow. */
+const DRAFT_PHOTO_CAP  = 12*1024*1024;
+
+/* Drafts are per signed-in user: FCs share phones, and one FC must never be
+   offered another's half-finished visit. */
+function _draftOwner(){
+  /* FC accounts always have a userId; admin and mobiliser accounts often do
+     not, and falling back to a shared 'anon' bucket would offer one of them
+     another's half-finished visit on a shared phone. */
+  try{ const a = actor(); return (a && (a.id || a.name)) || 'anon'; }catch(e){ return 'anon'; }
+}
+function draftKey(kind, farmerId, mode){ return kind+'|'+_draftOwner()+'|'+farmerId+'|'+(mode||'new'); }
+
+let _draftIdb = null, _draftIdbDead = false;
+function draftIdbOpen(){
+  return new Promise((resolve, reject) => {
+    if(_draftIdbDead){ reject(new Error('draft idb unavailable')); return; }
+    if(_draftIdb){ resolve(_draftIdb); return; }
+    if(!window.indexedDB){ _draftIdbDead = true; reject(new Error('no idb')); return; }
+    let req;
+    try{ req = indexedDB.open('sristi_fv_drafts_v1', 1); }
+    catch(e){ _draftIdbDead = true; reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', {keyPath:'key'});
+    };
+    req.onsuccess = () => { _draftIdb = req.result; resolve(_draftIdb); };
+    req.onerror   = () => { _draftIdbDead = true; reject(req.error); };
+    /* Private browsing and a wedged profile both surface as a hang rather than
+       an error. Never let a draft save keep a promise open forever. */
+    setTimeout(() => { if(!_draftIdb) reject(new Error('draft idb timeout')); }, 4000);
+  });
+}
+function _draftPhotosPut(key, photos){
+  return draftIdbOpen().then(db => new Promise((res,rej)=>{
+    const tx = db.transaction('photos','readwrite');
+    tx.objectStore('photos').put({key:key, at:Date.now(), photos:photos});
+    tx.oncomplete = () => res(true);
+    tx.onerror    = () => rej(tx.error);
+    tx.onabort    = () => rej(tx.error || new Error('aborted'));
+  }));
+}
+function _draftPhotosGet(key){
+  return draftIdbOpen().then(db => new Promise((res,rej)=>{
+    const tx = db.transaction('photos','readonly');
+    const rq = tx.objectStore('photos').get(key);
+    rq.onsuccess = () => res(rq.result ? (rq.result.photos || null) : null);
+    rq.onerror   = () => rej(rq.error);
+  })).catch(() => null);
+}
+function _draftPhotosDel(key){
+  return draftIdbOpen().then(db => new Promise((res)=>{
+    const tx = db.transaction('photos','readwrite');
+    tx.objectStore('photos').delete(key);
+    tx.oncomplete = () => res(true);
+    tx.onerror    = () => res(false);
+  })).catch(() => false);
+}
+
+/* The index is the whole text side: key -> {at, kind, farmerId, mode, page,
+   data, photoCount, photosKept}. Read prunes; it is the only sweep there is,
+   and it runs when a form opens, never at boot. */
+function _draftIndexRead(){
+  let map = {};
+  try{
+    const raw = localStorage.getItem(DRAFT_LS_KEY);
+    if(raw) map = JSON.parse(raw) || {};
+  }catch(e){ map = {}; }
+  if(!map || typeof map !== 'object') map = {};
+  const now = Date.now();
+  let changed = false;
+  Object.keys(map).forEach(k => {
+    const r = map[k];
+    if(!r || typeof r !== 'object' || !r.at || (now - r.at) > DRAFT_MAX_AGE_MS){
+      delete map[k]; _draftPhotosDel(k); changed = true;
+    }
+  });
+  const keys = Object.keys(map).sort((a,b) => (map[b].at||0) - (map[a].at||0));
+  keys.slice(DRAFT_MAX_KEEP).forEach(k => { delete map[k]; _draftPhotosDel(k); changed = true; });
+  if(changed) _draftIndexWrite(map);
+  return map;
+}
+/* Never throws. A full disk must not take down the form the FC is filling. */
+function _draftIndexWrite(map, protectKey){
+  try{
+    localStorage.setItem(DRAFT_LS_KEY, JSON.stringify(map));
+    return true;
+  }catch(e){
+    /* Out of room: drop the oldest OTHER draft and try once more.
+       protectKey is the one being written. Without excluding it, a phone
+       holding a single draft would delete that draft, succeed at writing the
+       now-empty map, and report success - the tick would say "saved on this
+       phone" over nothing at all. */
+    try{
+      const keys = Object.keys(map)
+        .filter(k => k !== protectKey)
+        .sort((a,b) => (map[a].at||0) - (map[b].at||0));
+      if(!keys.length) return false;
+      const k = keys[0];
+      delete map[k];
+      _draftPhotosDel(k);
+      localStorage.setItem(DRAFT_LS_KEY, JSON.stringify(map));
+      return true;
+    }catch(e2){ return false; }
+  }
+}
+
+function _draftPhotoBytes(photos){
+  let n = 0;
+  const add = p => { if(p && typeof p === 'object' && typeof p.data === 'string') n += p.data.length; };
+  if(Array.isArray(photos)) photos.forEach(add);
+  else if(photos && typeof photos === 'object') Object.keys(photos).forEach(q => (photos[q]||[]).forEach(add));
+  return n;
+}
+function _draftPhotoCount(photos){
+  if(Array.isArray(photos)) return photos.length;
+  if(photos && typeof photos === 'object') return Object.keys(photos).reduce((a,q)=>a+((photos[q]||[]).length),0);
+  return 0;
+}
+
+/* Save the text now, synchronously. Photos follow asynchronously and only when
+   the caller says they changed - re-writing 20MB of pictures every 1.5 seconds
+   because someone typed a note would make the phone crawl.
+   Returns true when the FC's ANSWERS are safe, which is what the tick claims. */
+function draftSave(kind, farmerId, mode, data, photos, photosChanged){
+  if(!farmerId) return false;
+  const key = draftKey(kind, farmerId, mode);
+  const map = _draftIndexRead();
+  const prev = map[key] || {};
+  const rec = {
+    at: Date.now(), kind: kind, farmerId: farmerId, mode: mode || 'new',
+    page: (data && typeof data.page === 'number') ? data.page : 0,
+    data: data || {},
+    photoCount: photos === undefined ? (prev.photoCount || 0) : _draftPhotoCount(photos),
+    photosKept: photos === undefined ? (prev.photosKept !== false) : true,
+  };
+  map[key] = rec;
+  /* Trim AFTER inserting. _draftIndexRead already pruned to the cap, so adding
+     this one without trimming again leaves cap+1 on the phone for ever - and
+     every draft over the cap can be holding megabytes of photos. */
+  Object.keys(map).sort((a,b) => (map[b].at||0) - (map[a].at||0))
+        .slice(DRAFT_MAX_KEEP)
+        .forEach(k => { delete map[k]; _draftPhotosDel(k); });
+  const ok = _draftIndexWrite(map, key);
+  if(!ok) return false;
+  if(photosChanged && photos !== undefined){
+    const n = _draftPhotoCount(photos);
+    if(!n){
+      _draftPhotosDel(key);
+    } else if(_draftPhotoBytes(photos) > DRAFT_PHOTO_CAP){
+      /* Too big to hold. Say so rather than pretending, so the banner on
+         restore can tell the FC the pictures need taking again. */
+      _draftPhotosDel(key);
+      rec.photosKept = false;
+      _draftIndexWrite(map);
+    } else {
+      _draftPhotosPut(key, photos).catch(() => {
+        const m2 = _draftIndexRead();
+        if(m2[key]){ m2[key].photosKept = false; _draftIndexWrite(m2); }
+      });
+    }
+  }
+  return true;
+}
+
+/* The text half, synchronously. The conversion form needs its working copy
+   BEFORE it renders - every section paints itself from that copy - and it
+   cannot wait on IndexedDB to do it. Photos are fetched separately. */
+function draftLoadTextSync(kind, farmerId, mode){
+  if(!farmerId) return null;
+  const rec = _draftIndexRead()[draftKey(kind, farmerId, mode)];
+  if(!rec || !rec.data) return null;
+  return {at: rec.at, page: rec.page || 0, data: rec.data,
+          photoCount: rec.photoCount || 0, photosKept: rec.photosKept !== false};
+}
+/* v219 - photo rows whose draft is gone. draftClear deletes the localStorage
+   entry synchronously but only fires the IndexedDB delete; if the page goes
+   down in between - and a queued version update now makes that likelier, since
+   it applies the moment a form closes - the row survives with nothing pointing
+   at it, and the read-time prune can never see it because it walks the index.
+   Left alone they accumulate megabytes in the same origin quota that protects
+   an unsent verification. Called when a form opens, never at boot. */
+let _draftSweptThisSession = false;
+function draftSweepOrphans(){
+  if(_draftSweptThisSession) return;
+  _draftSweptThisSession = true;
+  draftIdbOpen().then(db => {
+    const known = _draftIndexRead();
+    const tx = db.transaction('photos', 'readwrite');
+    const st = tx.objectStore('photos');
+    const rq = st.getAllKeys();
+    rq.onsuccess = () => {
+      (rq.result || []).forEach(k => { if(!known[k]) st.delete(k); });
+    };
+  }).catch(() => {});
+}
+
+/* Returns null when there is nothing worth offering. */
+async function draftLoad(kind, farmerId, mode){
+  if(!farmerId) return null;
+  const key = draftKey(kind, farmerId, mode);
+  const map = _draftIndexRead();
+  const rec = map[key];
+  if(!rec || !rec.data) return null;
+  let photos = null;
+  if(rec.photoCount && rec.photosKept !== false){
+    photos = await _draftPhotosGet(key);
+  }
+  return {
+    at: rec.at, page: rec.page || 0, data: rec.data,
+    photos: photos,
+    /* true only when pictures were taken AND did not come back */
+    photosLost: !!(rec.photoCount && (rec.photosKept === false || !photos)),
+  };
+}
+
+function draftClear(kind, farmerId, mode){
+  if(!farmerId) return;
+  const key = draftKey(kind, farmerId, mode);
+  const map = _draftIndexRead();
+  if(map[key]){ delete map[key]; _draftIndexWrite(map); }
+  _draftPhotosDel(key);
+}
+
+/* ---------- v219 - hold a version update back while a form is open ----------
+   sw.js calls skipWaiting()/clients.claim(), so the moment a new build is
+   published every open app reloads itself. That is correct for an app sitting
+   on a list screen and destructive for an FC on page 4 of a verification: four
+   builds went out on 21-22 August and each one wiped whatever was on screen.
+
+   The update is not cancelled, only queued: it applies the moment the form is
+   closed, or on the next launch. */
+window._formIsOpen = function(){
+  try{
+    const vh = document.getElementById('verifyHost');
+    if(vh && vh.classList.contains('show')) return true;
+    const eh = document.getElementById('enrollHost');
+    if(eh && eh.classList.contains('show')) return true;
+    const md = document.getElementById('modal');
+    if(md && md.classList.contains('show') && document.getElementById('scoreSave')) return true;
+  }catch(e){}
+  return false;
+};
+window._pendingSwReload = false;
+/* Queue it and let the one gate below decide when. Deliberately does NOT
+   reload on the spot even when nothing is open: the same gate also refuses
+   while a write is still on its way to the server, and having two entry points
+   disagree about that is how a farmer's visit gets interrupted mid-write. */
+window._reloadWhenSafe = function(){
+  window._pendingSwReload = true;
+  window._runPendingReload();
+  return false;
+};
+/* Called from every form-close path. Re-arms itself rather than giving up,
+   and refuses to reload while anything is still waiting to reach the server:
+   'farm-verification-closed' arrives while the 'farm-verification-done'
+   handler is still inside extractPhotos/saveDB, and taking the page down
+   there would interrupt the write carrying the visit. */
+let _pendingReloadTimer = null;
+window._runPendingReload = function(){
+  if(!window._pendingSwReload) return;
+  if(_pendingReloadTimer) return;
+  _pendingReloadTimer = setTimeout(function(){
+    _pendingReloadTimer = null;
+    if(!window._pendingSwReload) return;
+    if(window._formIsOpen()){ window._runPendingReload(); return; }
+    /* A submission that is under way but has not reached saveDB yet.
+       pendingSyncCount() alone is not enough: it only becomes non-zero inside
+       saveDB, which is the LAST thing the submit handler does. Everything
+       before it - compressing up to six photos, writing the answer sheet, an
+       eight-second guarded row update - runs with the queue still empty, and
+       'farm-verification-closed' arrives during exactly that window when the
+       FC taps Close on the success screen. Reloading there would cut the write
+       carrying the visit in half.
+       A deadline rather than a flag, so a thrown exception cannot wedge the
+       update off for the rest of the session. */
+    if(Date.now() < (window._verifBusyUntil || 0)){ window._runPendingReload(); return; }
+    try{ if(typeof pendingSyncCount === 'function' && pendingSyncCount() > 0){ window._runPendingReload(); return; } }catch(e){}
+    window._pendingSwReload = false;
+    window.location.reload();
+  }, 2500);
+};
 
 /* ---------- photo render helpers — accept every shape we've ever stored ----------
    Legacy: plain dataURL string, or {name, type, data: dataURL}.
@@ -8583,6 +9154,113 @@ function calculateConvScore(f){
 
 /* Assessment modal — FC fills A1/A2/B1/B2/B3/C, sees live score + status,
    then saves to f.conversionScoring. */
+/* v219 - put a saved draft back onto the working copy, key by key. Assigning
+   W wholesale would resurrect practices the framework has since dropped and
+   would blank ones it has since gained; only fields that still exist on both
+   sides are carried. */
+function _convApplyDraftW(W, dw){
+  if(!dw || typeof dw !== 'object') return;
+  ['A1','A2'].forEach(k => {
+    const d = dw[k];
+    if(!d || typeof d !== 'object' || !W[k]) return;
+    if(typeof d.confirmed === 'boolean' || d.confirmed === null) W[k].confirmed = d.confirmed;
+    if(Array.isArray(d.evidence)) W[k].evidence = d.evidence.slice();
+    if(typeof d.notes === 'string') W[k].notes = d.notes;
+  });
+  if(dw.C && typeof dw.C === 'object' && W.C){
+    ['totalLand','chemFreeLand','previousArea','currentArea'].forEach(f => {
+      if(dw.C[f] !== undefined && dw.C[f] !== null) W.C[f] = dw.C[f];
+    });
+  }
+  CONV_SCORE_B_KEYS.forEach(g => {
+    if(!W[g] || !dw[g] || typeof dw[g] !== 'object') return;
+    Object.keys(W[g]).forEach(p => {
+      const d = dw[g][p];
+      if(!d || typeof d !== 'object') return;
+      W[g][p].adopted = !!d.adopted;
+      W[g][p].remarks = d.remarks || '';
+    });
+  });
+}
+function _convDraftSnapshot(W){
+  const out = {};
+  ['A1','A2'].forEach(k => {
+    if(!W[k]) return;
+    out[k] = {confirmed: W[k].confirmed, evidence: (W[k].evidence||[]).slice(), notes: W[k].notes || ''};
+  });
+  if(W.C) out.C = {totalLand: W.C.totalLand, chemFreeLand: W.C.chemFreeLand,
+                   previousArea: W.C.previousArea, currentArea: W.C.currentArea};
+  CONV_SCORE_B_KEYS.forEach(g => {
+    if(!W[g]) return;
+    out[g] = {};
+    Object.keys(W[g]).forEach(p => { out[g][p] = {adopted: !!W[g][p].adopted, remarks: W[g][p].remarks || ''}; });
+  });
+  return out;
+}
+/* v219 - says plainly that work was brought back, when it was last held, and
+   only when it is true that the pictures did not survive. "Start fresh" is a
+   deliberate, confirmed tap; the default is always to keep the work. */
+/* v219 - the conversion draft's pictures come from IndexedDB, so the dialog is
+   already on screen before anyone knows whether they survived. Called with the
+   answer. The verification form does the same thing through
+   markDraftPhotosLost; neither banner may claim a photo is there when it is
+   not, because the FC will save the visit believing it has evidence on it. */
+function _convDraftPhotoResult(ok){
+  if(ok) return;
+  const b = document.getElementById('convDraftBanner');
+  if(!b || document.getElementById('convDraftPhotoLost')) return;
+  const w = document.createElement('div');
+  w.id = 'convDraftPhotoLost';
+  w.style.cssText = 'font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 9px;margin-top:7px';
+  w.innerHTML = '⚠ ફોટા સાચવી શકાયા નથી — ફરીથી લેવા પડશે.'
+              + ' · The photos could not be kept — please take them again.';
+  const btn = document.getElementById('convDraftFresh');
+  if(btn && btn.parentNode === b) b.insertBefore(w, btn); else b.appendChild(w);
+}
+function _convDraftBanner(farmerId, dr){
+  const body = document.querySelector('#modal .modal-body');
+  if(!body) return;
+  const old = document.getElementById('convDraftBanner');
+  if(old) old.remove();
+  let stamp = '';
+  try{
+    const w = dr && dr.at ? new Date(dr.at) : null;
+    if(w && !isNaN(w.getTime())){
+      stamp = String(w.getDate()).padStart(2,'0') + '-' + String(w.getMonth()+1).padStart(2,'0')
+            + '-' + w.getFullYear() + ', ' + w.toTimeString().slice(0,5);
+    }
+  }catch(e){}
+  /* Whether the pictures actually came back is not known yet - the read is
+     below, after the dialog is on screen. _convDraftPhotoResult fills it in. */
+  const lost = false;
+  const b = document.createElement('div');
+  b.id = 'convDraftBanner';
+  b.style.cssText = 'background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:11px 14px;margin-bottom:12px';
+  b.innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">'
+    + '\u2713 \u0a85\u0aa7\u0ac2\u0ab0\u0ac0 \u0aae\u0ac1\u0ab2\u0abe\u0a95\u0abe\u0aa4 \u0aaa\u0abe\u0a9b\u0ac0 \u0a86\u0ab5\u0ac0 \u00b7 Unfinished visit brought back</div>'
+    + '<div style="font-size:12.5px;color:#064e3b;line-height:1.5">'
+    + '\u0aa4\u0aae\u0ac7 \u0a9c\u0acd\u0aaf\u0abe\u0a82 \u0a9b\u0acb\u0aa1\u0acd\u0aaf\u0ac1\u0a82 \u0ab9\u0aa4\u0ac1\u0a82 \u0aa4\u0acd\u0aaf\u0abe\u0a82\u0aa5\u0ac0 \u0aac\u0aa7\u0ac1\u0a82 \u0aad\u0ab0\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82 \u0a9b\u0ac7.'
+    + ' \u00b7 Everything you had entered has been filled back in.'
+    + (stamp ? ' <b>' + esc(stamp) + '</b>' : '') + '</div>'
+    + (lost ? '<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 9px;margin-top:7px">'
+              + '\u26a0 \u0aab\u0acb\u0a9f\u0abe \u0ab8\u0abe\u0a9a\u0ab5\u0ac0 \u0ab6\u0a95\u0abe\u0aaf\u0abe \u0aa8\u0aa5\u0ac0 \u2014 \u0aab\u0ab0\u0ac0\u0aa5\u0ac0 \u0ab2\u0ac7\u0ab5\u0abe \u0aaa\u0aa1\u0ab6\u0ac7.'
+              + ' \u00b7 The photos could not be kept \u2014 please take them again.</div>' : '')
+    + '<button type="button" id="convDraftFresh" style="margin-top:9px;background:#fff;border:1px solid #059669;color:#065f46;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">'
+    + '\u0aa8\u0ab5\u0ac7\u0ab8\u0ab0\u0aa5\u0ac0 \u0ab6\u0ab0\u0ac2 \u0a95\u0ab0\u0acb \u00b7 Start fresh</button>';
+  body.insertBefore(b, body.firstChild);
+  const btn = document.getElementById('convDraftFresh');
+  if(btn) btn.onclick = function(){
+    if(!confirm('\u0aad\u0ab0\u0ac7\u0ab2\u0ac1\u0a82 \u0aac\u0aa7\u0ac1\u0a82 \u0a95\u0abe\u0aa2\u0ac0 \u0aa8\u0abe\u0a96\u0ab5\u0ac1\u0a82 \u0a9b\u0ac7? \u0a86 \u0aaa\u0abe\u0a9b\u0ac1\u0a82 \u0aa8\u0ab9\u0ac0 \u0aae\u0ab3\u0ac7.\n\nDiscard what was brought back and start this visit again? This cannot be undone.')) return;
+    /* Cancel the pending save first, or it writes the draft straight back
+       after this clears it - the v141 mistake. */
+    if(typeof window.__cvDraftCancel === 'function') window.__cvDraftCancel();
+    window.__cvDraftSchedule = null;
+    window.__cvDraftFlush = null;
+    draftClear('conv', farmerId, 'new');
+    openConvScoreModal(farmerId);
+  };
+}
 function openConvScoreModal(id){
   /* v217 - `let`, not `const`: re-resolved after the awaits in the save
      handler. See the note there for why holding this object is unsafe. */
@@ -8617,6 +9295,11 @@ function openConvScoreModal(id){
       W[g][p.key] = { adopted: !!(prev && prev.adopted), remarks: (prev && prev.remarks) || '' };
     });
   });
+  /* v219 - unfinished work from a previous run. Applied onto W here, before a
+     single section is rendered, so the whole form paints itself back with no
+     restore code. Read synchronously; photos catch up below. */
+  const _cvDraft = draftLoadTextSync('conv', id, 'new');
+  if(_cvDraft && _cvDraft.data && _cvDraft.data.W) _convApplyDraftW(W, _cvDraft.data.W);
 
   /* v168 - the people filling this in are native Gujarati speakers, so the
      visit form speaks Gujarati. English survives only as the fallback for a
@@ -8956,7 +9639,9 @@ function openConvScoreModal(id){
   modalShell(esc(f.name), body,
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
     + '<button class="btn btn-primary" id="scoreSave">' + svg(I.check) + 'Save visit</button>'
-    + '<div id="saveHint" style="width:100%;text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:none">બન્ને રાસાયણિક સવાલોના જવાબ આપો · Answer both chemical-use questions above</div>',
+    + '<div id="saveHint" style="width:100%;text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:none">બન્ને રાસાયણિક સવાલોના જવાબ આપો · Answer both chemical-use questions above</div>'
+    /* v219 - hidden until the first autosave actually lands */
+    + '<div id="cvDraftTick" style="width:100%;text-align:center;font-size:11.5px;font-weight:600;margin-top:5px;display:none"></div>',
     /* v187 - the running score rides in the modal header, beside the farmer's
        name. See modalShell's 4th argument. */
     '<div id="scoreLive"></div>');
@@ -9167,6 +9852,145 @@ function openConvScoreModal(id){
 
   rebindAndPaint();
 
+  /* ---- v219 - draft autosave for this form -----------------------------
+     Everything below is local to the phone. Nothing here goes near Firebase. */
+  const _cvDraftFields = () => ({
+    W: _convDraftSnapshot(W),
+    vsDate:    (document.getElementById('vsDate')    || {}).value || '',
+    vsNext:    (document.getElementById('vsNext')    || {}).value || '',
+    vsFc:      (document.getElementById('vsFc')      || {}).value || '',
+    vsFcOther: (document.getElementById('vsFcOther') || {}).value || '',
+    vsNotes:   (document.getElementById('vsNotes')   || {}).value || '',
+    crops: [...document.querySelectorAll('.vs-crop-chip.on')].map(b => b.dataset.crop).filter(Boolean),
+  });
+  let _cvBaseline = JSON.stringify(_cvDraftFields());
+  let _cvPhotoRev = 0, _cvPhotoRevSaved = 0, _cvTimer = null, _cvSaved = false;
+
+  /* Put back the parts that live in the DOM rather than in W. */
+  if(_cvDraft && _cvDraft.data){
+    const D = _cvDraft.data;
+    const setv = (elId, v) => { const e = document.getElementById(elId); if(e && v) e.value = v; };
+    setv('vsDate', D.vsDate);
+    if(D.vsNext){
+      setv('vsNext', D.vsNext);
+      /* Otherwise editing the visit date would overwrite the next-visit date
+         the FC had already chosen. */
+      vsNextTouched = true;
+    }
+    if(D.vsFc){
+      const fcEl = document.getElementById('vsFc');
+      if(fcEl){ fcEl.value = D.vsFc; if(typeof fcEl.onchange === 'function') fcEl.onchange(); }
+    }
+    setv('vsFcOther', D.vsFcOther);
+    setv('vsNotes', D.vsNotes);
+    if(Array.isArray(D.crops) && D.crops.length){
+      const want = {};
+      D.crops.forEach(c => { want[c] = true; });
+      document.querySelectorAll('.vs-crop-chip').forEach(b => {
+        if(b.dataset.crop && want[b.dataset.crop]){
+          b.classList.add('on');
+          b.style.display = '';   /* a ticked crop is never left hidden by the filter */
+        }
+      });
+    }
+    _cvBaseline = JSON.stringify(_cvDraftFields());
+    rebindAndPaint();
+    _convDraftBanner(id, _cvDraft);
+  }
+
+  function _cvTick(ok){
+    const t = document.getElementById('cvDraftTick');
+    if(!t) return;
+    t.style.display = 'block';
+    t.style.color = ok ? 'var(--leaf)' : '#b45309';
+    t.textContent = ok
+      ? '\u2713 \u0ab8\u0abe\u0a9a\u0ab5\u0acd\u0aaf\u0ac1\u0a82 \u2014 \u0a86 \u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0ac1\u0ab0\u0a95\u0acd\u0ab7\u0abf\u0aa4 \u0a9b\u0ac7 \u00b7 Saved on this phone'
+      : '\u26a0 \u0a86 \u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0abe\u0a9a\u0ab5\u0ac0 \u0ab6\u0a95\u0abe\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0 \u00b7 Could not save on this phone';
+  }
+  function _cvSaveNow(){
+    if(_cvSaved) return;                                /* already submitted */
+    if(!document.getElementById('scoreSave')) return;   /* modal already gone */
+    const fields = _cvDraftFields();
+    const sig = JSON.stringify(fields);
+    const photosChanged = (_cvPhotoRev !== _cvPhotoRevSaved);
+    /* Nothing the FC has actually changed yet: the form opens pre-filled from
+       the previous scoring, and merely looking at it must not come back next
+       time as unfinished work. */
+    if(sig === _cvBaseline && !photosChanged) return;
+    const ok = draftSave('conv', id, 'new', fields,
+                         photosChanged ? vsPhotos.slice() : undefined, photosChanged);
+    if(photosChanged) _cvPhotoRevSaved = _cvPhotoRev;
+    _cvTick(!!ok);
+  }
+  function _cvSchedule(){
+    if(_cvSaved) return;
+    if(_cvTimer) clearTimeout(_cvTimer);
+    _cvTimer = setTimeout(() => { _cvTimer = null; _cvSaveNow(); }, 1500);
+  }
+  function _cvCancel(){ if(_cvTimer){ clearTimeout(_cvTimer); _cvTimer = null; } }
+  /* The modal element is reused by every dialog in the app, so the listeners
+     are attached once and delegate to whichever scheduler is current. Binding
+     them per open would stack a new closure - each holding a previous
+     farmer's working copy - on every dialog the FC opened. */
+  window.__cvDraftSchedule = _cvSchedule;
+  window.__cvDraftFlush    = () => { _cvCancel(); _cvSaveNow(); };
+  window.__cvDraftCancel   = _cvCancel;
+  if(!window.__cvDraftBound){
+    window.__cvDraftBound = true;
+    const _m = document.getElementById('modal');
+    if(_m) ['input','change','click'].forEach(t => _m.addEventListener(t, () => {
+      if(typeof window.__cvDraftSchedule === 'function') window.__cvDraftSchedule();
+    }, false));
+    /* Opening the camera is both the commonest thing an FC does mid-visit and
+       the likeliest moment for Android to reclaim the tab. */
+    document.addEventListener('visibilitychange', () => {
+      if(document.hidden && typeof window.__cvDraftFlush === 'function') window.__cvDraftFlush();
+    });
+    window.addEventListener('pagehide', () => {
+      if(typeof window.__cvDraftFlush === 'function') window.__cvDraftFlush();
+    });
+  }
+  /* Photos are read asynchronously, so the change event has already gone by
+     the time one exists. Every path that adds or removes one repaints the
+     counter, so wrapping that is what notices. */
+  const _cvPaintOrig = paintVsPhotoUI;
+  paintVsPhotoUI = function(){ _cvPaintOrig(); _cvPhotoRev++; _cvSchedule(); };
+
+  /* Photos from a restored draft come from IndexedDB, so they land after the
+     form is already on screen. */
+  if(_cvDraft && _cvDraft.photoCount){
+    (_cvDraft.photosKept ? _draftPhotosGet(draftKey('conv', id, 'new')) : Promise.resolve(null)).then(ph => {
+      if(!Array.isArray(ph) || !ph.length){ _convDraftPhotoResult(false); return; }
+      if(!document.getElementById('vsPhotoGrid')) return;   /* modal already closed */
+      _convDraftPhotoResult(true);
+      ph.slice(0, VS_MAX_PHOTOS).forEach(photo => {
+        if(vsPhotos.length >= VS_MAX_PHOTOS) return;
+        vsPhotos.push(photo);
+        const thumb = document.createElement('div');
+        thumb.style.cssText = 'width:64px;height:64px;border-radius:8px;overflow:hidden;background:#e9edf2;position:relative;flex-shrink:0';
+        const im = document.createElement('img');
+        im.src = photo.data || '';
+        im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        const x = document.createElement('span');
+        x.textContent = '\u00d7';
+        x.style.cssText = 'position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(220,38,38,.9);color:#fff;display:grid;place-items:center;font-size:11px;cursor:pointer;line-height:1';
+        x.onclick = () => {
+          const i = vsPhotos.indexOf(photo);
+          if(i>=0) vsPhotos.splice(i,1);
+          thumb.remove();
+          paintVsPhotoUI();
+        };
+        thumb.appendChild(im); thumb.appendChild(x);
+        vsPhotoGrid.insertBefore(thumb, vsPhotoGrid.querySelector('label'));
+      });
+      paintVsPhotoUI();
+      /* These pictures came OUT of the store, so they are not a change that
+         needs writing back. */
+      _cvPhotoRevSaved = _cvPhotoRev;
+      _cvCancel();
+    }).catch(()=>{ _convDraftPhotoResult(false); });
+  }
+
   document.getElementById('scoreSave').onclick = async () => {
     // Mandatory check — A1 and A2 must have an explicit Confirmed/Not Confirmed value.
     if(W.A1.confirmed === null || W.A2.confirmed === null){
@@ -9188,6 +10012,10 @@ function openConvScoreModal(id){
     }
     const saveBtn = document.getElementById('scoreSave');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+    /* v219 - same reason as the verification form: this handler awaits photo
+       compression and saveDB, and closeModal runs before either has finished.
+       A deadline rather than a flag, so a throw cannot wedge updates off. */
+    window._verifBusyUntil = Date.now() + 90000;
     try {
     // ===== Push the OUTGOING score into history before overwriting =====
     // Each visit/re-score gets its own row so admin can see the trail
@@ -9358,6 +10186,17 @@ function openConvScoreModal(id){
                                      at: Date.now(), fields: _cvFields, rec:_cvRow})
         .catch(() => { try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); }catch(e){} });
     }
+    /* v219 - the visit is recorded, so the draft is finished with. Cancel
+       first: a debounced save still in flight would write it straight back and
+       the next open would offer to restore a visit that had already been
+       saved. That is what the enrolment patrak did before v141. */
+    _cvSaved = true;
+    _cvCancel();
+    window.__cvDraftSchedule = null;
+    window.__cvDraftFlush = null;
+    window.__cvDraftCancel = null;
+    try{ draftClear('conv', f.id, 'new'); }catch(e){}
+    window._verifBusyUntil = 0;   /* v219 - written; a queued update may apply */
     closeModal();
     if(typeof render === 'function') render();
     if(typeof openConvDrawer === 'function' && !document.body.classList.contains('fc-mode')) openConvDrawer(f.id);
@@ -15467,7 +16306,21 @@ function _sheetify(m){
   P('transform','none'); P('transition','none');
 }
 function openModal(){$('#overlay').classList.add('show');const _m=$('#modal');_m.classList.add('show');_sheetify(_m);}
-function closeModal(){$('#overlay').classList.remove('show');$('#modal').classList.remove('show');$('#modal').classList.remove('wide');}
+function closeModal(){
+  $('#overlay').classList.remove('show');
+  $('#modal').classList.remove('show');
+  $('#modal').classList.remove('wide');
+  /* v219 - release the conversion form's autosave hooks. closeModal only drops
+     CSS classes, so #scoreSave is still in the DOM afterwards and the stale
+     flush would keep passing its own "is the dialog gone?" check: every later
+     screen-off re-stamped that farmer's draft with a fresh time, holding it
+     past the seven-day prune and pushing other drafts out of the top four.
+     Any save already counting down still runs - the FC's last few edits before
+     Cancel are worth keeping - it simply cannot be triggered again. */
+  window.__cvDraftSchedule = null;
+  window.__cvDraftFlush = null;
+  if(window._runPendingReload) window._runPendingReload();
+}
 /* v187 - optional 4th argument renders between the title and the close button.
    Added for the conversion visit form, whose running score used to be a
    `position:sticky` card INSIDE .modal-body. Sticky anchors to the scroll
@@ -19740,6 +20593,7 @@ function closeEnrollmentForm(){
   document.body.style.overflow='';
   const fr=$('#enrollFrame');
   if(fr) fr.src='about:blank';
+  if(window._runPendingReload) window._runPendingReload();   /* v219 */
 }
 
 /* =============================================================
@@ -20136,7 +20990,51 @@ window.addEventListener('message',async ev=>{
         // set it from SESSION.userName). It's a real fallback for "who
         // verified this" display (farmer drawer timeline, activity log) when
         // the primary fc-id lookup fails, so send the real name every time.
-        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema, prevVerif, editVerif, verifierName: actor().name}, '*');
+        /* v219 - unfinished work from a previous run of this form, if any.
+           Fresh verifications only; see _verifDraftsOn.
+
+           Read SYNCHRONOUSLY from localStorage. An earlier version awaited
+           draftLoad here, which waits on IndexedDB for the photos - and on a
+           phone whose IndexedDB is wedged that wait runs past the form's own
+           1.5-second "could not load the question schema" banner, so the FC
+           got a scare before the form appeared. The pictures now follow in
+           their own message once they arrive. */
+        let draftVerif = null, _drRec = null;
+        try{
+          if(_verifDraftsOn()){
+            _drRec = draftLoadTextSync('verif', f.id, 'new');
+            if(_drRec && _drRec.data && Array.isArray(_drRec.data.claims) && _drRec.data.claims.length){
+              draftVerif = {
+                claims:   _drRec.data.claims,
+                photos:   {},
+                comments: _drRec.data.comments || '',
+                date:     _drRec.data.date || '',
+                time:     _drRec.data.time || '',
+                page:     _drRec.page || 0,
+                at:       _drRec.at || 0,
+                photoCount: _drRec.photoCount || 0,
+              };
+            }
+          }
+        }catch(e){ console.warn('[Sristi] v219 draft load:', e); }
+        frame.contentWindow.postMessage({type:'verif-prefill', farmer, claims, photos, schema, prevVerif, editVerif, draftVerif, verifierName: actor().name}, '*');
+        /* The draft's pictures, once IndexedDB gives them up. Sent separately
+           so a slow or broken read delays nothing the FC can see, and reported
+           as lost only when they genuinely did not come back - the banner must
+           never claim a photo is there when it is not. */
+        if(draftVerif && draftVerif.photoCount){
+          const _pk = draftKey('verif', f.id, 'new');
+          const _expect = _drRec && _drRec.photosKept;
+          (_expect ? _draftPhotosGet(_pk) : Promise.resolve(null)).then(ph => {
+            const fr2 = document.getElementById('verifyFrame');
+            if(!fr2 || !fr2.contentWindow) return;
+            const got = ph && typeof ph === 'object' && Object.keys(ph).length ? ph : null;
+            fr2.contentWindow.postMessage({type:'verif-draft-photos', photos: got || {}, lost: !got}, '*');
+          }).catch(() => {
+            const fr2 = document.getElementById('verifyFrame');
+            if(fr2 && fr2.contentWindow) fr2.contentWindow.postMessage({type:'verif-draft-photos', photos:{}, lost:true}, '*');
+          });
+        }
       }
     }
     return;
@@ -20669,6 +21567,15 @@ function openVerificationForm(farmerId, farmFid, opts){
     saveDB(true);
   }
   _verifyTargetId=farmerId;
+  /* v219 - settle now whether this open is an edit, and never ask again. */
+  window._verifOpenIsEdit = !!(opts && opts.editVisit);
+  /* Opening the form again is a new piece of work, so lift the
+     "already submitted" block for this farmer. */
+  try{
+    window._draftDone = window._draftDone || {};
+    delete window._draftDone['verif|' + farmerId + '|new'];
+  }catch(e){}
+  if(!window._verifOpenIsEdit && typeof draftSweepOrphans === 'function') draftSweepOrphans();
   let host=$('#verifyHost');
   if(!host){
     host=document.createElement('div');
@@ -20685,13 +21592,19 @@ function openVerificationForm(farmerId, farmFid, opts){
       </div>
       <iframe id="verifyFrame" class="enroll-frame" title="Verification form"></iframe>`;
     document.body.appendChild(host);
-    /* v185 - this closed a ~60-question verification instantly. The form has NO
-       draft autosave (the enrolment patrak has one; this does not), and the
-       in-iframe back button already confirms - so the big X in the outer bar was
-       the one way to lose an afternoon's work on a mis-tap. Same question the
-       in-form button asks. */
+    /* v185 - this closed a ~60-question verification instantly, and the big X in
+       the outer bar was the one way to lose an afternoon's work on a mis-tap.
+       v219 - the form DOES autosave now, for a fresh verification, so the
+       question below says which of the two situations the FC is actually in. */
     $('#verifyClose').onclick=function(){
-      if(confirm('\u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u0a9b\u0acb\u0aa1\u0ac0 \u0aa6\u0ac7\u0ab5\u0abe \u0aae\u0abe\u0a97\u0acb \u0a9b\u0acb? \u0aad\u0ab0\u0ac7\u0ab2\u0ac0 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0ab8\u0abe\u0a9a\u0ab5\u0abe\u0ab6\u0ac7 \u0aa8\u0ab9\u0abf.\n\nClose the form? Your answers will not be saved.')) closeVerificationForm();
+      /* v219 - this said the answers would not be saved. For a fresh
+         verification they now are, and the FC must be told which of the two
+         situations she is actually in. */
+      var _keeps = !window._verifOpenIsEdit;
+      var _msg = _keeps
+        ? '\u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u0aac\u0a82\u0aa7 \u0a95\u0ab0\u0ab5\u0ac1\u0a82 \u0a9b\u0ac7? \u0aad\u0ab0\u0ac7\u0ab2\u0abe \u0a9c\u0ab5\u0abe\u0aac \u0a86 \u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0a9a\u0ab5\u0abe\u0aaf\u0ac7\u0ab2\u0abe \u0a9b\u0ac7 \u2014 \u0aab\u0ab0\u0ac0 \u0a96\u0acb\u0ab2\u0ab6\u0acb \u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0aaa\u0abe\u0a9b\u0abe \u0aae\u0ab3\u0ab6\u0ac7.\n\nClose the form? Your answers are saved on this phone and will come back when you open it again.'
+        : '\u0aaa\u0aa4\u0acd\u0ab0\u0a95 \u0a9b\u0acb\u0aa1\u0ac0 \u0aa6\u0ac7\u0ab5\u0abe \u0aae\u0abe\u0a97\u0acb \u0a9b\u0acb? \u0aab\u0ac7\u0ab0\u0aab\u0abe\u0ab0 \u0ab8\u0abe\u0a9a\u0ab5\u0abe\u0ab6\u0ac7 \u0aa8\u0ab9\u0abf.\n\nClose without saving? Your changes to this verification will be lost.';
+      if(confirm(_msg)) closeVerificationForm();
     };
   }
   // Build the prefill-injection script.
@@ -21005,6 +21918,24 @@ function openVerificationForm(farmerId, farmFid, opts){
   host.classList.add('show');
   document.body.style.overflow='hidden';
 }
+/* v219 - drafts are for a FRESH verification only, never for the office
+   correcting one already submitted.
+
+   Captured when the form OPENS and read everywhere afterwards. Deriving it
+   from window._verifyEditing at the moment it is needed does not work:
+   closeVerificationForm() nulls that on its first line and then blanks the
+   iframe, and blanking the iframe fires the form's pagehide, which flushes one
+   final draft - by which time the mode has already collapsed to 'new'. An
+   edit's answers would be filed under the fresh-verification key and offered
+   back on a later real visit.
+
+   Excluding edits also settles three things a draft cannot do there: it would
+   push photos on top of the ones the edit prefill already placed, it cannot
+   express a note or photo the FC DELETED (so a correction would silently
+   revert itself on restore), and it left the clear removing the wrong key.
+   None of that is worth solving for a screen used at a desk, from a sheet the
+   server has already filled in, with the original safe on the server. */
+function _verifDraftsOn(){ return !window._verifOpenIsEdit; }
 function closeVerificationForm(){
   window._verifyEditing = null;   /* v211 - never outlive the form */
   // Release lock so other FCs aren't blocked after X-close (no submit).
@@ -21026,6 +21957,7 @@ function closeVerificationForm(){
   if(_verifyTargetId && $('#drawer').classList.contains('show')){
     openHaatDrawer(_verifyTargetId);
   }
+  if(window._runPendingReload) window._runPendingReload();   /* v219 */
 }
 /* v10 — the form's `photos` payload is an OBJECT {questionId: [dataURLs]},
    not an array. The old `(d.photos||[]).length` evaluated to `undefined`
@@ -21044,6 +21976,9 @@ window.addEventListener('message',async ev=>{
   const d=ev.data;
   if(!d||typeof d!=='object')return;
   if(d.type==='farm-verification-done' && _verifyTargetId){
+    /* v219 - hold any queued version update back until this has finished
+       writing. Cleared at both exits below; the deadline is the backstop. */
+    window._verifBusyUntil = Date.now() + 90000;
     /* v199 - `let`, not `const`: this is re-resolved after the awaits below.
        See the note at the re-resolve for why. */
     let f=DB.haatFarmers.find(x=>x.id===_verifyTargetId);
@@ -21230,7 +22165,31 @@ window.addEventListener('message',async ev=>{
                                            rec: f.verificationFormSubmittedAt}).catch(()=>{});
           }
         }
+        /* v219 - the visit is recorded, so the draft has done its job. This is
+           the path every real submission takes; the block further down handles
+           the legacy no-claims payload.
+           Marked done as well as cleared, because a debounced post already in
+           flight would otherwise write it straight back - that is exactly how
+           the enrolment patrak came to offer a restore of a form it had already
+           sent, and how one tap on restore plus one on submit sent all 88
+           answers twice (v141).
+           Cleared even when the write only reached the phone: the durable queue
+           carries the visit from here, so the draft is no longer the thing
+           keeping the FC's work.
+           Computed BEFORE _verifyEditing is nulled just below - the mode is
+           what tells a fresh verification's draft from a correction's. */
+        try{
+          /* Only a fresh verification ever had a draft. Clearing on an edit
+             would delete a DIFFERENT, still-unfinished verification of the
+             same farmer sitting on this phone. */
+          if(_verifDraftsOn()){
+            window._draftDone = window._draftDone || {};
+            window._draftDone['verif|' + f.id + '|new'] = true;
+            draftClear('verif', f.id, 'new');
+          }
+        }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
         window._verifyEditing = null;   /* v211 - one edit, one save */
+        window._verifBusyUntil = 0;     /* v219 - written; a queued update may apply */
         if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;
@@ -21262,8 +22221,57 @@ window.addEventListener('message',async ev=>{
       const _verifSynced = await saveDB(true);
       window._lastVerifSynced = !!_verifSynced;
       if(!_verifSynced) idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id, rec:sanitizeForFB(_stripEphemeral(f))}).catch(()=>{});
+      /* v219 - the visit is recorded, so the draft has done its job. Marked
+         done as well as cleared: a post already in flight must not write it
+         back, which is how the enrolment patrak once offered to restore a
+         form that had already been sent. Cleared even when the write only
+         reached the phone - the queue carries it from here, and the draft is
+         no longer the thing keeping the work. */
+      try{
+        if(_verifDraftsOn()){
+          window._draftDone = window._draftDone || {};
+          window._draftDone['verif|' + f.id + '|new'] = true;
+          draftClear('verif', f.id, 'new');
+        }
+      }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
+      window._verifBusyUntil = 0;     /* v219 */
       updateFcSync();
     }
+  }
+  /* v219 - the FC has tapped Submit. Hold any queued version update back from
+     here, not from the moment the payload arrives: submit() waits on GPS
+     first, and that wait is long enough to reload into. */
+  if(d.type==='verif-submitting'){ window._verifBusyUntil = Date.now() + 90000; return; }
+  /* v219 - an autosave from the verification form. Nothing here goes near
+     Firebase: it is written to this phone only. */
+  if(d.type==='verif-draft' && _verifyTargetId){
+    /* Ignore anything that does not belong to the form currently open - a
+       message that arrives late, after the FC has moved to another farmer,
+       must never overwrite the new farmer's draft. */
+    if(d.farmerId && d.farmerId !== _verifyTargetId) return;
+    /* Not while correcting a submitted verification - see _verifDraftsOn. */
+    if(!_verifDraftsOn()) return;
+    const _dm = 'new';
+    const _dk = 'verif|' + _verifyTargetId + '|' + _dm;
+    /* Submitted already. A post still in flight when the form was cleared is
+       exactly how the enrolment patrak resurrected a sent form in v141. */
+    if(window._draftDone && window._draftDone[_dk]) return;
+    const ok = draftSave('verif', _verifyTargetId, _dm, d.data,
+                         d.photosChanged ? (d.photos || {}) : undefined,
+                         !!d.photosChanged);
+    const fr = document.getElementById('verifyFrame');
+    if(fr && fr.contentWindow) fr.contentWindow.postMessage({type:'verif-draft-saved', ok: !!ok}, '*');
+    return;
+  }
+  /* v219 - the FC chose to throw the restored answers away. Clear the draft,
+     then re-open the same form so it builds clean. */
+  if(d.type==='verif-draft-discard' && _verifyTargetId){
+    const _id = _verifyTargetId;
+    draftClear('verif', _id, 'new');
+    const _ed = (window._verifyEditing && window._verifyEditing.farmerId === _id) ? window._verifyEditing : null;
+    const _opts = _ed ? {editVisit: {recordedAt: _ed.visitAt || '', date: _ed.visitDate || ''}} : undefined;
+    openVerificationForm(_id, window._verifyTargetFarmFid || '', _opts);
+    return;
   }
   if(d.type==='farm-verification-closed'){
     closeVerificationForm();
@@ -24515,7 +25523,12 @@ if ('serviceWorker' in navigator) {
       if (!hadControllerAtLoad) { hadControllerAtLoad = true; return; } // first-ever claim, not an update
       if (_swRefreshing) return;   // guard: reload at most once (no reload loop)
       _swRefreshing = true;
-      window.location.reload();
+      /* v219 - this used to reload immediately, which meant publishing a new
+         build wiped whatever every FC in the field had on screen. Four builds
+         went out on 21-22 August. Now the update waits until no form is open
+         and nothing is queued for the server. */
+      if (typeof window._reloadWhenSafe === 'function') window._reloadWhenSafe();
+      else window.location.reload();
     });
   });
 }

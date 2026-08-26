@@ -3181,7 +3181,7 @@ function renderFcControls(q){
       h += '<div class="l"><span class="tgu">FC જવાબ</span><span class="thi">FC जवाब</span><span class="ten">FC answer</span></div><div class="yn" data-fc-yn="'+q.id+'" style="display:flex;gap:8px"><button type="button" class="ynbtn" data-v="yes" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">હા</span><span class="thi">हाँ</span><span class="ten">Yes</span></button><button type="button" class="ynbtn" data-v="no" style="flex:1;padding:10px;border:1.5px solid var(--line-strong);background:#fff;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit"><span class="tgu">ના</span><span class="thi">नहीं</span><span class="ten">No</span></button></div>';
     } else if(q.type === 'photo'){
       h += '<div class="l"><span class="tgu">FC ફોટો અપલોડ</span><span class="thi">FC फोटो अपलोड</span><span class="ten">FC photo upload</span></div>';
-      h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
+      h += '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.15;text-align:center"><span><span style="font-size:22px;display:block">\ud83d\udcf7</span><span style="font-size:9px;font-weight:700">\u0a95\u0ac7\u0aae\u0ac7\u0ab0\u0abe</span></span><input type="file" accept="image/*" capture="environment" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.15;text-align:center"><span><span style="font-size:22px;display:block">\ud83d\uddbc\ufe0f</span><span style="font-size:9px;font-weight:700">\u0a97\u0ac7\u0ab2\u0ab0\u0ac0</span></span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div>';
     } else {
       /* text / textarea */
       const ph = q.type==='textarea' ? 'FC writes their observation here…' : 'FC answer';
@@ -3208,7 +3208,7 @@ function renderFcControls(q){
      their own verification photo in addition to the radio. */
   if(q.type==='photo'){
     h += '<div class="fc-photo-row" style="margin-top:10px"><div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">📷 <span class="tgu">FC ચકાસણી ફોટો (વૈકલ્પિક)</span><span class="thi">FC सत्यापन फोटो (वैकल्पिक)</span><span class="ten">FC verification photo (optional)</span></div>'
-       + '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff"><span style="font-size:24px">+</span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div></div>';
+       + '<div data-fc-photogrid="'+q.id+'" style="display:flex;gap:8px;flex-wrap:wrap"><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.15;text-align:center"><span><span style="font-size:22px;display:block">\ud83d\udcf7</span><span style="font-size:9px;font-weight:700">\u0a95\u0ac7\u0aae\u0ac7\u0ab0\u0abe</span></span><input type="file" accept="image/*" capture="environment" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label><label style="width:74px;height:74px;border-radius:8px;border:1.5px dashed var(--line-strong);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft);background:#fff;line-height:1.15;text-align:center"><span><span style="font-size:22px;display:block">\ud83d\uddbc\ufe0f</span><span style="font-size:9px;font-weight:700">\u0a97\u0ac7\u0ab2\u0ab0\u0ac0</span></span><input type="file" accept="image/*" multiple data-fc-photo-input="'+q.id+'" style="display:none"></label></div></div>';
   }
   if(q.type==='multi'){
     const claim = CLAIMS_BY_ID[q.id];
@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v220';
+const APP_VERSION = 'v221';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7293,6 +7293,16 @@ function startBackgroundPumps(){
 // WHAT (the action label is already in the activity text). Senior reviewers
 // and admins see this trail in the activity feed and on each farmer's drawer.
 function actor(){
+  /* v221 - PUBLIC_MODE is checked FIRST. The v9 note below assumed "SESSION is
+     null means public mode", which stopped being safe the moment a session
+     could be remembered across visits: a farmer's own enrolment would have been
+     stamped in the activity log with the name of whoever last used the device,
+     the visible line saying "via public form" while the audit fields named an
+     FC. The public landing never has a legitimate staff actor - sign-out nulls
+     SESSION before entering it - so nothing is lost by asking this first. */
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
+    return { id:'', name:'Public form', role:'public' };
+  }
   if(SESSION && SESSION.userName){
     return {
       id:   SESSION.userId   || '',
@@ -7440,23 +7450,125 @@ function nextFreeFcCode(){
    FC users see only their own assigned farmers in lists/maps.
    ============================================================ */
 const USER_SESSION_KEY = 'sristi_user_session_v1';
-// v9 Batch 1 — session stored in sessionStorage (NOT localStorage) so
-// closing the tab/browser ends the session and the next visit forces a
-// fresh login. Even admin must re-authenticate each visit per the spec.
+/* v9 Batch 1 — the session lives in sessionStorage, so closing the tab or the
+   browser ends it and the next visit forces a fresh login. On a phone passed
+   between people that is the right default, and it is still the default.
+
+   v221 — but only the default. Somebody signing in on their own laptop can
+   tick "keep me signed in on this device", which additionally writes the
+   session to localStorage with an expiry. Nothing else in the app changes: a
+   remembered session is copied straight back into sessionStorage on load, so
+   every existing `sessionStorage.getItem(USER_SESSION_KEY)` check behaves
+   exactly as it did. */
+const SESSION_KEEP_MS = 30*24*60*60*1000;
+/* The same test detectPublicMode() applies. Kept separate because loadSession()
+   runs during parse, long before PUBLIC_MODE exists. */
+function _sessionHashWantsApp(){
+  const h = ((typeof location !== 'undefined' && location.hash) || '').toLowerCase();
+  return h === '#admin' || h === '#fc';
+}
+/* v221 - the user has just asked to go into the app. If this device was told to
+   remember them, this is the moment it counts: on the public landing the
+   remembered session is deliberately ignored, so it has to be picked up here.
+   Returns true when a session was restored. */
+function restoreKeptSession(){
+  try{
+    if(sessionStorage.getItem(USER_SESSION_KEY)) return false;   // already signed in
+    const s = loadSession();
+    if(s){ SESSION = s; return true; }
+  }catch(e){}
+  return false;
+}
 function loadSession(){
   try{
     const raw = sessionStorage.getItem(USER_SESSION_KEY);
     if(raw) return JSON.parse(raw);
   }catch(e){}
-  // Migrate any old localStorage session (one-time cleanup) so users on
-  // upgrade aren't auto-signed-in from before.
-  try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
+  /* A session this device was told to remember - but ONLY when the URL says
+     we are heading into the staff app.
+
+     On the public farmer landing this must stay untouched. Two gates in
+     loadDB() read the raw sessionStorage key as "a login has happened in this
+     tab", and v185 put them there specifically to stop the public page
+     downloading every account record - salt and passwordHash included - and
+     caching it in localStorage. actor() makes the same assumption the other
+     way round: no session means a farmer is self-submitting. Restoring here
+     unconditionally broke both. */
+  if(!_sessionHashWantsApp()) return null;
+  try{
+    const kept = localStorage.getItem(USER_SESSION_KEY);
+    if(kept){
+      const k = JSON.parse(kept);
+      if(k && k.keepUntil && Date.now() < k.keepUntil && k.role){
+        /* Mirror it into sessionStorage so the rest of the app - which gates
+           on that key in several places - sees an ordinary session. */
+        try{ sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(k)); }catch(e){}
+        return k;
+      }
+      /* Expired, or written by an older version with no expiry at all. */
+      localStorage.removeItem(USER_SESSION_KEY);
+    }
+  }catch(e){
+    try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e2){}
+  }
   return null;   // no auto-default admin — landing requires explicit login
 }
-function saveSession(s){
+function saveSession(s, keepOnThisDevice){
   try{ sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(s)); }catch(e){}
-  // Defensive: kill any localStorage residue too.
+  try{
+    if(keepOnThisDevice){
+      localStorage.setItem(USER_SESSION_KEY, JSON.stringify(Object.assign({}, s, {keepUntil: Date.now() + SESSION_KEEP_MS})));
+    } else {
+      localStorage.removeItem(USER_SESSION_KEY);
+    }
+  }catch(e){}
+}
+/* v221 - sign out for a reason other than the person asking to. */
+function forceSignOut(why){
+  try{ sessionStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
+  SESSION = null;
+  try{ if(typeof toast === 'function') toast(why, 'error'); }catch(e){}
+  /* v221 - wait 1.8s so the message can be read, then do not reload on top of
+     a submission. The account is already signed out in memory so nothing new
+     can start; this only decides when the page is allowed to go down. Same two
+     conditions the version-update gate uses. Capped, so a flag left set cannot
+     strand somebody signed out on screen but still inside the app. */
+  let _fsTries = 0;
+  const _fsGo = function(){
+    /* Also while a form is open: its draft reaches IndexedDB through a
+       postMessage and a 1.5s debounce, and a reload can outrun that. The text
+       half is written synchronously and is safe either way; the photos are not. */
+    const busy = (Date.now() < (window._verifBusyUntil || 0))
+              || (function(){ try{ return typeof window._formIsOpen === 'function' && window._formIsOpen(); }catch(e){ return false; } })()
+              || (function(){ try{ return typeof pendingSyncCount === 'function' && pendingSyncCount() > 0; }catch(e){ return false; } })();
+    if(busy && _fsTries++ < 40){ setTimeout(_fsGo, 1500); return; }
+    location.hash = '#login';
+    location.reload();
+  };
+  setTimeout(_fsGo, 1800);
+}
+/* v221 - nothing in this app ever re-checked a session once it existed;
+   subscribeUsers() only refreshed the list. That was survivable while a session
+   died with the tab. A remembered session lasts 30 days, so a deactivated
+   account would too. Called every time config/users arrives.
+
+   One-sided ON PURPOSE: it signs out only when it can positively see the
+   account is deactivated. An account it cannot find is left alone - offline,
+   still loading, or an older session shape must never throw somebody out. */
+function revalidateSession(users){
+  if(!SESSION || !Array.isArray(users) || !users.length) return;
+  /* One test, matching exactly how SESSION.userId is built at sign-in
+     (fcCode || id). The extra `u.id === SESSION.userId` this used to carry was
+     redundant - it is already covered for an admin, whose userId IS their id -
+     and it could match a DIFFERENT record whose login id happened to equal
+     somebody's fcCode. If that other record were deactivated the live person
+     would be signed out, sign back in fine, and be thrown out again on the next
+     boot: a loop with no visible cause. */
+  const me = users.find(u => u && (u.fcCode || u.id) === SESSION.userId);
+  if(me && me.active === false){
+    forceSignOut('તમારું એકાઉન્ટ બંધ કરવામાં આવ્યું છે · This account has been deactivated — signing out.');
+  }
 }
 let SESSION = loadSession();
 /* v185 - was `!SESSION || SESSION.role === 'admin'`, i.e. NO SESSION MEANT
@@ -20624,6 +20736,10 @@ function render(){
     // If no entry exists at all (e.g. user created via Settings without a roster profile), allow through.
     if(myFc && myFc.deleted){
       try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
+      /* v221 - and the remembered copy. Without this a "keep me signed in"
+         device signs the removed FC straight back in on the next load, which
+         is the v122 bug again (see the note on the Sign out button below). */
+      try { localStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
       SESSION = null;
       location.hash = '';
       if(typeof toast === 'function') toast('Your field coordinator profile was removed. Please sign in again.');
@@ -22605,12 +22721,23 @@ function detectPublicMode(){
   // "Users should be required to log in using their username and password
   // every time they sign in to the application. Even for Admin also."
   const h = (location.hash || '').toLowerCase();
+  /* v221 - the hash saying #admin/#fc IS the statement of intent, so this is
+     the moment a remembered session becomes eligible. It has to happen before
+     the key is read two lines down: putting it in enterAdminMode() was too
+     late, because nothing reaches enterAdminMode() until this function has
+     already decided we are not public. On the public landing nothing is
+     restored and the app boots exactly as it did before v221. */
+  if(h === '#admin' || h === '#fc') restoreKeptSession();
   const hasSession = !!sessionStorage.getItem(USER_SESSION_KEY);
   if((h === '#admin' || h === '#fc') && hasSession) return false;
   return true;
 }
 
 function enterAdminMode(){
+  /* v221 - the one choke point for "the user is trying to get into the app".
+     A remembered session is not restored on the public landing, so this is
+     where it is picked up. */
+  restoreKeptSession();
   // v9 Batch 1 — only enter admin mode if a real login has happened this
   // session. Without sessionStorage proof we bounce back to landing.
   if(!sessionStorage.getItem(USER_SESSION_KEY)){
@@ -23166,6 +23293,7 @@ function subscribeUsers() {
     if (!snap.exists()) { migrateDefaultUsers(); return; }
     USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
     saveUsersCache(USERS_LIST);
+    revalidateSession(USERS_LIST);   /* v221 */
   }, err => { console.warn('[Users] Firebase sync error:', err); });
 }
 
@@ -23508,6 +23636,15 @@ function openLoginModal(){
         <label>પાસવર્ડ · Password</label>
         <input id="lmPw" type="password" autocomplete="current-password" placeholder="••••••••">
       </div>
+      <!-- v221 - off unless ticked. On a shared phone staying signed in means
+           whoever picks it up is signed in as you, so this has to be a
+           deliberate choice, not something that happens to everyone. -->
+      <label style="display:flex;align-items:flex-start;gap:8px;margin:2px 0 12px;cursor:pointer;font-size:12.5px;color:#cfd8e6;line-height:1.4">
+        <input type="checkbox" id="lmKeep" style="margin-top:2px;width:16px;height:16px;flex:none;cursor:pointer">
+        <span>આ ડિવાઇસ પર લૉગ-ઇન રહેવા દો · Keep me signed in on this device
+          <span style="display:block;font-size:11px;color:#8fa0b8">30 દિવસ સુધી. બીજા સાથે વાપરતા ફોન પર ટિક ન કરો. · For 30 days. Do not tick this on a phone you share.</span>
+        </span>
+      </label>
       <button class="lm-submit" id="lmSubmit">Sign in →</button>
     </div>
   `;
@@ -23517,6 +23654,12 @@ function openLoginModal(){
   const attempt = async () => {
     const idVal = ($('#lmId').value || '').trim().toLowerCase();
     const pwVal = $('#lmPw').value || '';
+    /* v221 - read NOW, not after the awaits below. An account flagged
+       mustChangePassword goes through forcePasswordChangeModal, which replaces
+       the modal DOM - so by the time the session is saved this checkbox no
+       longer exists and the tick was silently thrown away. Exactly the people
+       in a password rotation would have hit it. */
+    const _keepMe = !!($('#lmKeep') && $('#lmKeep').checked);
     const errEl = $('#lmErr');
     if(!idVal || !pwVal){
       errEl.innerHTML = '<div class="lm-err">કૃપા કરી ID અને password બંને નાખો. Please enter both ID and password.</div>';
@@ -23564,7 +23707,7 @@ function openLoginModal(){
     }
     // Success — set session and flip to admin mode.
     SESSION = { role: authUser.role, userId: authUser.fcCode || authUser.id || '', userName: authUser.name };
-    saveSession(SESSION);
+    saveSession(SESSION, _keepMe);   /* v221 - captured before the awaits above */
     // v9 process-fix M2 — multi-device warning. Track active sessions in
     // Firebase under activeSessions/{userId}. On sign-in, check if another
     // device's session is still fresh (< 8 hours) and warn the new login.
@@ -23586,6 +23729,9 @@ function openLoginModal(){
           );
           if(!ok){
             sessionStorage.removeItem(USER_SESSION_KEY);
+            /* v221 - and the remembered copy, or backing out here would leave
+               the device signed in on the next visit anyway. */
+            try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
             SESSION = null;
             submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';
             return;   // stay on the login modal — do NOT enter admin mode

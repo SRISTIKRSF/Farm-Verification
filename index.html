@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v224';
+const APP_VERSION = 'v225';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7635,6 +7635,9 @@ function saveSession(s, keepOnThisDevice){
 }
 /* v221 - sign out for a reason other than the person asking to. */
 function forceSignOut(why){
+  /* v225 - take this device's multi-device row down too. Without this a
+     deactivated account's flag outlived the account by up to 8 hours. */
+  try{ _clearMyActiveSession(_sessionKeyOf(SESSION)); }catch(e){}
   try{ sessionStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   SESSION = null;
@@ -7653,7 +7656,10 @@ function forceSignOut(why){
               || (function(){ try{ return typeof window._formIsOpen === 'function' && window._formIsOpen(); }catch(e){ return false; } })()
               || (function(){ try{ return typeof pendingSyncCount === 'function' && pendingSyncCount() > 0; }catch(e){ return false; } })();
     if(busy && _fsTries++ < 40){ setTimeout(_fsGo, 1500); return; }
-    location.hash = '#login';
+    /* v225 - was '#login', which nothing in this file handles, so a forced
+       sign-out landed on the farmer-facing page instead of the login screen.
+       '#admin' with no session opens the login modal at boot. */
+    location.hash = '#admin';
     location.reload();
   };
   setTimeout(_fsGo, 1800);
@@ -20845,6 +20851,8 @@ function render(){
     // Only bounce if the FC roster entry EXISTS but has been explicitly deleted.
     // If no entry exists at all (e.g. user created via Settings without a roster profile), allow through.
     if(myFc && myFc.deleted){
+      /* v225 - and this device's multi-device row, for the same reason. */
+      try { _clearMyActiveSession(_sessionKeyOf(SESSION)); } catch(e) {}
       try { sessionStorage.removeItem(USER_SESSION_KEY); } catch(e) {}
       /* v221 - and the remembered copy. Without this a "keep me signed in"
          device signs the removed FC straight back in on the next load, which
@@ -22777,39 +22785,67 @@ $('#globalSearch').oninput=e=>{
 $('#quickAdd').onclick=quickAdd;
 // v9 — user pill now signs out instead of opening a switch-user modal.
 // Switching accounts must go through the proper login page (with password).
-/* v224 - activeSessions/{key} is what tells the NEXT device "somebody is
-   already signed in here". Nothing ever took it down: not sign-out, not
-   closing the tab. So it stood for the full 8 hours, and signing in on a
-   laptop meant every phone sign-in for the rest of the day met the
-   "already signed in on another device" warning. On the shared accounts
-   (FC000, admin) that is every sign-in, every day - and answering No to it
-   left the person unable to get in at all.
+/* activeSessions is what tells the NEXT device "somebody is already signed in
+   here". Three versions of history sit behind the shape it has now:
 
-   Signing out now clears the record. Bounded, because a reload follows
-   immediately and an unreachable database must not hold the sign-out open.
-   Not a security control - it is a courtesy flag - so failing to clear it is
+   v9 wrote one record per ACCOUNT and never took it down - not on sign-out,
+   not on the tab closing - so it stood for a full 8 hours and the next
+   sign-in was warned about a session that had long since ended.
+
+   v224 made sign-out delete it. That helped the person who signs out and
+   nobody else, and on the shared keys (all 24 mobilizers resolve to
+   role-mobilizer, and the 3-4 admins to role-admin) it made things worse: one
+   person signing out deleted the record a colleague had written minutes
+   earlier, so the next device was told nothing at all.
+
+   v225 gives each DEVICE a row of its own. A sign-out can then only reach the
+   row this browser wrote, and the server takes that row down by itself when
+   the connection drops - which is how a closed tab or a swiped-away app
+   finally stops leaving something behind. Bounded, because a reload follows
+   immediately and an unreachable database must not hold a sign-out open. Not
+   a security control - it is a courtesy flag - so failing to clear it is
    never a reason to refuse the sign-out. */
+let _signOutInFlight = false;
 async function signOutNow(ask){
+  /* v225 - the 2.5s wait below is invisible, so a second tap used to start a
+     whole second sign-out on top of the first. */
+  if(_signOutInFlight) return;
   if(ask && !confirm('Sign out and return to the login page?')) return;
+  _signOutInFlight = true;
+  try{ toast('સાઇન આઉટ થઈ રહ્યું છે… · Signing out…'); }catch(e){}
   /* The key is written onto the session at sign-in (v224). Sessions remembered
-     by v221-v223 do not carry it, so fall back to rebuilding it exactly the way
+     by v221-v224 do not carry it, so _sessionKeyOf rebuilds it exactly the way
      sign-in does - and if the account list is not to hand, simply skip. */
-  let key = (SESSION && SESSION.sessKey) || '';
-  if(!key && SESSION){
-    try{
-      const me = (getUsersList()||[]).find(u => u && (u.fcCode || u.id) === SESSION.userId);
-      if(me) key = ((me.fcCode||'') || ('role-'+me.role)).replace(/[.#$/[\]]/g,'_');
-    }catch(e){}
-  }
-  if(key && FB && FB.ready){
-    try{ await fbWithin(fbRef('activeSessions/'+key).remove(), 2500, null); }catch(e){}
-  }
+  const key = _sessionKeyOf(SESSION);
+  /* v225 - takes down THIS device's row only. v224 removed the whole node,
+     which on the shared admin and mobilizer keys deleted a colleague's live
+     record and left the next person to sign in with no warning at all. */
+  await Promise.resolve(_clearMyActiveSession(key));
   // v122 — clear the real key (USER_SESSION_KEY), and the remembered copy.
   try{ sessionStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   SESSION = null;
-  location.hash = ask ? '#login' : '';
-  location.reload();
+  /* v225 - '#login' was handled nowhere in the file, so both buttons landed on
+     the farmer-facing page while the confirm promised the login page. '#admin'
+     with no session opens the login modal at boot, which is what it says. */
+  location.hash = '#admin';
+  /* v225 - and do not take the page down on top of unsaved work. forceSignOut
+     has refused to since v221: a form's draft reaches IndexedDB through a
+     postMessage and a 1.5s debounce, and a submitted visit is not durably
+     queued until its offlineWrites entry is written. A reload inside either
+     window loses the photos. The FC Profile button has no confirmation at all,
+     so one mis-tap could have cost a whole farm visit. Capped at ~12s so a
+     flag left set can never strand somebody signed out but still on screen. */
+  let _soTries = 0;
+  const _soGo = function(){
+    if(_appIsBusy() && _soTries++ < 8){
+      if(_soTries === 1){ try{ toast('તમારું કામ સેવ થઈ રહ્યું છે… · Saving your work…'); }catch(e){} }
+      setTimeout(_soGo, 1500);
+      return;
+    }
+    location.reload();
+  };
+  _soGo();
 }
 
 const _userPill = document.getElementById('userPill');
@@ -23319,11 +23355,102 @@ function getUsersList() {
    Everything on the path is now raced against a clock. The worst case is a
    message the person can act on, never a frozen button. This adds no reads or
    writes of its own: it only puts a limit on ones already being made. */
-function fbWithin(p, ms, fallback){
+function fbWithin(p, ms, fallback, label){
+  /* v225 - the rejection used to be swallowed silently, which made a real
+     failure (permission denied, App Check throttling - this project has had
+     both) look exactly like a dead socket in the console. Say which it was. */
+  let t = null;
   return Promise.race([
-    Promise.resolve(p).catch(function(){ return fallback; }),
-    new Promise(function(res){ setTimeout(function(){ res(fallback); }, ms); })
-  ]);
+    Promise.resolve(p).catch(function(e){
+      console.warn('[fb] ' + (label || 'call') + ' failed:', e);
+      return fallback;
+    }),
+    new Promise(function(res){
+      t = setTimeout(function(){
+        console.warn('[fb] ' + (label || 'call') + ' gave no answer in ' + ms + 'ms');
+        res(fallback);
+      }, ms);
+    })
+  ]).then(function(v){ if(t) clearTimeout(t); return v; });
+}
+
+/* v225 - a stable id for THIS BROWSER, because the user agent never worked.
+
+   The multi-device warning stored `navigator.userAgent.slice(0,80)` and then
+   compared it against the FULL user agent. Every real one is 110-135
+   characters, so the comparison was always true and "it is the same device,
+   do not warn" never once fired since v9. Signing in twice on the same phone
+   inside 8 hours warned you about yourself - and after v224 answering No to
+   that warning is what kept you out. THAT is the reported bug.
+
+   A user agent is the wrong thing to identify a device with anyway: two
+   identical phones share one, and a browser update changes it. This is a
+   random id, written once, kept in localStorage. If storage is unavailable it
+   falls back to an id that lives as long as the tab, which is still correct -
+   just forgotten on reload. Sanitised, because it becomes a Firebase path
+   segment. */
+const DEVICE_ID_KEY = 'sristi_device_id_v1';
+let _memDeviceId = '';
+function deviceId(){
+  let d = '';
+  try{ d = localStorage.getItem(DEVICE_ID_KEY) || ''; }catch(e){}
+  if(!d){
+    if(!_memDeviceId){
+      _memDeviceId = 'd' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    }
+    d = _memDeviceId;
+    try{ localStorage.setItem(DEVICE_ID_KEY, d); }catch(e){}
+  }
+  return String(d).replace(/[.#$/[\]]/g, '_').slice(0, 40);
+}
+
+/* v225 - the one definition of "do not take the page down right now".
+
+   forceSignOut has carried this test since v221 and its comment says why: a
+   form's draft reaches IndexedDB through a postMessage and a 1.5s debounce,
+   and a reload can outrun it - the text half is written synchronously and
+   survives, the PHOTOS do not. A submitted visit is in the same position
+   until its durable queue entry is written. signOutNow had none of it, and
+   the FC Profile button calls signOutNow with no confirmation at all, so one
+   mis-tap could cost a farm visit's photos. */
+function _appIsBusy(){
+  try{ if(Date.now() < (window._verifBusyUntil || 0)) return true; }catch(e){}
+  try{ if(typeof window._formIsOpen === 'function' && window._formIsOpen()) return true; }catch(e){}
+  try{ if(typeof pendingSyncCount === 'function' && pendingSyncCount() > 0) return true; }catch(e){}
+  return false;
+}
+
+/* v225 - take THIS device's multi-device record down, and nothing else.
+
+   v224 removed `activeSessions/{key}` whole. Every admin shares the key
+   `role-admin` and all 24 mobilizers share `role-mobilizer`, so one person
+   signing out deleted the record another person had written minutes earlier
+   and the next device to sign in was told nothing at all. A courtesy warning
+   that goes quiet is worse than one that fires too often, because the whole
+   point is to catch two people editing the same farmer.
+
+   Each device now owns a child of its own, so a removal can only ever reach
+   the row this browser wrote. Fire-and-forget by design: nothing may wait on
+   it, and it is never a reason to refuse a sign-out. */
+function _clearMyActiveSession(key){
+  try{
+    const dev = deviceId();
+    if(!key || !dev) return null;
+    if(!(FB && FB.ready && navigator.onLine)) return null;
+    return fbWithin(fbRef('activeSessions/' + key + '/' + dev).remove(), 2500, null, 'activeSessions remove');
+  }catch(e){ console.warn('[Auth] could not clear the device flag:', e); return null; }
+}
+
+/* v225 - rebuild the key exactly the way sign-in builds it. Sessions
+   remembered by v221-v224 carry no sessKey of their own. */
+function _sessionKeyOf(sess){
+  try{
+    if(!sess) return '';
+    if(sess.sessKey) return String(sess.sessKey).replace(/[.#$/[\]]/g, '_');
+    const me = (getUsersList() || []).find(u => u && (u.fcCode || u.id) === sess.userId);
+    if(me && me.role) return ((me.fcCode || '') || ('role-' + me.role)).replace(/[.#$/[\]]/g, '_');
+  }catch(e){}
+  return '';
 }
 
 async function ensureUsersLoaded() {
@@ -23333,7 +23460,7 @@ async function ensureUsersLoaded() {
       /* v224 - bounded. 15s is long enough for a slow rural connection to
          answer and short enough that a dead socket becomes the "could not
          load accounts" message instead of a permanent freeze. */
-      const snap = await fbWithin(fbRef('config/users').get(), 15000, null);
+      const snap = await fbWithin(fbRef('config/users').get(), 15000, null, 'account list');
       if (snap && snap.exists()) {
         USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
         saveUsersCache(USERS_LIST);
@@ -23398,7 +23525,12 @@ async function forcePasswordChangeModal(user){
       '<button class="btn btn-ghost" id="pcCancel">Cancel</button>');
     const fail = m => { const e=$('#pcErr'); if(e) e.innerHTML = '<div class="lm-err">'+esc(m)+'</div>'; };
     const cancelBtn = $('#pcCancel');
-    if(cancelBtn) cancelBtn.onclick = () => { closeModal(); resolve(false); };
+    /* v225 - a cancelled change must stay cancelled. Both writes below are
+       bounded now, but a slow one can still land after the person has given
+       up - and the old code then called closeModal(), shutting whatever
+       unrelated dialog they had opened since, and saved the password anyway. */
+    let _pcDone = false;
+    if(cancelBtn) cancelBtn.onclick = () => { _pcDone = true; closeModal(); resolve(false); };
     $('#pcSave').onclick = async () => {
       const a = $('#pcNew').value || '', b = $('#pcNew2').value || '';
       if(a.length < 10) return fail('Please use at least 10 characters. Stored password hashes are readable until the database rules are tightened, so short passwords can be cracked offline.');
@@ -23407,21 +23539,31 @@ async function forcePasswordChangeModal(user){
       const btn = $('#pcSave'); btn.disabled = true; btn.textContent = 'Saving…';
       try{
         // Resolve this account's key defensively instead of assuming 'u_'+id.
-        const snap = await fbRef('config/users').get();
+        /* v225 - bounded. These two awaits were the last unbounded Firebase
+           calls on the sign-in path: on a half-open socket the button sat on
+           "Saving..." for ever, which is the exact failure v224 set out to
+           remove, one modal deeper. attemptGuarded cannot help - nothing
+           rejects, so nothing ever settles. */
+        const snap = await fbWithin(fbRef('config/users').get(), 12000, null, 'password-change read');
+        if(_pcDone) return;
+        if(!snap) throw new Error('the database did not answer - check your connection and try again');
         const all  = snap.exists() ? snap.val() : {};
         const key  = Object.keys(all).find(k => all[k] && all[k].id === user.id);
         if(!key) throw new Error('account not found in config/users');
         const salt = generateSalt();
         const passwordHash = await hashPassword(salt, a);
-        await fbRef('config/users/'+key).update({
+        const _wrote = await fbWithin(fbRef('config/users/'+key).update({
           salt, passwordHash,
           mustChangePassword: null,          // null deletes the flag
           passwordChangedAt: new Date().toISOString(),
-        });
+        }).then(function(){ return true; }), 12000, false, 'password-change write');
+        if(_pcDone) return;
+        if(!_wrote) throw new Error('the new password could not be saved - check your connection and try again');
         // Keep the in-memory list in step so the session continues cleanly.
         const local = getUsersList().find(u => u.id === user.id);
         if(local){ local.salt = salt; local.passwordHash = passwordHash; delete local.mustChangePassword; }
         saveUsersCache(getUsersList());
+        _pcDone = true;
         closeModal();
         resolve(true);
       }catch(e){
@@ -23821,6 +23963,18 @@ function openLoginModal(){
     }
     const submitBtn = $('#lmSubmit');
     submitBtn.disabled = true; submitBtn.textContent = 'Signing in...';
+    /* v225 - defined up here because the login modal may be GONE by the time
+       we need it: forcePasswordChangeModal replaces the modal and closes it on
+       success. A person who had just set a new password was then told what
+       happened by a 2-second toast on the farmer landing page, with no login
+       modal and no way back in except a small dotted link in the footer. So if
+       the modal has gone, put it back before speaking. */
+    const _loginSay = function(html, plain){
+      if(!$('#lmSubmit')){ try{ openLoginModal(); }catch(e){} }
+      const e = $('#lmErr'); if(e) e.innerHTML = '<div class="lm-err">' + html + '</div>';
+      const b = $('#lmSubmit'); if(b){ b.disabled = false; b.textContent = 'Sign in \u2192'; }
+      try{ toast(plain, 'error'); }catch(err){}
+    };
     let authUser = null;
     /* v109 SECURITY + reliability. Two problems fixed here:
        1. the hardcoded-credential fallback is GONE (see the note where
@@ -23855,20 +24009,17 @@ function openLoginModal(){
     if(authUser.mustChangePassword){
       const changed = await forcePasswordChangeModal(authUser);
       if(!changed){
-        toast('Password was not changed — you are not signed in.', 'error');
+        /* v225 - was a bare toast, which left the person on the farmer
+           landing with the login modal destroyed. */
+        _loginSay(
+          'પાસવર્ડ બદલાયો નથી, એટલે લૉગ-ઇન થયું નથી.<br>'
+          + 'Your password was not changed, so you are not signed in.',
+          'Password not changed — you are not signed in'
+        );
         return;
       }
     }
     const userKey = ((authUser.fcCode||'') || ('role-'+authUser.role)).replace(/[.#$/[\]]/g,'_');
-    /* v224 - the login modal can be gone by now (a mustChangePassword account
-       goes through forcePasswordChangeModal, which replaces it), so every way
-       of speaking to the person has to survive that. The toast always shows;
-       the inline message shows when the modal is still up. */
-    const _loginSay = function(html, plain){
-      const e = $('#lmErr'); if(e) e.innerHTML = '<div class="lm-err">' + html + '</div>';
-      const b = $('#lmSubmit'); if(b){ b.disabled = false; b.textContent = 'Sign in \u2192'; }
-      try{ toast(plain, 'error'); }catch(err){}
-    };
     // v9 process-fix M2 — multi-device warning. Track active sessions in
     // Firebase under activeSessions/{userId}. On sign-in, check if another
     // device's session is still fresh (< 8 hours) and warn the new login.
@@ -23878,49 +24029,86 @@ function openLoginModal(){
        login form. On the next visit the hash was not #admin, so the app opened
        on the public landing and the person signed in again into the same
        trap. Nothing is granted until this has finished deciding. */
-    if(FB && FB.ready){
+    /* v225 - gated on navigator.onLine, not just FB.ready. FB.ready means "the
+       SDK started", and it is true in flight mode - so every offline sign-in
+       paid a hard 8 second wait for an answer that could never come, staring
+       at "Signing in...". ensureUsersLoaded above has always checked onLine;
+       this block never did. */
+    if(FB && FB.ready && navigator.onLine){
       try{
-        const snap = await fbWithin(fbRef('activeSessions/'+userKey).get(), 8000, null);
-        const existing = (snap && snap.exists && snap.exists()) ? snap.val() : null;
+        const myDev = deviceId();
+        const snap = await fbWithin(fbRef('activeSessions/'+userKey).get(), 8000, null, 'multi-device read');
+        const rows = (snap && snap.exists && snap.exists()) ? (snap.val() || {}) : {};
         const now = Date.now();
-        if(existing && existing.at && (now - existing.at) < 8*60*60*1000 && existing.device !== navigator.userAgent){
-          const minsAgo = Math.floor((now - existing.at)/60000);
+        /* v225 - one row per device. Skip our own, skip anything older than 8
+           hours, and keep the most recent of what is left. Rows written before
+           v225 are flat fields (userId / userName / at / device) rather than
+           device rows; they have no `.at` of their own once read this way, so
+           they fall out here and are cleaned up below. */
+        let other = null;
+        Object.keys(rows).forEach(function(d){
+          const r = rows[d];
+          if(!r || typeof r !== 'object' || d === myDev) return;
+          if(!r.at || (now - r.at) >= 8*60*60*1000) return;
+          if(!other || r.at > other.at) other = r;
+        });
+        if(other){
+          const minsAgo = Math.floor((now - other.at)/60000);
           const ago = minsAgo < 60 ? (minsAgo + ' min') : (Math.floor(minsAgo/60) + ' hr');
-          /* v224 - the old wording was English only and never said what the two
-             buttons do, on an app whose users read Gujarati. For the shared
-             accounts this dialog is routine, so the person meeting it is usually
-             doing nothing wrong - and Cancel, the button that looks safe, is the
-             one that keeps them out. */
+          /* v225 - name the person who is ALREADY signed in. This used to say
+             authUser.name - the person READING the dialog - so on the shared
+             admin and mobilizer accounts it told you that you were already
+             signed in somewhere else, which you knew to be untrue. The only
+             two conclusions available were "the app is broken" or "someone has
+             my password", and the useful fact was sitting unused two lines
+             away. */
+          const who = (other.userName || authUser.name);
           const ok = confirm(
-            authUser.name + ' પહેલાંથી બીજા ફોન કે કમ્પ્યુટર પર લૉગ-ઇન છે (' + ago + ' પહેલાં).\n' +
+            who + ' અત્યારે બીજા ફોન કે કમ્પ્યુટર પર લૉગ-ઇન છે (' + ago + ' પહેલાં).\n' +
             'બન્ને જગ્યાએ કામ કરશો તો એકબીજાનું કામ ભૂંસાઈ શકે છે.\n' +
             'OK = અહીં ચાલુ રાખો.   Cancel = અહીં લૉગ-ઇન ન કરો.\n\n' +
-            authUser.name + ' is already signed in on another phone or computer (' + ago + ' ago).\n' +
+            who + ' is signed in on another phone or computer (' + ago + ' ago).\n' +
             'Working in both places can overwrite each other\'s changes.\n' +
             'OK = continue here.   Cancel = do not sign in here.'
           );
           if(!ok){
             /* v224 - this used to return in silence: the button reset and
                nothing was said, so pressing Sign in looked like it did nothing
-               at all. A browser that suppresses the dialog lands here too, and
-               the person never saw the question in the first place. */
+               at all. v225 - and if the browser SUPPRESSED the dialog, the
+               person never saw the question, so "choose OK" is an instruction
+               they cannot follow. Say what to do in that case too. */
             _loginSay(
               'લૉગ-ઇન થયું નથી. અહીં કામ કરવું હોય તો ફરી Sign in દબાવી <b>OK</b> પસંદ કરો.<br>' +
-              'You are not signed in — the other-device question was answered No. To work here, press Sign in again and choose OK.',
+              'જો કોઈ સવાલ જ ન દેખાય તો એપ બંધ કરીને ફરી ખોલો.<br>' +
+              'You are not signed in — the other-device question was answered No. Press Sign in again and choose OK. If no question appears at all, close the app and open it again.',
               'Not signed in — press Sign in again and choose OK'
             );
             return;   // stay on the login modal — do NOT enter admin mode
           }
         }
+        /* v225 - clear a pre-v225 flat record once, so the node holds device
+           rows only. One tiny write, once per account, and it removes the
+           record that was causing the false "already signed in" warning. */
+        if(typeof rows.at === 'number' || typeof rows.device === 'string'){
+          fbWithin(fbRef('activeSessions/'+userKey).update({
+            userId: null, userName: null, at: null, device: null
+          }), 8000, null, 'legacy flag cleanup');
+        }
         /* v224 - bounded and not awaited to completion. Nothing below depends on
            this write, so a slow or dead connection must not hold up a sign-in
            that has already been granted. */
-        fbWithin(fbRef('activeSessions/'+userKey).set({
+        const myRow = fbRef('activeSessions/'+userKey+'/'+myDev);
+        fbWithin(myRow.set({
           userId: authUser.fcCode || '',
           userName: authUser.name,
           at: now,
-          device: navigator.userAgent.slice(0,80),
-        }), 8000, null);
+        }), 8000, null, 'multi-device write');
+        /* v225 - and let the SERVER take the row down when this connection
+           drops. A phone session normally ends by the tab being closed or the
+           app being swiped away, where no sign-out code of ours ever runs -
+           which is why records stood for the full eight hours and warned the
+           next person about a session that had long since ended. */
+        try{ myRow.onDisconnect().remove(); }catch(e){}
       }catch(e){
         /* v224 - non-fatal, exactly as it was before this rewrite. The
            multi-device warning is a courtesy, not a gate: fbWithin() only

@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v225';
+const APP_VERSION = 'v226';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18648,6 +18648,7 @@ function viewSettings(){
       <div class="tab ${cur==='photos'?'on':''}" data-st="photos">📷 Photo storage</div>
       <div class="tab ${cur==='roles'?'on':''}" data-st="roles">👤 Users</div>
       <div class="tab ${cur==='crops'?'on':''}" data-st="crops">🌾 Manage Crops</div>
+      <div class="tab ${cur==='juths'?'on':''}" data-st="juths">👥 Juths / FPCs</div>
       <div class="tab ${cur==='backup'?'on':''}" data-st="backup">💾 Backup</div>
     </div>`;
   }
@@ -18976,6 +18977,25 @@ function viewSettings(){
     v.querySelectorAll('[data-qmopen]').forEach(b => b.onclick = () => openQuestionManager(b.dataset.qmopen));
     return;
   }
+  /* v226 - the juth / FPC master list, on its own tab. It was drawn at the top
+     of Manage Haats since v220, where Guru went looking for it in Settings and
+     did not find it. Nothing about how it works has changed - only where it
+     is. The farmer's own juth is still set on the farmer, under Edit details,
+     and the Haat Farmers filter still appears as soon as one juth exists. */
+  if(STab==='juths'){
+    let h = tabBar();
+    h += juthManagerHtml();
+    h += '<div class="hint" style="max-width:820px;margin-top:4px">'
+      + 'A <b>juth</b> or <b>FPC</b> is a group of farmers who work together. Add the names here, '
+      + 'then open any farmer and use <b>Edit details</b> to put them in one. '
+      + 'Once a juth exists, a <b>All juths / FPCs</b> filter appears on the Haat Farmers and '
+      + 'Conversion lists, and the juth is included in every CSV download.'
+      + '</div>';
+    v.innerHTML = h;
+    v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
+    wireJuthManager();
+    return;
+  }
   if(STab==='haats'){
     /* v118 — Settings is now the ONE place haats are managed. This tab used to
        be a weaker duplicate (name-only add, delete by row index, no GPS,
@@ -19290,10 +19310,9 @@ function renderHaatManager(v){
   const cityOpts = [...new Set(haats.map(x=>x.city).filter(Boolean))].sort();
   const visibleHaats = cityFilter ? haats.filter(x=>x.city===cityFilter) : haats;
   const visibleNames = new Set(visibleHaats.map(x=>x.name));
-  /* v220 - the juth / FPC list lives here too: it is the other list farmers
-     are assigned to, and giving it its own screen for four names would be
-     silly. */
-  let h = juthManagerHtml();
+  /* v226 - the juth / FPC list used to be drawn here as well. It now has its
+     own Settings tab; two copies of one editor is how they drift apart. */
+  let h = '';
   h += `<div class="toolbar" style="margin-bottom:14px">
     <span style="font-size:12.5px;color:var(--ink-soft)">Tip: parent haats with sub-locations are expandable. Add GPS coordinates so we can measure farm-to-haat distance.</span>
     <div style="flex:1"></div>
@@ -19366,7 +19385,6 @@ function renderHaatManager(v){
     saveDB().catch(()=>{}); render();
   });
   $('#haatAdd').onclick = () => openHaatEditModal(null);
-  wireJuthManager();
 }
 
 /* ---- v220 - juth / FPC list manager ------------------------------------- */

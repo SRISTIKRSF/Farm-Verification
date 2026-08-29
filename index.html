@@ -4047,7 +4047,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v226';
+const APP_VERSION = 'v227';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10773,6 +10773,42 @@ function convStats(){
 function isImportedVisit(v){
   return !!(v && /imported from sristi/i.test(String(v.notes || '')));
 }
+/* v227 - THE one rule for "a field visit that counts".
+
+   Three screens counted this three different ways and produced three different
+   numbers. Dashboard "Field Visits Done" counted every dated visit on a live
+   farmer, no matter who did it. The dashboard's per-coordinator table counted
+   visits attributed to a coordinator but INCLUDED archived farmers. The Field
+   Coordinators page did the same. So a visit on an archived farmer was in two
+   of the three, and a visit recorded by an admin with no coordinator attached
+   was in one of the three.
+
+   A visit counts when: the farmer is neither archived nor a demo seed, the
+   visit has a date, and it is not a SRISTI-migration placeholder.
+
+   Attribution is recordedById when it names a live coordinator, else v.fc.
+   F8 says recordedById is authoritative - but a recovered visit can carry an
+   empty recordedById and a correct fc, and going to recordedById alone would
+   have silently taken that visit off the coordinator who did it. */
+function visitCoordinatorId(v){
+  const known = id => !!(id && (DB.fcs||[]).some(x => x && !x.deleted && x.id === id));
+  if(!v) return '';
+  if(known(v.recordedById)) return v.recordedById;
+  if(known(v.fc)) return v.fc;
+  return '';
+}
+function countedHaatVisits(){
+  const out = [];
+  _excludeSeeds(DB.haatFarmers||[]).forEach(f => {
+    if(!f || f._archived) return;
+    (Array.isArray(f.visits) ? f.visits : []).forEach(v => {
+      if(!v || !v.date || isImportedVisit(v)) return;
+      out.push({ f: f, v: v, fcId: visitCoordinatorId(v) });
+    });
+  });
+  return out;
+}
+
 /* Visits genuinely carried out by this FC through the app. */
 function fcRealVisits(farmer, fcId){
   const arr = (farmer && Array.isArray(farmer.visits)) ? farmer.visits : [];
@@ -10857,8 +10893,13 @@ function cumulativeData(){
     if(!minYM||ym<minYM) minYM=ym;
     if(!maxYM||ym>maxYM) maxYM=ym;
   };
+  /* v227 - the visit series comes from the one shared rule so this chart and
+     the two coordinator tables can never disagree again. Same farmers as
+     before (the rule applies the identical archived/seed filter); what is new
+     is that migration placeholders are excluded here too, as they always were
+     in the coordinator counts. */
+  countedHaatVisits().forEach(x => bump(newVisits, x.v.date.slice(0,7)));
   farmers.forEach(f=>{
-    (f.visits||[]).forEach(v=>{ if(v.date) bump(newVisits, v.date.slice(0,7)); });
     if(f.status==='green') bump(newOnboarded, farmerOnboardYM(f));
   });
   const todayYM=todayISO().slice(0,7);
@@ -12347,13 +12388,31 @@ function viewDashboard(){
   const recent3=recentMonths(3);  // v138 — from the calendar, not a stored list
   // Verifications are done by the Field Coordinators (Ayush / Harsh / Maheshbhai
   // and any others added in Settings) — not by every field coordinator in DB.fcs.
+  /* v227 - built from countedHaatVisits(), the same list the chart above uses,
+     so this table's Total row equals "Field Visits Done" by construction. */
+  const _counted = countedHaatVisits();
+  const _byFc = {};
+  _counted.forEach(x => { (_byFc[x.fcId] = _byFc[x.fcId] || []).push(x); });
   const fcRows=(DB.fieldCoordinators||[]).map(fc=>{
-    // v116 — migration placeholders excluded (see isImportedVisit).
-    const perMonth=recent3.map(m=>
-      DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).filter(v=>v.date&&v.date.startsWith(m)).length,0));
-    const total=DB.haatFarmers.reduce((a,f)=>a+fcRealVisits(f,fc.id).length,0);
-    return {fc, perMonth, total};
+    const mine = _byFc[fc.id] || [];
+    const perMonth = recent3.map(m => mine.filter(x => x.v.date.startsWith(m)).length);
+    return {fc, perMonth, total: mine.length};
   }).sort((a,b)=>b.total-a.total);
+  /* A visit recorded with no coordinator on it belongs to nobody, and a
+     per-coordinator table has nowhere to put it. It used to be dropped in
+     silence, which is what made this table disagree with the chart. Showing it
+     keeps the arithmetic honest AND surfaces the data problem instead of
+     hiding it - the row disappears by itself once those visits are corrected
+     or removed. */
+  const _unassigned = _byFc[''] || [];
+  if(_unassigned.length){
+    fcRows.push({
+      fc: {id:'', name:'Not assigned to a coordinator'},
+      perMonth: recent3.map(m => _unassigned.filter(x => x.v.date.startsWith(m)).length),
+      total: _unassigned.length,
+      unassigned: true,
+    });
+  }
 
   // For each haat, count farmers who came to that haat in each of the last 3 months
   // (a farmer is "active in month M" if they have a visit/transaction logged that month;
@@ -12415,9 +12474,9 @@ function viewDashboard(){
     h+=`<tr><td colspan="${recent3.length+3}" class="mini-empty">No Field Coordinators yet — add some on the Field Coordinators page.</td></tr>`;
   }
   fcRows.forEach((r,i)=>{
-    h+=`<tr data-fc="${r.fc.id}">
-      <td class="rk">${i+1}</td>
-      <td class="strong">${esc(r.fc.name)}${r.fc.phone?`<div class="mini-sub">📞 ${esc(r.fc.phone)}</div>`:''}</td>
+    h+=`<tr ${r.unassigned ? '' : 'data-fc="' + r.fc.id + '"'}${r.unassigned ? ' style="color:var(--ink-soft)"' : ''}>
+      <td class="rk">${r.unassigned ? '\u2014' : (i+1)}</td>
+      <td class="strong">${esc(r.fc.name)}${r.fc.phone?`<div class="mini-sub">📞 ${esc(r.fc.phone)}</div>`:''}${r.unassigned?'<div class="mini-sub">recorded without a coordinator</div>':''}</td>
       ${r.perMonth.map(n=>`<td class="num ${n?'':'muted'}">${n||'·'}</td>`).join('')}
       <td class="num tot"><b>${r.total}</b></td>
     </tr>`;
@@ -17735,18 +17794,19 @@ function viewFieldCoordinators(){
   const cutoff90=new Date(); cutoff90.setDate(cutoff90.getDate()-90);
 
   // Build per-FC stats
+  /* v227 - the same shared rule the Dashboard uses, so a coordinator's total
+     here matches their row there. It used to count visits on ARCHIVED farmers,
+     which no other list in the app shows. */
+  const _countedFc = {};
+  countedHaatVisits().forEach(x => { (_countedFc[x.fcId] = _countedFc[x.fcId] || []).push(x.v); });
   const rows=fcs.map(fc=>{
     let visitsTotal=0, visitsLast3M=0, plannedUpcoming=0, lastVisitAt='';
+    (_countedFc[fc.id] || []).forEach(v=>{
+      visitsTotal++;
+      if(new Date(v.date)>=cutoff90) visitsLast3M++;
+      if(!lastVisitAt || v.date>lastVisitAt) lastVisitAt=v.date;
+    });
     DB.haatFarmers.forEach(f=>{
-      // v116 — count only verifications actually carried out through the app;
-      // SRISTI-migration placeholders are excluded (see isImportedVisit).
-      fcRealVisits(f, fc.id).forEach(v=>{
-        visitsTotal++;
-        if(v.date){
-          if(new Date(v.date)>=cutoff90) visitsLast3M++;
-          if(!lastVisitAt || v.date>lastVisitAt) lastVisitAt=v.date;
-        }
-      });
       (f.plannedVisits||[]).forEach(p=>{
         if(p.fcId===fc.id && p.date>=today) plannedUpcoming++;
       });

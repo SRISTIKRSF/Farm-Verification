@@ -2377,9 +2377,20 @@ function submit(){
   if(_submitting) return;   // #5 — guard against a second tap re-posting the enrollment
   _submitting = true;
   /* compile claims map */
+  /* v228 - the address question renders four inputs bound to ANSWERS.district
+     / .taluka / .village / .pincode, so ANSWERS['village_taluka_district'] was
+     never written and this claim went out EMPTY - which is why every
+     verification form showed the farmer's address as "Not answered". Compose
+     it here, in the shape the rest of the app already expects. */
+  const _addrAnswer = () => ({
+    district: ANSWERS.district || '', taluka: ANSWERS.taluka || '',
+    village:  ANSWERS.village  || '', pincode: ANSWERS.pincode || '',
+  });
   const claims = QUESTIONS.filter(q => q.askedOf !== 'fc-only').map(q => ({
     id: q.id, cat: q.cat, type: q.type, gu: q.gu, en: q.en,
-    answer: q.type==='crops_table' ? CROP_ROWS.filter(r=>r.name) : (ANSWERS[q.id] != null ? ANSWERS[q.id] : '')
+    answer: q.type==='crops_table' ? CROP_ROWS.filter(r=>r.name)
+          : (q.type==='address_cascade' || q.type==='composite_address') ? _addrAnswer()
+          : (ANSWERS[q.id] != null ? ANSWERS[q.id] : '')
   }));
   const payload = {
     type: 'kisan-haat-enrollment',
@@ -2389,6 +2400,7 @@ function submit(){
       village: ANSWERS.village || '',
       taluka: ANSWERS.taluka || '',
       district: ANSWERS.district || '',
+      pincode: ANSWERS.pincode || '',   /* v228 - was collected and discarded */
       address: ANSWERS.address || '',
       age: ANSWERS.age || '',
       aadhaar: ANSWERS.aadhaar || '',
@@ -3169,6 +3181,27 @@ function fmtFarmerClaim(q, c){
         return '<span class="pill" style="display:inline-block">' + esc(r.item||'') + (parts?' — '+parts:'') + '</span>';
       }).join('') + '</div>'
     : '<span style="color:var(--ink-faint);font-style:italic">None selected</span>';
+  /* v228 - District / Taluka / Village / Pincode. The enrolment form writes
+     these four to separate answer keys and never composed them into this
+     question's own answer, so every verification form showed the farmer's
+     address as "Not answered" even though they had filled it in. Renders
+     whichever shape arrives: the object new enrolments send, or the object the
+     parent backfills from the farmer record for older ones. */
+  if(q.type==='address_cascade' || q.type==='composite_address'){
+    var _ad = (a && typeof a === 'object' && !Array.isArray(a)) ? a : null;
+    if(_ad){
+      var _parts = [
+        ['જિલ્લો · District', _ad.district],
+        ['તાલુકો · Taluka',   _ad.taluka],
+        ['ગામ · Village',                    _ad.village],
+        ['પિનકોડ · Pincode',  _ad.pincode]
+      ].filter(function(r){ return r[1] != null && String(r[1]).trim() !== ''; });
+      if(_parts.length) return '<div style="display:flex;flex-direction:column;gap:2px">' + _parts.map(function(r){
+        return '<span><span style="color:var(--ink-soft);font-size:11.5px">' + r[0] + ':</span> <b>' + esc(String(r[1])) + '</b></span>';
+      }).join('') + '</div>';
+    }
+    if(typeof a === 'string' && a.trim() !== '') return '<b>' + esc(a) + '</b>';
+  }
   if(a==null || a==='') return '<span style="color:var(--ink-faint);font-style:italic">Not answered</span>';
   return '<b>'+esc(String(a))+'</b>';
 }
@@ -3204,6 +3237,26 @@ function renderFcControls(q){
       <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="not_verified"><span class="lbl">✗ <span class="tgu">ચકાસાયેલ નથી</span><span class="thi">सत्यापित नहीं</span><span class="ten">Not Verified</span></span></label>
       <label class="radio-opt"><input type="radio" name="v_\${q.id}" value="na"><span class="lbl">N/A</span></label>
     </div>\`;
+  /* v228 - GPS is the one claim an FC can genuinely correct while standing in
+     the field, and a farmer pinning the wrong spot is common. Prefilled with
+     the farmer's own value, so leaving it alone keeps their location as the
+     verified one; the button replaces it with where the FC is standing.
+     data-fc-ans is the channel fc-only answers already use, so the draft
+     autosave and edit-reopen carry this with no extra plumbing. */
+  if(q.id === 'farm_gps'){
+    var _gClaim = (typeof CLAIMS_BY_ID !== 'undefined' && CLAIMS_BY_ID[q.id] && CLAIMS_BY_ID[q.id].answer != null) ? String(CLAIMS_BY_ID[q.id].answer) : '';
+    h += '<div class="fc-gps-row" style="margin-top:10px">'
+      + '<div class="l" style="font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px">\ud83d\udccd <span class="tgu">ચકાસાયેલ લોકેશન</span><span class="thi">सत्यापित लोकेशन</span><span class="ten">Verified location</span></div>'
+      + '<div style="display:flex;gap:8px;align-items:center">'
+      +   '<input type="text" data-fc-ans="' + q.id + '" value="' + esc(_gClaim) + '" placeholder="lat,lng" style="flex:1;padding:10px 12px;border:1px solid var(--line-strong);border-radius:7px;font-family:inherit;font-size:14px">'
+      +   '<button type="button" data-fc-gps="' + q.id + '" style="white-space:nowrap;padding:10px 13px;border:0;border-radius:7px;background:var(--leaf);color:#fff;font-weight:700;font-family:inherit;cursor:pointer">\ud83d\udccd <span class="tgu">અહીંનું</span><span class="thi">यहाँ का</span><span class="ten">Here</span></button>'
+      + '</div>'
+      + '<div data-fc-gps-msg="' + q.id + '" style="font-size:11px;color:var(--ink-faint);margin-top:4px;line-height:1.45">'
+      +   '<span class="tgu">ખેડૂતે આપેલું લોકેશન સાચું હોય તો કંઈ બદલશો નહિ — એ જ ચકાસાયેલ લોકેશન તરીકે સચવાશે. ખોટું હોય તો ખેતરમાં ઉભા રહી ઉપરનું બટન દબાવો.</span>'
+      +   '<span class="ten">If the location is right, leave it as it is — it is saved as the verified location. If it is wrong, stand at the farm and press the button.</span>'
+      + '</div>'
+      + '</div>';
+  }
   /* For photo questions asked of both (e.g. cert_photo), let the FC upload
      their own verification photo in addition to the radio. */
   if(q.type==='photo'){
@@ -3355,6 +3408,34 @@ function wireFcControls(){
   });
   /* FC-only text/textarea answers */
   $$('[data-fc-ans]').forEach(el => el.oninput = () => { FC_ANSWERS[el.dataset.fcAns] = el.value; });
+  /* v228 - a GPS the FC never touches still means "verified, where the farmer
+     said it was", so seed it rather than leaving it undefined and losing the
+     verified location entirely. applyEditPrefill overwrites this whenever a
+     saved value comes back. */
+  $$('[data-fc-ans="farm_gps"]').forEach(function(el){
+    if(el.value && (FC_ANSWERS.farm_gps === undefined || FC_ANSWERS.farm_gps === '')) FC_ANSWERS.farm_gps = el.value;
+  });
+  $$('[data-fc-gps]').forEach(function(btn){
+    btn.onclick = function(){
+      var qid = btn.getAttribute('data-fc-gps');
+      var msg = document.querySelector('[data-fc-gps-msg="' + qid + '"]');
+      if(!navigator.geolocation){ if(msg) msg.textContent = 'GPS is not available on this device.'; return; }
+      var label = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = '\u2026';
+      /* No maximumAge:0 - it has been seen to refuse a position outright. */
+      navigator.geolocation.getCurrentPosition(function(pos){
+        var v = pos.coords.latitude.toFixed(6) + ',' + pos.coords.longitude.toFixed(6);
+        var el = document.querySelector('[data-fc-ans="' + qid + '"]');
+        if(el){ el.value = v; FC_ANSWERS[qid] = v; }
+        if(msg) msg.textContent = 'Captured: ' + v;
+        btn.disabled = false; btn.innerHTML = label;
+        if(typeof scheduleDraftSave === 'function') scheduleDraftSave();
+      }, function(err){
+        if(msg) msg.textContent = 'Could not get the location: ' + ((err && err.message) ? err.message : 'unknown error');
+        btn.disabled = false; btn.innerHTML = label;
+      }, {enableHighAccuracy:true, timeout:10000});
+    };
+  });
   /* FC-only yes/no chips */
   $$('[data-fc-yn]').forEach(wrap => {
     const qid = wrap.dataset.fcYn;
@@ -3876,6 +3957,12 @@ function submit(){
         if(v === 'verified') verified++;
       }
       if(q.type==='multi' || q.type==='multi_count') fcRetick = RETICK[q.id] || [];
+      /* v228 - carry the FC's own value on a BOTH-question too. This branch
+         set fcAnswer only for fc-only questions, so the GPS the FC confirmed
+         or corrected survived the draft and was thrown away the instant they
+         pressed Submit. Only data-fc-ans inputs write FC_ANSWERS, and the only
+         both-question that has one is farm_gps, so nothing else changes. */
+      if(FC_ANSWERS[q.id] !== undefined && FC_ANSWERS[q.id] !== '') fcAnswer = FC_ANSWERS[q.id];
     }
     return {
       id: q.id, cat: q.cat, type: q.type, gu: q.gu, en: q.en,
@@ -4047,7 +4134,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v227';
+const APP_VERSION = 'v228';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -21447,7 +21534,37 @@ window.addEventListener('message',async ev=>{
         return;
       }
       const e = f.enrollmentFormFull || {};
-      const claims = Array.isArray(e.claims) ? e.claims : ((e._full && Array.isArray(e._full.claims)) ? e._full.claims : []);
+      /* v228 - COPY each claim before touching it. The backfill below writes a
+         value the enrolment never stored, and these objects live inside
+         f.enrollmentFormFull, which saveDB diffs and pushes - mutating them
+         would quietly write derived data back into the farmer's stored form. */
+      const claims = (Array.isArray(e.claims) ? e.claims : ((e._full && Array.isArray(e._full.claims)) ? e._full.claims : []))
+        .map(c => Object.assign({}, c));
+      /* v228 - District / Taluka / Village / Pincode read "Not answered" on
+         every form, because the enrolment writes those four to separate answer
+         keys and never composed them into this question's own answer. Fixed in
+         the enrolment for new submissions; for the farmers already enrolled the
+         record itself is the source, so fill it in here. Nothing is invented:
+         only fields the record actually holds are sent. */
+      const _addrQ = (window.QUESTIONS_V5||[]).find(q => q && (q.type==='address_cascade' || q.type==='composite_address'));
+      if(_addrQ){
+        const _cur = claims.find(c => c && c.id === _addrQ.id);
+        const _val = _cur ? _cur.answer : null;
+        const _isEmpty = _val == null || _val === ''
+          || (typeof _val === 'object' && !Object.keys(_val).some(k => String(_val[k]||'').trim() !== ''));
+        if(_isEmpty){
+          const _built = {
+            district: f.district || '',
+            taluka:   talukaDisplayName(f.taluka, f.district) || f.taluka || '',
+            village:  f.village || '',
+            pincode:  f.pincode || '',
+          };
+          if(Object.keys(_built).some(k => _built[k])){
+            if(_cur) _cur.answer = _built;
+            else claims.push({id:_addrQ.id, cat:_addrQ.cat, type:_addrQ.type, gu:_addrQ.gu, en:_addrQ.en, answer:_built});
+          }
+        }
+      }
       const rawPhotos = e.photos || (e._full && e._full.photos) || {};
       // Resolve each photo to a displayable src (URL, legacy base64, or this
       // session's local copy of a still-uploading photo) for the iframe.
@@ -21853,6 +21970,9 @@ window.addEventListener('message',async ev=>{
       program:'haat', name,
       village:f.village||'', taluka:talukaDisplayName(f.taluka,f.district)||'',
       district:f.district||'', state:guessState(f.district),
+      /* v228 - the pincode was asked for and then thrown away: it was in
+         neither the claims nor the record, so it could never be shown back. */
+      pincode:f.pincode||'',
       phone:f.mobile||'', landAcres:f.land||0,
       // v114 — was hardcoded to 0, so every farmer enrolled through this form
       // showed "0 yrs" in the list and summary while Compare Forms (which reads
@@ -22561,6 +22681,12 @@ window.addEventListener('message',async ev=>{
           // v6 fix: form sends fcVerification (not fcVerified), and a per-claim fcNote.
           // Old code read the wrong field and dropped the FC's notes on the floor.
           claimVerifications: (d.claims||[]).reduce((a,c)=>{a[c.id]={state:c.fcVerification||c.fcVerified||'na',fcNote:c.fcNote||''};return a;},{}),
+          /* v228 - the location the FC confirmed or corrected, kept on the
+             visit so it can be read without opening the whole form. */
+          verifiedGps: (function(){
+            const c = (d.claims||[]).find(x => x && x.id === 'farm_gps');
+            return (c && c.fcAnswer) ? String(c.fcAnswer) : '';
+          })(),
           comments: d.comments || '',
           photos: countFcPhotos(d.photos),
           notes: 'FC verification — ' + (d.summary?.verifiedCount||0) + '/' + (d.summary?.totalAsked||0) + ' claims verified',

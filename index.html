@@ -4134,7 +4134,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v228';
+const APP_VERSION = 'v229';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12602,12 +12602,43 @@ function viewDashboard(){
   h+=_submissionsPanelHtml('conv');
 
   // ===== recent updates (activity log) =====
-  const log=(DB.activity||[]).slice(0,12);
+  /* v229 - a date range and pages, instead of a fixed newest 12. All of it is
+     arithmetic over DB.activity, which is already in memory and already
+     synced, so it costs no extra Firebase. */
+  if(!FILTERS.dashAct) FILTERS.dashAct = {days:7, page:0};
+  const _DA = FILTERS.dashAct;
+  const _ACT_PER_PAGE = 15;
+  const _actAll = (DB.activity||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  /* "Today" means the calendar day, which is what people mean by it; the
+     others are rolling windows, which is what their labels say. */
+  const _actCut = _DA.days === 0 ? 0
+                : _DA.days === 1 ? new Date(new Date().setHours(0,0,0,0)).getTime()
+                : Date.now() - _DA.days*24*60*60*1000;
+  const _actIn = _actCut ? _actAll.filter(a => a && (a.ts||0) >= _actCut) : _actAll;
+  const _actPages = Math.max(1, Math.ceil(_actIn.length/_ACT_PER_PAGE));
+  if(_DA.page >= _actPages) _DA.page = _actPages - 1;
+  if(_DA.page < 0) _DA.page = 0;
+  const _actFrom = _DA.page * _ACT_PER_PAGE;
+  const log = _actIn.slice(_actFrom, _actFrom + _ACT_PER_PAGE);
+  /* The app holds the newest ACTIVITY_LIVE_CAP entries; older ones are in
+     activityArchive/, which is not subscribed to on purpose. If the range
+     reaches further back than the oldest entry we hold, say so - otherwise a
+     short list reads as "that is everything that happened". */
+  const _actOldest = _actAll.length ? (_actAll[_actAll.length-1].ts || 0) : 0;
+  const _actClipped = !!(_actCut && _actOldest && _actOldest > _actCut);
+  const _actRanges = [[1,'Today'],[7,'7 days'],[30,'30 days'],[0,'All']];
   h+=`<div class="section-head"><h3>Recent updates</h3><div class="line"></div></div>
-  <div class="card" style="padding:6px 18px">`;
+  <div class="card" style="padding:6px 18px">
+    <div class="toolbar" style="padding:10px 0 8px;gap:7px;flex-wrap:wrap;align-items:center">
+      ${_actRanges.map(r=>`<button class="btn btn-ghost btn-sm" data-act-days="${r[0]}"${_DA.days===r[0]?' style="background:var(--accent);color:#fff;border-color:var(--accent)"':''}>${r[1]}</button>`).join('')}
+      <div style="flex:1"></div>
+      <span style="font-size:12px;color:var(--ink-soft)">${_actIn.length ? (_actFrom+1)+'\u2013'+Math.min(_actFrom+_ACT_PER_PAGE, _actIn.length)+' of '+_actIn.length : '0'}</span>
+    </div>`;
   if(!log.length){
     h+=`<div style="padding:30px 0;text-align:center;color:var(--ink-faint);font-size:12.5px">
-      No activity yet. Actions like recording visits, decisions and status changes will appear here.</div>`;
+      ${_actAll.length
+        ? 'Nothing in this period. Try a longer range.'
+        : 'No activity yet. Actions like recording visits, decisions and status changes will appear here.'}</div>`;
   }else{
     h+='<div class="mini-list">';
     log.forEach(a=>{
@@ -12634,9 +12665,22 @@ function viewDashboard(){
     });
     h+='</div>';
   }
+  /* v229 - pages. Newest first, so page 1 is the most recent. */
+  if(_actIn.length > _ACT_PER_PAGE || _DA.page > 0 || _actClipped){
+    h+=`<div class="toolbar" style="padding:9px 0 12px;gap:9px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line-soft);margin-top:4px">
+      <button class="btn btn-ghost btn-sm" data-act-page="${_DA.page-1}"${_DA.page<=0?' disabled style="opacity:.4;cursor:default"':''}>\u2039 Newer</button>
+      <span style="font-size:12px;color:var(--ink-soft)">Page ${_DA.page+1} of ${_actPages}</span>
+      <button class="btn btn-ghost btn-sm" data-act-page="${_DA.page+1}"${_DA.page>=_actPages-1?' disabled style="opacity:.4;cursor:default"':''}>Older \u203a</button>
+      <div style="flex:1"></div>
+      ${_actClipped?`<span style="font-size:11.5px;color:var(--ink-faint)">Nothing older than ${esc(fmtDate(new Date(_actOldest).toISOString().slice(0,10)))} is kept on this screen \u2014 earlier updates are archived.</span>`:''}
+    </div>`;
+  }
   h+=`</div>`;
 
   v.innerHTML=h;
+  /* v229 */
+  v.querySelectorAll('[data-act-days]').forEach(b=>b.onclick=()=>{ FILTERS.dashAct.days = +b.dataset.actDays; FILTERS.dashAct.page = 0; render(); });
+  v.querySelectorAll('[data-act-page]').forEach(b=>{ if(!b.disabled) b.onclick=()=>{ FILTERS.dashAct.page = +b.dataset.actPage; render(); }; });
   v.querySelectorAll('[data-go]').forEach(r=>r.onclick=()=>{ROUTE=r.dataset.go;render();});
   v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav],.conv-pointer[data-nav]').forEach(b=>{
     b.onclick=()=>{

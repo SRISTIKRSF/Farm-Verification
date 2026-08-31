@@ -4134,7 +4134,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v229';
+const APP_VERSION = 'v230';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -11269,6 +11269,32 @@ function openFcRefModal(program, id){
       ${isSeasonalVerificationDue(f)?'<br>⚠ Seasonal re-verification due'+(isSeasonalVerificationOverdue(f)?' (overdue)':''):''}
     </div>`;
   }
+  /* v230 - the FC sees the forms the same way the admin does. Only for a
+     farmer who actually has more than one; for everybody else this sheet is
+     exactly what it was.
+     ⛔ formsExtra/ is deliberately OUTSIDE the live sync, so an extra form
+     (14-27KB) is fetched only when the FC asks for it, behind a button. An FC
+     who never taps it downloads nothing, and loadForms caches it afterwards. */
+  if(program !== 'conv'){
+    const _extraN = (f.extraForms||[]).length;
+    const _fcForms = farmerFormList(f);
+    if(_extraN && _fcForms.length <= 1){
+      h += `<div class="subhead">Forms received</div>
+        <div class="hint" style="margin-bottom:12px">
+          This farmer sent <b>${_extraN+1} forms</b>. Only one of them is on this phone.
+          <button class="btn btn-ghost btn-sm" data-fcloadforms="1" style="margin-top:9px;display:block">
+            Get the other ${_extraN===1?'form':_extraN+' forms'}
+          </button>
+        </div>`;
+    } else if(_fcForms.length > 1){
+      window._fcFormPick = window._fcFormPick || {};
+      const _pick = window._fcFormPick[f.id];
+      const _cur  = (_pick !== undefined ? _fcForms.find(x=>x.id===_pick) : null) || _fcForms[0];
+      h += formTabsHtml(_fcForms, _cur, 'data-fcformpick');
+      const _proxy = Object.assign({}, f, {enrollmentFormFull: _cur.form});
+      h += (Array.isArray(_cur.form && _cur.form.claims) ? renderV5EnrollmentSummary(_proxy) : '');
+    }
+  }
   h += `<div class="subhead">Verification history (${visits.length})</div>`;
   if(!visits.length){
     h += `<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0">No visits recorded yet.</div>`;
@@ -11290,6 +11316,25 @@ function openFcRefModal(program, id){
   modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h, `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
   _wireVerifActions(document.getElementById('modal'));
   _wireVerifEditLog(document.getElementById('modal'));   /* v211 */
+  /* v230 - switch between forms, and fetch the extra ones on request. */
+  const _fcm = document.getElementById('modal');
+  _fcm.querySelectorAll('[data-fcformpick]').forEach(b => {
+    b.onclick = () => {
+      window._fcFormPick = window._fcFormPick || {};
+      window._fcFormPick[f.id] = b.getAttribute('data-fcformpick');
+      openFcRefModal(program, f.id);
+    };
+  });
+  const _fcLoad = _fcm.querySelector('[data-fcloadforms]');
+  if(_fcLoad) _fcLoad.onclick = async () => {
+    if(!navigator.onLine || !(FB && FB.ready)){
+      toast('\u0a87\u0aa8\u0acd\u0a9f\u0ab0\u0aa8\u0ac7\u0a9f \u0aa8\u0aa5\u0ac0 \u2014 \u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0a86\u0ab5\u0ac7 \u0aaa\u0a9b\u0ac0 \u0aab\u0ab0\u0ac0 \u0aaa\u0acd\u0ab0\u0aaf\u0aa4\u0acd\u0aa8 \u0a95\u0ab0\u0acb \u00b7 No connection right now', 'error');
+      return;
+    }
+    _fcLoad.disabled = true; _fcLoad.textContent = 'Downloading\u2026';
+    try{ await loadForms(f.id); }catch(e){}
+    openFcRefModal(program, f.id);
+  };
 }
 /* v211 - the FC corrects a verification they have already submitted. The same
    form re-opens with their own answers in it; saving updates that verification
@@ -15939,18 +15984,52 @@ function openCropsHistoryModal(farmerId){
    null/'' means the original. */
 window._drawerFormPick = window._drawerFormPick || {};
 
-/* Every enrolment form on record for this farmer, oldest first. */
+/* v230 - one tab strip, used by the admin drawer and the FC's farmer sheet so
+   they cannot drift apart. `attr` is the data- attribute each side wires up. */
+function formTabsHtml(forms, cur, attr){
+  let h = '<div class="subhead" style="margin-top:14px">Forms received (' + forms.length + ')</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  forms.forEach(function(x){
+    const on = x.id === cur.id;
+    h += '<button class="btn btn-sm ' + (on?'btn-primary':'btn-ghost') + '" ' + attr + '="' + esc(x.id) + '" style="padding:5px 11px;text-align:left">'
+       + esc(x.label)
+       + (x.isMain ? '<span style="font-size:9px;font-weight:700;margin-left:5px;padding:1px 5px;border-radius:99px;background:' + (on?'rgba(255,255,255,.25)':'var(--panel-2)') + '">main</span>' : '')
+       + '<span style="display:block;font-size:10px;font-weight:400;opacity:.8">'
+       + (x.at ? esc(fmtDate(String(x.at).slice(0,10))) : 'date unknown')
+       + (x.from ? ' \u00b7 ' + esc(x.from) : '')
+       + '</span></button>';
+  });
+  h += '</div><div class="hint" style="margin-bottom:10px">'
+     + forms.length + ' separate submissions from this phone number. <b>Form 1 is the most recent.</b> '
+     + 'Each is kept exactly as it was filled in \u2014 nothing has been merged or overwritten. '
+     + 'The one marked <b>main</b> is the copy the farmer\u2019s record leads with: it is what the PDF prints '
+     + 'and what the verification form checks against.'
+     + '</div>';
+  return h;
+}
+
+/* Every enrolment form on record for this farmer, NEWEST FIRST (v230). */
 function farmerFormList(f){
   const out = [];
-  if(f.enrollmentFormFull) out.push({ id:'', label:'Form 1', at:f.enrollmentFormSubmittedAt||f.publicSubmittedAt||f.submittedAt||'', form:f.enrollmentFormFull });
+  if(f.enrollmentFormFull) out.push({ id:'', at:f.enrollmentFormSubmittedAt||f.publicSubmittedAt||f.submittedAt||'', form:f.enrollmentFormFull, isMain:true });
   const fc = FORMS_CACHE[f.id] || {};
-  (f.extraForms||[]).forEach((x,i)=>{
+  (f.extraForms||[]).forEach((x)=>{
     if(!x || !x.id) return;
     const raw = (fc.extra||{})[x.id];
     if(!raw) return;
     const claims = ((raw.form||{}).farmer||{}).claims || (raw.farmer||{}).claims || raw.claims || [];
-    out.push({ id:x.id, label:'Form '+(out.length+1), at:x.at||'', from:x.from||'', form:{claims:claims} });
+    out.push({ id:x.id, at:x.at||'', from:x.from||'', form:{claims:claims}, isMain:false });
   });
+  /* v230 - numbered by date, newest first, because that is the one anybody
+     opening the farmer wants to read. It used to number them in build order,
+     so the record's own form was always Form 1 even when a newer submission
+     sat behind it as Form 2.
+     ⛔ NOT a swap: for three farmers the extra form is OLDER than the record's
+     own (the admin merging two duplicates kept the newer one), so an unsorted
+     flip would have been wrong for them. Undated forms sort last rather than
+     jumping to the front. */
+  out.sort((a,b) => String(b.at||'').localeCompare(String(a.at||'')));
+  out.forEach((x,i) => { x.label = 'Form ' + (i+1); });
   return out;
 }
 
@@ -15981,19 +16060,12 @@ function renderHaatEnrollmentData(f){
      copy whose enrollmentFormFull is the chosen form. No duplicated view. */
   const forms = farmerFormList(f);
   if(forms.length > 1){
-    const pick = window._drawerFormPick[f.id] || '';
-    const cur  = forms.find(x=>x.id===pick) || forms[0];
-    let tabs = `<div class="subhead" style="margin-top:14px">Forms received (${forms.length})</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`;
-    forms.forEach(x=>{
-      const on = x.id === cur.id;
-      tabs += `<button class="btn btn-sm ${on?'btn-primary':'btn-ghost'}" data-formpick="${esc(x.id)}" style="padding:5px 11px;text-align:left">
-        ${esc(x.label)}
-        <span style="display:block;font-size:10px;font-weight:400;opacity:.8">${x.at?esc(fmtDate(String(x.at).slice(0,10))):'date unknown'}${x.from?' · '+esc(x.from):''}</span>
-      </button>`;
-    });
-    tabs += `</div>
-      <div class="hint" style="margin-bottom:10px">${forms.length} separate submissions from this phone number. Each is kept exactly as it was filled in — nothing has been merged or overwritten.</div>`;
+    /* v230 - "not picked yet" has to be undefined, not '': '' is the id of the
+       record's OWN form, so the old default re-labelled the tabs and then
+       opened the old one anyway. Default is now whichever is newest. */
+    const pick = window._drawerFormPick[f.id];
+    const cur  = (pick !== undefined ? forms.find(x=>x.id===pick) : null) || forms[0];
+    let tabs = formTabsHtml(forms, cur, 'data-formpick');
     const proxy = Object.assign({}, f, {enrollmentFormFull: cur.form});
     return tabs + (Array.isArray(cur.form && cur.form.claims) ? renderV5EnrollmentSummary(proxy) : '');
   }
@@ -20329,7 +20401,10 @@ function openAssignMobilizerModal(){
 }
 
 /* v159 — pick which enrolment form the merged farmer leads with.
-   Both are always kept; this only decides which is Form 1 and which is Form 2.
+   Both are always kept; this only decides which form the record LEADS WITH -
+   the one the PDF prints and the verification form checks against. Since v230
+   the tabs are numbered by date, newest first, so this choice no longer sets
+   which one is called Form 1.
    The answer counts are on the buttons because that is the whole basis for
    the choice, and reading it off the table below took scrolling. */
 function _dupFormChooser(keep, drop, mainFormId){
@@ -20344,7 +20419,7 @@ function _dupFormChooser(keep, drop, mainFormId){
   };
   return '<div style="background:var(--panel-2);border-radius:8px;padding:11px 12px;margin:2px 0 12px">'
     + '<div style="font-size:12.5px;font-weight:700;margin-bottom:2px">Which form should the farmer lead with?</div>'
-    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:9px">The other one is still kept, as Form 2. Nothing is deleted either way.</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:9px">The other one is still kept and stays visible on the farmer. Nothing is deleted either way.</div>'
     + '<div style="display:flex;gap:9px;flex-wrap:wrap">' + btn(keep) + btn(drop) + '</div></div>';
 }
 
@@ -20452,7 +20527,7 @@ function viewDuplicateRecords(){
      often the emptier one, so leading with its form put "not answered" down
      the whole first column while 46 real answers sat in the second. Default
      to whichever form actually has more answers; the admin can flip it.
-     Neither form is ever discarded — the other becomes Form 2. */
+     Neither form is ever discarded — the other stays on the farmer. */
   const _mainDefault = _dupAnswered(drop) > _dupAnswered(keep) ? drop.id : keep.id;
   const mainFormId = (F.mainForm === keep.id || F.mainForm === drop.id) ? F.mainForm : _mainDefault;
   const rows = dupDiff(keep, drop);
@@ -20504,7 +20579,7 @@ function viewDuplicateRecords(){
       <div class="detail-cell"><div class="k">Already the same</div><div class="v">${rows.length-conflicts.length-fills.length}</div></div>
     </div>
     <div class="cs" style="margin:2px 0 0">Only the summary the lists and map read is settled here.
-      <b>Both enrolment forms are kept in full</b> and appear as Form 1 and Form 2 on the surviving farmer.</div>
+      <b>Both enrolment forms are kept in full</b> and both stay visible on the surviving farmer, newest first.</div>
   </div>`;
 
   if(conflicts.length + fills.length){
@@ -20544,7 +20619,7 @@ function viewDuplicateRecords(){
       <div class="ct">The two enrolment forms, side by side</div>
       <div class="cs">${fDiff.length} of ${fRows.length} answered questions differ.
         <b>Both forms are kept in full</b> — neither is ever deleted. What you choose below is only which of
-        the two the farmer's record leads with; the other sits behind it as Form 2.</div>
+        the two the farmer's record leads with; the other is kept alongside it.</div>
       ${_dupFormChooser(keep, drop, mainFormId)}
       <div class="table-wrap"><table><thead><tr>
         <th style="width:30%">Question</th>
@@ -20626,7 +20701,7 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
     + 'ARCHIVES: '+drop.id+' — not deleted, restorable at any time\n\n'
     + 'Moved to '+keep.id+':\n'
     + '  • its enrolment form — ' + (mainFormId === drop.id
-        ? 'as the MAIN form (' + keep.id + '’s own form becomes Form 2)'
+        ? 'as the MAIN form (' + keep.id + '’s own form is kept alongside it)'
         : 'as Form 2') + '\n'
     + (_nv ? '  • '+_nv+' farm visit'+(_nv===1?'':'s')+'\n' : '')
     + (_nf ? '  • '+_nf+' second farm'+(_nf===1?'':'s')+'\n' : '')

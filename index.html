@@ -4134,7 +4134,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v230';
+const APP_VERSION = 'v231';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15788,7 +15788,10 @@ function renderV5EnrollmentSummary(f){
       + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">&#128203; Other details (' + textClaims.length + ')</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:5px 12px;font-size:12px">';
     textClaims.slice(0,18).forEach(c => {
-      h += '<div><span style="color:var(--ink-faint)">' + esc((c.gu||c.en||c.id||'').slice(0,30)) + ':</span> <b>' + esc(String(c.answer)) + '</b></div>';
+      /* v231 - min-width:0 because a grid item's minimum size is auto, and an
+         unbreakable string (one answer is a Google Maps URL) then refuses to
+         let its column shrink and runs over the next one. */
+      h += '<div style="min-width:0;overflow-wrap:anywhere"><span style="color:var(--ink-faint)">' + esc((c.gu||c.en||c.id||'').slice(0,30)) + ':</span> <b>' + esc(String(c.answer)) + '</b></div>';
     });
     if(textClaims.length>18) h += '<div style="color:var(--ink-faint);font-style:italic">+ ' + (textClaims.length-18) + ' more fields...</div>';
     h += '</div></div>';
@@ -15984,6 +15987,19 @@ function openCropsHistoryModal(farmerId){
    null/'' means the original. */
 window._drawerFormPick = window._drawerFormPick || {};
 
+/* v231 - the farmer's LATEST enrolment form, which since v231 is simply THE
+   form the app uses: what the drawer and the FC sheet open on, what the PDF
+   prints, and what a new verification checks against. Falls back to the
+   record's own whenever there is nothing newer (or the extras are not on this
+   device yet), so a farmer with one form is completely unaffected. */
+function newestEnrolmentForm(f){
+  try{
+    const list = farmerFormList(f);
+    if(list.length && list[0] && list[0].form && Array.isArray(list[0].form.claims)) return list[0].form;
+  }catch(e){}
+  return (f && f.enrollmentFormFull) || null;
+}
+
 /* v230 - one tab strip, used by the admin drawer and the FC's farmer sheet so
    they cannot drift apart. `attr` is the data- attribute each side wires up. */
 function formTabsHtml(forms, cur, attr){
@@ -15993,17 +16009,15 @@ function formTabsHtml(forms, cur, attr){
     const on = x.id === cur.id;
     h += '<button class="btn btn-sm ' + (on?'btn-primary':'btn-ghost') + '" ' + attr + '="' + esc(x.id) + '" style="padding:5px 11px;text-align:left">'
        + esc(x.label)
-       + (x.isMain ? '<span style="font-size:9px;font-weight:700;margin-left:5px;padding:1px 5px;border-radius:99px;background:' + (on?'rgba(255,255,255,.25)':'var(--panel-2)') + '">main</span>' : '')
        + '<span style="display:block;font-size:10px;font-weight:400;opacity:.8">'
        + (x.at ? esc(fmtDate(String(x.at).slice(0,10))) : 'date unknown')
        + (x.from ? ' \u00b7 ' + esc(x.from) : '')
        + '</span></button>';
   });
   h += '</div><div class="hint" style="margin-bottom:10px">'
-     + forms.length + ' separate submissions from this phone number. <b>Form 1 is the most recent.</b> '
-     + 'Each is kept exactly as it was filled in \u2014 nothing has been merged or overwritten. '
-     + 'The one marked <b>main</b> is the copy the farmer\u2019s record leads with: it is what the PDF prints '
-     + 'and what the verification form checks against.'
+     + forms.length + ' separate submissions from this phone number. <b>Form 1 is the latest</b>, and it is '
+     + 'the one the app uses \u2014 what opens here, what the PDF prints, and what a new verification checks '
+     + 'against. The older ones are kept exactly as they were filled in; nothing has been merged or overwritten.'
      + '</div>';
   return h;
 }
@@ -16017,8 +16031,12 @@ function farmerFormList(f){
     if(!x || !x.id) return;
     const raw = (fc.extra||{})[x.id];
     if(!raw) return;
-    const claims = ((raw.form||{}).farmer||{}).claims || (raw.farmer||{}).claims || raw.claims || [];
-    out.push({ id:x.id, at:x.at||'', from:x.from||'', form:{claims:claims}, isMain:false });
+    /* v231 - carry the WHOLE submission, not just its claims: an extra form is
+       a full one (claims, photos, mobile, aadhaar, address), and the
+       verification form reads all of those. */
+    const inner = ((raw.form||{}).farmer) || raw.farmer || raw;
+    if(!inner || !Array.isArray(inner.claims)) return;
+    out.push({ id:x.id, at:x.at||'', from:x.from||'', form:inner, isMain:false });
   });
   /* v230 - numbered by date, newest first, because that is the one anybody
      opening the farmer wants to read. It used to number them in build order,
@@ -16602,9 +16620,19 @@ function openHaatDrawer(id){
   });
   const drawerPdfBtn = $('#drawerPdfBtn');
   if(drawerPdfBtn) drawerPdfBtn.onclick = async () => {
-    let claims = f.enrollmentFormFull?.claims;
-    if(!claims){ try { await loadForms(id); claims = f.enrollmentFormFull?.claims; } catch(e) {} }
-    await downloadFarmerPdfOuter(f, claims, 'કિસાન નોંધણી પત્રક', drawerPdfBtn);
+    /* v231 - print the form that is on screen. It used to always print the
+       record's own form, so with two forms open on the newer one you got a PDF
+       of the older. */
+    const _pickPdf = () => {
+      const list = farmerFormList(f);
+      if(!list.length) return null;
+      const p = window._drawerFormPick ? window._drawerFormPick[f.id] : undefined;
+      const chosen = (p !== undefined ? list.find(x=>x.id===p) : null) || list[0];
+      return chosen && chosen.form;
+    };
+    let src = _pickPdf();
+    if(!src || !Array.isArray(src.claims)){ try { await loadForms(id); src = _pickPdf(); } catch(e) {} }
+    await downloadFarmerPdfOuter(f, src && src.claims, 'કિસાન નોંધણી પત્રક', drawerPdfBtn);
   };
   openDrawer();
 }
@@ -18522,8 +18550,20 @@ function openCompareFormsModal(id, opts){
   const enroll = f.enrollmentFormFull || {};
   const verif = f.verificationFormFull || {};
   /* Build maps by question id */
-  const farmerClaims = (Array.isArray(enroll.claims) ? enroll.claims : ((enroll._full && Array.isArray(enroll._full.claims)) ? enroll._full.claims : []))
+  /* v231 - ⛔ this must NOT simply follow the newest form. Compare puts the
+     farmer's claim beside the FC's verification; re-baselining it against a
+     form that arrived AFTER the visit would invent mismatches that never
+     happened. Every stored verification carries `farmerAnswer` per claim -
+     what was actually put in front of the FC - so that wins wherever it
+     exists, and the newest form fills in only the rest. */
+  const _enrolSrc = newestEnrolmentForm(f) || enroll;
+  const farmerClaims = (Array.isArray(_enrolSrc.claims) ? _enrolSrc.claims : ((enroll._full && Array.isArray(enroll._full.claims)) ? enroll._full.claims : []))
     .reduce((a,c)=>{a[c.id]=c;return a;},{});
+  (Array.isArray(verif.claims) ? verif.claims : []).forEach(c => {
+    if(c && c.id && c.farmerAnswer !== undefined && c.farmerAnswer !== null){
+      farmerClaims[c.id] = Object.assign({}, farmerClaims[c.id] || {id:c.id, gu:c.gu, en:c.en, type:c.type}, {answer: c.farmerAnswer});
+    }
+  });
   const fcVerifs = (Array.isArray(verif.claims) ? verif.claims : [])
     .reduce((a,c)=>{a[c.id]=c;return a;},{});
 
@@ -21652,7 +21692,10 @@ window.addEventListener('message',async ev=>{
         closeVerificationForm();
         return;
       }
-      const e = f.enrollmentFormFull || {};
+      /* v231 - the LATEST form, not whichever one the record happens to lead
+         with. An extra form is a full submission - claims, photos, mobile,
+         aadhaar, address - so this one line moves all of it. */
+      const e = newestEnrolmentForm(f) || {};
       /* v228 - COPY each claim before touching it. The backfill below writes a
          value the enrolment never stored, and these objects live inside
          f.enrollmentFormFull, which saveDB diffs and pushes - mutating them
@@ -21684,7 +21727,9 @@ window.addEventListener('message',async ev=>{
           }
         }
       }
-      const rawPhotos = e.photos || (e._full && e._full.photos) || {};
+      /* v231 - if the newest form carries no photos, fall back to the ones on
+         the record's own form rather than showing the FC none. */
+      const rawPhotos = e.photos || (e._full && e._full.photos) || ((f.enrollmentFormFull||{}).photos) || {};
       // Resolve each photo to a displayable src (URL, legacy base64, or this
       // session's local copy of a still-uploading photo) for the iframe.
       const photos = {};

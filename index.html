@@ -2687,6 +2687,10 @@ body.lang-hi .thi{display:inline}
     <div class="ico">✓</div>
     <h2><span class="tgu">ચકાસણી જમા થઈ!</span><span class="thi">सत्यापन जमा हुआ!</span><span class="ten">Verification submitted!</span></h2>
     <p id="verifySuccessSummary"></p>
+    <!-- v232 - the parent writes the photo-upload progress here. It reaches
+         into this document directly (blob: iframe, same origin), which is how
+         the prefill already arrives, so there is no message plumbing. -->
+    <div id="verifPhotoStatus" style="margin-top:10px;font-size:13px;font-weight:700;line-height:1.5"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button type="button" id="downloadVerifPdfBtn" style="padding:12px 24px;background:var(--leaf);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📄 <span class="tgu">PDF ડાઉનલોડ કરો</span><span class="thi">PDF डाउनलोड करें</span><span class="ten">Download PDF</span></button>
       <button type="button" id="closeVerifyBtn" style="padding:12px 24px;background:#fff;color:var(--leaf);border:1.5px solid var(--leaf);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✕ <span class="tgu">બંધ કરો</span><span class="thi">बंद करें</span><span class="ten">Close</span></button>
@@ -4134,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v231';
+const APP_VERSION = 'v232';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7024,6 +7028,59 @@ async function flushSpecificPhotos(photoIds, timeoutMs){
   const timeout = new Promise(res => setTimeout(()=>res({uploaded:0, failed:0, timedOut:true}), timeoutMs));
   return Promise.race([run, timeout]);
 }
+/* v232 - send THIS visit's photos now, and say so on the success screen.
+
+   The background pump runs every 30-40s and only while the app is open. An FC
+   submits, taps Close and pockets the phone, so a batch of a dozen field
+   photos - megabytes over a village connection - regularly got part-way and
+   stopped: 3 uploaded, 9 left behind, referenced by a record that can never
+   show them. The farmer-facing enrolment form has waited for its photos since
+   v85; this gives the verification the same treatment.
+
+   Deliberately NOT blocking: the FC can close whenever they like, and the
+   ordinary pump still picks up anything left. This only makes the common case
+   - phone still in hand, signal present - finish immediately, and makes the
+   uncommon one visible instead of silent. */
+function _sendVerifPhotosNow(photoIds){
+  const ids = (photoIds || []).slice();
+  const say = (txt, kind) => {
+    try{
+      const fr = document.getElementById('verifyFrame');
+      const doc = fr && fr.contentDocument;
+      const el  = doc && doc.getElementById('verifPhotoStatus');
+      if(!el) return;
+      el.textContent = txt || '';
+      el.style.color = kind === 'ok' ? '#1c7c4a' : (kind === 'warn' ? '#993c1d' : '#475569');
+    }catch(e){}
+  };
+  if(!ids.length){ say(''); return; }
+  if(!navigator.onLine || !cloudinaryConfigured()){
+    say('⚠ ' + ids.length + ' ફોટા હજુ મોકલાયા નથી — સિગ્નલ આવે ત્યારે એપ ખોલો  ·  '
+      + ids.length + ' photos not sent yet — open the app when you have signal', 'warn');
+    return;
+  }
+  (async () => {
+    let left = ids.length, failed = 0;
+    say('↑ ' + left + ' ફોટા મોકલાઈ રહ્યા છે…  ·  sending ' + left + ' photos…');
+    for(const pid of ids){
+      try{
+        const it = await idbGet('photoQueue', pid).catch(()=>null);
+        if(it) await _uploadQueuedPhoto(it);
+      }catch(e){ failed++; console.warn('[Sristi] verif photo upload failed:', e && e.message); }
+      left--;
+      if(left > 0) say('↑ ' + left + ' બાકી…  ·  ' + left + ' left…');
+    }
+    try{ updatePhotoBadge(); }catch(e){}
+    try{ if(typeof updateFcSync === 'function') updateFcSync(); }catch(e){}
+    if(failed){
+      say('⚠ ' + failed + ' ફોટા બાકી — એપ ખુલ્લી રાખો  ·  '
+        + failed + ' photos still to send — keep the app open', 'warn');
+    } else {
+      say('✓ બધા ફોટા મોકલાઈ ગયા  ·  all photos sent', 'ok');
+    }
+  })();
+}
+
 // v85 — after queuing a Haat enrollment's photos (public or FC/admin), actively
 // upload them and tell the enrollment iframe's success screen it's safe to let
 // the farmer move on. See KISAN_FORM_HTML's submit()/successScreen wiring —
@@ -7070,6 +7127,7 @@ function applyPhotoUrl(it, repl){
 async function updatePhotoBadge(){
   let n = 0;
   try{ n = (await idbAll('photoQueue')).length; }catch(e){}
+  _photoQueueCount = n;   /* v232 - the beforeunload guard reads this */
   let el = document.getElementById('photoQueuePill');
   if(!n || !cloudinaryConfigured()){ if(el) el.style.display = 'none'; return; }
   if(!el){
@@ -7086,6 +7144,20 @@ async function updatePhotoBadge(){
     ? 'Photos waiting to upload to Cloudinary (auto-retries)'
     : '⚠ Cloudinary not set up yet — Settings → Photo storage. Photos stay safe on this device until then.';
 }
+
+/* v232 - closing the app is what actually strands a photo: the queue only
+   drains while it is open. Ask first. Fires on a tab close or a navigation;
+   it cannot fire when the phone kills a backgrounded app, so it is a warning
+   and not a guarantee. */
+let _photoQueueCount = 0;
+window.addEventListener('beforeunload', function(e){
+  try{
+    if(!_photoQueueCount) return;
+    if(Date.now() < (window._verifBusyUntil || 0)) { e.preventDefault(); e.returnValue = ''; return; }
+    e.preventDefault();
+    e.returnValue = '';
+  }catch(err){}
+});
 
 /* ---------- on-demand forms (forms/{farmerId} in Firebase) ---------- */
 const FORMS_CACHE = {};   // farmerId -> {enrol, verif, _attempted, _complete}
@@ -22813,7 +22885,11 @@ window.addEventListener('message',async ev=>{
         const _oldForm = (window._verifyEditing && window._verifyEditing.farmerId === f.id && f.verificationFormFull)
           ? JSON.parse(JSON.stringify(f.verificationFormFull)) : null;
         // v11 — photos to upload queue, form text to forms/{id}.
-        await extractPhotos(d, {program:'haat', farmerId: f.id});
+        /* v232 - collect the ids so they can be pushed immediately below,
+           instead of waiting for the 30-40s background pump that an FC who
+           closes the app never gives a chance to run. */
+        const _vPhotoIds = [];
+        await extractPhotos(d, {program:'haat', farmerId: f.id}, _vPhotoIds);
         setForms(f.id, 'verif', d);
         /* v199 - RE-RESOLVE. extractPhotos is awaited and takes seconds on a
            field phone; _processLiveSnapshot() replaces every object in
@@ -23006,6 +23082,7 @@ window.addEventListener('message',async ev=>{
         }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
         window._verifyEditing = null;   /* v211 - one edit, one save */
         window._verifBusyUntil = 0;     /* v219 - written; a queued update may apply */
+        _sendVerifPhotosNow(_vPhotoIds);   /* v232 */
         if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;
@@ -23051,6 +23128,7 @@ window.addEventListener('message',async ev=>{
         }
       }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
       window._verifBusyUntil = 0;     /* v219 */
+      _sendVerifPhotosNow(_vPhotoIds);   /* v232 */
       updateFcSync();
     }
   }

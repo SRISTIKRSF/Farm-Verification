@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v235';
+const APP_VERSION = 'v236';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19083,6 +19083,144 @@ function openCompareFormsModal(id, opts){
      2) Manage Haats — add / remove markets
      3) Manage Field Coordinators — same data, table-style editor
      4) Roles — basic role-picker (Admin / Manager / FC / Read-only) */
+/* ================= v236 - restore a backup from inside the app =================
+
+   Until now Settings -> Data & Backup could only DOWNLOAD. Putting data back
+   meant a hand-typed `firebase database:set` in a terminal, which is not a
+   recovery plan for the person who needs it at the moment they need it.
+
+   ⛔ Nothing here goes through saveDB(). saveDB infers deletions by diffing
+   memory against _lastSnap; handing it a restored dataset is precisely how a
+   mass delete gets computed. Every write below is a targeted fbRef() write, and
+   the page reloads afterwards so the baseline is rebuilt from the server.
+============================================================================ */
+
+/* Keys in the app's own download that are description, not data. */
+const _RESTORE_SKIP = ['_about','_appVersion','exportedAt','exportedBy','complete','counts'];
+
+/* Live under meta/ on the server, so they are not top-level collections. */
+const _RESTORE_INSIDE_META = ['haats','crops','settings'];
+
+const _RESTORE_LABEL = {
+  haatFarmers:'Haat farmers', convFarmers:'Conversion farmers',
+  forms:'Enrolment & verification forms', convForms:'Conversion forms',
+  formsExtra:'Second forms', fcs:'Field coordinators',
+  fieldCoordinators:'Field coordinators (old list)',
+  verificationPlans:'Planned visits', incomeRecords:'Income records',
+  verifIndex:'Verification index', phoneIndex:'Phone index',
+  farmers_master:'Farmer master list', activity:'Activity log',
+  activityArchive:'Activity archive', config:'Accounts',
+  meta:'Settings & lists', questionSchema:'Question list',
+  counters:'Counters', weekly:'Weekly', verifEdits:'Verification edits',
+  pendingEnrolments:'Pending enrolments', users:'Accounts (names only)'
+};
+
+let _RESTORE_PENDING = null;   // the parsed file, between choosing and applying
+
+/* Accepts both shapes: the command-line backup (collections keyed by id) and
+   the app's own download (farmers as ARRAYS). Everything comes out as
+   { node: { id: record } }. */
+function _restoreNormalise(raw){
+  if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const cols = {}, notRestorable = [];
+  Object.keys(raw).forEach(k => {
+    if(_RESTORE_SKIP.indexOf(k) >= 0) return;
+    let v = raw[k];
+    if(v === null || v === undefined) return;
+    if(_RESTORE_INSIDE_META.indexOf(k) >= 0){ notRestorable.push(k); return; }
+    /* The app's download lists accounts WITHOUT passwords, on purpose, so the
+       file is safe to email. Writing them back would replace working logins
+       with unusable ones. */
+    if(k === 'users'){ notRestorable.push('users'); return; }
+    if(Array.isArray(v)){
+      const o = {};
+      v.forEach(r => { if(r && r.id !== undefined && r.id !== null) o[String(r.id)] = r; });
+      if(!Object.keys(o).length) return;
+      v = o;
+    }
+    if(typeof v !== 'object') return;
+    if(!Object.keys(v).length) return;
+    cols[k] = v;
+  });
+  if(!Object.keys(cols).length) return null;
+  return { cols: cols, notRestorable: notRestorable,
+           exportedAt: raw.exportedAt || null, appVersion: raw._appVersion || null };
+}
+
+/* Just the ids at a node, not the data. `shallow=true` is a REST-only feature
+   and is the difference between reading a few KB of keys and pulling the whole
+   15 MB forms node down to count it. Same pattern as preCleanBlobsFromRTDB. */
+async function _restoreServerKeys(node){
+  try{
+    const u = firebase.auth && firebase.auth().currentUser;
+    if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return null;
+    const tok  = await u.getIdToken();
+    const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
+    const res  = await fetch(base + '/' + node + '.json?shallow=true&auth=' + encodeURIComponent(tok),
+                             {cache:'no-store'});
+    if(!res.ok) return null;
+    const v = await res.json();
+    if(v === null) return [];
+    return (typeof v === 'object') ? Object.keys(v) : [];
+  }catch(e){ console.warn('[Sristi] restore: could not read keys at '+node, e); return null; }
+}
+
+/* What each mode would actually do, per collection. */
+async function _restoreAnalyse(parsed){
+  const rows = [];
+  for(const node of Object.keys(parsed.cols)){
+    const fileIds   = Object.keys(parsed.cols[node]);
+    const serverIds = await _restoreServerKeys(node);
+    const unknown   = serverIds === null;
+    const onServer  = new Set(serverIds || []);
+    const inFile    = new Set(fileIds);
+    rows.push({
+      node: node, label: _RESTORE_LABEL[node] || node,
+      inFile: fileIds.length,
+      onServer: unknown ? null : (serverIds || []).length,
+      wouldAdd: unknown ? null : fileIds.filter(id => !onServer.has(id)).length,
+      wouldLose: unknown ? null : (serverIds || []).filter(id => !inFile.has(id)).length
+    });
+  }
+  rows.sort((a,b) => b.inFile - a.inFile);
+  return rows;
+}
+
+/* mode 'add'     - write only ids the server does not have. Cannot delete,
+                    cannot overwrite.
+   mode 'replace' - write each collection whole. Never the namespace root: the
+                    app's own download omits several nodes and a root write
+                    would delete them. */
+async function _restoreApply(parsed, mode, onProgress){
+  let added = 0, touched = [];
+  for(const node of Object.keys(parsed.cols)){
+    const data = parsed.cols[node];
+    if(mode === 'replace'){
+      await fbRef(node).set(data);
+      added += Object.keys(data).length;
+      touched.push(node);
+      if(onProgress) onProgress(node, Object.keys(data).length);
+      continue;
+    }
+    const serverIds = await _restoreServerKeys(node);
+    if(serverIds === null){
+      /* Could not find out what is there. Refuse rather than guess - guessing
+         "nothing" would overwrite live records with the file's older copies. */
+      throw new Error('Could not read the current contents of "' + node + '", so it was skipped rather than risk overwriting newer data. Nothing before this point was undone.');
+    }
+    const have = new Set(serverIds);
+    const missing = Object.keys(data).filter(id => !have.has(id));
+    for(let i = 0; i < missing.length; i += 150){
+      const upd = {};
+      missing.slice(i, i + 150).forEach(id => { upd[node + '/' + id] = data[id]; });
+      await fbRef('').update(upd);
+    }
+    if(missing.length){ added += missing.length; touched.push(node); }
+    if(onProgress) onProgress(node, missing.length);
+  }
+  return { added: added, touched: touched };
+}
+
 function viewSettings(){
   const v=$('#view');
   if(!FILTERS.settings) FILTERS.settings={tab:'practices'};
@@ -19124,6 +19262,19 @@ function viewSettings(){
       </div>
       <button class="btn btn-primary btn-sm" id="downloadFullBackup">${svg(I.download,2.2)}Download full backup (JSON)</button>
     </div>`;
+    /* v236 - the other half. Admin only: this can rewrite the database. */
+    if(isAdminUser()){
+      h+=`<div class="card" style="padding:18px 20px;max-width:680px;margin-top:16px;border:1px solid var(--line-strong)">
+      <div class="ct" style="font-size:14px;font-weight:700">\u267b\ufe0f Restore from a backup file</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
+        Pick a backup file and put the data back. Works with a file downloaded above, or with one of the weekly backups from the laptop.<br><br>
+        Nothing happens when you choose a file \u2014 you are shown exactly what is in it and what would change, and you choose what to do next.
+      </div>
+      <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
+      <button class="btn btn-sm" id="restorePick" style="border:1px solid var(--line-strong)">Choose a backup file\u2026</button>
+      <div id="restoreSummary" style="margin-top:14px"></div>
+    </div>`;
+    }
     v.innerHTML=h;
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     $('#downloadFullBackup').onclick=async()=>{
@@ -19202,6 +19353,146 @@ function viewSettings(){
         btn.disabled=false; btn.innerHTML=orig;
       }
     };
+
+    /* ---------------- v236 restore ---------------- */
+    if(isAdminUser() && $('#restorePick')){
+      const esc2 = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      const box  = () => $('#restoreSummary');
+
+      $('#restorePick').onclick = () => $('#restoreFile').click();
+
+      $('#restoreFile').onchange = async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if(!file) return;
+        box().innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">Reading the file\u2026</div>';
+        let raw;
+        try{
+          raw = JSON.parse(await file.text());
+        }catch(e){
+          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">That file is not a valid backup \u2014 it is not readable JSON.</div>';
+          ev.target.value=''; return;
+        }
+        const parsed = _restoreNormalise(raw);
+        if(!parsed){
+          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">That file does not look like a backup of this app \u2014 there are no farmer records or forms in it.</div>';
+          ev.target.value=''; return;
+        }
+        if(!FB.ready || !navigator.onLine){
+          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">You are offline. Go online and wait for the \u201cSynced\u201d pill before restoring.</div>';
+          ev.target.value=''; return;
+        }
+        _RESTORE_PENDING = parsed;
+        box().innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">Comparing the file against the database\u2026</div>';
+
+        let rows;
+        try{ rows = await _restoreAnalyse(parsed); }
+        catch(e){
+          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">Could not compare the file against the database. Check your connection and try again.</div>';
+          return;
+        }
+
+        const totAdd  = rows.reduce((n,r)=>n+(r.wouldAdd||0),0);
+        const totLose = rows.reduce((n,r)=>n+(r.wouldLose||0),0);
+        const when = parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : null;
+
+        let t = '<div style="font-size:12.5px;font-weight:700;margin-bottom:8px">' + esc2(file.name) + '</div>';
+        t += '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:12px">'
+           + (when ? 'Taken on ' + esc2(when) + '. ' : 'The file does not record when it was taken \u2014 check the date in its name. ')
+           + (parsed.appVersion ? 'App version ' + esc2(parsed.appVersion) + '.' : '') + '</div>';
+
+        t += '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:12px">'
+           + '<tr style="text-align:left;color:var(--ink-faint)">'
+           + '<th style="padding:4px 8px 4px 0;font-weight:600">What</th>'
+           + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the file</th>'
+           + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the app now</th>'
+           + '<th style="padding:4px 0 4px 8px;font-weight:600;text-align:right">Would be added back</th></tr>';
+        rows.forEach(r => {
+          t += '<tr style="border-top:1px solid var(--line)">'
+             + '<td style="padding:5px 8px 5px 0">' + esc2(r.label) + '</td>'
+             + '<td style="padding:5px 8px;text-align:right">' + r.inFile + '</td>'
+             + '<td style="padding:5px 8px;text-align:right">' + (r.onServer===null?'?':r.onServer) + '</td>'
+             + '<td style="padding:5px 0 5px 8px;text-align:right;font-weight:700;color:' + (r.wouldAdd?'var(--green)':'var(--ink-faint)') + '">'
+             + (r.wouldAdd===null?'?':r.wouldAdd) + '</td></tr>';
+        });
+        t += '</table>';
+
+        if(parsed.notRestorable.length){
+          t += '<div style="font-size:11.5px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 7px 7px 0;padding:9px 12px;margin-bottom:12px">'
+             + 'This file does not contain: ' + esc2(parsed.notRestorable.map(k=>_RESTORE_LABEL[k]||k).join(', '))
+             + '. Those are left exactly as they are.'
+             + (parsed.notRestorable.indexOf('users')>=0 ? ' Passwords are never written to a backup, so logins are untouched.' : '')
+             + '</div>';
+        }
+
+        t += '<div style="font-size:12.5px;font-weight:700;margin:14px 0 8px">What do you want to do?</div>';
+
+        t += '<label style="display:block;border:1px solid var(--line-strong);border-radius:9px;padding:11px 13px;margin-bottom:9px;cursor:pointer">'
+           + '<input type="radio" name="restoreMode" value="add" checked style="margin-right:8px">'
+           + '<b style="font-size:12.5px">Add back what is missing</b>'
+           + '<div style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 0 22px">Puts back <b>' + totAdd + '</b> record' + (totAdd===1?'':'s') + ' that the app no longer has. '
+           + 'Nothing is deleted and nothing already in the app is changed, even if the file has an older copy of it. Safe to use with an old file.</div></label>';
+
+        t += '<label style="display:block;border:1px solid ' + (totLose? 'var(--red)':'var(--line-strong)') + ';border-radius:9px;padding:11px 13px;cursor:pointer">'
+           + '<input type="radio" name="restoreMode" value="replace" style="margin-right:8px">'
+           + '<b style="font-size:12.5px">Replace everything in the file</b>'
+           + '<div style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 0 22px">Makes the app match the file exactly. '
+           + (totLose ? '<b style="color:var(--red)">' + totLose + ' record' + (totLose===1?'':'s') + ' added since this backup would be deleted.</b> ' : 'Nothing would be lost, because the file already has everything the app has. ')
+           + 'Use this only when the database is genuinely lost.</div></label>';
+
+        t += '<div id="restoreConfirmWrap" style="margin-top:12px"></div>';
+        t += '<div style="margin-top:14px;display:flex;gap:9px;align-items:center">'
+           + '<button class="btn btn-primary btn-sm" id="restoreGo">Restore</button>'
+           + '<button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Cancel</button>'
+           + '<span id="restoreProgress" style="font-size:11.5px;color:var(--ink-faint)"></span></div>';
+        box().innerHTML = t;
+
+        const syncConfirm = () => {
+          const mode = (box().querySelector('input[name=restoreMode]:checked')||{}).value;
+          const w = $('#restoreConfirmWrap');
+          if(mode === 'replace'){
+            w.innerHTML = '<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;font-size:11.5px;color:#7f1d1d">'
+              + '<b>Download a copy of what is there now first</b> \u2014 use the button above. That copy is your only way back.<br><br>'
+              + 'Then type <b>RESTORE</b> to confirm.<br>'
+              + '<input id="restoreTyped" placeholder="type RESTORE" style="margin-top:7px;padding:6px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:12px">'
+              + '</div>';
+          } else { w.innerHTML=''; }
+        };
+        box().querySelectorAll('input[name=restoreMode]').forEach(r => r.onchange = syncConfirm);
+
+        $('#restoreCancel').onclick = () => { _RESTORE_PENDING=null; box().innerHTML=''; $('#restoreFile').value=''; };
+
+        $('#restoreGo').onclick = async () => {
+          const mode = (box().querySelector('input[name=restoreMode]:checked')||{}).value || 'add';
+          if(mode === 'replace'){
+            const typed = ($('#restoreTyped')||{}).value || '';
+            if(typed.trim().toUpperCase() !== 'RESTORE'){ toast('Type RESTORE to confirm','error'); return; }
+          }
+          if(mode === 'add' && totAdd === 0){ toast('Nothing to add back \u2014 the app already has everything in this file'); return; }
+          const go = $('#restoreGo'); go.disabled = true; $('#restoreCancel').disabled = true;
+          const prog = $('#restoreProgress');
+          let done = 0;
+          try{
+            const res = await _restoreApply(_RESTORE_PENDING, mode, (node, n) => {
+              done++; prog.textContent = 'Restoring \u2014 ' + (_RESTORE_LABEL[node]||node) + ' (' + n + ')\u2026';
+            });
+            try{ logActivity('alert','\u267b Restored from a backup file (' + (mode==='replace'?'replaced everything':'added back what was missing') + ') \u2014 ' + res.added + ' record(s) written'); }catch(e){}
+            prog.textContent = '';
+            box().innerHTML = '<div style="background:#ecfdf5;border-left:3px solid var(--green);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#065f46">'
+              + '<b>Done \u2014 ' + res.added + ' record' + (res.added===1?'':'s') + ' written.</b><br>'
+              + 'Reloading so the app reads everything fresh from the server\u2026</div>';
+            /* Drop the local mirror and reload. The app rebuilds its sync
+               baseline from the server; leaving a stale one in place is how a
+               later save would compute deletions. */
+            setTimeout(() => { try{ localStorage.removeItem(STORE_KEY); }catch(e){} location.reload(); }, 1800);
+          }catch(e){
+            console.error('[Sristi] restore failed', e);
+            go.disabled = false; $('#restoreCancel').disabled = false; prog.textContent='';
+            box().insertAdjacentHTML('afterbegin','<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;font-size:12px;color:#7f1d1d;margin-bottom:10px">Restore stopped: '
+              + esc2(e && e.message ? e.message : 'unknown error') + '</div>');
+          }
+        };
+      };
+    }
     return;
   }
   if(STab==='crops'){

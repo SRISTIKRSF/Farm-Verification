@@ -30,3 +30,8 @@ hosting-redirect/.firebase/
 # putting it on GitHub should be a deliberate decision, not a stray git add.
 docs/Khedut-Chakasani-Guide-GU.html
 docs/Khedut-Chakasani-Guide.pdf
+
+# Staging build. A derived copy of index.html plus a Firebase Hosting config;
+# rebuilt from the live file by _stg_build_site.py, so there is nothing here
+# worth versioning and it would double the repo size.
+staging-site/

@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v233';
+const APP_VERSION = 'v234';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7709,6 +7709,20 @@ const activeFcs=()=>(DB.fcs||[]).filter(f=>f && !f.deleted && !f.inactive);
    contain the stored value, the browser would fall back to the first option,
    and simply opening the edit box and pressing Save would silently move the
    farmer to a different coordinator. */
+/* v234 - the same picker, with an explicit "not assigned" row.
+
+   fcChoices() lists only coordinators, so for a farmer with NO coordinator -
+   499 of the 515 haat farmers - the <select> had no option matching '' and the
+   browser fell back to its first entry, which is Demo FC. Opening Edit details
+   and pressing Save then silently assigned them to the demo account: fifteen
+   real farmers across thirteen districts ended up that way.
+
+   The note on fcChoices below describes this exact failure for a DEACTIVATED
+   coordinator. The empty value is the same trap and was never covered. */
+function fcPickerOptions(currentId){
+  return [['', '\u2014 Not assigned \u2014']].concat(fcChoices(currentId).map(x => [x.id, x.name]));
+}
+
 function fcChoices(currentId){
   const list=activeFcs().slice();
   if(currentId && !list.some(f=>f.id===currentId)){
@@ -17909,7 +17923,7 @@ function openFarmerModal(program,id){
   </div>
   <div class="field-row">
     ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
-    }${program==='haat'?fld('Field Coordinator',sel('ffFc',fcChoices(f.fcId).map(x=>[x.id,x.name]),f.fcId),true):''}
+    }${program==='haat'?fld('Field Coordinator',sel('ffFc',fcPickerOptions(f.fcId),f.fcId||''),true):''}
   </div>`;
   /* v220 - the farmer's juth or FPC. Outside the program branches below
      because both programmes have farmers who belong to one. */
@@ -17934,7 +17948,7 @@ function openFarmerModal(program,id){
   if(program==='conv'){
     body+=`<div class="field-row">
       ${fld('Next visit due',`<input type="date" id="ffNext" value="${esc(f.nextVisitDue||'')}">`)}
-      ${fld('Field Coordinator',sel('ffFc',fcChoices(f.fcId).map(x=>[x.id,x.name]),f.fcId))}
+      ${fld('Field Coordinator',sel('ffFc',fcPickerOptions(f.fcId),f.fcId||''))}
     </div>`;
   }
 
@@ -18010,7 +18024,10 @@ function openFarmerModal(program,id){
       name, phone:_phone,
       village:$('#ffVillage').value.trim(), taluka:talukaDisplayName($('#ffTaluka').value.trim(),$('#ffDistrict').value),
       state:$('#ffState').value, district:$('#ffDistrict').value,
-      landAcres:_land, fcId:$('#ffFc')?.value||(f.fcId||''), crops,
+      /* v234 - read the select DIRECTLY. `value || f.fcId` fell back to the
+         stored id whenever the select was empty, which would have made the
+         new "Not assigned" option impossible to choose. */
+      landAcres:_land, fcId:($('#ffFc') ? $('#ffFc').value : (f.fcId||'')), crops,
       juth: ($('#ffJuth') ? $('#ffJuth').value : (f.juth || '')) || '',   /* v220 */
     };
     if(editing){

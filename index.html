@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v237';
+const APP_VERSION = 'v238';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4186,6 +4186,53 @@ function fbConfigured(){
       && FB_CONFIG.databaseURL && !FB_CONFIG.databaseURL.includes('YOUR_PROJECT');
 }
 function fbRef(path){return FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));}
+
+/* v238 - the one question the first-ever-load branch must get right: does this
+   database already hold anything at all? `?shallow=true` returns the ROOT's
+   child NAMES and nothing else - about 300 bytes against a 20 MB database - so
+   this is cheaper than the single meta read it replaces, and it cannot be
+   fooled by one missing node the way that read was.
+   Returns 'has-data' | 'empty' | 'unknown'. ONLY 'empty' may lead to seeding;
+   every failure returns 'unknown' on purpose. */
+const RESTORE_SEED_BLOCK_KEY = 'sristi_restored_at_v1';
+const RESTORE_SEED_BLOCK_MS  = 30 * 24 * 60 * 60 * 1000;   // 30 days
+async function _cloudRootState(){
+  try{
+    if(!navigator.onLine) return 'unknown';
+    if(!FB_CONFIG || !FB_CONFIG.databaseURL) return 'unknown';
+    const u = firebase.auth && firebase.auth().currentUser;
+    if(!u) return 'unknown';
+    const tok  = await u.getIdToken();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let res;
+    try{
+      res = await fetch(FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE
+                        + '.json?shallow=true&auth=' + encodeURIComponent(tok),
+                        {cache:'no-store', signal: ctrl.signal});
+    } finally { clearTimeout(timer); }
+    if(!res || !res.ok) return 'unknown';
+    const v = await res.json();
+    if(v === null) return 'empty';
+    if(v && typeof v === 'object') return Object.keys(v).length ? 'has-data' : 'empty';
+    return 'has-data';
+  }catch(e){
+    console.warn('[Sristi] could not read the database root', e);
+    return 'unknown';
+  }
+}
+/* A restore on this device drops the local mirror, so the next boot looks like
+   a brand-new device. localStorage, not sessionStorage: the tab that ran the
+   restore is not the only one that can boot next. Time-boxed so a genuinely
+   new deployment on the same laptop is not blocked forever. */
+function _restoreSeedBlocked(){
+  try{
+    const at = parseInt(localStorage.getItem(RESTORE_SEED_BLOCK_KEY) || '0', 10);
+    if(!at) return false;
+    if(Date.now() - at > RESTORE_SEED_BLOCK_MS){ localStorage.removeItem(RESTORE_SEED_BLOCK_KEY); return false; }
+    return true;
+  }catch(e){ return false; }
+}
 
 /* sync-status pill in the top bar */
 /* v186 - everything still waiting to reach the server, from the queues the app
@@ -4319,29 +4366,40 @@ async function loadDB(){
       if(local){
         DB=normaliseDB(local);
       }else{
-        // First ever load on this device: check if cloud has data before seeding
+        /* v238 - "is the cloud empty?" used to be answered by reading ONE node,
+           meta. A database still holding every farmer, form and login but
+           missing meta answered "empty", and pushFullDB() below then wrote the
+           namespace root over all of it. That is the v236 incident, and v237's
+           guard only covered the single browser tab that had just run a
+           restore - not a second tab, not another device, not the next day.
+           Ask the ROOT instead, shallowly: a few hundred bytes, cheaper than
+           the meta read it replaces. Seed ONLY when the root is positively
+           confirmed to hold nothing. Any doubt at all - the read failed, no
+           auth, offline - means DO NOT SEED. Failing closed here costs a first
+           visitor an empty screen and one reload; failing open costs the
+           database. */
         try{
-          const metaSnap=await fbRef('meta').get();
-          if(metaSnap.exists()){
+          const rootState = await _cloudRootState();
+          if(rootState === 'has-data'){
             // Cloud has data — DB will be fully populated once live listener fires
             DB=normaliseDB(seedDB());
-          }else if(sessionStorage.getItem('sristi_skip_seed_v1')){
-            /* v237 - a restore clears the local cache and reloads, so this boot
-               takes the "first ever load" branch. If the restore did not happen
-               to include meta, metaSnap is empty and pushFullDB() below would
-               write the namespace ROOT with seed data - destroying everything
-               just restored, on the disaster-recovery path itself. */
-            console.warn('[Sristi] skipping the first-load seed: a restore just ran.');
+          }else if(rootState !== 'empty'){
+            console.warn('[Sristi] could not confirm the database is empty — not seeding.');
+            DB=normaliseDB(seedDB());
+          }else if(_restoreSeedBlocked()){
+            /* Belt and braces behind the root check: a restore ran on this
+               device recently, so an "empty" answer is far more likely to be a
+               bad read than a genuinely new deployment. */
+            console.warn('[Sristi] skipping the first-load seed: a restore ran on this device recently.');
             DB=normaliseDB(seedDB());
           }else{
             DB=normaliseDB(seedDB());
-            await pushFullDB();  // cloud empty — seed it from local
+            await pushFullDB();  // cloud genuinely empty — seed it from local
           }
         }catch(e){
           DB=normaliseDB(seedDB());
         }
       }
-      try{ sessionStorage.removeItem('sristi_skip_seed_v1'); }catch(e){}
       cacheLocal();
       await preCleanBlobsFromRTDB();
       attachLiveListener();
@@ -5937,10 +5995,19 @@ function _excludePendingFromSnap(snap){
   return snap;
 }
 /* pushFullDB — used only for first-time seeding. Writes everything as
-   keyed maps so per-record writes work afterwards. */
+   keyed maps so per-record writes work afterwards.
+   v238 - this was `.set()` on the namespace ROOT, which DELETES every node it
+   does not name: forms, convForms, formsExtra, verifIndex, verifEdits,
+   phoneIndex, questionSchema, farmers_master, counters, weekly,
+   activityArchive and config - every login in the app. That is what took a
+   test database from 14 nodes to 3 in v236. `.update()` writes the same eight
+   keys and leaves everything else untouched, so even if this is ever reached
+   by mistake it can no longer destroy a node it was never meant to write.
+   The caller (load(), one caller only) now also refuses to seed unless the
+   root is positively confirmed empty. */
 async function pushFullDB(){
   if(!FB.ready)return;
-  await fbRef('').set(sanitizeForFB({
+  await fbRef('').update(sanitizeForFB({
     haatFarmers:arrToMap(DB.haatFarmers),
     convFarmers:arrToMap(DB.convFarmers),
     fcs:arrToMap(DB.fcs),
@@ -19146,8 +19213,17 @@ const _RESTORE_ALLOWED = {
   incomeRecords:'Income records', farmers_master:'Farmer master list',
   verifIndex:'Verification index', verifEdits:'Verification edits',
   pendingEnrolments:'Pending enrolments', meta:'Settings & lists',
-  questionSchema:'Question list', counters:'Counters', weekly:'Weekly'
+  questionSchema:'Question list'
 };
+
+/* v238 - nodes that hold ONE record per farmer, and nodes that hold a set of
+   pieces per farmer. In a real database 479 of 562 form records hold only an
+   enrolment and 5 hold only a verification, so comparing these three at record
+   level answers "nothing is missing" for exactly the damage this feature was
+   built to repair - a verification lost from underneath a farmer whose
+   enrolment survived. These are compared and written one level deeper.
+   convForms is NOT here: its children are the fields of one flat record. */
+const _RESTORE_DEEP = { forms:1, formsExtra:1, verifEdits:1 };
 
 /* Deliberately NOT restorable, each for a reason worth stating on screen. */
 const _RESTORE_REFUSED = {
@@ -19155,12 +19231,25 @@ const _RESTORE_REFUSED = {
   users:'Accounts — a backup never contains passwords, so they cannot be restored from one.',
   fcs:'Field coordinators — rebuilt automatically from the accounts, so restoring them would fight that.',
   fieldCoordinators:'Field coordinators (old list) — same as above.',
-  phoneIndex:'Phone index — the database only allows each phone to be written once, so it rebuilds itself.',
+  /* v238 - the old note said this "rebuilds itself". It does not: the phone
+     list is written when a farmer enrols and at no other time, so nothing
+     backfills it. Say so plainly instead of implying it is handled. */
+  phoneIndex:'Phone list used to spot duplicate applications — it is only written when a farmer first enrols, so it cannot be put back here. A farmer restored from a backup will not be matched against a repeat application until the office links them by hand.',
   activity:'Activity log — a record of what happened, not data to put back.',
   activityArchive:'Activity archive — same as above.',
-  haats:'Haat list — part of Settings, restored with them.',
-  crops:'Crop list — part of Settings, restored with them.',
-  settings:'Settings — part of Settings, restored with them.'
+  /* v238 - counting positions, not records. counters holds the last
+     application number issued in each district; weekly holds which week the
+     app is showing. "Put back what is missing" can only ever apply to these
+     when the node was lost, which is precisely when writing an old value
+     re-issues numbers that have already been given to farmers. */
+  counters:'Farmer numbering — these are counting positions, not records. Putting an old one back would hand out application numbers that farmers already have.',
+  weekly:'Week position — which week the app is showing, not data. Set from the Haat screen.',
+  /* v238 - the old note claimed these were "part of Settings, restored with
+     them". They are not: the app writes them inside the Settings & lists node,
+     and a file that lists them separately cannot be read back into it. */
+  haats:'Haat list — this file keeps it separately from the Settings & lists it belongs in, so it cannot be put back from here. A weekly backup from the laptop does carry it.',
+  crops:'Crop list — same as the haat list above.',
+  settings:'Settings — same as the haat list above.'
 };
 
 /* Description, not data. */
@@ -19170,16 +19259,44 @@ const _RESTORE_SKIP = ['_about','_appVersion','exportedAt','exportedBy','complet
    leaving a half-written restore; an EMPTY id was worse - the update key
    `haatFarmers/` normalises to `haatFarmers` and REPLACED the whole collection.
    Confirmed by experiment. saveDB has the same guard at _pathSafe. */
-const _RESTORE_BAD_KEY = /[.#$\[\]\/]/;
+/* v238 - also rejects ASCII control characters, which Firebase forbids too,
+   and measures the 768-byte key limit in BYTES rather than characters: one
+   Gujarati letter is three bytes, so a character count lets a key through that
+   the server then refuses mid-write. */
+const _RESTORE_BAD_KEY = /[.#$\[\]\/\x00-\x1f\x7f]/;
+function _restoreByteLen(s){
+  try{ return new TextEncoder().encode(s).length; }catch(e){ return s.length * 3; }
+}
+/* Exactly what Firebase itself forbids, and nothing more - a key with an inner
+   space or a Gujarati word in it is perfectly legal and must not be dropped. */
+function _restoreNestedKeyOk(k){
+  return typeof k === 'string' && k.length > 0
+      && !_RESTORE_BAD_KEY.test(k) && k !== '__proto__'
+      && _restoreByteLen(k) <= 700;
+}
+/* A record id is held to a stricter standard: it also becomes part of an
+   update path, and one that is blank or padded signals a damaged file. */
 function _restoreKeyOk(k){
-  return typeof k === 'string' && k.length > 0 && k.length <= 700
-      && !_RESTORE_BAD_KEY.test(k) && k !== '__proto__' && k.trim() === k;
+  return _restoreNestedKeyOk(k) && k.trim() === k;
+}
+/* v238 - _restoreKeyOk only ever checked the RECORD id. Firebase validates the
+   whole payload, so one bad key NESTED inside a record threw out of
+   fbRef(node).update(batch) and took the rest of that collection - and every
+   collection after it - down with it. Check the record before it goes in the
+   batch, and leave a bad one out with a count rather than losing the batch. */
+function _restoreValueOk(v, depth){
+  if(v === null || typeof v !== 'object') return true;
+  if((depth || 0) > 24) return false;
+  if(Array.isArray(v)) return v.every(x => _restoreValueOk(x, (depth||0)+1));
+  return Object.keys(v).every(k =>
+    _restoreNestedKeyOk(k) && v[k] !== undefined && _restoreValueOk(v[k], (depth||0)+1));
 }
 
 let _RESTORE_PENDING = null;   // the parsed file, between choosing and applying
 let _RESTORE_GEN     = 0;      // guards against a second file picked mid-compare
 let _RESTORE_BUSY    = false;  // suspends the live listener's re-render
 let _RESTORE_ABORT   = false;  // Cancel, honoured between chunks
+let _RESTORE_RELOAD_TIMER = null;  // so Close can call off the reload
 
 /* Accepts both shapes: the command-line backup (collections keyed by id) and
    the app's own download (farmers as ARRAYS). Records with an unusable id are
@@ -19191,7 +19308,13 @@ function _restoreNormalise(raw){
     if(_RESTORE_SKIP.indexOf(k) >= 0) return;
     let v = raw[k];
     if(v === null || v === undefined) return;
-    if(_RESTORE_REFUSED[k]){ refused.push(k); return; }
+    /* v238 - hasOwnProperty. Without it a file carrying a top-level key named
+       `constructor`, `toString`, `valueOf` or `hasOwnProperty` found the
+       OBJECT PROTOTYPE here, was filed as refused, and the summary then called
+       .split() on a function - an unhandled rejection that left the screen
+       stuck on "Comparing..." for ever with no message. The direction was
+       safe; the silence was not. */
+    if(Object.prototype.hasOwnProperty.call(_RESTORE_REFUSED, k)){ refused.push(k); return; }
     if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, k)) return;
     if(Array.isArray(v)){
       const o = {}; let bad = 0;
@@ -19210,6 +19333,11 @@ function _restoreNormalise(raw){
     Object.keys(v).forEach(id => {
       if(!_restoreKeyOk(id)){ bad++; return; }
       if(v[id] === null || v[id] === undefined){ bad++; return; }
+      /* v238 - a key Firebase refuses, nested anywhere inside the record, used
+         to throw out of the batch write and take the rest of that collection -
+         and every collection after it - with it. Leave the one record out and
+         count it. */
+      if(!_restoreValueOk(v[id], 0)){ bad++; return; }
       clean[id] = v[id];
     });
     if(bad) badIds[k] = (badIds[k] || 0) + bad;
@@ -19229,45 +19357,124 @@ function _restoreNormalise(raw){
 /* Just the ids at a node, never the values: `shallow=true` turns a 15 MB read
    of `forms` into a few KB. Times out rather than hanging on a half-open
    socket, matching _serverDecisionAt. */
-async function _restoreServerKeys(node){
-  if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, node)) return null;
+async function _restoreShallow(path){
   try{
     if(!navigator.onLine) return null;
     const u = firebase.auth && firebase.auth().currentUser;
     if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return null;
-    const tok  = await u.getIdToken();
+    /* v238 - getIdToken had no timeout. If it never settled, the whole restore
+       never settled either, _RESTORE_BUSY stayed true, and the live listener's
+       render() was suppressed for the rest of the session - a frozen app right
+       after a recovery, clearable only by reloading. */
+    const tok  = await _restoreWithin(u.getIdToken(), 20000, 'the sign-in check');
     const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
+    const url  = base + '/' + path.split('/').map(encodeURIComponent).join('/')
+               + '.json?shallow=true&auth=' + encodeURIComponent(tok);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
     let res;
-    try{
-      res = await fetch(base + '/' + encodeURIComponent(node) + '.json?shallow=true&auth=' + encodeURIComponent(tok),
-                        {cache:'no-store', signal: ctrl.signal});
-    } finally { clearTimeout(timer); }
+    try{ res = await fetch(url, {cache:'no-store', signal: ctrl.signal}); }
+    finally { clearTimeout(timer); }
     if(!res || !res.ok) return null;
     const v = await res.json();
     if(v === null) return [];
     return (typeof v === 'object') ? Object.keys(v) : [];
-  }catch(e){ console.warn('[Sristi] restore: could not read keys at '+node, e); return null; }
+  }catch(e){ console.warn('[Sristi] restore: could not read keys at '+path, e); return null; }
+}
+async function _restoreServerKeys(node){
+  if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, node)) return null;
+  return _restoreShallow(node);
+}
+
+/* Run a list of jobs a few at a time. Sequential would take a minute over 562
+   ids on a village link; all at once would open 562 sockets. */
+async function _restorePool(items, limit, fn){
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while(true){
+      const k = i++;
+      if(k >= items.length) return;
+      if(_RESTORE_ABORT) return;
+      out[k] = await fn(items[k], k);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/* v238 - for the three nodes that hold a SET of pieces per farmer, ask which
+   pieces the server has. In the live database 479 of 562 form records hold
+   only an enrolment: comparing at record level answers "nothing is missing"
+   for a farmer whose verification was lost from underneath them, which is the
+   exact damage this feature exists to repair.
+   Only ids present on BOTH sides need this - an id missing entirely is already
+   handled a level up - and the answer per id is about thirty bytes. */
+const _RESTORE_DEEP_CAP = 3000;
+async function _restoreDeepMissing(node, data, serverIds, onProgress){
+  const both = Object.keys(data).filter(id => serverIds.has(id));
+  if(!both.length) return { pairs: [], checked: 0, capped: false };
+  const capped = both.length > _RESTORE_DEEP_CAP;
+  const list = capped ? both.slice(0, _RESTORE_DEEP_CAP) : both;
+  let done = 0, failed = false;
+  const pairs = [];
+  await _restorePool(list, 8, async (id) => {
+    const kids = await _restoreShallow(node + '/' + id);
+    done++;
+    if(onProgress && done % 25 === 0) onProgress(done, list.length);
+    if(kids === null){ failed = true; return; }
+    const have = new Set(kids);
+    const mine = data[id];
+    if(!mine || typeof mine !== 'object' || Array.isArray(mine)) return;
+    Object.keys(mine).forEach(childKey => {
+      if(!have.has(childKey) && _restoreKeyOk(childKey) && mine[childKey] !== null && mine[childKey] !== undefined){
+        pairs.push({ id: id, child: childKey });
+      }
+    });
+  });
+  if(failed) return null;      // treat a partial look as no look at all
+  return { pairs: pairs, checked: list.length, capped: capped };
 }
 
 /* What restoring would actually put back, per collection. A null `wouldAdd`
    means the comparison FAILED - the screen must say so and refuse, rather than
    quietly treating "could not look" as "nothing to do". */
-async function _restoreAnalyse(parsed){
-  const rows = [];
-  for(const node of Object.keys(parsed.cols)){
-    const fileIds   = Object.keys(parsed.cols[node]);
+async function _restoreAnalyse(parsed, onProgress){
+  const nodes = Object.keys(parsed.cols);
+  const rows = await _restorePool(nodes, 4, async (node) => {
+    const data      = parsed.cols[node];
+    const fileIds   = Object.keys(data);
     const serverIds = await _restoreServerKeys(node);
-    const known     = serverIds !== null;
-    const have      = new Set(serverIds || []);
-    rows.push({
+    if(serverIds === null){
+      return { node: node, label: _RESTORE_ALLOWED[node] || node,
+               inFile: fileIds.length, onServer: null, wouldAdd: null,
+               newRecords: null, mendedRecords: null, deep: null, capped: false };
+    }
+    const have = new Set(serverIds);
+    const newIds = fileIds.filter(id => !have.has(id));
+    let deep = null, capped = false;
+    if(_RESTORE_DEEP[node]){
+      if(onProgress) onProgress('Checking ' + (_RESTORE_ALLOWED[node]||node) + ' record by record…');
+      const d = await _restoreDeepMissing(node, data, have,
+                  (n,t) => { if(onProgress) onProgress('Checking ' + (_RESTORE_ALLOWED[node]||node) + ' — ' + n + ' of ' + t + '…'); });
+      if(d === null){
+        return { node: node, label: _RESTORE_ALLOWED[node] || node,
+                 inFile: fileIds.length, onServer: serverIds.length, wouldAdd: null,
+                 newRecords: null, mendedRecords: null, deep: null, capped: false };
+      }
+      deep = d.pairs; capped = d.capped;
+    }
+    const mended = deep ? new Set(deep.map(p => p.id)).size : 0;
+    return {
       node: node, label: _RESTORE_ALLOWED[node] || node,
       inFile: fileIds.length,
-      onServer: known ? (serverIds || []).length : null,
-      wouldAdd: known ? fileIds.filter(id => !have.has(id)).length : null
-    });
-  }
+      onServer: serverIds.length,
+      newRecords: newIds.length,
+      mendedRecords: mended,
+      wouldAdd: newIds.length + (deep ? deep.length : 0),
+      deep: deep, capped: capped
+    };
+  });
   rows.sort((a,b) => b.inFile - a.inFile);
   return rows;
 }
@@ -19288,47 +19495,97 @@ function _restoreWithin(p, ms, what){
    can be 463 KB - that would never finish on a village uplink. */
 const _RESTORE_CHUNK_BYTES = 400 * 1024;
 
-/* Writes ONLY ids the server does not have, one collection at a time, through
-   fbRef(node) so a key cannot escape its collection. Returns what it wrote. */
-async function _restoreApply(parsed, onProgress){
-  const written = [];
-  let added = 0;
+/* v238 - the size guard counted JS characters. Gujarati is three BYTES per
+   character, so a chunk meant to be 400 KB was really 600-800 KB on exactly
+   the data the byte-sizing was written to protect. */
+function _restoreSize(rec){
+  try{ return _restoreByteLen(JSON.stringify(rec)); }catch(e){ return 0; }
+}
+/* Prepare one record for writing back. */
+function _restoreRecordFor(node, rec){
+  /* Farmer records in an older backup still carry the form blobs the app
+     strips everywhere else. Writing them back re-creates megabytes in the
+     database that cloudToDB then nulls a tick later - the restore looks like
+     it worked and quietly undoes itself. */
+  if(node === 'haatFarmers' || node === 'convFarmers') return _stripEphemeral(rec);
+  /* v238 - pendingEnrolments IS live-synced, so a base64 photo inside one is
+     re-downloaded by every device on every reconnect, for ever. Submissions
+     captured before v124 still carry them; the creation path strips them and
+     so must this one. */
+  if(node === 'pendingEnrolments') return _stripBlobs(rec);
+  return rec;
+}
+
+/* Writes ONLY what the server does not have, one collection at a time, through
+   fbRef(node) so a key cannot escape its collection.
+   v238 - `result` is passed IN rather than returned, because the caller needs
+   to know what was written when this THROWS. Previously a cancel or a dropped
+   connection lost the tally with the stack, and the screen and the permanent
+   audit line both said "nothing was written" after writing hundreds. */
+async function _restoreApply(parsed, rows, result, onProgress){
+  const byNode = {};
+  (rows || []).forEach(r => { byNode[r.node] = r; });
   for(const node of Object.keys(parsed.cols)){
     if(_RESTORE_ABORT) throw new Error('Stopped at your request.');
     if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, node)) continue;
+    const row = byNode[node];
+    if(!row || row.chosen === false) continue;          // unticked on the summary
     const data = parsed.cols[node];
     const serverIds = await _restoreServerKeys(node);
     if(serverIds === null){
       throw new Error('Could not read what is currently in "' + (_RESTORE_ALLOWED[node]||node) + '", so nothing was written for it.');
     }
     const have = new Set(serverIds);
-    const missing = Object.keys(data).filter(id => !have.has(id) && _restoreKeyOk(id));
-    let done = 0;
-    let batch = {}, bytes = 0, n = 0;
+    /* Whole records the server does not have at all, keyed by id. */
+    const jobs = Object.keys(data)
+      .filter(id => !have.has(id) && _restoreKeyOk(id))
+      .map(id => ({ key: id, value: _restoreRecordFor(node, data[id]) }));
+    /* Pieces missing from a record that DID survive - a verification lost from
+       under a farmer whose enrolment is still there. Re-checked here rather
+       than trusted from the comparison, so "never overwrites" is true at the
+       moment of writing and not merely when the table was drawn. Only the ids
+       the comparison flagged are re-read, so this stays cheap. */
+    if(_RESTORE_DEEP[node] && row && Array.isArray(row.deep) && row.deep.length){
+      const ids = Array.from(new Set(row.deep.filter(p => have.has(p.id)).map(p => p.id)));
+      const fresh = await _restorePool(ids, 8, async (id) => ({ id: id, kids: await _restoreShallow(node + '/' + id) }));
+      for(const f of fresh){
+        if(!f) continue;
+        if(f.kids === null){
+          throw new Error('Could not read what is currently inside "' + (_RESTORE_ALLOWED[node]||node) + '", so nothing more was written for it.');
+        }
+        const kidsHave = new Set(f.kids);
+        const mine = data[f.id] || {};
+        Object.keys(mine).forEach(childKey => {
+          if(kidsHave.has(childKey) || !_restoreKeyOk(childKey)) return;
+          if(mine[childKey] === null || mine[childKey] === undefined) return;
+          jobs.push({ key: f.id + '/' + childKey, value: mine[childKey], mend: true });
+        });
+      }
+    }
+    if(!jobs.length) continue;
+
+    let done = 0, mended = 0;
+    let batch = {}, bytes = 0, n = 0, nMend = 0;
     const flush = async () => {
       if(!n) return;
       await _restoreWithin(fbRef(node).update(batch), 90000, _RESTORE_ALLOWED[node] || node);
-      done += n; added += n;
-      if(onProgress) onProgress(node, done, missing.length);
-      batch = {}; bytes = 0; n = 0;
+      done += n; mended += nMend;
+      result.added += n; result.mended += nMend;
+      const at = result.written.find(w => w.node === node);
+      if(at){ at.n = done; at.mend = mended; }
+      else result.written.push({node: node, label: _RESTORE_ALLOWED[node] || node, n: done, mend: mended});
+      if(onProgress) onProgress(node, done, jobs.length);
+      batch = {}; bytes = 0; n = 0; nMend = 0;
     };
-    for(const id of missing){
+    for(const job of jobs){
       if(_RESTORE_ABORT){ await flush(); throw new Error('Stopped at your request.'); }
-      /* Farmer records in an older backup still carry the form blobs the app
-         strips everywhere else. Writing them back re-creates megabytes in the
-         database that cloudToDB then nulls a tick later - the restore looks
-         like it worked and quietly undoes itself. */
-      const rec = (node === 'haatFarmers' || node === 'convFarmers')
-                ? _stripEphemeral(data[id]) : data[id];
-      let size = 0;
-      try{ size = JSON.stringify(rec).length; }catch(e){ size = 0; }
+      const size = _restoreSize(job.value);
       if(n && bytes + size > _RESTORE_CHUNK_BYTES) await flush();
-      batch[id] = rec; bytes += size; n++;
+      batch[job.key] = job.value; bytes += size; n++; if(job.mend) nMend++;
     }
     await flush();
-    if(done) written.push({node: node, label: _RESTORE_ALLOWED[node] || node, n: done});
   }
-  return { added: added, written: written };
+  return result;
 }
 
 function viewSettings(){
@@ -19379,6 +19636,7 @@ function viewSettings(){
       <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
         Lost some records? Pick a backup file and this puts back whatever is <b>missing</b> \u2014 a file downloaded above, or one of the weekly backups from the laptop.<br><br>
         <b>It only ever adds.</b> Nothing is deleted, and anything already in the app is left exactly as it is, even if the file holds an older copy of it. So it is safe to use an old backup.<br><br>
+        It puts back a whole record that has gone, and also a missing <b>piece</b> of one \u2014 a verification that vanished from under a farmer whose enrolment is still there.<br><br>
         Nothing happens when you choose a file \u2014 you are shown what is in it and what would be put back, and you decide from there.
       </div>
       <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
@@ -19397,12 +19655,16 @@ function viewSettings(){
         // they are NOT in memory — they have to be fetched. This is the whole
         // point of the change: a backup without forms could not have recovered
         // the verification that was lost on 24 July.
-        let forms=null, convForms=null, fetchedForms=false;
+        let forms=null, convForms=null, formsExtra=null, fetchedForms=false;
         if(FB && FB.ready && navigator.onLine){
           try{
-            const [fSnap,cSnap]=await Promise.all([fbRef('forms').get(), fbRef('convForms').get()]);
-            forms     = fSnap.exists() ? fSnap.val() : {};
-            convForms = cSnap.exists() ? cSnap.val() : {};
+            /* v238 - formsExtra too. A farmer can have a second enrolment form
+               (v230/v231) and it lives in its own node, so a backup without it
+               could not put one back - the same gap forms/ had before v219. */
+            const [fSnap,cSnap,xSnap]=await Promise.all([fbRef('forms').get(), fbRef('convForms').get(), fbRef('formsExtra').get()]);
+            forms      = fSnap.exists() ? fSnap.val() : {};
+            convForms  = cSnap.exists() ? cSnap.val() : {};
+            formsExtra = xSnap.exists() ? xSnap.val() : {};
             fetchedForms=true;
           }catch(e){ console.error('[Sristi] backup: could not fetch forms',e); }
         }
@@ -19425,7 +19687,22 @@ function viewSettings(){
           complete:fetchedForms,
           haatFarmers:DB.haatFarmers||[],
           convFarmers:DB.convFarmers||[],
-          forms:forms, convForms:convForms,
+          forms:forms, convForms:convForms, formsExtra:formsExtra,
+          /* v238 - the app writes its lists and settings INSIDE the "Settings &
+             lists" node, but this file listed them separately at the top level,
+             where nothing could read them back. Three consequences, all real:
+             the haat list, crop list and settings could not be restored from
+             the app's own backup while the screen said they could; the
+             verification index - which is what keeps a finished verification in
+             the queue - was in no backup at all; and a database restored from
+             this file still had no Settings node, which is the exact condition
+             that used to make the next fresh device overwrite the whole
+             database with starter data. Written in the same shape the app
+             itself uses, so it goes straight back. */
+          meta:{ haats:DB.haats||[], crops:DB.crops||[], months:DB.months||[],
+                 states:DB.states||[], convParams:DB.convParams||[],
+                 settings:DB.settings||{} },
+          verifIndex:DB.verifIndex||{},
           haats:DB.haats||[], fcs:DB.fcs||[],
           verificationPlans:DB.verificationPlans||[],
           incomeRecords:DB.incomeRecords||[],
@@ -19465,18 +19742,24 @@ function viewSettings(){
       }
     };
 
-    /* ---------------- v237 restore ---------------- */
+    /* ---------------- v238 restore ---------------- */
     if(isAdminUser() && $('#restorePick')){
       const box = () => document.getElementById('restoreSummary');
       const say = html => { const b = box(); if(b) b.innerHTML = html; };
-      const err = msg => say('<div style="font-size:12.5px;color:var(--red)">' + esc(msg) + '</div>');
+      /* v238 - an <input type=file> does not fire `change` when the SAME file is
+         chosen again, so an uncleared value leaves the admin clicking Choose
+         with nothing happening at all. Every exit from this handler clears it -
+         including the two paths whose own message says "choose the file again",
+         which used to be the paths that made that impossible. */
+      const clearPick = () => { const f = $('#restoreFile'); if(f) f.value=''; };
+      const err = msg => { say('<div style="font-size:12.5px;color:var(--red)">' + esc(msg) + '</div>'); clearPick(); };
 
       $('#restorePick').onclick = () => { const f = $('#restoreFile'); if(f) f.click(); };
 
       $('#restoreFile').onchange = async (ev) => {
         const file = ev.target.files && ev.target.files[0];
         if(!file) return;
-        if(_RESTORE_BUSY){ toast('A restore is already running','error'); ev.target.value=''; return; }
+        if(_RESTORE_BUSY){ toast('A restore is already running','error'); clearPick(); return; }
         /* Picking a second file while the first is still being compared used to
            show one file's table and restore the other. Only the newest wins. */
         const gen = ++_RESTORE_GEN;
@@ -19484,19 +19767,32 @@ function viewSettings(){
         say('<div style="font-size:12px;color:var(--ink-faint)">Reading the file…</div>');
         let raw;
         try{ raw = JSON.parse(await file.text()); }
-        catch(e){ if(gen===_RESTORE_GEN){ err('That file is not a backup — it is not readable JSON.'); ev.target.value=''; } return; }
+        catch(e){ if(gen===_RESTORE_GEN){ err('That file could not be read. Choose the .json backup file itself, not a folder or a zip.'); } return; }
         if(gen !== _RESTORE_GEN) return;
 
-        const parsed = _restoreNormalise(raw);
-        if(!parsed){ err('That file does not look like a backup of this app — there is nothing in it this can restore.'); ev.target.value=''; return; }
-        if(!FB.ready || !navigator.onLine){ err('You are offline. Go online, wait for the “Synced” pill, and try again.'); ev.target.value=''; return; }
+        let parsed;
+        try{ parsed = _restoreNormalise(raw); }
+        catch(e){ err('That file could not be read — it is not shaped like a backup of this app.'); return; }
+        if(!parsed){ err('That file does not look like a backup of this app — there is nothing in it this can restore.'); return; }
+        if(!FB.ready || !navigator.onLine){ err('You are offline. Go online, wait for the “Synced” pill, and try again.'); return; }
+        /* v238 - the restore ends by dropping this device's local copy. Work
+           saved here but not yet sent to the server lives ONLY in that copy, so
+           dropping it would destroy it - on the machine of the person running a
+           recovery. Wait for the queue to empty first. */
+        let pend = 0;
+        try{ pend = (typeof pendingSyncCount === 'function') ? pendingSyncCount() : 0; }catch(e){ pend = 0; }
+        if(pend > 0){
+          err('This device still has ' + pend + ' record' + (pend===1?'':'s') + ' waiting to reach the server. Wait for the “Synced” pill at the top, then choose the file again — restoring now could lose that work.');
+          return;
+        }
 
         say('<div style="font-size:12px;color:var(--ink-faint)">Comparing the file against the app…</div>');
         let rows;
-        try{ rows = await _restoreAnalyse(parsed); }
+        try{ rows = await _restoreAnalyse(parsed, txt => { if(gen===_RESTORE_GEN) say('<div style="font-size:12px;color:var(--ink-faint)">' + esc(txt) + '</div>'); }); }
         catch(e){ if(gen===_RESTORE_GEN) err('Could not compare the file against the app. Check your connection and try again.'); return; }
         if(gen !== _RESTORE_GEN) return;
         _RESTORE_PENDING = parsed;
+        rows.forEach(r => { r.chosen = (r.wouldAdd || 0) > 0; });
 
         /* A collection we could not read is NOT "nothing to do". The old screen
            printed a reassuring total in exactly that case. */
@@ -19509,59 +19805,103 @@ function viewSettings(){
                           : 'The file does not record when it was taken — check the date in its name. ')
            + (parsed.appVersion ? 'App version ' + esc(parsed.appVersion) + '.' : '') + '</div>';
 
-        t += '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:12px">'
+        /* v238 - the app's global stylesheet gives every table min-width:840px
+           for the admin's wide lists. Without min-width:0 this one kept that
+           floor and spilled about 530px outside its own card on a 375px phone,
+           scrolling the whole page sideways. The wrapper is the same treatment
+           the enrolment comparison table already uses. The rows are also given
+           their own hover reset, because the global one makes every row look
+           clickable when none of them is. */
+        t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px">'
+           + '<table style="width:100%;min-width:0;border-collapse:collapse;font-size:11.5px">'
            + '<tr style="text-align:left;color:var(--ink-faint)">'
+           + '<th style="padding:4px 6px 4px 0;font-weight:600"></th>'
            + '<th style="padding:4px 8px 4px 0;font-weight:600">What</th>'
-           + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the file</th>'
-           + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the app now</th>'
-           + '<th style="padding:4px 0 4px 8px;font-weight:600;text-align:right">Would be put back</th></tr>';
-        rows.forEach(r => {
-          t += '<tr style="border-top:1px solid var(--line)">'
+           + '<th style="padding:4px 6px;font-weight:600;text-align:right">In the file</th>'
+           + '<th style="padding:4px 6px;font-weight:600;text-align:right">In the app now</th>'
+           + '<th style="padding:4px 0 4px 6px;font-weight:600;text-align:right">Would be put back</th></tr>';
+        rows.forEach((r,i) => {
+          const can = r.wouldAdd !== null && r.wouldAdd > 0;
+          let detail = '';
+          if(can && r.mendedRecords) detail = '<div style="font-size:10.5px;color:var(--ink-faint);font-weight:500">'
+            + r.newRecords + ' missing, ' + r.mendedRecords + ' incomplete</div>';
+          t += '<tr style="border-top:1px solid var(--line);cursor:default;background:none;box-shadow:none">'
+             + '<td style="padding:5px 6px 5px 0">'
+             + (can ? '<input type="checkbox" data-rrow="' + i + '" checked style="width:15px;height:15px;accent-color:var(--accent)">' : '')
+             + '</td>'
              + '<td style="padding:5px 8px 5px 0">' + esc(r.label) + '</td>'
-             + '<td style="padding:5px 8px;text-align:right">' + r.inFile + '</td>'
-             + '<td style="padding:5px 8px;text-align:right">' + (r.onServer === null ? '—' : r.onServer) + '</td>'
-             + '<td style="padding:5px 0 5px 8px;text-align:right;font-weight:700;color:' + (r.wouldAdd ? 'var(--green)' : 'var(--ink-faint)') + '">'
-             + (r.wouldAdd === null ? 'could not check' : r.wouldAdd) + '</td></tr>';
+             + '<td style="padding:5px 6px;text-align:right">' + r.inFile + '</td>'
+             + '<td style="padding:5px 6px;text-align:right">' + (r.onServer === null ? '—' : r.onServer) + '</td>'
+             + '<td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;color:' + (r.wouldAdd ? 'var(--green)' : 'var(--ink-faint)') + '">'
+             + (r.wouldAdd === null ? 'could not check' : r.wouldAdd) + detail + '</td></tr>';
         });
-        t += '</table>';
+        t += '</table></div>';
 
         const notes = [];
         if(parsed.refused.length){
-          notes.push('Not restored from this file: ' + parsed.refused.map(k => '<b>' + esc((_RESTORE_REFUSED[k]||k).split(' — ')[0]) + '</b>').join(', ')
-                   + '. ' + esc(parsed.refused.map(k => (_RESTORE_REFUSED[k]||'')).filter(Boolean).join(' ')));
+          const nameOf = k => String((Object.prototype.hasOwnProperty.call(_RESTORE_REFUSED,k) ? _RESTORE_REFUSED[k] : k)).split(' — ')[0];
+          const whyOf  = k => Object.prototype.hasOwnProperty.call(_RESTORE_REFUSED,k) ? String(_RESTORE_REFUSED[k]) : '';
+          notes.push('Not put back from this file: ' + parsed.refused.map(k => '<b>' + esc(nameOf(k)) + '</b>').join(', ')
+                   + '.<br>' + esc(parsed.refused.map(whyOf).filter(Boolean).join(' ')));
         }
         const badTotal = Object.keys(parsed.badIds).reduce((n,k) => n + parsed.badIds[k], 0);
-        if(badTotal) notes.push('<b>' + badTotal + ' record' + (badTotal===1?'':'s') + ' in the file could not be read</b> and will be ignored — they have no usable identifier.');
-        notes.push('Records that are present but incomplete are <b>not</b> repaired — only ones that are entirely missing are put back.');
+        if(badTotal) notes.push('<b>' + badTotal + ' record' + (badTotal===1?'':'s') + ' in the file could not be read</b> and will be ignored — they have no usable identifier, or something inside them the database will not accept.');
+        if(rows.some(r => r.capped)) notes.push('This file is very large, so only the first ' + _RESTORE_DEEP_CAP + ' records of each kind were checked piece by piece.');
+        notes.push('A record already in the app is <b>left exactly as it is</b>, even where the file holds an older copy. What can be put back is a whole record that is gone, or a missing piece of one — a verification, a second form — that the app can see is not there.');
+        notes.push('This puts back everything ticked above that is missing, <b>including anything that was deleted on purpose</b>. Untick a row to leave it alone.');
         if(notes.length){
           t += '<div style="font-size:11.5px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 7px 7px 0;padding:9px 12px;margin-bottom:12px">'
              + notes.join('<br><br>') + '</div>';
         }
 
         if(unread.length){
+          /* v238 - this used to say restoring "could put back records that are
+             already there in a newer form", which the code makes impossible and
+             which contradicts the promise on the card above. The real reason to
+             stop is simply that the app could not look, so it cannot tell the
+             admin what would happen. */
           t += '<div style="font-size:12px;color:#7f1d1d;background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;margin-bottom:12px">'
              + '<b>Could not check ' + unread.length + ' of the ' + rows.length + ' things in this file.</b><br>'
-             + 'Restoring now could put back records that are already there in a newer form. Check your connection and choose the file again.</div>'
+             + 'Nothing has been changed. The app could not read what it already has, so it cannot tell you what would be put back. Check your connection and choose the file again.</div>'
              + '<div style="margin-top:12px"><button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Close</button></div>';
           say(t);
+          clearPick();
           const c = document.getElementById('restoreCancel');
-          if(c) c.onclick = () => { _RESTORE_PENDING=null; say(''); const f=$('#restoreFile'); if(f) f.value=''; };
+          if(c) c.onclick = () => { _RESTORE_PENDING=null; say(''); clearPick(); };
           return;
         }
 
-        t += '<div style="font-size:12.5px;margin:12px 0 4px">'
-           + (totAdd ? 'This will put back <b>' + totAdd + '</b> record' + (totAdd===1?'':'s') + '. Nothing will be deleted or changed.'
+        t += '<div style="font-size:12.5px;margin:12px 0 4px" id="restoreCount">'
+           + (totAdd ? 'This will put back <b>' + totAdd + '</b> record' + (totAdd===1?'':'s') + '. Nothing is deleted and nothing already in the app is changed. The app will reload itself once when it finishes.'
                      : 'Nothing is missing — the app already has everything in this file.') + '</div>';
-        t += '<div style="margin-top:12px;display:flex;gap:9px;align-items:center">'
-           + '<button class="btn btn-primary btn-sm" id="restoreGo"' + (totAdd ? '' : ' disabled style="opacity:.5"') + '>Put back ' + totAdd + ' record' + (totAdd===1?'':'s') + '</button>'
-           + '<button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Cancel</button>'
+        t += '<div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">'
+           + '<button class="btn btn-primary btn-sm" id="restoreGo"' + (totAdd ? '' : ' disabled style="opacity:.5"') + '>' + (totAdd ? 'Put back ' + totAdd + ' record' + (totAdd===1?'':'s') : 'Nothing to put back') + '</button>'
+           + '<button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Close</button>'
            + '<span id="restoreProgress" style="font-size:11.5px;color:var(--ink-faint)"></span></div>';
         say(t);
+
+        /* Reticking a row changes the total and the button with it. */
+        const recount = () => {
+          const tot = rows.reduce((n,r) => n + (r.chosen ? (r.wouldAdd||0) : 0), 0);
+          const g = document.getElementById('restoreGo');
+          const c = document.getElementById('restoreCount');
+          if(g){ g.disabled = !tot; g.style.opacity = tot ? '' : '.5';
+                 g.textContent = tot ? ('Put back ' + tot + ' record' + (tot===1?'':'s')) : 'Nothing to put back'; }
+          if(c) c.innerHTML = tot
+            ? ('This will put back <b>' + tot + '</b> record' + (tot===1?'':'s') + '. Nothing is deleted and nothing already in the app is changed. The app will reload itself once when it finishes.')
+            : 'Nothing ticked — there is nothing to put back.';
+        };
+        const bx = box();
+        if(bx) bx.querySelectorAll('[data-rrow]').forEach(cb => {
+          cb.onchange = () => { const r = rows[parseInt(cb.getAttribute('data-rrow'),10)]; if(r) r.chosen = cb.checked; recount(); };
+        });
 
         const cancel = document.getElementById('restoreCancel');
         if(cancel) cancel.onclick = () => {
           if(_RESTORE_BUSY){ _RESTORE_ABORT = true; cancel.textContent = 'Stopping…'; return; }
-          _RESTORE_PENDING=null; say(''); const f=$('#restoreFile'); if(f) f.value='';
+          if(_RESTORE_RELOAD_TIMER){ clearTimeout(_RESTORE_RELOAD_TIMER); _RESTORE_RELOAD_TIMER = null; }
+          _RESTORE_BUSY = false;
+          _RESTORE_PENDING=null; say(''); clearPick();
         };
 
         const goBtn = document.getElementById('restoreGo');
@@ -19570,46 +19910,97 @@ function viewSettings(){
           goBtn.disabled = true;
           _RESTORE_BUSY = true; _RESTORE_ABORT = false;
           const setProg = txt => { const p = document.getElementById('restoreProgress'); if(p) p.textContent = txt; };
-          let res = null, failure = null;
+          /* v238 - the tally is built in an object the caller owns, so a cancel
+             or a dropped connection can no longer throw it away with the stack.
+             Before this, stopping a restore that had written 300 records
+             reported "Nothing was written" on screen AND in the audit log. */
+          const res = { added: 0, mended: 0, written: [] };
+          let failure = null;
           try{
-            res = await _restoreApply(_RESTORE_PENDING, (node, done, total) => {
+            await _restoreApply(_RESTORE_PENDING, rows, res, (node, done, total) => {
               setProg('Putting back ' + (_RESTORE_ALLOWED[node] || node) + ' — ' + done + ' of ' + total + '…');
             });
           }catch(e){ failure = e; }
-          _RESTORE_BUSY = false;
+          finally{
+            /* On success the flag stays up until the reload, so the app's own
+               live updates cannot repaint the Settings screen and wipe the
+               report of what was written before the admin has read it. */
+            if(failure) _RESTORE_BUSY = false;
+          }
 
-          /* Everything below is null-safe on purpose: the user may have moved to
-             another screen while this ran. The old code threw here and reported
-             nothing at all. */
+          /* Everything below is null-safe on purpose: the admin may have moved
+             to another screen while this ran. */
           const listWritten = (r) => (r && r.written && r.written.length)
-            ? '<ul style="margin:6px 0 0 18px;padding:0">' + r.written.map(w => '<li>' + esc(w.label) + ' — ' + w.n + '</li>').join('') + '</ul>'
+            ? '<ul style="margin:6px 0 0 18px;padding:0">' + r.written.map(w => '<li>' + esc(w.label) + ' — ' + w.n
+                + (w.mend ? ' (' + w.mend + ' of them a missing piece of a record that was already there)' : '') + '</li>').join('') + '</ul>'
             : '<div style="margin-top:4px">Nothing was written.</div>';
+          const plain = (r) => (r && r.written && r.written.length)
+            ? r.written.map(w => w.label + ' ' + w.n).join(', ') : 'nothing';
 
           if(failure){
-            try{ await _restoreLog('♻ Restore STOPPED — ' + ((res&&res.added)||0) + ' record(s) written before it stopped: ' + (failure.message||'')); }catch(e){}
+            /* v238 - a deliberate Stop used to be reported in red as a failure,
+               advising the admin to fix a connection that was never broken. */
+            const stopped = /Stopped at your request/i.test(failure.message || '');
+            try{ await _restoreLog((stopped ? '♻ Restore STOPPED by the admin — ' : '♻ Restore INTERRUPTED — ')
+                 + res.added + ' record(s) written (' + plain(res) + ')'
+                 + (stopped ? '' : ': ' + (failure.message||''))); }catch(e){}
             setProg('');
-            say('<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#7f1d1d">'
-              + '<b>The restore stopped before it finished.</b><br>' + esc(failure.message || 'Unknown error') + '<br><br>'
-              + '<b>What was written before it stopped:</b>' + listWritten(res) + '<br>'
-              + 'Nothing was deleted. It is safe to fix your connection and run this again — it will simply put back whatever is still missing.</div>');
-            toast('Restore stopped — nothing was deleted','error');
+            if(stopped){
+              say('<div style="background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#5b4a2a">'
+                + '<b>Stopped. ' + res.added + ' record' + (res.added===1?'':'s') + ' had already been put back.</b>' + listWritten(res) + '<br>'
+                + 'Nothing was deleted. You can run this again whenever you like — it will simply put back whatever is still missing.</div>');
+              toast('Stopped — ' + res.added + ' record(s) put back');
+            }else{
+              say('<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#7f1d1d">'
+                + '<b>The restore stopped before it finished.</b><br>' + esc(failure.message || 'Unknown error') + '<br><br>'
+                + '<b>What was put back before it stopped:</b>' + listWritten(res) + '<br>'
+                + 'Nothing was deleted. It is safe to fix your connection and run this again — it will simply put back whatever is still missing.</div>');
+              toast('Restore stopped — nothing was deleted','error');
+            }
+            clearPick();
             return;
           }
 
-          try{ await _restoreLog('♻ Restored ' + res.added + ' missing record(s) from a backup file'); }catch(e){}
+          try{ await _restoreLog('♻ Restored ' + res.added + ' missing record(s) from a backup file — ' + plain(res)); }catch(e){}
           setProg('');
           say('<div style="background:#ecfdf5;border-left:3px solid var(--green);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#065f46">'
             + '<b>Done — ' + res.added + ' record' + (res.added===1?'':'s') + ' put back.</b>' + listWritten(res)
-            + '<br>Reloading so the app reads everything fresh…</div>');
-          /* Drop the local mirror so the sync baseline is rebuilt from the
-             server, and tell the next boot NOT to seed: with the mirror gone it
-             takes the "first ever load" branch, and that used to write the
-             namespace root. */
-          setTimeout(() => {
-            try{ sessionStorage.setItem('sristi_skip_seed_v1','1'); }catch(e){}
-            try{ localStorage.removeItem(STORE_KEY); }catch(e){}
-            location.reload();
-          }, 2200);
+            + '<br><br>The app will reload in a moment so it reads everything fresh.'
+            + '<div style="margin-top:10px"><button class="btn btn-sm" id="restoreReloadNow" style="border:1px solid var(--line-strong)">Reload now</button></div></div>');
+          /* v238 - a success toast as well as the box: the admin may be on
+             another screen by now, and this was the only report of the most
+             consequential action in the app. */
+          toast(res.added + ' record' + (res.added===1?'':'s') + ' put back from the backup');
+          clearPick();
+
+          const finish = () => {
+            if(_RESTORE_RELOAD_TIMER){ clearTimeout(_RESTORE_RELOAD_TIMER); _RESTORE_RELOAD_TIMER = null; }
+            /* Drop this device's local copy so the sync baseline is rebuilt
+               from the server. Order matters: mark the device FIRST and read
+               the mark back, and if it did not stick, leave the local copy
+               alone. With the copy gone the next boot looks like a brand-new
+               device, and that is the branch that used to write the namespace
+               root over everything. Clearing the copy is a tidy-up, not a
+               requirement - the restore has already succeeded on the server. */
+            let marked = false;
+            try{
+              localStorage.setItem(RESTORE_SEED_BLOCK_KEY, String(Date.now()));
+              marked = !!localStorage.getItem(RESTORE_SEED_BLOCK_KEY);
+            }catch(e){ marked = false; }
+            let stillPending = 0;
+            try{ stillPending = (typeof pendingSyncCount === 'function') ? pendingSyncCount() : 0; }catch(e){ stillPending = 0; }
+            if(marked && !stillPending){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} }
+            else console.warn('[Sristi] restore: keeping the local copy — mark', marked, 'pending', stillPending);
+            _RESTORE_BUSY = false;
+            /* The app already has a reload that waits for an open form or a
+               write in flight. Use it rather than pulling the page out from
+               under whatever the admin started in the meantime. */
+            if(typeof window._reloadWhenSafe === 'function') window._reloadWhenSafe();
+            else location.reload();
+          };
+          const rn = document.getElementById('restoreReloadNow');
+          if(rn) rn.onclick = finish;
+          _RESTORE_RELOAD_TIMER = setTimeout(finish, 8000);
         };
       };
     }

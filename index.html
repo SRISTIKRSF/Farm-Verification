@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v234';
+const APP_VERSION = 'v235';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18676,6 +18676,24 @@ function openCompareFormsModal(id, opts){
   });
   const fcVerifs = (Array.isArray(verif.claims) ? verif.claims : [])
     .reduce((a,c)=>{a[c.id]=c;return a;},{});
+  /* v235 - if the verification FORM never reached the server, fall back to the
+     visit on the farmer's record. It carries claimVerifications - every
+     question with its state and the FC's note - plus the score, the comment
+     and who did it. Meghrajbhai Patel's comparison was blank for exactly this
+     reason while a real 42-question verification sat on his record.
+     The stored form always wins: this only fills a gap, and it vanishes by
+     itself the moment the queued form arrives from the FC's phone. */
+  const _cmpVisit = (f.visits||[]).slice().reverse().find(v => v && v.claimVerifications) || null;
+  let _cmpFromVisit = false;
+  if(!Object.keys(fcVerifs).length && _cmpVisit){
+    const _cv = _cmpVisit.claimVerifications || {};
+    Object.keys(_cv).forEach(qid => {
+      const c = _cv[qid] || {};
+      if(!c.state && !c.fcNote) return;
+      fcVerifs[qid] = { id: qid, fcVerification: c.state || '', fcNote: c.fcNote || '' };
+    });
+    _cmpFromVisit = Object.keys(fcVerifs).length > 0;
+  }
 
   /* Match indicator per row */
   function matchIcon(q, farmerC, fcC){
@@ -18789,6 +18807,10 @@ function openCompareFormsModal(id, opts){
      and that changes - 205 Narmada farmers moved from Harsh to Ayush this
      week. The person who actually stood in the field does not change. */
   const fcName = (verif && verif.summary && verif.summary.verifierName)
+              /* v235 - a visit stores recordedBy / verifierName. This chain asked
+                 for byName / fcName, which a visit has never carried, so the
+                 banner read — even with the name sitting right there. */
+              || (latestVisit && (latestVisit.recordedBy || latestVisit.verifierName))
               || (latestVisit && (latestVisit.byName || latestVisit.fcName))
               || (verif && verif._submittedByName)
               || (fcRec && fcRec.name)
@@ -18804,10 +18826,24 @@ function openCompareFormsModal(id, opts){
   body += '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:11px 13px;background:var(--panel-2);border-radius:8px;margin-bottom:14px;font-size:11.5px;color:var(--ink-soft)">';
   body += '<span><b style="color:var(--ink)">Enrolment submitted:</b> ' + (f.enrollmentFormSubmittedAt?esc(fmtDate(f.enrollmentFormSubmittedAt)):'—') + '</span>';
   body += '<span><b style="color:var(--ink)">Verification submitted:</b> ' + (f.verificationFormSubmittedAt?esc(fmtDate(f.verificationFormSubmittedAt)):'—') + '</span>';
-  if(verif.summary && verif.summary.score != null){
-    body += '<span><b style="color:var(--ink)">Verification score:</b> ' + verif.summary.score + '%</span>';
+  /* v235 - the visit carries the score too, for a verification whose form
+     never arrived. */
+  const _cmpScore = (verif.summary && verif.summary.score != null) ? verif.summary.score
+                  : ((_cmpVisit && _cmpVisit.score != null) ? _cmpVisit.score : null);
+  if(_cmpScore != null){
+    body += '<span><b style="color:var(--ink)">Verification score:</b> ' + _cmpScore + '%</span>';
   }
   body += '</div>';
+  /* v235 - never let a recovered view pass for a stored form. */
+  if(_cmpFromVisit){
+    body += '<div style="margin-bottom:14px;padding:10px 13px;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 8px 8px 0;font-size:12px;line-height:1.55;color:#5b4a2a">'
+      + '<b>The detailed verification form for this farmer never reached the server.</b><br>'
+      + 'What you see below is taken from the visit saved on the farmer\u2019s record, which holds every '
+      + 'question\u2019s result and the coordinator\u2019s notes. The farmer\u2019s own answers are shown from their '
+      + 'enrolment form. If the coordinator opens the app on the phone they used, the full form can still '
+      + 'arrive and will replace this automatically.'
+      + '</div>';
+  }
   /* No data warning */
   if(!Object.keys(farmerClaims).length && !Object.keys(fcVerifs).length){
     body += '<div class="hint" style="background:#fef3c7;border:1px solid #fde68a;padding:10px 12px;border-radius:8px;color:#92400e">No form data on record yet. Comparison is only possible once both forms are submitted in v5 or later.</div>';
@@ -18848,10 +18884,15 @@ function openCompareFormsModal(id, opts){
   });
   body += '</div>';
   /* FC general comments */
-  if(verif.comments || (verif.summary && verif.summary.comments)){
+  /* v235 - and the comment, which for a form-less verification lives only on
+     the visit. Meghrajbhai Patel's recommendation for the Palanpur haat was
+     on his record the whole time and this screen never showed it. */
+  const _cmpComments = verif.comments || (verif.summary && verif.summary.comments)
+                    || (_cmpVisit && _cmpVisit.comments) || '';
+  if(_cmpComments){
     body += '<div style="margin-top:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px">';
     body += '<div style="font-size:11px;color:#854F0B;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">📢 FC general comments</div>';
-    body += '<div style="font-size:13px;color:#451a03;line-height:1.55">' + esc(verif.comments || (verif.summary && verif.summary.comments) || '') + '</div>';
+    body += '<div style="font-size:13px;color:#451a03;line-height:1.55">' + esc(_cmpComments) + '</div></div>';
     body += '</div>';
   }
 

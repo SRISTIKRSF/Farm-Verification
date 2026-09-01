@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v236';
+const APP_VERSION = 'v237';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4325,6 +4325,14 @@ async function loadDB(){
           if(metaSnap.exists()){
             // Cloud has data — DB will be fully populated once live listener fires
             DB=normaliseDB(seedDB());
+          }else if(sessionStorage.getItem('sristi_skip_seed_v1')){
+            /* v237 - a restore clears the local cache and reloads, so this boot
+               takes the "first ever load" branch. If the restore did not happen
+               to include meta, metaSnap is empty and pushFullDB() below would
+               write the namespace ROOT with seed data - destroying everything
+               just restored, on the disaster-recovery path itself. */
+            console.warn('[Sristi] skipping the first-load seed: a restore just ran.');
+            DB=normaliseDB(seedDB());
           }else{
             DB=normaliseDB(seedDB());
             await pushFullDB();  // cloud empty — seed it from local
@@ -4333,6 +4341,7 @@ async function loadDB(){
           DB=normaliseDB(seedDB());
         }
       }
+      try{ sessionStorage.removeItem('sristi_skip_seed_v1'); }catch(e){}
       cacheLocal();
       await preCleanBlobsFromRTDB();
       attachLiveListener();
@@ -5764,7 +5773,12 @@ function _processLiveSnapshot(){
       // an open drawer doesn't lose them when the snapshot replaces records.
       try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
       cacheLocal();
-      if(typeof render==='function') render();   // refresh the UI
+      /* v237 - a restore writes to collections this listener watches, so its own
+         writes used to re-render the Settings screen mid-run. That destroyed the
+         progress line and the buttons, which silently removed the double-click
+         guard and made every failure invisible - the error handler then threw on
+         the missing element, so a partly-written restore reported nothing at all. */
+      if(typeof render==='function' && !_RESTORE_BUSY) render();   // refresh the UI
     }
     // v126 — we now know what the server holds, so a catch-up push is safe.
     _firstSnapshotMerged = true;
@@ -7652,6 +7666,24 @@ function fmtRecordedBy(rec){
 // saveDB()'s archive-on-overflow logic). Kept separate from the 200-entry
 // client-side display cap below since this one governs cloud bandwidth.
 const ACTIVITY_LIVE_CAP = 300;
+/* v237 - logActivity only unshifts into memory; every consequential caller
+   follows it with saveDB(). The restore cannot call saveDB (diff-based), and it
+   reloads straight afterwards, so its audit entry was created and then thrown
+   away - leaving the most consequential action in the app recorded nowhere.
+   This writes the one entry straight to the server. */
+async function _restoreLog(text){
+  try{
+    logActivity('alert', text);
+    if(!FB.ready) return;
+    const a = (typeof actor==='function') ? actor() : {};
+    const id = uid('ACT');
+    await fbRef('activity/' + id).set({
+      id:id, kind:'alert', text:text, ts:Date.now(),
+      actorName:a.name||'', actorId:a.id||'', actorRole:a.role||''
+    });
+  }catch(e){ console.warn('[Sristi] restore: could not record the audit entry', e); }
+}
+
 function logActivity(kind,text){
   if(!DB.activity)DB.activity=[];
   // v8.1 fix: activity entries MUST have an id, or arrToMap() drops them
@@ -19083,142 +19115,220 @@ function openCompareFormsModal(id, opts){
      2) Manage Haats — add / remove markets
      3) Manage Field Coordinators — same data, table-style editor
      4) Roles — basic role-picker (Admin / Manager / FC / Read-only) */
-/* ================= v236 - restore a backup from inside the app =================
+/* ============ v237 - restore a backup from inside the app ====================
 
-   Until now Settings -> Data & Backup could only DOWNLOAD. Putting data back
-   meant a hand-typed `firebase database:set` in a terminal, which is not a
-   recovery plan for the person who needs it at the moment they need it.
+   v236 had a second mode, "Replace everything", which four independent reviews
+   showed was the source of nearly every serious defect - and several were
+   reachable with an ORDINARY weekly backup, not a malformed one. It would
+   `set()` the `config` node and wipe every login (accounts live nowhere else);
+   it was refused PART WAY THROUGH by the write-once rule on `phoneIndex`, after
+   the destructive writes, with no report; and an empty id or an empty node name
+   could replace a whole collection or the namespace root.
 
-   ⛔ Nothing here goes through saveDB(). saveDB infers deletions by diffing
-   memory against _lastSnap; handing it a restored dataset is precisely how a
-   mass delete gets computed. Every write below is a targeted fbRef() write, and
-   the page reloads afterwards so the baseline is rebuilt from the server.
+   It is gone. Putting back what is MISSING is what recovery needs. Reverting
+   the database to an older state is a different and far more dangerous thing,
+   and it lives in restore.js on the laptop, which takes a safety backup first
+   and prints an undo command.
+
+   ⛔ This can only ADD. It never deletes and never overwrites: an id already on
+   the server is skipped whatever the file says about it.
+   ⛔ Nothing here goes through saveDB(), which is diff-based and would compute
+   deletions from a restored dataset.
 ============================================================================ */
 
-/* Keys in the app's own download that are description, not data. */
-const _RESTORE_SKIP = ['_about','_appVersion','exportedAt','exportedBy','complete','counts'];
-
-/* Live under meta/ on the server, so they are not top-level collections. */
-const _RESTORE_INSIDE_META = ['haats','crops','settings'];
-
-const _RESTORE_LABEL = {
+/* Only these may be written, and only ids the server does not have. An unknown
+   or empty node name is impossible by construction, which is what keeps a write
+   away from the namespace root. */
+const _RESTORE_ALLOWED = {
   haatFarmers:'Haat farmers', convFarmers:'Conversion farmers',
   forms:'Enrolment & verification forms', convForms:'Conversion forms',
-  formsExtra:'Second forms', fcs:'Field coordinators',
-  fieldCoordinators:'Field coordinators (old list)',
-  verificationPlans:'Planned visits', incomeRecords:'Income records',
-  verifIndex:'Verification index', phoneIndex:'Phone index',
-  farmers_master:'Farmer master list', activity:'Activity log',
-  activityArchive:'Activity archive', config:'Accounts',
-  meta:'Settings & lists', questionSchema:'Question list',
-  counters:'Counters', weekly:'Weekly', verifEdits:'Verification edits',
-  pendingEnrolments:'Pending enrolments', users:'Accounts (names only)'
+  formsExtra:'Second forms', verificationPlans:'Planned visits',
+  incomeRecords:'Income records', farmers_master:'Farmer master list',
+  verifIndex:'Verification index', verifEdits:'Verification edits',
+  pendingEnrolments:'Pending enrolments', meta:'Settings & lists',
+  questionSchema:'Question list', counters:'Counters', weekly:'Weekly'
 };
 
+/* Deliberately NOT restorable, each for a reason worth stating on screen. */
+const _RESTORE_REFUSED = {
+  config:'Accounts — restoring these from an older file would undo password changes and lock people out. Accounts are managed in Settings → Users.',
+  users:'Accounts — a backup never contains passwords, so they cannot be restored from one.',
+  fcs:'Field coordinators — rebuilt automatically from the accounts, so restoring them would fight that.',
+  fieldCoordinators:'Field coordinators (old list) — same as above.',
+  phoneIndex:'Phone index — the database only allows each phone to be written once, so it rebuilds itself.',
+  activity:'Activity log — a record of what happened, not data to put back.',
+  activityArchive:'Activity archive — same as above.',
+  haats:'Haat list — part of Settings, restored with them.',
+  crops:'Crop list — part of Settings, restored with them.',
+  settings:'Settings — part of Settings, restored with them.'
+};
+
+/* Description, not data. */
+const _RESTORE_SKIP = ['_about','_appVersion','exportedAt','exportedBy','complete','counts'];
+
+/* Firebase forbids these in a key. An id carrying one used to throw mid-loop,
+   leaving a half-written restore; an EMPTY id was worse - the update key
+   `haatFarmers/` normalises to `haatFarmers` and REPLACED the whole collection.
+   Confirmed by experiment. saveDB has the same guard at _pathSafe. */
+const _RESTORE_BAD_KEY = /[.#$\[\]\/]/;
+function _restoreKeyOk(k){
+  return typeof k === 'string' && k.length > 0 && k.length <= 700
+      && !_RESTORE_BAD_KEY.test(k) && k !== '__proto__' && k.trim() === k;
+}
+
 let _RESTORE_PENDING = null;   // the parsed file, between choosing and applying
+let _RESTORE_GEN     = 0;      // guards against a second file picked mid-compare
+let _RESTORE_BUSY    = false;  // suspends the live listener's re-render
+let _RESTORE_ABORT   = false;  // Cancel, honoured between chunks
 
 /* Accepts both shapes: the command-line backup (collections keyed by id) and
-   the app's own download (farmers as ARRAYS). Everything comes out as
-   { node: { id: record } }. */
+   the app's own download (farmers as ARRAYS). Records with an unusable id are
+   counted so the screen can say so rather than dropping them in silence. */
 function _restoreNormalise(raw){
   if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const cols = {}, notRestorable = [];
+  const cols = {}, refused = [], badIds = {};
   Object.keys(raw).forEach(k => {
     if(_RESTORE_SKIP.indexOf(k) >= 0) return;
     let v = raw[k];
     if(v === null || v === undefined) return;
-    if(_RESTORE_INSIDE_META.indexOf(k) >= 0){ notRestorable.push(k); return; }
-    /* The app's download lists accounts WITHOUT passwords, on purpose, so the
-       file is safe to email. Writing them back would replace working logins
-       with unusable ones. */
-    if(k === 'users'){ notRestorable.push('users'); return; }
+    if(_RESTORE_REFUSED[k]){ refused.push(k); return; }
+    if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, k)) return;
     if(Array.isArray(v)){
-      const o = {};
-      v.forEach(r => { if(r && r.id !== undefined && r.id !== null) o[String(r.id)] = r; });
+      const o = {}; let bad = 0;
+      v.forEach(r => {
+        if(!r || typeof r !== 'object') return;
+        const id = (r.id === undefined || r.id === null) ? '' : String(r.id);
+        if(!_restoreKeyOk(id)){ bad++; return; }
+        o[id] = r;
+      });
+      if(bad) badIds[k] = (badIds[k] || 0) + bad;
       if(!Object.keys(o).length) return;
       v = o;
     }
-    if(typeof v !== 'object') return;
-    if(!Object.keys(v).length) return;
-    cols[k] = v;
+    if(typeof v !== 'object' || Array.isArray(v)) return;
+    const clean = {}; let bad = 0;
+    Object.keys(v).forEach(id => {
+      if(!_restoreKeyOk(id)){ bad++; return; }
+      if(v[id] === null || v[id] === undefined){ bad++; return; }
+      clean[id] = v[id];
+    });
+    if(bad) badIds[k] = (badIds[k] || 0) + bad;
+    if(!Object.keys(clean).length) return;
+    cols[k] = clean;
   });
   if(!Object.keys(cols).length) return null;
-  return { cols: cols, notRestorable: notRestorable,
-           exportedAt: raw.exportedAt || null, appVersion: raw._appVersion || null };
+  let when = null;
+  if(raw.exportedAt){
+    const d = new Date(raw.exportedAt);
+    if(!isNaN(d.getTime())) when = d;      // "Invalid Date" is never shown
+  }
+  return { cols: cols, refused: refused, badIds: badIds,
+           when: when, appVersion: raw._appVersion || null };
 }
 
-/* Just the ids at a node, not the data. `shallow=true` is a REST-only feature
-   and is the difference between reading a few KB of keys and pulling the whole
-   15 MB forms node down to count it. Same pattern as preCleanBlobsFromRTDB. */
+/* Just the ids at a node, never the values: `shallow=true` turns a 15 MB read
+   of `forms` into a few KB. Times out rather than hanging on a half-open
+   socket, matching _serverDecisionAt. */
 async function _restoreServerKeys(node){
+  if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, node)) return null;
   try{
+    if(!navigator.onLine) return null;
     const u = firebase.auth && firebase.auth().currentUser;
     if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return null;
     const tok  = await u.getIdToken();
     const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
-    const res  = await fetch(base + '/' + node + '.json?shallow=true&auth=' + encodeURIComponent(tok),
-                             {cache:'no-store'});
-    if(!res.ok) return null;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    let res;
+    try{
+      res = await fetch(base + '/' + encodeURIComponent(node) + '.json?shallow=true&auth=' + encodeURIComponent(tok),
+                        {cache:'no-store', signal: ctrl.signal});
+    } finally { clearTimeout(timer); }
+    if(!res || !res.ok) return null;
     const v = await res.json();
     if(v === null) return [];
     return (typeof v === 'object') ? Object.keys(v) : [];
   }catch(e){ console.warn('[Sristi] restore: could not read keys at '+node, e); return null; }
 }
 
-/* What each mode would actually do, per collection. */
+/* What restoring would actually put back, per collection. A null `wouldAdd`
+   means the comparison FAILED - the screen must say so and refuse, rather than
+   quietly treating "could not look" as "nothing to do". */
 async function _restoreAnalyse(parsed){
   const rows = [];
   for(const node of Object.keys(parsed.cols)){
     const fileIds   = Object.keys(parsed.cols[node]);
     const serverIds = await _restoreServerKeys(node);
-    const unknown   = serverIds === null;
-    const onServer  = new Set(serverIds || []);
-    const inFile    = new Set(fileIds);
+    const known     = serverIds !== null;
+    const have      = new Set(serverIds || []);
     rows.push({
-      node: node, label: _RESTORE_LABEL[node] || node,
+      node: node, label: _RESTORE_ALLOWED[node] || node,
       inFile: fileIds.length,
-      onServer: unknown ? null : (serverIds || []).length,
-      wouldAdd: unknown ? null : fileIds.filter(id => !onServer.has(id)).length,
-      wouldLose: unknown ? null : (serverIds || []).filter(id => !inFile.has(id)).length
+      onServer: known ? (serverIds || []).length : null,
+      wouldAdd: known ? fileIds.filter(id => !have.has(id)).length : null
     });
   }
   rows.sort((a,b) => b.inFile - a.inFile);
   return rows;
 }
 
-/* mode 'add'     - write only ids the server does not have. Cannot delete,
-                    cannot overwrite.
-   mode 'replace' - write each collection whole. Never the namespace root: the
-                    app's own download omits several nodes and a root write
-                    would delete them. */
-async function _restoreApply(parsed, mode, onProgress){
-  let added = 0, touched = [];
+/* A Firebase write promise NEVER SETTLES with no signal - v216. Bare awaits
+   left the screen frozen with both buttons disabled and no way to find out what
+   had been written. This rejects instead. */
+function _restoreWithin(p, ms, what){
+  let t = null;
+  return Promise.race([
+    Promise.resolve(p).finally(() => clearTimeout(t)),
+    new Promise((_, rej) => { t = setTimeout(
+      () => rej(new Error('The connection stopped responding while writing ' + what + '.')), ms); })
+  ]);
+}
+
+/* Chunks are sized by BYTES. A chunk of 150 forms is 6.6 MB and a single form
+   can be 463 KB - that would never finish on a village uplink. */
+const _RESTORE_CHUNK_BYTES = 400 * 1024;
+
+/* Writes ONLY ids the server does not have, one collection at a time, through
+   fbRef(node) so a key cannot escape its collection. Returns what it wrote. */
+async function _restoreApply(parsed, onProgress){
+  const written = [];
+  let added = 0;
   for(const node of Object.keys(parsed.cols)){
+    if(_RESTORE_ABORT) throw new Error('Stopped at your request.');
+    if(!Object.prototype.hasOwnProperty.call(_RESTORE_ALLOWED, node)) continue;
     const data = parsed.cols[node];
-    if(mode === 'replace'){
-      await fbRef(node).set(data);
-      added += Object.keys(data).length;
-      touched.push(node);
-      if(onProgress) onProgress(node, Object.keys(data).length);
-      continue;
-    }
     const serverIds = await _restoreServerKeys(node);
     if(serverIds === null){
-      /* Could not find out what is there. Refuse rather than guess - guessing
-         "nothing" would overwrite live records with the file's older copies. */
-      throw new Error('Could not read the current contents of "' + node + '", so it was skipped rather than risk overwriting newer data. Nothing before this point was undone.');
+      throw new Error('Could not read what is currently in "' + (_RESTORE_ALLOWED[node]||node) + '", so nothing was written for it.');
     }
     const have = new Set(serverIds);
-    const missing = Object.keys(data).filter(id => !have.has(id));
-    for(let i = 0; i < missing.length; i += 150){
-      const upd = {};
-      missing.slice(i, i + 150).forEach(id => { upd[node + '/' + id] = data[id]; });
-      await fbRef('').update(upd);
+    const missing = Object.keys(data).filter(id => !have.has(id) && _restoreKeyOk(id));
+    let done = 0;
+    let batch = {}, bytes = 0, n = 0;
+    const flush = async () => {
+      if(!n) return;
+      await _restoreWithin(fbRef(node).update(batch), 90000, _RESTORE_ALLOWED[node] || node);
+      done += n; added += n;
+      if(onProgress) onProgress(node, done, missing.length);
+      batch = {}; bytes = 0; n = 0;
+    };
+    for(const id of missing){
+      if(_RESTORE_ABORT){ await flush(); throw new Error('Stopped at your request.'); }
+      /* Farmer records in an older backup still carry the form blobs the app
+         strips everywhere else. Writing them back re-creates megabytes in the
+         database that cloudToDB then nulls a tick later - the restore looks
+         like it worked and quietly undoes itself. */
+      const rec = (node === 'haatFarmers' || node === 'convFarmers')
+                ? _stripEphemeral(data[id]) : data[id];
+      let size = 0;
+      try{ size = JSON.stringify(rec).length; }catch(e){ size = 0; }
+      if(n && bytes + size > _RESTORE_CHUNK_BYTES) await flush();
+      batch[id] = rec; bytes += size; n++;
     }
-    if(missing.length){ added += missing.length; touched.push(node); }
-    if(onProgress) onProgress(node, missing.length);
+    await flush();
+    if(done) written.push({node: node, label: _RESTORE_ALLOWED[node] || node, n: done});
   }
-  return { added: added, touched: touched };
+  return { added: added, written: written };
 }
 
 function viewSettings(){
@@ -19267,8 +19377,9 @@ function viewSettings(){
       h+=`<div class="card" style="padding:18px 20px;max-width:680px;margin-top:16px;border:1px solid var(--line-strong)">
       <div class="ct" style="font-size:14px;font-weight:700">\u267b\ufe0f Restore from a backup file</div>
       <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 14px">
-        Pick a backup file and put the data back. Works with a file downloaded above, or with one of the weekly backups from the laptop.<br><br>
-        Nothing happens when you choose a file \u2014 you are shown exactly what is in it and what would change, and you choose what to do next.
+        Lost some records? Pick a backup file and this puts back whatever is <b>missing</b> \u2014 a file downloaded above, or one of the weekly backups from the laptop.<br><br>
+        <b>It only ever adds.</b> Nothing is deleted, and anything already in the app is left exactly as it is, even if the file holds an older copy of it. So it is safe to use an old backup.<br><br>
+        Nothing happens when you choose a file \u2014 you are shown what is in it and what would be put back, and you decide from there.
       </div>
       <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
       <button class="btn btn-sm" id="restorePick" style="border:1px solid var(--line-strong)">Choose a backup file\u2026</button>
@@ -19354,142 +19465,151 @@ function viewSettings(){
       }
     };
 
-    /* ---------------- v236 restore ---------------- */
+    /* ---------------- v237 restore ---------------- */
     if(isAdminUser() && $('#restorePick')){
-      const esc2 = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-      const box  = () => $('#restoreSummary');
+      const box = () => document.getElementById('restoreSummary');
+      const say = html => { const b = box(); if(b) b.innerHTML = html; };
+      const err = msg => say('<div style="font-size:12.5px;color:var(--red)">' + esc(msg) + '</div>');
 
-      $('#restorePick').onclick = () => $('#restoreFile').click();
+      $('#restorePick').onclick = () => { const f = $('#restoreFile'); if(f) f.click(); };
 
       $('#restoreFile').onchange = async (ev) => {
         const file = ev.target.files && ev.target.files[0];
         if(!file) return;
-        box().innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">Reading the file\u2026</div>';
+        if(_RESTORE_BUSY){ toast('A restore is already running','error'); ev.target.value=''; return; }
+        /* Picking a second file while the first is still being compared used to
+           show one file's table and restore the other. Only the newest wins. */
+        const gen = ++_RESTORE_GEN;
+        _RESTORE_PENDING = null;
+        say('<div style="font-size:12px;color:var(--ink-faint)">Reading the file…</div>');
         let raw;
-        try{
-          raw = JSON.parse(await file.text());
-        }catch(e){
-          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">That file is not a valid backup \u2014 it is not readable JSON.</div>';
-          ev.target.value=''; return;
-        }
-        const parsed = _restoreNormalise(raw);
-        if(!parsed){
-          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">That file does not look like a backup of this app \u2014 there are no farmer records or forms in it.</div>';
-          ev.target.value=''; return;
-        }
-        if(!FB.ready || !navigator.onLine){
-          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">You are offline. Go online and wait for the \u201cSynced\u201d pill before restoring.</div>';
-          ev.target.value=''; return;
-        }
-        _RESTORE_PENDING = parsed;
-        box().innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">Comparing the file against the database\u2026</div>';
+        try{ raw = JSON.parse(await file.text()); }
+        catch(e){ if(gen===_RESTORE_GEN){ err('That file is not a backup — it is not readable JSON.'); ev.target.value=''; } return; }
+        if(gen !== _RESTORE_GEN) return;
 
+        const parsed = _restoreNormalise(raw);
+        if(!parsed){ err('That file does not look like a backup of this app — there is nothing in it this can restore.'); ev.target.value=''; return; }
+        if(!FB.ready || !navigator.onLine){ err('You are offline. Go online, wait for the “Synced” pill, and try again.'); ev.target.value=''; return; }
+
+        say('<div style="font-size:12px;color:var(--ink-faint)">Comparing the file against the app…</div>');
         let rows;
         try{ rows = await _restoreAnalyse(parsed); }
-        catch(e){
-          box().innerHTML = '<div style="font-size:12.5px;color:var(--red)">Could not compare the file against the database. Check your connection and try again.</div>';
-          return;
-        }
+        catch(e){ if(gen===_RESTORE_GEN) err('Could not compare the file against the app. Check your connection and try again.'); return; }
+        if(gen !== _RESTORE_GEN) return;
+        _RESTORE_PENDING = parsed;
 
-        const totAdd  = rows.reduce((n,r)=>n+(r.wouldAdd||0),0);
-        const totLose = rows.reduce((n,r)=>n+(r.wouldLose||0),0);
-        const when = parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : null;
+        /* A collection we could not read is NOT "nothing to do". The old screen
+           printed a reassuring total in exactly that case. */
+        const unread = rows.filter(r => r.wouldAdd === null);
+        const totAdd = rows.reduce((n,r) => n + (r.wouldAdd || 0), 0);
 
-        let t = '<div style="font-size:12.5px;font-weight:700;margin-bottom:8px">' + esc2(file.name) + '</div>';
+        let t = '<div style="font-size:12.5px;font-weight:700;margin-bottom:8px">' + esc(file.name) + '</div>';
         t += '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:12px">'
-           + (when ? 'Taken on ' + esc2(when) + '. ' : 'The file does not record when it was taken \u2014 check the date in its name. ')
-           + (parsed.appVersion ? 'App version ' + esc2(parsed.appVersion) + '.' : '') + '</div>';
+           + (parsed.when ? 'Taken on ' + esc(parsed.when.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})) + '. '
+                          : 'The file does not record when it was taken — check the date in its name. ')
+           + (parsed.appVersion ? 'App version ' + esc(parsed.appVersion) + '.' : '') + '</div>';
 
         t += '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:12px">'
            + '<tr style="text-align:left;color:var(--ink-faint)">'
            + '<th style="padding:4px 8px 4px 0;font-weight:600">What</th>'
            + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the file</th>'
            + '<th style="padding:4px 8px;font-weight:600;text-align:right">In the app now</th>'
-           + '<th style="padding:4px 0 4px 8px;font-weight:600;text-align:right">Would be added back</th></tr>';
+           + '<th style="padding:4px 0 4px 8px;font-weight:600;text-align:right">Would be put back</th></tr>';
         rows.forEach(r => {
           t += '<tr style="border-top:1px solid var(--line)">'
-             + '<td style="padding:5px 8px 5px 0">' + esc2(r.label) + '</td>'
+             + '<td style="padding:5px 8px 5px 0">' + esc(r.label) + '</td>'
              + '<td style="padding:5px 8px;text-align:right">' + r.inFile + '</td>'
-             + '<td style="padding:5px 8px;text-align:right">' + (r.onServer===null?'?':r.onServer) + '</td>'
-             + '<td style="padding:5px 0 5px 8px;text-align:right;font-weight:700;color:' + (r.wouldAdd?'var(--green)':'var(--ink-faint)') + '">'
-             + (r.wouldAdd===null?'?':r.wouldAdd) + '</td></tr>';
+             + '<td style="padding:5px 8px;text-align:right">' + (r.onServer === null ? '—' : r.onServer) + '</td>'
+             + '<td style="padding:5px 0 5px 8px;text-align:right;font-weight:700;color:' + (r.wouldAdd ? 'var(--green)' : 'var(--ink-faint)') + '">'
+             + (r.wouldAdd === null ? 'could not check' : r.wouldAdd) + '</td></tr>';
         });
         t += '</table>';
 
-        if(parsed.notRestorable.length){
+        const notes = [];
+        if(parsed.refused.length){
+          notes.push('Not restored from this file: ' + parsed.refused.map(k => '<b>' + esc((_RESTORE_REFUSED[k]||k).split(' — ')[0]) + '</b>').join(', ')
+                   + '. ' + esc(parsed.refused.map(k => (_RESTORE_REFUSED[k]||'')).filter(Boolean).join(' ')));
+        }
+        const badTotal = Object.keys(parsed.badIds).reduce((n,k) => n + parsed.badIds[k], 0);
+        if(badTotal) notes.push('<b>' + badTotal + ' record' + (badTotal===1?'':'s') + ' in the file could not be read</b> and will be ignored — they have no usable identifier.');
+        notes.push('Records that are present but incomplete are <b>not</b> repaired — only ones that are entirely missing are put back.');
+        if(notes.length){
           t += '<div style="font-size:11.5px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 7px 7px 0;padding:9px 12px;margin-bottom:12px">'
-             + 'This file does not contain: ' + esc2(parsed.notRestorable.map(k=>_RESTORE_LABEL[k]||k).join(', '))
-             + '. Those are left exactly as they are.'
-             + (parsed.notRestorable.indexOf('users')>=0 ? ' Passwords are never written to a backup, so logins are untouched.' : '')
-             + '</div>';
+             + notes.join('<br><br>') + '</div>';
         }
 
-        t += '<div style="font-size:12.5px;font-weight:700;margin:14px 0 8px">What do you want to do?</div>';
+        if(unread.length){
+          t += '<div style="font-size:12px;color:#7f1d1d;background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;margin-bottom:12px">'
+             + '<b>Could not check ' + unread.length + ' of the ' + rows.length + ' things in this file.</b><br>'
+             + 'Restoring now could put back records that are already there in a newer form. Check your connection and choose the file again.</div>'
+             + '<div style="margin-top:12px"><button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Close</button></div>';
+          say(t);
+          const c = document.getElementById('restoreCancel');
+          if(c) c.onclick = () => { _RESTORE_PENDING=null; say(''); const f=$('#restoreFile'); if(f) f.value=''; };
+          return;
+        }
 
-        t += '<label style="display:block;border:1px solid var(--line-strong);border-radius:9px;padding:11px 13px;margin-bottom:9px;cursor:pointer">'
-           + '<input type="radio" name="restoreMode" value="add" checked style="margin-right:8px">'
-           + '<b style="font-size:12.5px">Add back what is missing</b>'
-           + '<div style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 0 22px">Puts back <b>' + totAdd + '</b> record' + (totAdd===1?'':'s') + ' that the app no longer has. '
-           + 'Nothing is deleted and nothing already in the app is changed, even if the file has an older copy of it. Safe to use with an old file.</div></label>';
-
-        t += '<label style="display:block;border:1px solid ' + (totLose? 'var(--red)':'var(--line-strong)') + ';border-radius:9px;padding:11px 13px;cursor:pointer">'
-           + '<input type="radio" name="restoreMode" value="replace" style="margin-right:8px">'
-           + '<b style="font-size:12.5px">Replace everything in the file</b>'
-           + '<div style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 0 22px">Makes the app match the file exactly. '
-           + (totLose ? '<b style="color:var(--red)">' + totLose + ' record' + (totLose===1?'':'s') + ' added since this backup would be deleted.</b> ' : 'Nothing would be lost, because the file already has everything the app has. ')
-           + 'Use this only when the database is genuinely lost.</div></label>';
-
-        t += '<div id="restoreConfirmWrap" style="margin-top:12px"></div>';
-        t += '<div style="margin-top:14px;display:flex;gap:9px;align-items:center">'
-           + '<button class="btn btn-primary btn-sm" id="restoreGo">Restore</button>'
+        t += '<div style="font-size:12.5px;margin:12px 0 4px">'
+           + (totAdd ? 'This will put back <b>' + totAdd + '</b> record' + (totAdd===1?'':'s') + '. Nothing will be deleted or changed.'
+                     : 'Nothing is missing — the app already has everything in this file.') + '</div>';
+        t += '<div style="margin-top:12px;display:flex;gap:9px;align-items:center">'
+           + '<button class="btn btn-primary btn-sm" id="restoreGo"' + (totAdd ? '' : ' disabled style="opacity:.5"') + '>Put back ' + totAdd + ' record' + (totAdd===1?'':'s') + '</button>'
            + '<button class="btn btn-sm" id="restoreCancel" style="border:1px solid var(--line-strong)">Cancel</button>'
            + '<span id="restoreProgress" style="font-size:11.5px;color:var(--ink-faint)"></span></div>';
-        box().innerHTML = t;
+        say(t);
 
-        const syncConfirm = () => {
-          const mode = (box().querySelector('input[name=restoreMode]:checked')||{}).value;
-          const w = $('#restoreConfirmWrap');
-          if(mode === 'replace'){
-            w.innerHTML = '<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;font-size:11.5px;color:#7f1d1d">'
-              + '<b>Download a copy of what is there now first</b> \u2014 use the button above. That copy is your only way back.<br><br>'
-              + 'Then type <b>RESTORE</b> to confirm.<br>'
-              + '<input id="restoreTyped" placeholder="type RESTORE" style="margin-top:7px;padding:6px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:12px">'
-              + '</div>';
-          } else { w.innerHTML=''; }
+        const cancel = document.getElementById('restoreCancel');
+        if(cancel) cancel.onclick = () => {
+          if(_RESTORE_BUSY){ _RESTORE_ABORT = true; cancel.textContent = 'Stopping…'; return; }
+          _RESTORE_PENDING=null; say(''); const f=$('#restoreFile'); if(f) f.value='';
         };
-        box().querySelectorAll('input[name=restoreMode]').forEach(r => r.onchange = syncConfirm);
 
-        $('#restoreCancel').onclick = () => { _RESTORE_PENDING=null; box().innerHTML=''; $('#restoreFile').value=''; };
-
-        $('#restoreGo').onclick = async () => {
-          const mode = (box().querySelector('input[name=restoreMode]:checked')||{}).value || 'add';
-          if(mode === 'replace'){
-            const typed = ($('#restoreTyped')||{}).value || '';
-            if(typed.trim().toUpperCase() !== 'RESTORE'){ toast('Type RESTORE to confirm','error'); return; }
-          }
-          if(mode === 'add' && totAdd === 0){ toast('Nothing to add back \u2014 the app already has everything in this file'); return; }
-          const go = $('#restoreGo'); go.disabled = true; $('#restoreCancel').disabled = true;
-          const prog = $('#restoreProgress');
-          let done = 0;
+        const goBtn = document.getElementById('restoreGo');
+        if(goBtn) goBtn.onclick = async () => {
+          if(!_RESTORE_PENDING || _RESTORE_BUSY) return;
+          goBtn.disabled = true;
+          _RESTORE_BUSY = true; _RESTORE_ABORT = false;
+          const setProg = txt => { const p = document.getElementById('restoreProgress'); if(p) p.textContent = txt; };
+          let res = null, failure = null;
           try{
-            const res = await _restoreApply(_RESTORE_PENDING, mode, (node, n) => {
-              done++; prog.textContent = 'Restoring \u2014 ' + (_RESTORE_LABEL[node]||node) + ' (' + n + ')\u2026';
+            res = await _restoreApply(_RESTORE_PENDING, (node, done, total) => {
+              setProg('Putting back ' + (_RESTORE_ALLOWED[node] || node) + ' — ' + done + ' of ' + total + '…');
             });
-            try{ logActivity('alert','\u267b Restored from a backup file (' + (mode==='replace'?'replaced everything':'added back what was missing') + ') \u2014 ' + res.added + ' record(s) written'); }catch(e){}
-            prog.textContent = '';
-            box().innerHTML = '<div style="background:#ecfdf5;border-left:3px solid var(--green);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#065f46">'
-              + '<b>Done \u2014 ' + res.added + ' record' + (res.added===1?'':'s') + ' written.</b><br>'
-              + 'Reloading so the app reads everything fresh from the server\u2026</div>';
-            /* Drop the local mirror and reload. The app rebuilds its sync
-               baseline from the server; leaving a stale one in place is how a
-               later save would compute deletions. */
-            setTimeout(() => { try{ localStorage.removeItem(STORE_KEY); }catch(e){} location.reload(); }, 1800);
-          }catch(e){
-            console.error('[Sristi] restore failed', e);
-            go.disabled = false; $('#restoreCancel').disabled = false; prog.textContent='';
-            box().insertAdjacentHTML('afterbegin','<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 13px;font-size:12px;color:#7f1d1d;margin-bottom:10px">Restore stopped: '
-              + esc2(e && e.message ? e.message : 'unknown error') + '</div>');
+          }catch(e){ failure = e; }
+          _RESTORE_BUSY = false;
+
+          /* Everything below is null-safe on purpose: the user may have moved to
+             another screen while this ran. The old code threw here and reported
+             nothing at all. */
+          const listWritten = (r) => (r && r.written && r.written.length)
+            ? '<ul style="margin:6px 0 0 18px;padding:0">' + r.written.map(w => '<li>' + esc(w.label) + ' — ' + w.n + '</li>').join('') + '</ul>'
+            : '<div style="margin-top:4px">Nothing was written.</div>';
+
+          if(failure){
+            try{ await _restoreLog('♻ Restore STOPPED — ' + ((res&&res.added)||0) + ' record(s) written before it stopped: ' + (failure.message||'')); }catch(e){}
+            setProg('');
+            say('<div style="background:#fef2f2;border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#7f1d1d">'
+              + '<b>The restore stopped before it finished.</b><br>' + esc(failure.message || 'Unknown error') + '<br><br>'
+              + '<b>What was written before it stopped:</b>' + listWritten(res) + '<br>'
+              + 'Nothing was deleted. It is safe to fix your connection and run this again — it will simply put back whatever is still missing.</div>');
+            toast('Restore stopped — nothing was deleted','error');
+            return;
           }
+
+          try{ await _restoreLog('♻ Restored ' + res.added + ' missing record(s) from a backup file'); }catch(e){}
+          setProg('');
+          say('<div style="background:#ecfdf5;border-left:3px solid var(--green);border-radius:0 7px 7px 0;padding:12px 14px;font-size:12.5px;color:#065f46">'
+            + '<b>Done — ' + res.added + ' record' + (res.added===1?'':'s') + ' put back.</b>' + listWritten(res)
+            + '<br>Reloading so the app reads everything fresh…</div>');
+          /* Drop the local mirror so the sync baseline is rebuilt from the
+             server, and tell the next boot NOT to seed: with the mirror gone it
+             takes the "first ever load" branch, and that used to write the
+             namespace root. */
+          setTimeout(() => {
+            try{ sessionStorage.setItem('sristi_skip_seed_v1','1'); }catch(e){}
+            try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+            location.reload();
+          }, 2200);
         };
       };
     }

@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v232';
+const APP_VERSION = 'v233';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7547,6 +7547,27 @@ let _pumpsStarted = false;
 function startBackgroundPumps(){
   if(_pumpsStarted) return;
   _pumpsStarted = true;
+  /* v233 - ask the browser to keep this device's unsent work.
+
+     A day in the field can leave 40+ photos (about 8MB), the offline
+     verification writes and the form drafts sitting in IndexedDB for hours.
+     Without this they are "best-effort" storage, which Android is free to
+     evict when the phone runs low on space - and that work exists NOWHERE
+     else until it uploads. Measured before adding it: persisted() was false.
+
+     Best-effort itself: not awaited, cannot throw into boot, and a refusal
+     (the browser decides, and usually grants it for an installed PWA) simply
+     leaves things as they were. */
+  try{
+    if(navigator.storage && navigator.storage.persist && navigator.storage.persisted){
+      navigator.storage.persisted().then(function(already){
+        if(already){ console.info('[Sristi] storage already persistent'); return; }
+        return navigator.storage.persist().then(function(granted){
+          console.info('[Sristi] persistent storage ' + (granted ? 'granted' : 'refused by the browser'));
+        });
+      }).catch(function(){});
+    }
+  }catch(e){}
   // v186 - refresh the FC strip on the same beat the queues are drained.
   window.addEventListener('online',  updateFcSync);
   window.addEventListener('offline', updateFcSync);

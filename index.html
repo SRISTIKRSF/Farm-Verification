@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v240';
+const APP_VERSION = 'v241';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5521,10 +5521,14 @@ function cacheLocal(){
     // stops persisting, so warn once per session rather than losing edits unknowingly.
     const quota = e && (e.name==='QuotaExceededError' || e.code===22 || e.code===1014);
     if(quota && !_quotaWarned){ _quotaWarned=true; console.warn('[Sristi] localStorage full — local mirror not saved.'); if(typeof toast==='function') toast('Device storage full — stay online so your changes sync.','error'); }
-    /* v239 - a non-quota failure here means the browser refused the write for
-       another reason, memory pressure being the common one on a field phone.
-       It was swallowed entirely before. */
-    else if(!quota) _storageTrouble('cacheLocal', e);
+    /* v241 - v239 routed this through the low-memory warning, which was the
+       wrong diagnosis: a genuine out-of-memory setItem surfaces as
+       QuotaExceededError and is caught above. What actually lands here is site
+       data being blocked (a managed device, a WebView, third-party data
+       settings), where "close other apps" is useless advice repeated every two
+       minutes until they learn to ignore every warning the app gives them.
+       Logged, not shouted. */
+    else console.warn('[Sristi] localStorage refused the write (site data blocked?):', e);
   }
 }
 
@@ -6918,26 +6922,41 @@ const _photoSession = {};   // photoId -> dataURL, this session only (instant lo
 const _photoSessionAt   = {};   // photoId -> when it entered memory
 const _photoUploadedHere = {};  // photoId -> true once its url was written onto the record/form
 const _photoQueuedHere  = {};   // photoId -> true. IDs only, never evicted, a few bytes each
-const _PHOTO_SESSION_KEEP = 8;  // ~1.6 MB of previews, instead of a whole day of them
+/* the two ceilings live with _photoSessionTrim below */
 function _photoSessionPut(photoId, dataUrl){
   if(!photoId || !dataUrl) return;
   _photoSession[photoId] = dataUrl;
   _photoSessionAt[photoId] = Date.now();
   _photoSessionTrim();
 }
+/* v241 - v240 capped this at 8 previews of any kind, which is FEWER THAN ONE
+   VISIT: a verification carries 8 to 18 photos, and _photoSessionPut runs once
+   per photo inside the submit loop, so the first six were evicted before the
+   submit had even finished. Offline - the normal state in the field - none of
+   them has a url yet, so the coordinator opened their own just-finished visit
+   and saw grey "uploading..." tiles where the photographs should be.
+
+   So the rule is now: an UPLOADED preview is disposable, because photoSrc()
+   reads its url instead. One still waiting is not, and is only dropped when the
+   map passes a hard ceiling that a whole visit still fits inside. */
+const _PHOTO_KEEP_UPLOADED = 4;    // enough for the just-uploaded ones to stay instant
+const _PHOTO_HARD_MAX = 24;        // a full visit fits; a whole day does not
 function _photoSessionTrim(){
   const ids = Object.keys(_photoSession);
-  if(ids.length <= _PHOTO_SESSION_KEEP) return;
-  ids.sort(function(a, b){
-    /* already uploaded goes first - those render from their url */
-    const ua = _photoUploadedHere[a] ? 1 : 0, ub = _photoUploadedHere[b] ? 1 : 0;
-    if(ua !== ub) return ub - ua;
-    return (_photoSessionAt[a] || 0) - (_photoSessionAt[b] || 0);   // then oldest
-  });
-  ids.slice(0, ids.length - _PHOTO_SESSION_KEEP).forEach(function(id){
-    delete _photoSession[id];
-    delete _photoSessionAt[id];
-  });
+  const waiting = ids.filter(function(id){ return !_photoUploadedHere[id]; });
+  const uploaded = ids.filter(function(id){ return _photoUploadedHere[id]; });
+  const byAge = function(a, b){ return (_photoSessionAt[a] || 0) - (_photoSessionAt[b] || 0); };
+  const drop = function(id){ delete _photoSession[id]; delete _photoSessionAt[id]; };
+
+  /* uploaded ones beyond the handful worth keeping instant */
+  if(uploaded.length > _PHOTO_KEEP_UPLOADED){
+    uploaded.sort(byAge).slice(0, uploaded.length - _PHOTO_KEEP_UPLOADED).forEach(drop);
+  }
+  /* only then, and only past the ceiling, the oldest ones still waiting */
+  const left = Object.keys(_photoSession).length;
+  if(left > _PHOTO_HARD_MAX){
+    waiting.sort(byAge).slice(0, left - _PHOTO_HARD_MAX).forEach(drop);
+  }
 }
 /* v109 SECURITY — photo values come from farmer-submitted form payloads
    (forms/{id}.enrol.photos), which any visitor can write until the RTDB rules
@@ -7098,17 +7117,37 @@ let _photoFlushLastErr = '';
 // how to handle retry/give-up. Shared by flushPhotoQueue() (background,
 // whole-queue) and flushSpecificPhotos() (foreground, just-queued IDs).
 async function _uploadQueuedPhoto(it){
-  const up = await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
+  /* v241 - if a previous attempt uploaded this photo but could not record WHERE
+     it went, the address is on the queue row. Re-use it instead of uploading the
+     same image again. */
+  const up = it.uploadedUrl
+    ? { url: it.uploadedUrl, w: it.uploadedW || 0, h: it.uploadedH || 0, bytes: it.uploadedBytes || 0 }
+    : await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
   const repl = { photoId: it.photoId, url: up.url, w: up.w, h: up.h, bytes: up.bytes, name: it.name || '' };
   /* Kept for the instant between the upload landing and the screen re-reading
      the photo, and for any copy applyPhotoUrl could not reach. */
   if(!_photoSession[it.photoId]) _photoSessionPut(it.photoId, it.dataUrl);
   const applied = applyPhotoUrl(it, repl);
-  await idbDel('photoQueue', it.photoId);
-  /* v240 - the url is now on the record and/or the form, so photoSrc() will
-     read that and never consult the cache for this photo again. Marking it
-     lets the trim drop it before it drops anything still waiting to upload. */
-  if(applied){ _photoUploadedHere[it.photoId] = true; _photoSessionTrim(); }
+  if(applied){
+    /* The url is now on the record and/or the form, so photoSrc() reads that and
+       never consults the preview cache for this photo again. */
+    await idbDel('photoQueue', it.photoId);
+    _photoUploadedHere[it.photoId] = true;
+    _photoSessionTrim();
+    return;
+  }
+  /* ⛔ v241 - THE PHOTO-LOSS PATH, closed. applyPhotoUrl found neither the
+     farmer record nor a cached form to write the address into - loadForms can
+     overwrite FORMS_CACHE with the server copy while a photo is still queued.
+     The row used to be DELETED anyway: the image sat on Cloudinary under an
+     address nobody had recorded, the phone's copy was gone, and the record said
+     "pending" for ever. Unrecoverable through the app.
+     Now the row stays, carrying the address, so the next pump re-applies it
+     without a second upload. The preview also stays: it is the last copy on
+     screen until that succeeds. */
+  console.warn('[Sristi] photo uploaded but nowhere to record it yet - keeping it queued:', it.photoId);
+  it.uploadedUrl = up.url; it.uploadedW = up.w; it.uploadedH = up.h; it.uploadedBytes = up.bytes;
+  await idbPut('photoQueue', it).catch(e => _storageTrouble('photoQueue-url', e));
 }
 async function flushPhotoQueue(){
   if(_photoFlushBusy) return;
@@ -7126,6 +7165,11 @@ async function flushPhotoQueue(){
     // #38 — skip images that have already failed many times so a permanently-bad
     // upload doesn't retry forever every cycle (kept in the queue, not deleted/lost).
     const realItems = items.filter(it => !(it.dataUrl && it.dataUrl.slice(0,19)==='data:image/svg+xml;') && (it.tries||0) < 8);
+    /* v241 - a photo that has given up after 8 permanent failures is no longer
+       "uploading...". Forgetting that this session queued it lets
+       photoIsStranded tell the truth again, so the office stops waiting for
+       something that is not coming. The bytes stay in the queue either way. */
+    items.forEach(it => { if((it.tries||0) >= 8) delete _photoQueuedHere[it.photoId]; });
     for(const it of realItems){
       try{
         await _uploadQueuedPhoto(it);
@@ -7192,23 +7236,38 @@ async function flushSpecificPhotos(photoIds, timeoutMs){
    uncommon one visible instead of silent. */
 function _sendVerifPhotosNow(photoIds){
   const ids = (photoIds || []).slice();
-  const say = (txt, kind) => {
+  /* v241 - `final` messages fall back to a toast. This line is written into the
+     verification iframe, and closeVerificationForm() blanks that iframe - so an
+     FC who taps Close promptly never saw "sending N photos", never saw
+     "N photos still to send", and never saw the offline warning. The one
+     surface built to make stranded photos visible was invisible in exactly the
+     case it was built for. */
+  const say = (txt, kind, final) => {
+    let shown = false;
     try{
       const fr = document.getElementById('verifyFrame');
       const doc = fr && fr.contentDocument;
       const el  = doc && doc.getElementById('verifPhotoStatus');
-      if(!el) return;
-      el.textContent = txt || '';
-      el.style.color = kind === 'ok' ? '#1c7c4a' : (kind === 'warn' ? '#993c1d' : '#475569');
+      if(el){
+        el.textContent = txt || '';
+        el.style.color = kind === 'ok' ? '#1c7c4a' : (kind === 'warn' ? '#993c1d' : '#475569');
+        shown = true;
+      }
     }catch(e){}
+    if(!shown && final && txt && typeof toast === 'function'){
+      try{ toast(txt, kind === 'warn' ? 'error' : ''); }catch(e){}
+    }
   };
   if(!ids.length){ say(''); return; }
   if(!navigator.onLine || !cloudinaryConfigured()){
     say('⚠ ' + ids.length + ' ફોટા હજુ મોકલાયા નથી — સિગ્નલ આવે ત્યારે એપ ખોલો  ·  '
-      + ids.length + ' photos not sent yet — open the app when you have signal', 'warn');
+      + ids.length + ' photos not sent yet — open the app when you have signal', 'warn', true);
     return;
   }
-  (async () => {
+  /* v241 - RETURNED, so the caller can hold the reload guard until the burst
+     finishes. It used to be fire-and-forget, and a queued version update could
+     reload the app straight through a dozen in-flight uploads. */
+  return (async () => {
     let left = ids.length, failed = 0;
     say('↑ ' + left + ' ફોટા મોકલાઈ રહ્યા છે…  ·  sending ' + left + ' photos…');
     for(const pid of ids){
@@ -7223,9 +7282,9 @@ function _sendVerifPhotosNow(photoIds){
     try{ if(typeof updateFcSync === 'function') updateFcSync(); }catch(e){}
     if(failed){
       say('⚠ ' + failed + ' ફોટા બાકી — એપ ખુલ્લી રાખો  ·  '
-        + failed + ' photos still to send — keep the app open', 'warn');
+        + failed + ' photos still to send — keep the app open', 'warn', true);
     } else {
-      say('✓ બધા ફોટા મોકલાઈ ગયા  ·  all photos sent', 'ok');
+      say('✓ બધા ફોટા મોકલાઈ ગયા  ·  all photos sent', 'ok', true);
     }
   })();
 }
@@ -7279,7 +7338,17 @@ function applyPhotoUrl(it, repl){
 }
 async function updatePhotoBadge(){
   let n = 0;
-  try{ n = (await idbAll('photoQueue')).length; }catch(e){}
+  /* v241 - keys, not whole rows. idbAll pulled every queued photo's base64 back
+     into memory on every beat - megabytes, on the pump whose job is to relieve
+     memory pressure. And seeding _photoQueuedHere from those keys is what keeps
+     "still uploading" correct ACROSS A RELOAD: without it, a coordinator who
+     worked offline and reopened the app next morning saw every waiting photo
+     marked red "not uploaded", when in fact they were all still queued. */
+  try{
+    const keys = await idbKeys('photoQueue');
+    n = keys.length;
+    keys.forEach(k => { if(!_photoUploadedHere[k]) _photoQueuedHere[k] = true; });
+  }catch(e){}
   _photoQueueCount = n;   /* v232 - the beforeunload guard reads this */
   let el = document.getElementById('photoQueuePill');
   if(!n || !cloudinaryConfigured()){ if(el) el.style.display = 'none'; return; }
@@ -7326,7 +7395,9 @@ function _storageTrouble(kind, err){
    cover a form the way it already covers a photo. */
 let _formQueueCount = 0;
 async function updateUnsentCounts(){
-  try{ _formQueueCount = (await idbAll('formWrites')).length; }
+  /* v241 - keys only. idbAll dragged every queued answer sheet (~23 KB each)
+     back into memory four times a minute. */
+  try{ _formQueueCount = (await idbKeys('formWrites')).length; }
   catch(e){ /* cannot read the queue - leave the last known figure alone */ }
 }
 
@@ -7340,8 +7411,14 @@ async function updateUnsentCounts(){
 let _photoQueueCount = 0;
 window.addEventListener('beforeunload', function(e){
   try{
-    if(!_photoQueueCount && !_formQueueCount) return;
+    /* v241 - the submit window comes FIRST. _verifBusyUntil marks the ~90
+       seconds where a verification has been handed over but has not yet reached
+       the queues, so both counts still read zero - and the early return below
+       fired before this line was ever reached. Closing the app three seconds
+       into a submit produced no warning at all, which is the narrowest and most
+       expensive moment to lose. */
     if(Date.now() < (window._verifBusyUntil || 0)) { e.preventDefault(); e.returnValue = ''; return; }
+    if(!_photoQueueCount && !_formQueueCount) return;
     e.preventDefault();
     e.returnValue = '';
   }catch(err){}
@@ -7523,8 +7600,9 @@ async function attachFormToFarmer(farmerId, formId, formPayload, meta){
   const _p = sanitizeForFB(formPayload);
   idbPut('formWrites', {key:'extra:'+farmerId+':'+formId, farmerId,
                         path:'formsExtra/'+farmerId+'/'+formId, payload:_p, at:Date.now()})
-    .then(()=>flushFormWrites())
-    .catch(()=>{ if(FB && FB.ready) fbRef('formsExtra/'+farmerId+'/'+formId).set(_p).catch(e=>console.warn('attached form write:',e)); });
+    .then(()=>{ updateUnsentCounts(); return flushFormWrites(); })   /* v241 - or closing warns about nothing */
+    .catch((e)=>{ _storageTrouble('formWrites-extra', e);
+                  if(FB && FB.ready) fbRef('formsExtra/'+farmerId+'/'+formId).set(_p).catch(e2=>console.warn('attached form write:',e2)); });
   meta = meta || {};
   rec.extraForms = (rec.extraForms||[]).filter(x => x && x.id !== formId);
   rec.extraForms.push({ id: formId, at: meta.at || new Date().toISOString(),
@@ -7555,7 +7633,7 @@ function persistForms(farmerId){
       if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e2=>console.warn('forms write:',e2));
     });
 }
-let _formFlushBusy = false, _formFlushStartedAt = 0;
+/* v241 - the old busy flag and start time are gone; see _queueTake below. */
 /* v239 - this queue is what carries a completed enrolment or verification to
    the server, and it could stop trying for the rest of a session.
 
@@ -7571,30 +7649,57 @@ let _formFlushBusy = false, _formFlushStartedAt = 0;
    anywhere else in here cannot hold the flag for longer than a minute. A write
    that times out keeps its place in the queue and is simply retried - writing
    the same form to the same path twice costs nothing. */
-const _FORM_FLUSH_STALE_MS = 60000;
+/* v241 - one pattern for all three durable queues, after review found v239's
+   version wrong in two ways and missing from the other two queues entirely.
+
+   The time limit is a WEDGE-BREAKER, not a retry trigger. v239 used 8 seconds -
+   the tightest budget in this file - and a 23 KB write on a real rural link
+   routinely takes longer than that. The write LANDED, the guard called it a
+   timeout, the row was kept, and every 30-second pump re-sent it for ever:
+   Firebase traffic multiplied, and the coordinator's strip stuck reading
+   "Sending..." - the exact symptom v239 set out to kill.
+
+   The watchdog was worse. A single boolean plus a start time that every new run
+   overwrote meant that after 60 seconds a second run began, and whichever run
+   finished first cleared the flag for all of them. On a slow link that settles
+   into two or three concurrent runs each re-sending every row. A token fixes
+   both: the staleness test always measures the run that actually holds the
+   queue, and only that run can release it. */
+const _QUEUE_WRITE_MS = 45000;   // a working link, however slow, finishes inside this
+const _QUEUE_STALE_MS = 90000;   // only ever to break a wedge
+function _queueTake(state){
+  const now = Date.now();
+  if(state.tok && (now - state.tok.at) < _QUEUE_STALE_MS) return null;
+  return (state.tok = { at: now });
+}
+function _queueDrop(state, tok){ if(state.tok === tok) state.tok = null; }
+
+const _formFlushState = { tok: null };
 async function flushFormWrites(){
-  if(_formFlushBusy && (Date.now() - _formFlushStartedAt) < _FORM_FLUSH_STALE_MS) return;
   if(!FB || !FB.ready || !navigator.onLine) return;
-  _formFlushBusy = true; _formFlushStartedAt = Date.now();
+  const _tok = _queueTake(_formFlushState); if(!_tok) return;
   try{
     const items = await idbAll('formWrites').catch(()=>[]);
     for(const it of items){
       try{
-        const _g = await _fbWriteGuard(fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload), _fbWriteWaitMs());
+        const _g = await _fbWriteGuard(fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload), _QUEUE_WRITE_MS);
         if(_g.timedOut){
-          /* The write may still be travelling. Leave the row where it is and
-             move on rather than blocking every form behind this one. */
+          /* The write may still be travelling. Leave the row and move on rather
+             than blocking every other form behind this one. */
           console.warn('[Sristi] forms write timed out (kept for retry):', it.key);
           continue;
         }
         // #41 — re-read before deleting: if a newer persistForms() for the same farmer
         // landed during the write's await, the queue row now holds the newer payload —
         // leave it for the next flush instead of deleting the latest (unsynced) edit.
+        /* v241 - `!cur ||` used to delete the row when the RE-READ ITSELF failed,
+           which is the one direction that loses work. A row that cannot be read
+           is left alone; the next pump re-reads it. */
         const cur = await idbGet('formWrites', it.key).catch(()=>null);
-        if(!cur || cur.at === it.at){ await idbDel('formWrites', it.key); }
+        if(cur && cur.at === it.at){ await idbDel('formWrites', it.key); }
       }catch(e){ console.warn('[Sristi] forms write failed (will retry):', e); }
     }
-  } finally { _formFlushBusy = false; updateUnsentCounts(); }
+  } finally { _queueDrop(_formFlushState, _tok); updateUnsentCounts(); }
 }
 
 /* v106 — independent backup for Conversion Program records. Unlike Haat
@@ -7689,25 +7794,32 @@ async function migrateLegacyData(){
   }
 }
 
-let _enrolFlushBusy = false;
+/* v241 - the same wedge v239 fixed in the forms queue was still live in both of
+   these. A Firebase write promise never settles with no signal, so one bare
+   await here held the busy flag for the rest of the session and the queue went
+   quiet without saying so. flushOfflineWrites carries the VISIT half of a
+   verification - the half that reached the server in the two cases where the
+   form did not. */
+const _enrolFlushState = { tok: null };
 async function flushPendingEnrolments(){
-  if(_enrolFlushBusy || !FB || !FB.ready || !navigator.onLine) return;
-  _enrolFlushBusy = true;
+  if(!FB || !FB.ready || !navigator.onLine) return;
+  const _tok = _queueTake(_enrolFlushState); if(!_tok) return;
   try{
     const items = await idbAll('pendingEnrolments').catch(()=>[]);
     for(const sub of items){
       try{
-        await fbRef('pendingEnrolments/'+sub.id).set(sanitizeForFB(sub));
+        const _g = await _fbWriteGuard(fbRef('pendingEnrolments/'+sub.id).set(sanitizeForFB(sub)), _QUEUE_WRITE_MS);
+        if(_g.timedOut){ console.warn('[Sristi] enrolment write timed out (kept for retry):', sub.id); continue; }
         await idbDel('pendingEnrolments', sub.id);
       }catch(e){ console.warn('[Sristi] enrolment sync failed (will retry):', e); }
     }
-  } finally { _enrolFlushBusy = false; }
+  } finally { _queueDrop(_enrolFlushState, _tok); }
 }
 
-let _offlineWritesBusy = false;
+const _offlineWritesState = { tok: null };
 async function flushOfflineWrites(){
-  if(_offlineWritesBusy || !FB || !FB.ready || !navigator.onLine) return;
-  _offlineWritesBusy = true;
+  if(!FB || !FB.ready || !navigator.onLine) return;
+  const _tok = _queueTake(_offlineWritesState); if(!_tok) return;
   try{
     const items = await idbAll('offlineWrites').catch(()=>[]);
     for(const it of items){
@@ -7716,7 +7828,8 @@ async function flushOfflineWrites(){
         /* Anything that is not a farmer record - the verifIndex marker, for
            one - is a single value the device genuinely owns. Unchanged. */
         if(it.col !== 'haatFarmers' && it.col !== 'convFarmers'){
-          await fbRef(it.col+'/'+it.id).set(it.rec);
+          const _g1 = await _fbWriteGuard(fbRef(it.col+'/'+it.id).set(it.rec), _QUEUE_WRITE_MS);
+          if(_g1.timedOut){ console.warn('[Sristi] offline write timed out (kept for retry):', it.key); continue; }
           await idbDel('offlineWrites', it.key);
           continue;
         }
@@ -7748,11 +7861,14 @@ async function flushOfflineWrites(){
           console.warn('[Sristi] v218 - the office ruled on ' + it.id + ' after this copy was taken; '
                      + 'replaying the field work only, leaving the decision alone.');
         }
-        if(Object.keys(patch).length) await fbRef(it.col+'/'+it.id).update(patch);
+        if(Object.keys(patch).length){
+          const _g2 = await _fbWriteGuard(fbRef(it.col+'/'+it.id).update(patch), _QUEUE_WRITE_MS);
+          if(_g2.timedOut){ console.warn('[Sristi] offline record write timed out (kept for retry):', it.key); continue; }
+        }
         await idbDel('offlineWrites', it.key);
       }catch(e){ console.warn('[Sristi] offline write flush failed (will retry):', e); }
     }
-  } finally { _offlineWritesBusy = false; }
+  } finally { _queueDrop(_offlineWritesState, _tok); }
 }
 
 /* background pumps — started by startBackgroundPumps() only AFTER loadDB()
@@ -18701,8 +18817,12 @@ function saveVerifEditRecord(farmerId, rec, keepList){
   const payload = sanitizeForFB(rec);
   idbPut('formWrites', {key: 'edit:' + farmerId + ':' + rec.id, farmerId,
                         path: 'verifEdits/' + farmerId + '/' + rec.id, payload, at: Date.now()})
-    .then(()=>flushFormWrites())
-    .catch(()=>{ if(FB && FB.ready) fbRef('verifEdits/' + farmerId + '/' + rec.id).set(payload).catch(e=>console.warn('verif edit write:', e)); });
+    /* v241 - this is the FC's correction to a submitted verification. Without
+       the count refresh, closing the app within the next 40 seconds warned
+       about nothing at all. */
+    .then(()=>{ updateUnsentCounts(); return flushFormWrites(); })
+    .catch((e)=>{ _storageTrouble('formWrites-edit', e);
+                  if(FB && FB.ready) fbRef('verifEdits/' + farmerId + '/' + rec.id).set(payload).catch(e2=>console.warn('verif edit write:', e2)); });
   const keep = {};
   (keepList||[]).forEach(e => { if(e && e.id) keep[e.id] = 1; });
   if(!Object.keys(keep).length) return;
@@ -23901,6 +24021,16 @@ window.addEventListener('message',async ev=>{
            to put back. Only taken when an edit is actually in progress. */
         const _oldForm = (window._verifyEditing && window._verifyEditing.farmerId === f.id && f.verificationFormFull)
           ? JSON.parse(JSON.stringify(f.verificationFormFull)) : null;
+        /* ⛔ v241 - CAPTURE THE EDIT HERE, alongside _oldForm, and never read
+           window._verifyEditing again below. closeVerificationForm() nulls it on
+           its first line, and the coordinator tapping Close lands during the
+           awaited extractPhotos a few lines down. The read that used to happen
+           after that await then saw null, the correction was treated as a fresh
+           visit, and f.visits.push added a SECOND visit for the same farm -
+           breaking the one-visit rule silently, with no warning, because the
+           "could not match" log is itself gated on this value. */
+        const _edAtStart = (window._verifyEditing && window._verifyEditing.farmerId === f.id)
+          ? window._verifyEditing : null;
         // v11 — photos to upload queue, form text to forms/{id}.
         /* v232 - collect the ids so they can be pushed immediately below,
            instead of waiting for the 30-40s background pump that an FC who
@@ -23918,8 +24048,9 @@ window.addEventListener('message',async ev=>{
         const _fresh = (DB.haatFarmers||[]).find(x => x && x.id === _verifyTargetId);
         if(_fresh) f = _fresh;
         markLocalTouch('haatFarmers', f.id);
-        /* v211 - is this a correction of a verification already on file? */
-        const _ed = (window._verifyEditing && window._verifyEditing.farmerId === f.id) ? window._verifyEditing : null;
+        /* v211 - is this a correction of a verification already on file?
+           v241 - taken from before the await; see the note at _edAtStart. */
+        const _ed = _edAtStart;
         /* An edit does not change WHEN the office received the verification.
            The visit date is the field the FC can correct, and the comparison
            sheet prints that. Leaving this alone keeps every downstream date -
@@ -24098,8 +24229,14 @@ window.addEventListener('message',async ev=>{
           }
         }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
         window._verifyEditing = null;   /* v211 - one edit, one save */
-        window._verifBusyUntil = 0;     /* v219 - written; a queued update may apply */
-        _sendVerifPhotosNow(_vPhotoIds);   /* v232 */
+        /* v241 - hold the reload guard ACROSS the photo burst. _runPendingReload
+           checks this and the pending-sync queue, but never the photo queue, so
+           a version update queued earlier fired 2.5s later straight through a
+           dozen in-flight uploads and stranded them. */
+        window._verifBusyUntil = Date.now() + 45000;
+        Promise.resolve(_sendVerifPhotosNow(_vPhotoIds))   /* v232 */
+          .catch(function(){})
+          .then(function(){ window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync(); });
         if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;
@@ -24144,8 +24281,12 @@ window.addEventListener('message',async ev=>{
           draftClear('verif', f.id, 'new');
         }
       }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
-      window._verifBusyUntil = 0;     /* v219 */
-      _sendVerifPhotosNow(_vPhotoIds);   /* v232 */
+      /* v241 - see the note at the other submit site: the guard is held across
+         the photo burst so a queued reload cannot cut through it. */
+      window._verifBusyUntil = Date.now() + 45000;
+      Promise.resolve(_sendVerifPhotosNow(_vPhotoIds))   /* v232 */
+        .catch(function(){})
+        .then(function(){ window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync(); });
       updateFcSync();
     }
   }
@@ -24187,8 +24328,15 @@ window.addEventListener('message',async ev=>{
   if(d.type==='farm-verification-closed'){
     closeVerificationForm();
     render();
-    /* v186 - say which of the two actually happened. */
-    toast(window._lastVerifSynced === false
+    /* v186 - say which of the two actually happened.
+       v241 - `=== false` meant only a CONFIRMED failure was reported honestly.
+       The flag is set after the record write, and a coordinator can tap Close a
+       second after submitting, while the handler is still inside the photo
+       extraction or the guarded write - so it was still `undefined` and every
+       one of those submits was announced as "Verification sent". Anything not
+       positively confirmed is now reported as saved-on-the-phone, which is both
+       true and the safer thing for them to believe. */
+    toast(window._lastVerifSynced !== true
       ? '\u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0ac7\u0ab5 \u0aa5\u0aaf\u0ac1\u0a82 \u2014 \u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0aae\u0ab3\u0aa4\u0abe\u0a82 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0ab6\u0ac7 \u00b7 Saved on your phone, will send when you have signal'
       : '\u0ab5\u0ac7\u0ab0\u0abf\u0aab\u0abf\u0a95\u0ac7\u0ab6\u0aa8 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82 \u00b7 Verification sent');
     window._lastVerifSynced = undefined;

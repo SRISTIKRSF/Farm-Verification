@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v238';
+const APP_VERSION = 'v239';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5521,6 +5521,10 @@ function cacheLocal(){
     // stops persisting, so warn once per session rather than losing edits unknowingly.
     const quota = e && (e.name==='QuotaExceededError' || e.code===22 || e.code===1014);
     if(quota && !_quotaWarned){ _quotaWarned=true; console.warn('[Sristi] localStorage full — local mirror not saved.'); if(typeof toast==='function') toast('Device storage full — stay online so your changes sync.','error'); }
+    /* v239 - a non-quota failure here means the browser refused the write for
+       another reason, memory pressure being the common one on a field phone.
+       It was swallowed entirely before. */
+    else if(!quota) _storageTrouble('cacheLocal', e);
   }
 }
 
@@ -7022,6 +7026,10 @@ async function extractPhotos(payload, ctx, outIds){
     }catch(e){
       // IndexedDB unavailable — keep base64 embedded rather than lose the photo.
       console.warn('[Sristi] photo queue failed, keeping inline:', e);
+      /* v239 - message only. The photo is deliberately left where it is, exactly
+         as before; this just stops the failure being invisible, because a phone
+         that cannot queue a photo is about to fail at saving the form too. */
+      _storageTrouble('photoQueue', e);
     }
   }
   if(queued){ updatePhotoBadge(); setTimeout(flushPhotoQueue, 800); }
@@ -7226,14 +7234,49 @@ async function updatePhotoBadge(){
     : '⚠ Cloudinary not set up yet — Settings → Photo storage. Photos stay safe on this device until then.';
 }
 
+/* v239 - the phone running out of room is the thing that actually breaks a
+   day's work, and until now it only ever reached the console. Chrome fails
+   IndexedDB first when memory is short - which is exactly the store holding a
+   form or a photo that has not been sent yet - so the coordinator sees
+   "Sending..." for ever and no reason why. Said once every two minutes, in
+   both languages, because it is advice they can act on: close other apps and
+   reopen this one. */
+let _storageWarnAt = 0, _storageTroubleCount = 0;
+function _storageTrouble(kind, err){
+  _storageTroubleCount++;
+  try{ console.warn('[Sristi] storage trouble (' + kind + ')', err || ''); }catch(e){}
+  const now = Date.now();
+  if(now - _storageWarnAt < 120000) return;
+  _storageWarnAt = now;
+  try{
+    /* Kept short on purpose: the toast is about 190px wide on a phone, so the
+       first wording ran to ten lines. Say the one thing they can act on. */
+    if(typeof toast === 'function')
+      toast('⚠ ફોનમાં મેમરી ઓછી — બીજી એપ બંધ કરી આ એપ ફરી ખોલો'
+          + ' · Low memory: close other apps, reopen this one', 'error');
+  }catch(e){}
+}
+
+/* v239 - how many finished forms are still waiting to leave this phone. Read
+   on the same beat as the queues are drained, so the close warning below can
+   cover a form the way it already covers a photo. */
+let _formQueueCount = 0;
+async function updateUnsentCounts(){
+  try{ _formQueueCount = (await idbAll('formWrites')).length; }
+  catch(e){ /* cannot read the queue - leave the last known figure alone */ }
+}
+
 /* v232 - closing the app is what actually strands a photo: the queue only
    drains while it is open. Ask first. Fires on a tab close or a navigation;
    it cannot fire when the phone kills a backgrounded app, so it is a warning
-   and not a guarantee. */
+   and not a guarantee.
+   v239 - a finished FORM waiting to be sent is worth exactly the same warning.
+   Two verifications reached the server as a visit but never as a form, one of
+   them submitted the same morning it was found. */
 let _photoQueueCount = 0;
 window.addEventListener('beforeunload', function(e){
   try{
-    if(!_photoQueueCount) return;
+    if(!_photoQueueCount && !_formQueueCount) return;
     if(Date.now() < (window._verifBusyUntil || 0)) { e.preventDefault(); e.returnValue = ''; return; }
     e.preventDefault();
     e.returnValue = '';
@@ -7439,20 +7482,47 @@ function persistForms(farmerId){
   const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
   // durable write queue — survives offline AND closing the tab
   idbPut('formWrites', {key: farmerId, farmerId, payload, at: Date.now()})
-    .then(()=>flushFormWrites())
-    .catch(()=>{ // no IndexedDB: best-effort direct write
-      if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e=>console.warn('forms write:',e));
+    .then(()=>{ updateUnsentCounts(); return flushFormWrites(); })
+    .catch((e)=>{ // no IndexedDB: best-effort direct write
+      /* v239 - this is the path a phone short of memory takes, and it used to
+         be invisible. If the queue cannot even be written to, the only copy of
+         this form is the one in the page - say so. */
+      _storageTrouble('formWrites', e);
+      if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e2=>console.warn('forms write:',e2));
     });
 }
-let _formFlushBusy = false;
+let _formFlushBusy = false, _formFlushStartedAt = 0;
+/* v239 - this queue is what carries a completed enrolment or verification to
+   the server, and it could stop trying for the rest of a session.
+
+   v216 established that a Firebase write promise NEVER SETTLES with no signal:
+   it does not reject, it simply hangs. The bare `await` below therefore never
+   returned, `finally` never ran, and the busy flag stayed true - so every one
+   of the 30-second pumps after that returned at the first line, silently. The
+   coordinator's strip kept saying "Sending..." and nothing was ever sent again
+   until the app was reloaded.
+
+   Two guards, both borrowed from the offline-writes queue which was given this
+   treatment back in v218: a time limit on each write, and a watchdog so a hang
+   anywhere else in here cannot hold the flag for longer than a minute. A write
+   that times out keeps its place in the queue and is simply retried - writing
+   the same form to the same path twice costs nothing. */
+const _FORM_FLUSH_STALE_MS = 60000;
 async function flushFormWrites(){
-  if(_formFlushBusy || !FB || !FB.ready || !navigator.onLine) return;
-  _formFlushBusy = true;
+  if(_formFlushBusy && (Date.now() - _formFlushStartedAt) < _FORM_FLUSH_STALE_MS) return;
+  if(!FB || !FB.ready || !navigator.onLine) return;
+  _formFlushBusy = true; _formFlushStartedAt = Date.now();
   try{
     const items = await idbAll('formWrites').catch(()=>[]);
     for(const it of items){
       try{
-        await fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload);
+        const _g = await _fbWriteGuard(fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload), _fbWriteWaitMs());
+        if(_g.timedOut){
+          /* The write may still be travelling. Leave the row where it is and
+             move on rather than blocking every form behind this one. */
+          console.warn('[Sristi] forms write timed out (kept for retry):', it.key);
+          continue;
+        }
         // #41 — re-read before deleting: if a newer persistForms() for the same farmer
         // landed during the write's await, the queue row now holds the newer payload —
         // leave it for the next flush instead of deleting the latest (unsynced) edit.
@@ -7460,7 +7530,7 @@ async function flushFormWrites(){
         if(!cur || cur.at === it.at){ await idbDel('formWrites', it.key); }
       }catch(e){ console.warn('[Sristi] forms write failed (will retry):', e); }
     }
-  } finally { _formFlushBusy = false; }
+  } finally { _formFlushBusy = false; updateUnsentCounts(); }
 }
 
 /* v106 — independent backup for Conversion Program records. Unlike Haat
@@ -7652,7 +7722,9 @@ function startBackgroundPumps(){
   // v186 - refresh the FC strip on the same beat the queues are drained.
   window.addEventListener('online',  updateFcSync);
   window.addEventListener('offline', updateFcSync);
-  const pump = ()=>{ updateFcSync(); flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); };
+  /* v239 - updateUnsentCounts rides the same beat, so the close warning knows
+     about a form still waiting without reading IndexedDB on every keystroke. */
+  const pump = ()=>{ updateFcSync(); flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); updateUnsentCounts(); };
   setInterval(pump, 30000 + Math.floor(Math.random()*10000));
   window.addEventListener('online', ()=>{ setTimeout(pump, 1500); });
   setTimeout(()=>{ pump(); updatePhotoBadge(); }, 2000);   // initial kick shortly after load

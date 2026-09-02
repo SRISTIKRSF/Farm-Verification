@@ -2440,32 +2440,80 @@ function submit(){
   // can be silently unrecoverable forever the moment they leave — no other
   // device can ever see it. Hold "Continue" until the parent confirms the
   // upload actually happened (or times out on a genuinely bad connection).
+  /* v242 - the answers are now waited for too, not just the photos. Until v241
+     this screen appeared in the same instant the form was handed over, before
+     the answers had been written anywhere at all - so a farmer who closed the
+     page on seeing the tick lost everything he had just filled in. Eight
+     farmers reached the office as a name with no answer sheet.
+     The Continue button is held until BOTH the answers and the photos have been
+     accounted for, and it is always released in the end: nobody is ever trapped
+     on this screen. */
   const _statusEl = $('#photoUploadStatus');
   const _hasPhotos = Object.keys(PHOTOS).some(k => Array.isArray(PHOTOS[k]) && PHOTOS[k].length);
-  if(_hasPhotos && _continueBtn){
-    _continueBtn.disabled = true;
-    _continueBtn.style.opacity = '.5';
-    _continueBtn.style.cursor = 'not-allowed';
-    _continueBtn.textContent = '⏳ ફોટા save થઈ રહ્યા છે…';
-    if(_statusEl){ _statusEl.style.display = ''; _statusEl.textContent = '📤 ફોટા save થઈ રહ્યા છે — થોડી સેકંડ રાહ જુઓ (Saving photos, please wait)'; }
-    let _photoAckDone = false;
-    const _releaseBtn = (msg) => {
-      if(_photoAckDone) return;
-      _photoAckDone = true;
+  if(_continueBtn){
+    let _answersMsg = '', _photosMsg = '';
+    let _answersDone = false, _photosDone = !_hasPhotos;
+
+    const _paint = () => {
+      if(!_statusEl) return;
+      _statusEl.style.display = '';
+      _statusEl.innerHTML = [_answersMsg, _photosMsg].filter(Boolean).join('<br>');
+    };
+    const _maybeRelease = () => {
+      if(!(_answersDone && _photosDone)) return;
       _continueBtn.disabled = false;
       _continueBtn.style.opacity = '';
       _continueBtn.style.cursor = '';
       _continueBtn.textContent = 'આગળ વધો →';
-      if(_statusEl) _statusEl.textContent = msg;
     };
-    const _photoAckTimer = setTimeout(() => _releaseBtn('ⓘ ફોટા upload ચાલુ છે — connection મળતાં પૂર્ણ થશે.'), 20000);
-    window.addEventListener('message', function _onPhotoAck(ev){
+
+    _continueBtn.disabled = true;
+    _continueBtn.style.opacity = '.5';
+    _continueBtn.style.cursor = 'not-allowed';
+    _continueBtn.textContent = '⏳ સાચવી રહ્યા છીએ…';
+    _answersMsg = '💾 તમારા જવાબો સાચવાઈ રહ્યા છે — આ પેજ ખુલ્લું રાખો (Saving your answers, keep this page open)';
+    if(_hasPhotos) _photosMsg = '📤 ફોટા save થઈ રહ્યા છે (Saving photos)';
+    _paint();
+
+    /* ANSWERS */
+    const _answersTimer = setTimeout(() => {
+      if(_answersDone) return;
+      _answersDone = true;
+      _answersMsg = '⚠ જવાબો હજુ મોકલાયા નથી — સિગ્નલ મળે ત્યાં સુધી આ પેજ ખુલ્લું રાખો (Answers not sent yet — keep this page open)';
+      _paint(); _maybeRelease();
+    }, 25000);
+    window.addEventListener('message', function _onSaved(ev){
       const dd = ev.data;
-      if(!dd || dd.type !== 'photo-upload-result') return;
-      window.removeEventListener('message', _onPhotoAck);
-      clearTimeout(_photoAckTimer);
-      _releaseBtn(dd.ok ? '✓ ફોટા સચવાઈ ગયા' : 'ⓘ ફોટા upload બાકી છે — connection મળતાં પૂર્ણ થશે.');
+      if(!dd || dd.type !== 'enrol-saved') return;
+      window.removeEventListener('message', _onSaved);
+      clearTimeout(_answersTimer);
+      _answersDone = true;
+      _answersMsg = dd.state === 'sent'
+        ? '✓ તમારા જવાબો સચવાઈ ગયા (Your answers are saved)'
+        : (dd.state === 'saved'
+            ? 'ⓘ જવાબો ફોનમાં સચવાયા — સિગ્નલ મળતાં મોકલાશે (Saved on this phone, will send when you have signal)'
+            : '⚠ જવાબો સચવાયા નથી — ફરીથી ભરો અથવા FC ને જણાવો (Not saved — please submit again or tell your FC)');
+      _paint(); _maybeRelease();
     });
+
+    /* PHOTOS - unchanged behaviour, just reported alongside the answers */
+    if(_hasPhotos){
+      const _photoAckTimer = setTimeout(() => {
+        if(_photosDone) return;
+        _photosDone = true;
+        _photosMsg = 'ⓘ ફોટા upload ચાલુ છે — connection મળતાં પૂર્ણ થશે.';
+        _paint(); _maybeRelease();
+      }, 20000);
+      window.addEventListener('message', function _onPhotoAck(ev){
+        const dd = ev.data;
+        if(!dd || dd.type !== 'photo-upload-result') return;
+        window.removeEventListener('message', _onPhotoAck);
+        clearTimeout(_photoAckTimer);
+        _photosDone = true;
+        _photosMsg = dd.ok ? '✓ ફોટા સચવાઈ ગયા' : 'ⓘ ફોટા upload બાકી છે — connection મળતાં પૂર્ણ થશે.';
+        _paint(); _maybeRelease();
+      });
+    }
   }
   if(_continueBtn) _continueBtn.onclick = () => { if(!_continueBtn.disabled) _goDone(); };
 }
@@ -4138,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v241';
+const APP_VERSION = 'v242';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6922,6 +6970,12 @@ const _photoSession = {};   // photoId -> dataURL, this session only (instant lo
 const _photoSessionAt   = {};   // photoId -> when it entered memory
 const _photoUploadedHere = {};  // photoId -> true once its url was written onto the record/form
 const _photoQueuedHere  = {};   // photoId -> true. IDs only, never evicted, a few bytes each
+/* v242 - photos that have permanently given up. Kept apart from
+   _photoQueuedHere because updatePhotoBadge re-seeds that map from the queue on
+   every beat - a retired row stays in the queue by design, so without this it
+   was re-marked "uploading…" microseconds after v241 cleared it, and the office
+   went on waiting for a photo that is not coming. */
+const _photoGaveUp = {};
 /* the two ceilings live with _photoSessionTrim below */
 function _photoSessionPut(photoId, dataUrl){
   if(!photoId || !dataUrl) return;
@@ -7020,8 +7074,12 @@ function photoIsStranded(p){
      have been freed. A photo this session queued is still on its way, whether
      or not its thumbnail is still in memory; only a photo this device never
      took is genuinely stranded on somebody else's phone. */
-  return !!(p && typeof p === 'object' && p.photoId && !p.url && !p.data
-            && !_photoSession[p.photoId] && !_photoQueuedHere[p.photoId]);
+  if(!(p && typeof p === 'object' && p.photoId && !p.url && !p.data)) return false;
+  /* v242 - a photo that has given up is not coming, whatever else is true of
+     it. Checked first, so the answer does not depend on whether this device
+     still happens to be holding its preview. */
+  if(_photoGaveUp[p.photoId]) return true;
+  return !_photoSession[p.photoId] && !_photoQueuedHere[p.photoId];
 }
 function photoPendingPlaceholder(p){
   const stranded = photoIsStranded(p);
@@ -7147,6 +7205,17 @@ async function _uploadQueuedPhoto(it){
      screen until that succeeds. */
   console.warn('[Sristi] photo uploaded but nowhere to record it yet - keeping it queued:', it.photoId);
   it.uploadedUrl = up.url; it.uploadedW = up.w; it.uploadedH = up.h; it.uploadedBytes = up.bytes;
+  /* v242 - this path throws nothing, so flushPhotoQueue's own give-up counter
+     never advanced and a row nothing could ever file was retried on every pump
+     for the rest of the session - rewriting itself to IndexedDB and re-filling
+     the preview cache each time. Count the failures here instead, and retire it
+     the same way a permanently rejected upload is retired. */
+  it.applyFails = (it.applyFails || 0) + 1;
+  if(it.applyFails >= 8){
+    it.tries = 8;                       // retired: flushPhotoQueue skips it from now on
+    _photoGaveUp[it.photoId] = true;    // and it stops claiming to be "uploading…"
+    console.warn('[Sristi] photo has an address but nothing to attach it to - retired:', it.photoId);
+  }
   await idbPut('photoQueue', it).catch(e => _storageTrouble('photoQueue-url', e));
 }
 async function flushPhotoQueue(){
@@ -7169,7 +7238,7 @@ async function flushPhotoQueue(){
        "uploading...". Forgetting that this session queued it lets
        photoIsStranded tell the truth again, so the office stops waiting for
        something that is not coming. The bytes stay in the queue either way. */
-    items.forEach(it => { if((it.tries||0) >= 8) delete _photoQueuedHere[it.photoId]; });
+    items.forEach(it => { if((it.tries||0) >= 8){ delete _photoQueuedHere[it.photoId]; _photoGaveUp[it.photoId] = true; } });
     for(const it of realItems){
       try{
         await _uploadQueuedPhoto(it);
@@ -7347,7 +7416,8 @@ async function updatePhotoBadge(){
   try{
     const keys = await idbKeys('photoQueue');
     n = keys.length;
-    keys.forEach(k => { if(!_photoUploadedHere[k]) _photoQueuedHere[k] = true; });
+    /* v242 - never re-mark one that has given up; that undid the whole point. */
+    keys.forEach(k => { if(!_photoUploadedHere[k] && !_photoGaveUp[k]) _photoQueuedHere[k] = true; });
   }catch(e){}
   _photoQueueCount = n;   /* v232 - the beforeunload guard reads this */
   let el = document.getElementById('photoQueuePill');
@@ -7397,7 +7467,15 @@ let _formQueueCount = 0;
 async function updateUnsentCounts(){
   /* v241 - keys only. idbAll dragged every queued answer sheet (~23 KB each)
      back into memory four times a minute. */
-  try{ _formQueueCount = (await idbKeys('formWrites')).length; }
+  /* v242 - offlineWrites carries the VISIT half of a verification. Counting
+     only formWrites meant the closing warning under-reported exactly the work
+     v241 pushed more of into that queue. */
+  try{
+    const a = await idbKeys('formWrites');
+    let b = [];
+    try{ b = await idbKeys('offlineWrites'); }catch(e2){}
+    _formQueueCount = a.length + b.length;
+  }
   catch(e){ /* cannot read the queue - leave the last known figure alone */ }
 }
 
@@ -7514,7 +7592,30 @@ async function loadForms(farmerId){
   // cloud — authoritative
   if(FB && FB.ready && navigator.onLine){
     try{
-      const snap = await fbRef('forms/'+farmerId).get();
+      /* v242 - a bare .get() here could hang for ever on a link that is up but
+         moving nothing (v216: a Firebase promise does not reject, it never
+         settles). The verification form then never opened at all - and the
+         farmer had already been LOCKED to this coordinator, so for the next
+         thirty minutes nobody else could verify him either. */
+      const _fg = await _fbWriteGuard(fbRef('forms/'+farmerId).get(), 20000);
+      if(_fg.timedOut){
+        console.warn('[Sristi] forms read timed out for', farmerId);
+        /* v242 - _timedOut, NOT _attempted. The drawer and the comparison
+           screen both treat _attempted as "this has been settled, render what
+           we have", so setting it here left that farmer blank for the rest of
+           the session after a single slow moment. Leaving it unset means the
+           next open simply tries again, while the verification guard below
+           still refuses to open a hollow form. */
+        fc._timedOut = true;
+        /* v242 - but still attach whatever this phone already had. Skipping this
+           left a form that WAS cached in IndexedDB unattached to the record, so
+           the verification screen showed 88 blank questions and the new
+           no-answers warning did not fire either - it is gated on _complete.
+           The worst of both. */
+        _attachFormsToRecord(farmerId);
+        return fc;
+      }
+      const snap = _fg.value;
       if(snap.exists()){
         const v = snap.val() || {};
         if(v.enrol) fc.enrol = v.enrol;
@@ -7559,7 +7660,12 @@ async function loadForms(farmerId){
   _attachFormsToRecord(farmerId);
   return fc;
 }
-function setForms(farmerId, kind, data){   // kind: 'enrol' | 'verif'
+/* v242 - `defer` means "the caller will save this itself, right now". Without
+   it the enrolment paths wrote forms/{id} TWICE per submission: once from the
+   queue this function fills, and once from the awaited persistFormsNow that
+   follows - the same 20-50 KB payload, on the slowest connections in the
+   programme. */
+function setForms(farmerId, kind, data, defer){   // kind: 'enrol' | 'verif'
   FORMS_CACHE[farmerId] = FORMS_CACHE[farmerId] || {};
   FORMS_CACHE[farmerId][kind] = data;
   /* v215 - the form just changed, so every other phone holding a copy has to
@@ -7579,7 +7685,7 @@ function setForms(farmerId, kind, data){   // kind: 'enrol' | 'verif'
                    extra: FORMS_CACHE[farmerId].extra||null,
                    rev: FORMS_CACHE[farmerId]._rev || 0, cachedAt: FORMS_CACHE[farmerId]._cachedAt,
                    cropsKey: FORMS_CACHE[farmerId]._cropsKey || ''}).catch(()=>{});
-  persistForms(farmerId);
+  if(!defer) persistForms(farmerId);
 }
 /* v130 — attach a repeat submission to the farmer who already holds the
    phone number, as an additional enrolment form. The farmer record keeps only
@@ -7633,6 +7739,93 @@ function persistForms(farmerId){
       if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e2=>console.warn('forms write:',e2));
     });
 }
+/* v242 - the same write as persistForms, but AWAITED and answered honestly, so
+   a farmer's "Application received" screen can wait for it.
+
+   The public form used to post its answers and show the confirmation in the
+   same instant. The answers had not been saved anywhere at that point - not
+   even to the phone - so a farmer who closed the page on seeing the tick lost
+   them. Eight farmers reached the office as a name with no answer sheet that
+   way, Parmar Ramaji Bhemaji among them.
+
+   Durable first, then the server. Returns 'sent' when the server has it,
+   'saved' when only the phone does, 'lost' when neither worked. */
+/* v242 - wait for the farmer record the enrolment handler is creating, instead
+   of guessing how long it takes. It creates the record after an unguarded
+   network write, so on a slow link it can be seconds - and the answer sheet
+   handler used to give up after 600 ms and silently save nothing. Resolves the
+   moment the record exists; gives up only so nothing can hang for ever. */
+/* v242 - tell the enrolment form's success screen what actually happened. It
+   holds its Continue button until this arrives, so EVERY path that shows that
+   screen must send it - including a staff enrolment and a repeat submission,
+   which otherwise left the person staring at "saving..." for 25 seconds and
+   then a warning that was not true. */
+function _ackEnrolSaved(state){
+  try{
+    const fr = document.getElementById('enrollFrame');
+    if(fr && fr.contentWindow) fr.contentWindow.postMessage({type:'enrol-saved', state:state||'saved'}, '*');
+  }catch(e){}
+}
+/* v242 - in public mode saveDB is deliberately suppressed, so an entry added
+   with logActivity alone dies with the tab - and this is the one message the
+   office most needs. Written straight to the server, the way the duplicate
+   -submission alert already is. */
+function _reportEnrolNotSaved(rec){
+  const txt = '⚠ <b>' + esc((rec && (rec.name || rec.id)) || 'a farmer')
+            + '</b> — the enrolment answers could not be saved on the phone OR the server. Ask the farmer to submit again.';
+  try{ logActivity('alert', txt); }catch(e){}
+  try{
+    if(FB && FB.ready){
+      const id = uid('ACT');
+      fbRef('activity/' + id).set({ id:id, kind:'alert', text:txt, ts:Date.now(),
+        actorName:'Public form', actorId:'', actorRole:'public' }).catch(()=>{});
+    }
+  }catch(e){}
+}
+
+async function _awaitEnrolRecord(ms){
+  const until = Date.now() + (ms || 30000);
+  while(Date.now() < until){
+    const pubId = window._lastPublicAppId;
+    if(pubId && (DB.haatFarmers||[]).some(x => x && x.id === pubId)) return true;
+    const anyId = window._lastNewHaatId;
+    if(!PUBLIC_MODE && anyId && (DB.haatFarmers||[]).some(x => x && x.id === anyId)) return true;
+    await new Promise(r => setTimeout(r, 120));
+  }
+  console.warn('[Sristi] enrolment record never appeared - saving against the newest record instead');
+  return false;
+}
+
+async function persistFormsNow(farmerId, ms){
+  const fc = FORMS_CACHE[farmerId];
+  if(!fc) return 'lost';
+  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
+  let durable = false;
+  const _at = Date.now();
+  try{ await idbPut('formWrites', {key: farmerId, farmerId, payload, at: _at}); durable = true; }
+  catch(e){ _storageTrouble('formWrites-now', e); }
+  updateUnsentCounts();
+  if(!FB || !FB.ready || !navigator.onLine) return durable ? 'saved' : 'lost';
+  try{
+    const g = await _fbWriteGuard(fbRef('forms/'+farmerId).set(payload), ms || 20000);
+    if(g.timedOut) return durable ? 'saved' : 'lost';
+    /* it is on the server - drop the queue row so nothing re-sends it.
+       v242 - but only if it is still OUR row: a newer setForms for the same
+       farmer during the await would have replaced the payload, and deleting
+       that would discard the newer answers. Same rule as fix #41 in
+       flushFormWrites. */
+    if(durable){
+      const cur = await idbGet('formWrites', farmerId).catch(()=>null);
+      if(cur && cur.at === _at) await idbDel('formWrites', farmerId).catch(()=>{});
+    }
+    updateUnsentCounts();
+    return 'sent';
+  }catch(e){
+    console.warn('[Sristi] forms write failed, left queued:', e);
+    return durable ? 'saved' : 'lost';
+  }
+}
+
 /* v241 - the old busy flag and start time are gone; see _queueTake below. */
 /* v239 - this queue is what carries a completed enrolment or verification to
    the server, and it could stop trying for the rest of a session.
@@ -7824,7 +8017,13 @@ async function flushOfflineWrites(){
     const items = await idbAll('offlineWrites').catch(()=>[]);
     for(const it of items){
       try{
-        markLocalTouch(it.col, it.id, 10000);
+        /* v242 - the shield has to outlast the write it is shielding. It was
+           10 seconds while the guarded write below may take 45, so between the
+           two a live snapshot replaced the record with the server copy that
+           does not yet have the replayed visit - the farmer flipped back to
+           "verification pending" on screen, and an FC who re-verified in that
+           window created a second visit. */
+        markLocalTouch(it.col, it.id, _QUEUE_WRITE_MS + 15000);
         /* Anything that is not a farmer record - the verifIndex marker, for
            one - is a single value the device genuinely owns. Unchanged. */
         if(it.col !== 'haatFarmers' && it.col !== 'convFarmers'){
@@ -11017,6 +11216,12 @@ function openConvScoreModal(id){
       ? ('Visit updated · ' + cs.total + '/100 · ' + CONV_SCORE_STATUS[cs.status].label)
       : ('ફોનમાં સેવ થયું · Saved on your phone, will send when you have signal'));
     } catch(e) {
+      /* v242 - release the hold on the failure path too. It was cleared only
+         when the save succeeded, so a failed save left it set for 90 seconds:
+         a "Leave site?" dialog on every navigation, sign-out blocked, and any
+         queued version update held back - all after an action that did not
+         happen. */
+      window._verifBusyUntil = 0;
       saveBtn.disabled = false; saveBtn.textContent = 'Save visit';
       toast('Save failed — please try again.');
     }
@@ -22896,7 +23101,9 @@ window.addEventListener('message',async ev=>{
       // nothing against real data. Block and say so plainly instead of
       // silently opening a hollow form.
       const _fc = FORMS_CACHE[f.id] || {};
-      if(_fc._attempted && !_fc._complete && !_fc.enrol){
+      /* v242 - _timedOut included: a read that hung is exactly the case where
+         the FC must not be handed a form with nothing in it. */
+      if((_fc._attempted || _fc._timedOut) && !_fc._complete && !_fc.enrol){
         toast('⚠ આ ખેડૂતની અરજીની વિગતો આ ડિવાઇસ પર હજુ ડાઉનલોડ થઈ નથી — ઇન્ટરનેટ કનેક્ટ કરી ફરી પ્રયત્ન કરો. (This farmer\'s enrollment details haven\'t downloaded to this device yet — reconnect and try again.) \u00b7 \u0aaa\u0acd\u0ab0\u0acb\u0aab\u0abe\u0a87\u0ab2\u0aae\u0abe\u0a82\u0aa5\u0ac0 \u0a86\u0a97\u0ab3\u0aa5\u0ac0 \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb. (Tip: download your farmers from Profile before you go.)', 'error');
         closeVerificationForm();
         return;
@@ -22911,6 +23118,35 @@ window.addEventListener('message',async ev=>{
          would quietly write derived data back into the farmer's stored form. */
       const claims = (Array.isArray(e.claims) ? e.claims : ((e._full && Array.isArray(e._full.claims)) ? e._full.claims : []))
         .map(c => Object.assign({}, c));
+      /* v242 - the farmer's answers never arrived, and the app looked exactly as
+         it does for a farmer who answered nothing. The coordinator worked down
+         88 blank questions and submitted a verification with nothing to check
+         against - Maheshbhai typed 22 of the farmer's answers into note boxes by
+         hand, because there was nowhere else to put them. Eight farmers are in
+         this state. Only asked when the server was genuinely read (_complete),
+         so a phone that simply has not downloaded yet still gets the clearer
+         message above instead. */
+      const _anyAnswer = claims.some(c => {
+        const a = c && c.answer;
+        return Array.isArray(a) ? a.length > 0 : (a != null && String(a).trim() !== '');
+      });
+      if(!_anyAnswer && _fc._complete){
+        const _go = confirm(
+          '⚠ આ ખેડૂતના પોતાના જવાબ સર્વર પર પહોંચ્યા નથી.\n\n'
+          + 'ચકાસવા માટે અહીં કંઈ નથી — બધા પ્રશ્નો ખાલી દેખાશે. ખેડૂતને ફરીથી ફોર્મ ભરવા કહો, અથવા ઓફિસને જણાવો.\n\n'
+          + 'This farmer’s own answers never reached the server, so there is nothing to check against — every question will be blank.\n'
+          + 'Ask the farmer to fill the form again, or tell the office.\n\n'
+          + 'Open it anyway?'
+        );
+        /* v242 - FAILS OPEN. Chrome returns false from confirm() without ever
+           showing it when the tab is backgrounded or the user has ticked
+           "prevent additional dialogs" - and a verification load can take 20
+           seconds on 2G, which is long enough for a phone to sleep. Treating
+           that silent false as "cancel" would close the form with no
+           explanation. A warned coordinator is better than a blocked one. */
+        if(_go === false && document.visibilityState === 'visible'){ closeVerificationForm(); return; }
+        logActivity('alert','⚠ <b>'+esc(f.name||f.id)+'</b> — verification opened with NO farmer answers on file');
+      }
       /* v228 - District / Taluka / Village / Pincode read "Not answered" on
          every form, because the enrolment writes those four to separate answer
          keys and never composed them into this question's own answer. Fixed in
@@ -23060,8 +23296,21 @@ window.addEventListener('message',async ev=>{
   if(d.type==='kisan-haat-full' && d.data){
     /* attach to the most recently created haat farmer (last one in array,
        since the kisan-haat-enrollment message above pushes the record).
-       This is best-effort; for a more robust mapping use an explicit ID. */
-    setTimeout(async ()=>{
+       This is best-effort; for a more robust mapping use an explicit ID.
+
+       ⛔ v242 - THIS IS WHERE THE EIGHT LOST ANSWER SHEETS WENT.
+       It used to be a flat setTimeout(600). The handler that creates the farmer
+       record runs `await claimPhoneForPublic(...)`, which is an UNGUARDED
+       network write to phoneIndex - on 2G that takes well over 600 ms. This
+       callback then fired first, `window._lastPublicAppId` was still unset,
+       `rec` came back undefined, and the whole branch simply RETURNED: setForms
+       was never called, nothing was queued, nothing was written anywhere. The
+       record appeared moments later, which is exactly what the office saw - a
+       farmer with a name and no answers, and no submission stamp on the record
+       because the line that writes it is inside that branch.
+       Waiting for the record to actually exist, instead of guessing how long it
+       takes, is the fix. Everything below is unchanged. */
+    _awaitEnrolRecord(30000).then(async ()=>{
       // v9 Batch 1 — public mode: attach to the haatFarmer we just auto-promoted
       // above (no more pendingEnrolments queue).
       if(PUBLIC_MODE){
@@ -23072,7 +23321,26 @@ window.addEventListener('message',async ev=>{
           // to forms/{id}; the record itself stays lean.
           const _photoIds = [];
           await extractPhotos(d.data, {program:'haat', farmerId: rec.id}, _photoIds);
-          setForms(rec.id, 'enrol', d.data);
+          setForms(rec.id, 'enrol', d.data, true);   /* v242 - persistFormsNow saves it, once */
+          /* v242 - START THE PHOTOS FIRST, and do not wait for them here. The
+             farmer's screen runs its own 20-second timer for photos and 25 for
+             answers, both from the moment it appears. Saving the answers first
+             and only then starting the photos ate the photo budget whole on a
+             slow link: the photo timer expired before a single upload had
+             begun, the button was released, and the farmer closed the tab -
+             which is precisely how photos end up stranded on a phone. Both now
+             run at once, so each gets its own full budget. */
+          const _photoPromise = _flushAndAckEnrollPhotos(_photoIds).catch(e => {
+            console.warn('[Sristi] enrolment photo flush:', e);
+          });
+          /* v242 - and now WAIT for the answers, then tell the farmer's screen
+             the truth. setForms queues the write and returns immediately; the
+             confirmation used to appear in that same instant. */
+          let _enrolSaved = 'lost';
+          try{ _enrolSaved = await persistFormsNow(rec.id, 20000); }
+          catch(e){ console.warn('[Sristi] enrolment save:', e); }
+          _ackEnrolSaved(_enrolSaved);
+          if(_enrolSaved === 'lost') _reportEnrolNotSaved(rec);
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
           const cropsClaim = claims.find(c => c.id === 'crops_table');
@@ -23088,10 +23356,15 @@ window.addEventListener('message',async ev=>{
             rec.crops = plotCropsToNameRows(plotClaim.answer).map(r => r.name);
           }
           if(FB && FB.ready){
-            try { await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))); } catch(e) { console.warn('haatFarmer full update:',e); }
+            /* v242 - guarded. This was the last bare Firebase await on the
+               public path: with no signal it never settles and never rejects,
+               so everything after it - including the photo flush that used to
+               live below - simply never ran. */
+            try { await _fbWriteGuard(fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))), 20000); }
+            catch(e) { console.warn('haatFarmer full update:',e); }
           }
           cacheLocal();
-          await _flushAndAckEnrollPhotos(_photoIds);
+          await _photoPromise;   /* v242 - started above, awaited here */
         }
         return;
       }
@@ -23106,7 +23379,16 @@ window.addEventListener('message',async ev=>{
         // v11 — photos to upload queue, form text to forms/{id}.
         const _photoIds = [];
         await extractPhotos(d.data, {program:'haat', farmerId: last.id}, _photoIds);
-        setForms(last.id, 'enrol', d.data);
+        setForms(last.id, 'enrol', d.data, true);   /* v242 - saved once, just below */
+        /* v242 - a coordinator or admin enrolling in person reaches this same
+           success screen, and it now waits for an answer. Without this the
+           button sat disabled for 25 seconds and then warned that nothing had
+           been saved, on every single staff enrolment, when it had saved fine. */
+        let _staffSaved = 'lost';
+        try{ _staffSaved = await persistFormsNow(last.id, 20000); }
+        catch(e){ console.warn('[Sristi] enrolment save:', e); }
+        _ackEnrolSaved(_staffSaved);
+        if(_staffSaved === 'lost') _reportEnrolNotSaved(last);
         last.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
         /* v6 - populate legacy f.crops from v5 crops_table claim so the Haat
            Farmers table CROPS column renders names. Also seed cropHistory[0]
@@ -23152,7 +23434,7 @@ window.addEventListener('message',async ev=>{
         await saveDB(true);
         await _flushAndAckEnrollPhotos(_photoIds);
       }
-    }, 600);
+    });
     return;
   }
   if(d.type==='farm-verification-full' && d.data && _verifyTargetId){
@@ -23288,6 +23570,11 @@ window.addEventListener('message',async ev=>{
              district:f.district||'', phone:f.mobile},
             d, _exRef2, 'identical_resend'));
           logActivity('alert', `Identical repeat submission from <b>${esc(name)}</b> (${esc(f.mobile)}) — same form sent twice. Kept in Needs attention.`);
+          /* v242 - this submission IS kept (in Needs attention), and the
+             farmer sees the normal thank-you - so the success screen must be
+             released. Without this it waited 25 seconds and then told them
+             their answers had not been saved, which was not true. */
+          _ackEnrolSaved('sent');
           window._pfLastApp = { name, village: f.village||'', district: f.district||'',
                                 taluka: talukaDisplayName(f.taluka,f.district)||'',
                                 phone: f.mobile, id: '' };
@@ -23311,6 +23598,10 @@ window.addEventListener('message',async ev=>{
           cacheLocal();
           // Their own details, not the existing farmer's — see the matching
           // note in the conversion form.
+          /* v242 - the submission is kept in Needs attention and the farmer
+             sees the thank-you, so release the success screen rather than
+             leaving it waiting on an answer that never comes. */
+          _ackEnrolSaved('sent');
           window._pfLastApp = { name, village: f.village||'', district: f.district||'',
                                 taluka: talukaDisplayName(f.taluka,f.district)||'',
                                 phone: f.mobile, _duplicate: true };
@@ -24183,9 +24474,20 @@ window.addEventListener('message',async ev=>{
            offline fallback never queued either. Three farmers carry exactly that
            fingerprint - form on the server, row untouched. Awaiting it means the
            queue-on-failure actually gets a chance to run. */
-        const _vSynced = await saveDB(true);
-        window._lastVerifSynced = !!_vSynced;
+        /* v242 - saveDB returns TRUE when Firebase never initialised at all
+           (its own early exit sets the pill to "local" and reports success), so
+           a launch where Firebase failed produced "Verification sent", queued
+           no durable copy, and wrote no verifIndex marker. Nothing had left the
+           phone. Treat "never connected" as not sent, which turns every
+           fallback below back on. */
+        const _saved = await saveDB(true);
+        const _vSynced = !!_saved && !!(FB && FB.ready);
+        window._lastVerifSynced = _vSynced;
+        /* v242 - did the emergency copy actually get stored? The draft below is
+           cleared on the strength of it. */
+        let _durableOk = true;
         if(!_vSynced){
+          _durableOk = false;
           /* v218 - name what this verification actually changed, so the replay
              cannot carry a stale copy of anything else (an onboarding decided
              while this sat in the queue, above all). */
@@ -24193,7 +24495,9 @@ window.addEventListener('message',async ev=>{
                                          at: Date.now(),
                                          fields: ['verificationFormSubmittedAt','visits','stage','verificationLock','formsRev'],
                                          rec:sanitizeForFB(_stripEphemeral(f))})
-            .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); });
+            .then(() => { _durableOk = true; })
+            .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office');
+                          _storageTrouble('offlineWrites-verif', e); });
           /* v216 - and make the durable marker actually durable. verifIndex is
              not in SYNC_COLS, so saveDB never carries it; markVerificationSubmitted
              writes it straight to Firebase, which offline means it lives only in
@@ -24222,10 +24526,20 @@ window.addEventListener('message',async ev=>{
           /* Only a fresh verification ever had a draft. Clearing on an edit
              would delete a DIFFERENT, still-unfinished verification of the
              same farmer sitting on this phone. */
-          if(_verifDraftsOn()){
+          /* ⛔ v242 - and ONLY once something durable actually holds this work.
+             The draft was cleared unconditionally: if the phone was too short of
+             memory to store the emergency copy - the very case _storageTrouble
+             exists to warn about - the coordinator's ninety answers were deleted
+             from the one place still holding them. Keeping the draft costs a
+             restore prompt on the next open; clearing it wrongly costs the
+             visit. */
+          if(_verifDraftsOn() && (_vSynced || _durableOk)){
             window._draftDone = window._draftDone || {};
             window._draftDone['verif|' + f.id + '|new'] = true;
             draftClear('verif', f.id, 'new');
+          } else if(_verifDraftsOn()){
+            console.warn('[Sristi] v242 - keeping the draft: nothing durable holds this verification yet');
+            logActivity('alert','⚠ Verification for <b>'+esc(f.name)+'</b> is not saved anywhere yet — the draft has been kept on the phone');
           }
         }catch(e){ console.warn('[Sristi] v219 draft clear:', e); }
         window._verifyEditing = null;   /* v211 - one edit, one save */
@@ -24234,9 +24548,16 @@ window.addEventListener('message',async ev=>{
            a version update queued earlier fired 2.5s later straight through a
            dozen in-flight uploads and stranded them. */
         window._verifBusyUntil = Date.now() + 45000;
+        const _burstTok = (window._verifBurstTok = (window._verifBurstTok || 0) + 1);
         Promise.resolve(_sendVerifPhotosNow(_vPhotoIds))   /* v232 */
           .catch(function(){})
-          .then(function(){ window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync(); });
+          .then(function(){
+            /* v242 - only clear OUR hold. A long burst finishing after the next
+               verification has started would otherwise strip that one's guard
+               at the moment it needs it. */
+            if(window._verifBurstTok !== _burstTok) return;
+            window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync();
+          });
         if(typeof updateFcSync==='function') updateFcSync();
         if(typeof render==='function') render();
         return;
@@ -24284,9 +24605,13 @@ window.addEventListener('message',async ev=>{
       /* v241 - see the note at the other submit site: the guard is held across
          the photo burst so a queued reload cannot cut through it. */
       window._verifBusyUntil = Date.now() + 45000;
+      const _burstTok2 = (window._verifBurstTok = (window._verifBurstTok || 0) + 1);
       Promise.resolve(_sendVerifPhotosNow(_vPhotoIds))   /* v232 */
         .catch(function(){})
-        .then(function(){ window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync(); });
+        .then(function(){
+          if(window._verifBurstTok !== _burstTok2) return;   /* v242 - see the other site */
+          window._verifBusyUntil = 0; if(typeof updateFcSync==='function') updateFcSync();
+        });
       updateFcSync();
     }
   }

@@ -4138,7 +4138,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v239';
+const APP_VERSION = 'v240';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6893,6 +6893,52 @@ window._runPendingReload = function(){
    Legacy: plain dataURL string, or {name, type, data: dataURL}.
    v11:    {photoId, url, w, h} after upload; {photoId, pending:true} while queued. */
 const _photoSession = {};   // photoId -> dataURL, this session only (instant local thumbs)
+/* v240 - this map used to grow all day and was only ever emptied by reloading
+   the app. Every photo a coordinator took stayed in the page as a second copy
+   on top of the one in IndexedDB: four visits at 8-18 photos is roughly 6-14 MB
+   of strings, on top of 1,700 farmer records and an open form. That is what
+   produced "Unable to complete previous operation due to low memory" on a
+   coordinator's phone - and when Chrome is short of memory it fails IndexedDB
+   first, which is exactly the store holding the form and photos that have not
+   been sent yet. Hence "Sending..." for ever.
+
+   ⛔ NO PHOTO IS DELETED HERE. These bytes are a THUMBNAIL CACHE. Every photo
+   also lives in the IndexedDB upload queue until it is uploaded, and on
+   Cloudinary afterwards; this map is only consulted by photoSrc() when a photo
+   has neither a url nor inline data. Dropping an entry can at worst cost a
+   preview, never an image.
+
+   Two things make that safe:
+     - an uploaded photo is evicted first, because photoSrc() reads its url and
+       never looks here at all;
+     - `_photoQueuedHere` remembers the IDs this session queued, so
+       photoIsStranded() keeps telling the truth after the bytes are gone.
+       Without it, freeing memory would relabel a photo that is still uploading
+       as "not uploaded" - alarming, and wrong. */
+const _photoSessionAt   = {};   // photoId -> when it entered memory
+const _photoUploadedHere = {};  // photoId -> true once its url was written onto the record/form
+const _photoQueuedHere  = {};   // photoId -> true. IDs only, never evicted, a few bytes each
+const _PHOTO_SESSION_KEEP = 8;  // ~1.6 MB of previews, instead of a whole day of them
+function _photoSessionPut(photoId, dataUrl){
+  if(!photoId || !dataUrl) return;
+  _photoSession[photoId] = dataUrl;
+  _photoSessionAt[photoId] = Date.now();
+  _photoSessionTrim();
+}
+function _photoSessionTrim(){
+  const ids = Object.keys(_photoSession);
+  if(ids.length <= _PHOTO_SESSION_KEEP) return;
+  ids.sort(function(a, b){
+    /* already uploaded goes first - those render from their url */
+    const ua = _photoUploadedHere[a] ? 1 : 0, ub = _photoUploadedHere[b] ? 1 : 0;
+    if(ua !== ub) return ub - ua;
+    return (_photoSessionAt[a] || 0) - (_photoSessionAt[b] || 0);   // then oldest
+  });
+  ids.slice(0, ids.length - _PHOTO_SESSION_KEEP).forEach(function(id){
+    delete _photoSession[id];
+    delete _photoSessionAt[id];
+  });
+}
 /* v109 SECURITY — photo values come from farmer-submitted form payloads
    (forms/{id}.enrol.photos), which any visitor can write until the RTDB rules
    are tightened. photoSrc()'s return value is interpolated straight into
@@ -6951,7 +6997,12 @@ function photoThumb(p, w){
    Lalasinh Chandubhai Padiyar's verification has 11 photos uploaded and 10
    in this state. Display only; the stored entries are untouched. */
 function photoIsStranded(p){
-  return !!(p && typeof p === 'object' && p.photoId && !p.url && !p.data && !_photoSession[p.photoId]);
+  /* v240 - `_photoQueuedHere` is what keeps this honest once the preview bytes
+     have been freed. A photo this session queued is still on its way, whether
+     or not its thumbnail is still in memory; only a photo this device never
+     took is genuinely stranded on somebody else's phone. */
+  return !!(p && typeof p === 'object' && p.photoId && !p.url && !p.data
+            && !_photoSession[p.photoId] && !_photoQueuedHere[p.photoId]);
 }
 function photoPendingPlaceholder(p){
   const stranded = photoIsStranded(p);
@@ -7017,7 +7068,10 @@ async function extractPhotos(payload, ctx, outIds){
         program: ctx.program || 'haat', farmerId: ctx.farmerId || '',
         createdAt: new Date().toISOString(), tries: 0,
       });
-      _photoSession[photoId] = compressed;
+      /* v240 - through the capped cache, and remember the id permanently so
+         "still uploading" stays accurate after the preview is freed. */
+      _photoSessionPut(photoId, compressed);
+      _photoQueuedHere[photoId] = true;
       leaf.photoId = photoId;
       leaf.pending = true;
       delete leaf.data;
@@ -7046,9 +7100,15 @@ let _photoFlushLastErr = '';
 async function _uploadQueuedPhoto(it){
   const up = await cloudinaryUpload(it.dataUrl, 'sristi/' + (it.farmerId || 'misc'));
   const repl = { photoId: it.photoId, url: up.url, w: up.w, h: up.h, bytes: up.bytes, name: it.name || '' };
-  _photoSession[it.photoId] = _photoSession[it.photoId] || it.dataUrl;
-  applyPhotoUrl(it, repl);
+  /* Kept for the instant between the upload landing and the screen re-reading
+     the photo, and for any copy applyPhotoUrl could not reach. */
+  if(!_photoSession[it.photoId]) _photoSessionPut(it.photoId, it.dataUrl);
+  const applied = applyPhotoUrl(it, repl);
   await idbDel('photoQueue', it.photoId);
+  /* v240 - the url is now on the record and/or the form, so photoSrc() will
+     read that and never consult the cache for this photo again. Marking it
+     lets the trim drop it before it drops anything still waiting to upload. */
+  if(applied){ _photoUploadedHere[it.photoId] = true; _photoSessionTrim(); }
 }
 async function flushPhotoQueue(){
   if(_photoFlushBusy) return;
@@ -7212,6 +7272,10 @@ function applyPhotoUrl(it, repl){
   }
   if(recTouched) saveDB(true);
   else if(formTouched) cacheLocal();
+  /* v240 - say whether the url actually landed anywhere. The caller only frees
+     this photo's preview bytes when it did; if nothing here could be reached,
+     the preview is the last copy on screen and must stay. */
+  return recTouched || formTouched;
 }
 async function updatePhotoBadge(){
   let n = 0;

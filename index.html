@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v242';
+const APP_VERSION = 'v243';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13759,7 +13759,7 @@ function viewHaat(){
 
   /* ---- clickable pipeline strip — same simplified 4-step flow as the Dashboard ---- */
   let h=journeyBoxesHtml(hs,'filter',F.status);
-  h+=dateRangePillsHtml(F.dateRange);
+  h+=dateRangePillsHtml(F.dateRange, F.status);
 
   /* ---- secondary filters (district added; field coordinator dropped) ---- */
   const haatDistricts=[...new Set(DB.haatFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
@@ -13813,7 +13813,8 @@ function viewHaat(){
      if there is one, otherwise the district's. "No coordinator" means neither. */
   if(F.fc==='__none__') rows=rows.filter(r=>!farmerFcInfo(r).fc);
   else if(F.fc) rows=rows.filter(r=>{const i=farmerFcInfo(r); return i.fc && i.fc.id===F.fc;});
-  if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
+  /* v243 - judged on the date that matches the stage being shown */
+  if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerStageTs(r,F.status)));
 
   if(F.active==='1') rows=rows.filter(r=>r.status==='green'&&r.active);
   if(F.active==='0') rows=rows.filter(r=>r.status==='green'&&!r.active);
@@ -13974,6 +13975,33 @@ function farmerLatestTs(f){
   }
   return 0;
 }
+/* v243 - the date range has to mean the same thing as the list it is filtering.
+
+   It always used farmerLatestTs, which despite the name returns the FIRST of
+   submittedAt / enrollmentFormSubmittedAt / ... - in practice the ENROLMENT
+   date, for 510 of 516 farmers. So "Onboarded · last 7 days" asked "who
+   applied in the last 7 days AND is onboarded", not "who was onboarded in the
+   last 7 days". Sejalkumar Kanubhai Patel was onboarded on 2 September and the
+   filter judged him on 27 July - the day he applied - so he did not appear.
+
+   Every decided farmer carries decisionAt, and every verified one carries
+   verificationFormSubmittedAt, so the right date is always there to use. */
+function farmerStageTs(f, status){
+  const p = v => { const t = Date.parse(v); return isNaN(t) ? 0 : t; };
+  if(status === 'verified')                                   /* waiting for approval */
+    return p(f.verificationFormSubmittedAt) || farmerLatestTs(f);
+  if(status === 'green' || status === 'yellow' || status === 'red')   /* decided */
+    return p(f.decisionAt) || p(f.verificationFormSubmittedAt) || farmerLatestTs(f);
+  return farmerLatestTs(f);                                   /* applied / awaiting a visit */
+}
+/* What the pills are actually measuring, so the label can say so. */
+function dateRangeLabel(status){
+  if(status === 'verified') return '📅 Verified';
+  if(status === 'green')  return '📅 Onboarded';
+  if(status === 'yellow') return '📅 Put on hold';
+  if(status === 'red')    return '📅 Rejected';
+  return '📅 Submitted';
+}
 function farmerJoinedLabel(f){
   const ts=farmerLatestTs(f);
   if(!ts) return '—';
@@ -13995,7 +14023,7 @@ function inDateRange(D,ts){
   const ms={today:86400000,'7d':7*86400000,'30d':30*86400000};
   return ts >= (Date.now() - (ms[D.preset] || ms['30d']));
 }
-function dateRangePillsHtml(D){
+function dateRangePillsHtml(D, status){
   const opts=[['today','Today'],['7d','7 days'],['30d','30 days'],['all','All time'],['custom','Custom']];
   const pills=opts.map(([k,lbl])=>`<button class="chip ${D.preset===k?'on':''}" data-dpreset="${k}" style="font-size:12px">${lbl}</button>`).join('');
   const customInputs=D.preset==='custom'
@@ -14004,7 +14032,7 @@ function dateRangePillsHtml(D){
        <input type="date" id="drTo" value="${esc(D.to||'')}" style="font-size:12px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:6px">`
     : '';
   return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;margin-bottom:14px">
-    <span style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em">📅 Submitted</span>
+    <span style="font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em">${dateRangeLabel(status)}</span>
     ${pills}
     ${customInputs}
   </div>`;
@@ -14701,7 +14729,7 @@ function viewConversion(){
   const F=FILTERS.conv;
   if(!F.dateRange) F.dateRange={preset:'all',from:'',to:''};
   let h=convFunnelHtml(cs,F.status,F.notInterested);
-  h+=dateRangePillsHtml(F.dateRange);
+  h+=dateRangePillsHtml(F.dateRange);   /* v243 - "Submitted", as before */
   const convDistricts=[...new Set(DB.convFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="cState"><option value="">All states</option>
@@ -14739,6 +14767,10 @@ function viewConversion(){
   /* v220 */
   if(F.juth==='__none__') rows=rows.filter(r=>!String(r.juth||'').trim());
   else if(F.juth) rows=rows.filter(r=>String(r.juth||'')===F.juth);
+  /* v243 - judged on the date that matches the stage being shown */
+  /* v243 - conversion keeps the enrolment date: its green/yellow/red mean
+     adopted / in progress / not chemical-free, not a decision the office made,
+     and there is no decision date to filter on. */
   if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
   if(window._q){const q=window._q.toLowerCase();
     rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q));}

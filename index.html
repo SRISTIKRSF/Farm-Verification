@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v245';
+const APP_VERSION = 'v246';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -11665,6 +11665,10 @@ function countedHaatVisits(){
     if(!f || f._archived) return;
     (Array.isArray(f.visits) ? f.visits : []).forEach(v => {
       if(!v || !v.date || isImportedVisit(v)) return;
+      /* v246 - an earlier entry the same coordinator replaced on the same day.
+         It stays on the record and stays visible; it just is not a second
+         field visit. Three farmers were counted twice before this. */
+      if(v._superseded) return;
       out.push({ f: f, v: v, fcId: visitCoordinatorId(v) });
     });
   });
@@ -12079,6 +12083,8 @@ function openFcRefModal(program, id){
       return `<div class="tl-item"><div class="tl-card">
         <div class="tl-date">${esc(fmtDate(vis.date||''))}${vis.time?' · '+esc(vis.time):''}</div>
         <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${vis.score!=null?' · Score '+vis.score:''}</div>
+        ${vis._superseded ? `<div style="margin-top:5px;font-size:11px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 6px 6px 0;padding:5px 9px;line-height:1.45">
+          \u21bb <b>Replaced later the same day</b> by the same coordinator, so it is not counted as a second visit \u2014 kept here so you can still read it.</div>` : ''}
         ${_verifEditLogHtml(vis, {farmerId: f.id})}
       </div></div>`;
     }).join('') + '</div>';
@@ -24618,10 +24624,20 @@ window.addEventListener('message',async ev=>{
                     && String(x.v.recordedById || x.v.fc || '') === _meId;
               });
             if(_mine.length){
-              const _prev = _mine[_mine.length - 1];
-              f.visits[_prev.i] = stamp(_vFields);
-              logActivity('visit', 'Verification for <b>' + esc(f.name) + '</b> replaced today\u2019s earlier '
-                + 'entry by the same coordinator \u2014 kept as one visit');
+              /* ⛔ v246 - MARK THE EARLIER ONE, DO NOT REPLACE IT. v245 kept the
+                 newer entry, and Sarvdaman Patel is the proof that newer is not
+                 better: his first entry scored 50 with 18 questions verified and
+                 a real comment, and the resubmit 63 seconds later scored 0 with
+                 everything marked "does not apply". The app cannot tell a
+                 correction from an accident, so it must not throw either away.
+                 Both rows stay and remain visible; only one is counted. */
+              _mine.forEach(function(x){
+                f.visits[x.i]._superseded = true;
+                f.visits[x.i]._supersededAt = new Date().toISOString();
+              });
+              f.visits.push(stamp(_vFields));
+              logActivity('visit', 'Second verification for <b>' + esc(f.name) + '</b> on the same day by the '
+                + 'same coordinator \u2014 the earlier one is kept on the record but no longer counted');
             } else {
               const _others = (f.visits || []).filter(function(v){
                 return v && v.claimVerifications && v.date === _vDate

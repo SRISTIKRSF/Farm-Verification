@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v244';
+const APP_VERSION = 'v245';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24598,7 +24598,41 @@ window.addEventListener('message',async ev=>{
               f.visits.push(stamp(_vFields));
             }
           } else {
-            f.visits.push(stamp(_vFields));
+            /* ⛔ v245 - ONE VISIT PER FARMER PER DAY PER COORDINATOR.
+               A coordinator who re-opens a farmer they already submitted today
+               - a correction, a double tap, a resend after a bad connection -
+               used to add a SECOND visit row. Both then counted everywhere,
+               because countedHaatVisits (v227) counts every dated visit and has
+               nothing to dedupe on. Three farmers are in that state right now,
+               Sarvdaman Patel among them - the same pair the v227 investigation
+               tripped over.
+               Same day AND same person is one visit: the newer one replaces the
+               older, which is what a redo means. A DIFFERENT coordinator on the
+               same day is left alone and flagged - two people really did visit,
+               and that needs a human, not a merge. */
+            const _vDate = _vFields.date;
+            const _meId  = String((actor() || {}).id || '');
+            const _mine  = (f.visits || []).map(function(v, i){ return {v: v, i: i}; })
+              .filter(function(x){
+                return x.v && x.v.claimVerifications && x.v.date === _vDate
+                    && String(x.v.recordedById || x.v.fc || '') === _meId;
+              });
+            if(_mine.length){
+              const _prev = _mine[_mine.length - 1];
+              f.visits[_prev.i] = stamp(_vFields);
+              logActivity('visit', 'Verification for <b>' + esc(f.name) + '</b> replaced today\u2019s earlier '
+                + 'entry by the same coordinator \u2014 kept as one visit');
+            } else {
+              const _others = (f.visits || []).filter(function(v){
+                return v && v.claimVerifications && v.date === _vDate
+                    && String(v.recordedById || v.fc || '') !== _meId;
+              });
+              if(_others.length){
+                logActivity('alert', '\u26a0 <b>' + esc(f.name) + '</b> now has ' + (_others.length + 1)
+                  + ' visits on ' + esc(_vDate) + ' by different coordinators \u2014 both kept, please check which is right');
+              }
+              f.visits.push(stamp(_vFields));
+            }
           }
         }
         // v9 process-fix #38 — only advance to "verified" if the FC actually

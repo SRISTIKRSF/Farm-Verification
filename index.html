@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v247';
+const APP_VERSION = 'v248';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4292,7 +4292,11 @@ async function fcPendingTotal(){
      and the durable queue holds the same col/id. Adding the two counted one
      visit as two things waiting. Count distinct keys. */
   const keys = new Set();
-  try{ photos=(await idbAll('photoQueue')).length; }catch(e){}
+  /* \u26d4 v248 - KEYS, NOT ROWS. This runs every 30-40s in the pump, on the
+     phone with the backlog. idbAll read every queued photo's base64 back into
+     memory just to count them - 15 MB twice a minute on the phone holding 76.
+     Same fix v241 made to updatePhotoBadge; this counter was missed. */
+  try{ photos=(await idbKeys('photoQueue')).length; }catch(e){}
   try{ (await idbAll('offlineWrites')).forEach(x=>{ if(x && x.key) keys.add(String(x.key)); }); }catch(e){}
   try{ forms =(await idbAll('formWrites')).length; }catch(e){}
   try{ _readPendingSync().forEach(k=>keys.add(String(k))); }catch(e){}
@@ -21042,7 +21046,7 @@ function viewSettings(){
     </div>`;
     v.innerHTML = h;
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
-    idbAll('photoQueue').then(items=>{
+    idbKeys('photoQueue').then(items=>{        /* v248 - count, don't load */
       const el = document.getElementById('cldQueueInfo');
       if(el) el.innerHTML = items.length
         ? '📤 <b>'+items.length+'</b> photo'+(items.length===1?'':'s')+' on this device waiting to upload'+(ok?' (uploads run automatically).':' — they upload as soon as Cloudinary is connected.')

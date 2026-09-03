@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v243';
+const APP_VERSION = 'v244';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5354,7 +5354,19 @@ function normaliseDB(d){
       ['chemicalFree','demarcation','composting','vermicompost','jeevamrut','bioPesticide','seedTreatment','mulching']
         .forEach(k=>{ f.practices[k]={status:'not_started',lastUpdated:'',byFc:''}; });
     }
-    if(!Array.isArray(f.visits)) f.visits=[];
+    /* ⛔ v244 - CONVERT, never discard. Firebase hands a sparse array back as
+       an OBJECT keyed by index, and this line then replaced the farmer's whole
+       visit history with an empty list - on live server data, because
+       _processLiveSnapshot runs cloudToDB on every snapshot. The v126 union
+       that exists to put missing visits back is disabled by the same shape (it
+       tests Array.isArray on the server copy), so nothing would have restored
+       them and the next save would have pushed the emptied list. */
+    if(!Array.isArray(f.visits)){
+      f.visits = (f.visits && typeof f.visits === 'object')
+        ? Object.keys(f.visits).sort(function(a,b){return Number(a)-Number(b);})
+            .map(function(k){return f.visits[k];}).filter(Boolean)
+        : [];
+    }
     if(!Array.isArray(f.observations)) f.observations=[];
     if(!('chemFreeFlag' in f)) f.chemFreeFlag=true;
     if(!('lastVisitAt' in f)) f.lastVisitAt='';
@@ -5371,7 +5383,19 @@ function normaliseDB(d){
   // crash on a missing `visits` or `crops` field.
   d.haatFarmers.forEach(f=>{
     if(!f) return;
-    if(!Array.isArray(f.visits)) f.visits=[];
+    /* ⛔ v244 - CONVERT, never discard. Firebase hands a sparse array back as
+       an OBJECT keyed by index, and this line then replaced the farmer's whole
+       visit history with an empty list - on live server data, because
+       _processLiveSnapshot runs cloudToDB on every snapshot. The v126 union
+       that exists to put missing visits back is disabled by the same shape (it
+       tests Array.isArray on the server copy), so nothing would have restored
+       them and the next save would have pushed the emptied list. */
+    if(!Array.isArray(f.visits)){
+      f.visits = (f.visits && typeof f.visits === 'object')
+        ? Object.keys(f.visits).sort(function(a,b){return Number(a)-Number(b);})
+            .map(function(k){return f.visits[k];}).filter(Boolean)
+        : [];
+    }
     if(!Array.isArray(f.crops)) f.crops=[];
     if(!('haat' in f)) f.haat='';
     if(!('fcId' in f)) f.fcId='';
@@ -6611,8 +6635,23 @@ function idbOpen(){
       if(!db.objectStoreNames.contains('pendingEnrolments'))  db.createObjectStore('pendingEnrolments',  {keyPath:'id'});
       if(!db.objectStoreNames.contains('offlineWrites'))      db.createObjectStore('offlineWrites',      {keyPath:'key'});
     };
-    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
-    req.onerror = () => reject(req.error);
+    /* v244 - a wedged profile or another tab holding a versionchange makes
+       indexedDB.open() HANG rather than fail. Every durable store in the app
+       goes through here, so a hang leaves every queue's promise pending for
+       ever: the photo queue's busy flag has no watchdog and never clears, and
+       the other two re-take a token every 90 seconds only to hang again. The
+       draft store has been guarded this way since v219 with the same note -
+       this one was missed. Rejecting lets the callers take their own fallback
+       paths, which all exist. */
+    let _settled = false;
+    const _t = setTimeout(() => {
+      if(_settled) return;
+      _settled = true;
+      console.warn('[Sristi] IndexedDB did not open within 5s - treating it as unavailable');
+      reject(new Error('idb open timed out'));
+    }, 5000);
+    req.onsuccess = () => { if(_settled) return; _settled = true; clearTimeout(_t); _idb = req.result; resolve(_idb); };
+    req.onerror = () => { if(_settled) return; _settled = true; clearTimeout(_t); reject(req.error); };
   });
 }
 function idbPut(store, val){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
@@ -7185,7 +7224,20 @@ async function _uploadQueuedPhoto(it){
   /* Kept for the instant between the upload landing and the screen re-reading
      the photo, and for any copy applyPhotoUrl could not reach. */
   if(!_photoSession[it.photoId]) _photoSessionPut(it.photoId, it.dataUrl);
-  const applied = applyPhotoUrl(it, repl);
+  let applied = applyPhotoUrl(it, repl);
+  /* ⛔ v244 - THE SESSION THAT QUEUES A PHOTO IS RARELY THE SESSION THAT SENDS
+     IT. A verification's photos live inside the FORM, not on the farmer record
+     (the record keeps only a count), and FORMS_CACHE starts EMPTY at every
+     boot. So after any reload - which is the normal case for a coordinator who
+     submits and closes the app - the upload succeeded and then had nowhere to
+     write the address, every time. v242 then made it permanent by retiring the
+     photo after eight such attempts.
+     Load the answer sheet and try again. loadForms reads this phone's own copy
+     first, so in the ordinary case it costs nothing. */
+  if(!applied && it.farmerId && !(FORMS_CACHE[it.farmerId] && (FORMS_CACHE[it.farmerId].enrol || FORMS_CACHE[it.farmerId].verif))){
+    try{ await loadForms(it.farmerId); applied = applyPhotoUrl(it, repl); }
+    catch(e){ console.warn('[Sristi] could not load the form to attach a photo:', e); }
+  }
   if(applied){
     /* The url is now on the record and/or the form, so photoSrc() reads that and
        never consults the preview cache for this photo again. */
@@ -7215,6 +7267,13 @@ async function _uploadQueuedPhoto(it){
     it.tries = 8;                       // retired: flushPhotoQueue skips it from now on
     _photoGaveUp[it.photoId] = true;    // and it stops claiming to be "uploading…"
     console.warn('[Sristi] photo has an address but nothing to attach it to - retired:', it.photoId);
+    /* v244 - and SAY SO, with the address, so the photo is recoverable by hand
+       rather than sitting on the photo service under a name nobody has. The
+       bytes also stay in the queue; nothing here deletes anything. */
+    try{
+      logActivity('alert', '⚠ A photo for farmer <b>' + esc(it.farmerId || '?') + '</b> uploaded but could not be '
+        + 'attached to the form after 8 tries. It is safe at: ' + esc(String(it.uploadedUrl || '')));
+    }catch(e){}
   }
   await idbPut('photoQueue', it).catch(e => _storageTrouble('photoQueue-url', e));
 }
@@ -7862,7 +7921,13 @@ const _QUEUE_WRITE_MS = 45000;   // a working link, however slow, finishes insid
 const _QUEUE_STALE_MS = 90000;   // only ever to break a wedge
 function _queueTake(state){
   const now = Date.now();
-  if(state.tok && (now - state.tok.at) < _QUEUE_STALE_MS) return null;
+  /* v244 - a BACKWARD clock jump (an Android time correction mid-session) makes
+     this difference negative, which is always under the threshold, so every
+     queue would stop taking a token for the length of the jump - a day-behind
+     correction silently freezes all three for a day. A negative age means the
+     clock moved, not that the run is fresh: treat it as stale. */
+  const age = now - state.tok?.at;
+  if(state.tok && age >= 0 && age < _QUEUE_STALE_MS) return null;
   return (state.tok = { at: now });
 }
 function _queueDrop(state, tok){ if(state.tok === tok) state.tok = null; }
@@ -8040,7 +8105,18 @@ async function flushOfflineWrites(){
           const _g = await _fbWriteGuard(fbRef(it.col+'/'+it.id+'/decisionAt').get(), _fbWriteWaitMs());
           if(!_g.timedOut && _g.value && _g.value.exists()) _decAt = _g.value.val();
         }catch(e){}
-        const _officeRuledLater = !!(_decAt && (!it.at || new Date(_decAt).getTime() > Number(it.at)));
+        /* v244 - this compared the OFFICE's timestamp against THIS PHONE's
+           clock. A phone running a day fast made a real later decision look
+           earlier, and the replay then wrote status, stage and decisionAt over
+           the office's ruling - the exact v218 bug this check exists to
+           prevent, reopened by a wrong clock. `queuedAtIso` is stamped from the
+           same wall clock the office writes, so the two are comparable; the old
+           numeric comparison stays as the fallback for rows queued before this
+           version. */
+        const _queuedIso = it.atIso || (it.at ? new Date(Number(it.at)).toISOString() : '');
+        const _officeRuledLater = !!(_decAt && (
+          _queuedIso ? (String(_decAt) > _queuedIso)
+                     : (!it.at || new Date(_decAt).getTime() > Number(it.at))));
 
         let patch;
         if(Array.isArray(it.fields) && it.fields.length){
@@ -8049,6 +8125,36 @@ async function flushOfflineWrites(){
              sent as null so it is removed here too. */
           patch = {};
           it.fields.forEach(k => { patch[k] = (it.rec && it.rec[k] !== undefined) ? it.rec[k] : null; });
+          /* ⛔ v244 - MERGE THE VISITS, never replace them. `patch.visits` is a
+             frozen copy taken when this device submitted, possibly hours ago,
+             and update() replaces that child whole. Two coordinators on one
+             farmer - one online at 10:00, one offline until evening - and the
+             evening replay wrote a list that never contained the morning visit.
+             It was gone, with no trace and nobody told: the heal paths all skip
+             a farmer whose verificationFormSubmittedAt is set, which the same
+             replay sets.
+             saveDB has carried this union since v126 (the ~110 lost farmers);
+             the replay queue never got it. Same signature, same rule. */
+          if(patch.visits !== undefined && Array.isArray(patch.visits)){
+            try{
+              const _g3 = await _fbWriteGuard(fbRef(it.col+'/'+it.id+'/visits').get(), _fbWriteWaitMs());
+              if(!_g3.timedOut && _g3.value && _g3.value.exists()){
+                const _srvRaw = _g3.value.val();
+                /* Firebase hands a sparse array back as an object - take values */
+                const _srv = Array.isArray(_srvRaw) ? _srvRaw : Object.values(_srvRaw || {});
+                const _sig = v => [v&&v.date, v&&v.fc, v&&v.score, v&&v.notes, v&&v.recordedAt].join('|');
+                const _have = new Set(patch.visits.map(_sig));
+                const _missing = _srv.filter(v => v && !_have.has(_sig(v)));
+                if(_missing.length){
+                  patch.visits = patch.visits.concat(_missing)
+                    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+                  console.warn('[Sristi] v244 - kept ' + _missing.length + ' visit(s) this phone had not seen, on ' + it.id);
+                  try{ logActivity('alert','⚠ Kept '+_missing.length+' farm visit'+(_missing.length===1?'':'s')
+                    +' recorded by someone else while this phone was offline. Nothing was lost.'); }catch(e){}
+                }
+              }
+            }catch(e){ console.warn('[Sristi] visit union read failed; leaving the queued copy alone:', e); }
+          }
         } else {
           /* Queued before v218, or by an enrolment. Send the record, but as an
              update, never a set: fields this device never knew about survive. */
@@ -8103,7 +8209,12 @@ function startBackgroundPumps(){
   window.addEventListener('offline', updateFcSync);
   /* v239 - updateUnsentCounts rides the same beat, so the close warning knows
      about a form still waiting without reading IndexedDB on every keystroke. */
-  const pump = ()=>{ updateFcSync(); flushPhotoQueue(); flushFormWrites(); flushPendingEnrolments(); flushOfflineWrites(); updateUnsentCounts(); };
+  /* v244 - the ANSWER SHEETS AND VISITS GO FIRST. Photos used to lead, and a
+     phone holding 40 photos spends up to thirteen minutes on them before the
+     forms queue is even looked at - putting the small, irreplaceable thing
+     behind the large, re-shootable one. They all run on the same beat; only
+     the order changed. */
+  const pump = ()=>{ updateFcSync(); flushFormWrites(); flushOfflineWrites(); flushPendingEnrolments(); flushPhotoQueue(); updateUnsentCounts(); };
   setInterval(pump, 30000 + Math.floor(Math.random()*10000));
   window.addEventListener('online', ()=>{ setTimeout(pump, 1500); });
   setTimeout(()=>{ pump(); updatePhotoBadge(); }, 2000);   // initial kick shortly after load
@@ -9862,12 +9973,13 @@ async function autoHealVerifications(){
     delete f.verificationLock;
     if(FB && FB.ready){
       try{
-        await fbRef('haatFarmers/' + f.id).update({
+        /* v244 - guarded. These are the RECOVERY tools, and an unguarded Firebase promise never settles on a link that is up but dead - so the one thing that finds a lost verification was itself the thing that hung. */
+        await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
           verificationFormSubmittedAt: f.verificationFormSubmittedAt,
           stage: 'verified',
           visits: sanitizeForFB(f.visits),
           verificationLock: null
-        });
+        }), 15000);
         healed.push(f.id);
       }catch(e){ console.error('[Sristi] auto-heal write failed for ' + f.id, e); }
     }
@@ -11194,7 +11306,7 @@ function openConvScoreModal(id){
                          'stage','transitionStatus','lastVisitAt','nextVisitDue']
                         .concat(_cvSetFc ? ['fcId','assignedAt'] : []);
       await idbPut('offlineWrites', {key:'convFarmers/'+f.id, col:'convFarmers', id:f.id,
-                                     at: Date.now(), fields: _cvFields, rec:_cvRow})
+                                     at: Date.now(), atIso: new Date().toISOString(), fields: _cvFields, rec:_cvRow})   /* v244 */
         .catch(() => { try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); }catch(e){} });
     }
     /* v219 - the visit is recorded, so the draft is finished with. Cancel
@@ -17989,7 +18101,10 @@ async function openRepairVerificationsModal(){
   const found = [];
   const probe = async f => {
     try{
-      const snap = await fbRef('forms/' + f.id + '/verif/submittedAt').get();
+      /* v244 - guarded. These are the RECOVERY tools, and an unguarded Firebase promise never settles on a link that is up but dead - so the one thing that finds a lost verification was itself the thing that hung. */
+      const _pg = await _fbWriteGuard(fbRef('forms/' + f.id + '/verif/submittedAt').get(), 12000);
+      if(_pg.timedOut){ console.warn('[Sristi] repair probe timed out for', f.id); return; }
+      const snap = _pg.value;
       /* v196 - the ID, not the record. The record object this loop can see is
          replaced wholesale by the live listener while the modal is open. */
       if(snap.exists() && snap.val()) found.push({ id: f.id, name: f.name, f: f, at: snap.val() });
@@ -18077,12 +18192,13 @@ async function openRepairVerificationsModal(){
          guarantee; saveDB below keeps the rest of the app in step. */
       if(FB && FB.ready){
         try{
-          await fbRef('haatFarmers/' + f.id).update({
+          /* v244 - guarded. These are the RECOVERY tools, and an unguarded Firebase promise never settles on a link that is up but dead - so the one thing that finds a lost verification was itself the thing that hung. */
+          await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
             verificationFormSubmittedAt: f.verificationFormSubmittedAt,
             stage: 'verified',
             visits: sanitizeForFB(f.visits),
             verificationLock: null
-          });
+          }), 15000);
           written.push(f.id);
         }catch(e){ console.error('[Sristi] repair write failed for ' + f.id, e); }
       }
@@ -23133,6 +23249,17 @@ window.addEventListener('message',async ev=>{
       // nothing against real data. Block and say so plainly instead of
       // silently opening a hollow form.
       const _fc = FORMS_CACHE[f.id] || {};
+      /* v244 - an ARCHIVED farmer can still be opened and verified today: the
+         archive is a soft flag, so the form appears, the visit is stored and
+         the coordinator is told it was sent - but every count, the queue and
+         the dashboard skip archived farmers, so the work is invisible
+         afterwards. Say so before the visit is wasted. */
+      if(f && f._archived){
+        toast('\u26a0 \u0a86 \u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0a86\u0ab0\u0acd\u0a95\u0abe\u0a87\u0ab5 \u0a95\u0ab0\u0ac7\u0ab2 \u0a9b\u0ac7 \u2014 \u0a86 \u0ab5\u0ac7\u0ab0\u0abf\u0aab\u0abf\u0a95\u0ac7\u0ab6\u0aa8 \u0a95\u0acb\u0a88 \u0a97\u0aa3\u0aa4\u0ab0\u0ac0\u0aae\u0abe\u0a82 \u0a97\u0aa3\u0abe\u0ab6\u0ac7 \u0aa8\u0ab9\u0ac0\u0a82.'
+            + ' \u00b7 This farmer is archived \u2014 a verification recorded now will not appear in any list or count. Restore the farmer first.', 'error');
+        closeVerificationForm();
+        return;
+      }
       /* v242 - _timedOut included: a read that hung is exactly the case where
          the FC must not be handed a form with nothing in it. */
       if((_fc._attempted || _fc._timedOut) && !_fc._complete && !_fc.enrol){
@@ -24370,7 +24497,15 @@ window.addEventListener('message',async ev=>{
            revert what we are about to write. */
         const _fresh = (DB.haatFarmers||[]).find(x => x && x.id === _verifyTargetId);
         if(_fresh) f = _fresh;
-        markLocalTouch('haatFarmers', f.id);
+        /* ⛔ v244 - 20 seconds, not the default 5. The guarded row write below
+           can take 8, and between 5 and 8 a live snapshot replaced this record
+           with the server copy that has no visit on it yet. The visit was then
+           gone from memory, saveDB found nothing dirty and returned true, so
+           the durable fallback was skipped and the draft was cleared - and the
+           coordinator was told the verification had been sent. A whole visit
+           lost, with a success message on screen. saveDB already uses 20000 on
+           its own offline path for exactly this reason. */
+        markLocalTouch('haatFarmers', f.id, 20000);
         /* v211 - is this a correction of a verification already on file?
            v241 - taken from before the await; see the note at _edAtStart. */
         const _ed = _edAtStart;
@@ -24442,8 +24577,29 @@ window.addEventListener('message',async ev=>{
           }
         }
         if(!_editedVisit){
-          if(_ed) logActivity('alert', '⚠ Could not match the verification being edited for <b>' + esc(f.name) + '</b> — saved as a new visit instead');
-          f.visits.push(stamp(_vFields));
+          /* ⛔ v244 - an EDIT that cannot find its original used to be pushed
+             as a SECOND visit. The answer sheet had already been replaced with
+             the edit a few lines above, so the farmer ended up with the
+             original's answers gone AND two visits, both counting in every
+             total. When this is an edit, replace the newest real visit instead
+             - that is the one the correction was made against - and only fall
+             back to adding a row when there is genuinely nothing to correct. */
+          if(_ed){
+            const _real = (f.visits||[]).map(function(v,i){return {v:v,i:i};})
+              .filter(function(x){ return x.v && x.v.claimVerifications; });
+            if(_real.length){
+              const _last = _real[_real.length-1];
+              logActivity('alert', '⚠ Could not match the exact visit being edited for <b>' + esc(f.name)
+                + '</b> — the correction was applied to the most recent one instead');
+              f.visits[_last.i] = stamp(Object.assign({}, _last.v, _vFields));
+            } else {
+              logActivity('alert', '⚠ Could not match the verification being edited for <b>' + esc(f.name)
+                + '</b> — saved as a new visit instead');
+              f.visits.push(stamp(_vFields));
+            }
+          } else {
+            f.visits.push(stamp(_vFields));
+          }
         }
         // v9 process-fix #38 — only advance to "verified" if the FC actually
         // verified things. Otherwise keep it as verification_pending and tell
@@ -24524,7 +24680,7 @@ window.addEventListener('message',async ev=>{
              cannot carry a stale copy of anything else (an onboarding decided
              while this sat in the queue, above all). */
           await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id,
-                                         at: Date.now(),
+                                         at: Date.now(), atIso: new Date().toISOString(),   /* v244 - comparable with the office's clock */
                                          fields: ['verificationFormSubmittedAt','visits','stage','verificationLock','formsRev'],
                                          rec:sanitizeForFB(_stripEphemeral(f))})
             .then(() => { _durableOk = true; })

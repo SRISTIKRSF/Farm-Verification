@@ -4186,7 +4186,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v246';
+const APP_VERSION = 'v247';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7774,6 +7774,56 @@ async function attachFormToFarmer(farmerId, formId, formPayload, meta){
                         name: meta.name || '', from: meta.from || 'public form' });
   markLocalTouch(rec.program === 'conversion' || rec.program === 'conv' ? 'convFarmers' : 'haatFarmers', rec.id);
   return rec;
+}
+
+/* v247 - keep the answer sheet a new verification is about to replace.
+
+   forms/{id}/verif holds ONE verification. A second verification for the same
+   farmer overwrote it, and with it the coordinator's photos and the farmer's
+   answers exactly as they were put in front of him. Sarvdaman Patel lost a
+   real verification that way to an empty resubmit 63 seconds later.
+
+   \u26d4 The copy must NOT go in forms/{id}. persistForms .set()s that whole
+   node, and a phone running an older build writes only {enrol, verif} - it
+   would delete anything else living there. That is the v130 lesson, and
+   attached enrolment forms are in formsExtra/ for the same reason. */
+async function archivePastVerif(f, oldForm){
+  if(!f || !f.id || !oldForm) return;
+  if(!Array.isArray(oldForm.claims) || !oldForm.claims.length) return;
+  const at  = oldForm._submittedAt || (oldForm.summary && oldForm.summary.date) || '';
+  const key = (String(at).replace(/[^0-9A-Za-z]/g, '').slice(0, 20)) || String(Date.now());
+  /* The visit this sheet belongs to is the newest real one on the record right
+     now - the new visit has not been added yet. Marking it means the drawer
+     can find the sheet later with no date matching to get wrong. */
+  const real = (f.visits || []).filter(v => v && !isImportedVisit(v));
+  const own  = real[real.length - 1];
+  if(own && own._sheetKey === key) return;              /* already archived */
+  if(own){ own._sheetKey = key; markLocalTouch('haatFarmers', f.id); }
+  const payload = sanitizeForFB(oldForm);
+  idbPut('formWrites', {key: 'pastverif:' + f.id + ':' + key, farmerId: f.id,
+                        path: 'verifPast/' + f.id + '/' + key, payload, at: Date.now()})
+    .then(()=>{ updateUnsentCounts(); return flushFormWrites(); })
+    .catch((e)=>{
+      _storageTrouble('formWrites-pastverif', e);
+      if(FB && FB.ready) fbRef('verifPast/' + f.id + '/' + key).set(payload)
+        .catch(e2=>console.warn('past verification write:', e2));
+    });
+}
+
+/* Fetch one archived answer sheet, once. Nothing downloads it until somebody
+   asks to read that verification, so it costs nothing on a normal load. */
+async function loadPastVerifSheet(farmerId, key){
+  window._pastSheets = window._pastSheets || {};
+  const ck = farmerId + ':' + key;
+  if(window._pastSheets[ck] !== undefined) return window._pastSheets[ck];
+  if(!(FB && FB.ready) || !navigator.onLine) return null;
+  try{
+    const g = await _fbWriteGuard(fbRef('verifPast/' + farmerId + '/' + key).get(), 12000);
+    if(g.timedOut){ console.warn('[Sristi] past sheet timed out for', farmerId); return null; }
+    const v = (g.value && g.value.exists()) ? g.value.val() : null;
+    window._pastSheets[ck] = v;
+    return v;
+  }catch(e){ console.warn('[Sristi] past verification sheet:', e); return null; }
 }
 
 function persistForms(farmerId){
@@ -17314,7 +17364,8 @@ function openHaatDrawer(id){
   }else{
     h+='<div class="timeline">';
     const VERIF_STATE={verified:{label:'✓ Verified',cls:'green'},partial:{label:'◐ Partial',cls:'yellow'},not_verified:{label:'✗ Not verified',cls:'red'},na:{label:'— N/A',cls:'grey'},not_specified:{label:'—',cls:'grey'}};
-    f.visits.slice().reverse().forEach(vis=>{
+    f.visits.slice().reverse().forEach((vis,_ri)=>{
+      const _vIdx = f.visits.length - 1 - _ri;   /* v247 - index on the record */
       const vfc=fcById(vis.fc);
       // new-style visit (has claimVerifications) vs legacy (livingFence etc.)
       const isNew = !!vis.claimVerifications;
@@ -17397,6 +17448,8 @@ function openHaatDrawer(id){
         ${fcObsHtml}
         ${observations?`<div class="tl-note" style="margin-top:7px">"${esc(observations)}"</div>`:''}
         ${vis.notes&&!isNew?`<div class="tl-note" style="margin-top:7px">"${esc(vis.notes)}"</div>`:''}
+        ${vis._superseded?`<div style="margin-top:7px;font-size:11.5px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 6px 6px 0;padding:6px 10px;line-height:1.45">\u21bb <b>Replaced later the same day</b> by the same coordinator, so it is not counted as a second visit \u2014 kept here so you can still read it.</div>`:''}
+        ${vis.claimVerifications?`<button class="btn btn-ghost btn-sm" data-vsheet="${_vIdx}" style="margin-top:9px;padding:6px 12px">\ud83d\udcc4 Open this verification</button>`:''}
         ${_verifEditLogHtml(vis, {farmerId: f.id, canUndo: isAdminUser()})}
       </div></div>`;
     });
@@ -17405,6 +17458,23 @@ function openHaatDrawer(id){
   h+='</div>';
   $('#drawer').innerHTML=h;
   _wireVerifEditLog($('#drawer'));   /* v211 */
+  /* v247 - read one particular verification, not just the farmer's latest. */
+  $('#drawer').querySelectorAll('[data-vsheet]').forEach(b=>{
+    b.onclick = async ()=>{
+      const i = Number(b.getAttribute('data-vsheet'));
+      const rec = (DB.haatFarmers||[]).find(x => x && x.id === id);   /* re-resolve */
+      const vis = rec && (rec.visits||[])[i];
+      if(!vis) return;
+      let sheet = null;
+      if(vis._sheetKey){
+        const _lbl = b.innerHTML;
+        b.disabled = true; b.textContent = 'Opening\u2026';
+        try{ sheet = await loadPastVerifSheet(rec.id, vis._sheetKey); }catch(e){}
+        b.disabled = false; b.innerHTML = _lbl;
+      }
+      openCompareFormsModal(rec.id, {visitIndex:i, sheet:sheet});
+    };
+  });
   $('#drawer').querySelectorAll('[data-d]').forEach(b=>{
     b.onclick=async(ev)=>{
       const a=b.dataset.d;
@@ -19372,7 +19442,14 @@ function openCompareFormsModal(id, opts){
   const cats = window.CATEGORIES_V5 || [];
   const qs = window.QUESTIONS_V5 || [];
   const enroll = f.enrollmentFormFull || {};
-  const verif = f.verificationFormFull || {};
+  /* v247 - opts.visitIndex pins the view to ONE visit instead of the farmer's
+     current state. Every visit row carries claimVerifications, so an earlier
+     verification is readable even when its full sheet was overwritten before
+     v247 existed. opts.sheet is the archived sheet when there is one, which
+     adds the coordinator's photos and the farmer's answers as he saw them. */
+  const _pinVisit = (opts.visitIndex != null && Array.isArray(f.visits)) ? f.visits[opts.visitIndex] : null;
+  const _pinSheet = opts.sheet || null;
+  const verif = _pinSheet || (_pinVisit ? {} : (f.verificationFormFull || {}));
   /* Build maps by question id */
   /* v231 - ⛔ this must NOT simply follow the newest form. Compare puts the
      farmer's claim beside the FC's verification; re-baselining it against a
@@ -19397,7 +19474,7 @@ function openCompareFormsModal(id, opts){
      reason while a real 42-question verification sat on his record.
      The stored form always wins: this only fills a gap, and it vanishes by
      itself the moment the queued form arrives from the FC's phone. */
-  const _cmpVisit = (f.visits||[]).slice().reverse().find(v => v && v.claimVerifications) || null;
+  const _cmpVisit = _pinVisit || (f.visits||[]).slice().reverse().find(v => v && v.claimVerifications) || null;
   let _cmpFromVisit = false;
   if(!Object.keys(fcVerifs).length && _cmpVisit){
     const _cv = _cmpVisit.claimVerifications || {};
@@ -19512,7 +19589,7 @@ function openCompareFormsModal(id, opts){
   let body = '';
   /* FC attribution banner — who did the survey. Issue 3: must be prominent. */
   const fcRec = (DB.fcs || []).find(x => x.id === f.fcId);
-  const latestVisit = (f.visits || []).slice(-1)[0];
+  const latestVisit = _pinVisit || (f.visits || []).slice(-1)[0];
   /* v170 - the verification form stores who did it in summary.verifierName,
      and this banner never looked there: it started from f.fcId, which on a
      publicly-enrolled farmer is usually blank, so the banner read "-" even
@@ -19539,7 +19616,10 @@ function openCompareFormsModal(id, opts){
   /* Submission strip */
   body += '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:11px 13px;background:var(--panel-2);border-radius:8px;margin-bottom:14px;font-size:11.5px;color:var(--ink-soft)">';
   body += '<span><b style="color:var(--ink)">Enrolment submitted:</b> ' + (f.enrollmentFormSubmittedAt?esc(fmtDate(f.enrollmentFormSubmittedAt)):'—') + '</span>';
-  body += '<span><b style="color:var(--ink)">Verification submitted:</b> ' + (f.verificationFormSubmittedAt?esc(fmtDate(f.verificationFormSubmittedAt)):'—') + '</span>';
+  /* v247 - the date of the verification being READ, not the farmer's latest,
+     or a pinned older one contradicts its own banner two lines below. */
+  const _stripDate = _pinVisit ? (_pinVisit.date || '') : (f.verificationFormSubmittedAt || '');
+  body += '<span><b style="color:var(--ink)">Verification ' + (_pinVisit ? 'date' : 'submitted') + ':</b> ' + (_stripDate?esc(fmtDate(_stripDate)):'—') + '</span>';
   /* v235 - the visit carries the score too, for a verification whose form
      never arrived. */
   const _cmpScore = (verif.summary && verif.summary.score != null) ? verif.summary.score
@@ -19549,7 +19629,21 @@ function openCompareFormsModal(id, opts){
   }
   body += '</div>';
   /* v235 - never let a recovered view pass for a stored form. */
-  if(_cmpFromVisit){
+  if(_pinVisit){
+    body += '<div style="margin-bottom:14px;padding:10px 13px;background:#eef4fb;border-left:3px solid var(--navy);border-radius:0 8px 8px 0;font-size:12px;line-height:1.55;color:#24384f">'
+      + '<b>Verification of ' + esc(fmtDate(_pinVisit.date || '')) + '</b>'
+      + (_pinVisit.verifierName || _pinVisit.recordedBy ? ' by ' + esc(_pinVisit.verifierName || _pinVisit.recordedBy) : '')
+      + '.<br>'
+      + (_pinSheet
+          ? 'This is the answer sheet exactly as it was submitted, kept when a later verification replaced it.'
+          : 'Built from the verification saved on the farmer\u2019s record \u2014 every question, the coordinator\u2019s '
+          + 'result and notes, the score and the comment. The coordinator\u2019s photos are not part of it: '
+          + 'before v247 a later verification overwrote the detailed sheet they were attached to.')
+      + (_pinVisit._superseded
+          ? '<br>This one was replaced later the same day by the same coordinator, so it is not counted as a second visit.'
+          : '')
+      + '</div>';
+  } else if(_cmpFromVisit){
     body += '<div style="margin-bottom:14px;padding:10px 13px;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 8px 8px 0;font-size:12px;line-height:1.55;color:#5b4a2a">'
       + '<b>The detailed verification form for this farmer never reached the server.</b><br>'
       + 'What you see below is taken from the visit saved on the farmer\u2019s record, which holds every '
@@ -19616,10 +19710,18 @@ function openCompareFormsModal(id, opts){
   const _cmpVisits = _fcRealVisitsAll(f);
   const _cmpLastVisit = _cmpVisits.slice(-1)[0] || null;
   if(_cmpVisits.length > 1){
+    /* v247 - two things changed under this note. An earlier verification can
+       now be opened from the visit history, so "the answers below are the most
+       recent one" is only true when nothing is pinned; and a repeat
+       verification no longer overwrites the sheet it replaces. */
     body += '<div style="margin-top:12px;background:var(--blue-bg);border:1px solid var(--blue);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--ink);line-height:1.55">'
-      + '<b>This farmer has ' + _cmpVisits.length + ' verifications on file.</b> The answers below are the most recent one'
-      + (_cmpLastVisit && _cmpLastVisit.date ? ', from ' + esc(fmtDate(_cmpLastVisit.date)) : '')
-      + '. Earlier verifications keep their date, score and per-question marks in the farmer\'s visit history, but only the newest full answer sheet is stored.'
+      + '<b>This farmer has ' + _cmpVisits.length + ' verifications on file.</b> '
+      + (_pinVisit
+          ? 'You are reading the one from ' + esc(fmtDate(_pinVisit.date || '')) + '. '
+            + 'Close this and use the farm verification history to read the others.'
+          : 'The answers below are the most recent one'
+            + (_cmpLastVisit && _cmpLastVisit.date ? ', from ' + esc(fmtDate(_cmpLastVisit.date)) : '')
+            + '. Each of the earlier ones can be opened from the farm verification history on the farmer.')
       + '</div>';
   }
   /* v211 - the change history, on screen as well as on the sheet. */
@@ -19634,7 +19736,7 @@ function openCompareFormsModal(id, opts){
     /* v211 - the verification this sheet describes, so the page can print the
        real visit date and say if it has been corrected since. */
     const _cmpAll = _fcRealVisitsAll(f);
-    const _cmpVisit = _cmpAll.slice(-1)[0] || null;
+    const _cmpVisit = _pinVisit || _cmpAll.slice(-1)[0] || null;   /* v247 */
     const _cmpVisitDate = (_cmpVisit && _cmpVisit.date) || f.verificationFormSubmittedAt || '';
     const _cmpEdits = (_cmpVisit && Array.isArray(_cmpVisit.edits)) ? _cmpVisit.edits : [];
     let h = '<div class="pdfdoc" style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2e1f16;background:#fff">'
@@ -19656,10 +19758,14 @@ function openCompareFormsModal(id, opts){
                     _cmpVisitDate ? esc(fmtDate(_cmpVisitDate)) : '\u2014')
       +   '</div>'
       + '</div>';
-    if(verif.summary && verif.summary.score != null){
+    /* v247 - a pinned verification's score lives on the visit; verif.summary
+       is empty for one whose sheet was overwritten before v247. */
+    const _pdfScore = (verif.summary && verif.summary.score != null) ? verif.summary.score
+                    : ((_cmpVisit && _cmpVisit.score != null) ? _cmpVisit.score : null);
+    if(_pdfScore != null){
       h += '<div style="width:132px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:11px 10px;text-align:center;background:#faf7f5;display:flex;flex-direction:column;justify-content:center">'
         + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700">\u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u0ab8\u0acd\u0a95\u0acb\u0ab0</div>'
-        + '<div style="font-size:30px;font-weight:800;color:#723e31;line-height:1.15">' + verif.summary.score + '<span style="font-size:15px">%</span></div>'
+        + '<div style="font-size:30px;font-weight:800;color:#723e31;line-height:1.15">' + _pdfScore + '<span style="font-size:15px">%</span></div>'
         + '</div>';
     }
     h += '</div>';
@@ -19675,7 +19781,10 @@ function openCompareFormsModal(id, opts){
        needs to know which one is later. */
     if(_cmpAll.length > 1){
       h += '<div style="font-size:10px;color:#8a7768;margin:0 0 6px;padding:0 2px">'
-         + _cmpAll.length + ' verifications on file for this farmer \u00b7 this sheet is the most recent one</div>';
+         + _cmpAll.length + ' verifications on file for this farmer \u00b7 this sheet is '
+         + (_pinVisit
+             ? 'the one from ' + esc(fmtDate(_pinVisit.date || ''))
+             : 'the most recent one') + '</div>';
     }
     if(_cmpEdits.length){
       const _le = _cmpEdits[_cmpEdits.length-1];
@@ -23623,6 +23732,7 @@ window.addEventListener('message',async ev=>{
       const enoughEvidence = true;
       // v11 — photos to upload queue, form text to forms/{id}.
       await extractPhotos(d.data, {program:'haat', farmerId: f.id});
+      await archivePastVerif(f, (FORMS_CACHE[f.id] || {}).verif);   /* v247 */
       setForms(f.id, 'verif', d.data);
       /* v199 - RE-RESOLVE after the await; see the farm-verification-done
          handler for the full story. The second-farm target is derived from the
@@ -24493,6 +24603,10 @@ window.addEventListener('message',async ev=>{
            closes the app never gives a chance to run. */
         const _vPhotoIds = [];
         await extractPhotos(d, {program:'haat', farmerId: f.id}, _vPhotoIds);
+        /* v247 - a FRESH verification replaces the sheet; keep the old one.
+           Not on an edit: a correction is the same verification, and its
+           before/after already lives in the verifEdits log with an undo. */
+        if(!_edAtStart) await archivePastVerif(f, _oldForm || (FORMS_CACHE[f.id] || {}).verif);
         setForms(f.id, 'verif', d);
         /* v199 - RE-RESOLVE. extractPhotos is awaited and takes seconds on a
            field phone; _processLiveSnapshot() replaces every object in

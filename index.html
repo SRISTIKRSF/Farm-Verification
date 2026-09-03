@@ -729,7 +729,7 @@ tbody tr:last-child td{border-bottom:none}
    #toast, so at equal z-index the opaque nav wins and covers the toast. Every
    confirmation, save result and error an FC or mobilizer sees was invisible to
    them. Lift it clear of the nav in FC mode only; admin is untouched. */
-body.fc-mode .toast{bottom:112px;z-index:210}
+body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
   background:var(--navy);color:#fff;padding:11px 20px;border-radius:9px;font-size:13px;
   font-weight:600;box-shadow:var(--sh-3);z-index:200;opacity:0;
@@ -844,7 +844,7 @@ body.is-offline .topbar{margin-top:34px}
 /* ===== FC MOBILE UI ===== */
 body.fc-mode .sidebar{display:none}
 /* v186 - room for the bottom nav AND the sync strip above it. */
-body.fc-mode .main{padding-bottom:96px}
+body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px strip */
 /* v186 - FCs could not see whether their work had reached the office. The sync
    pill exists, but it lives in .topbar, which fc-mode sets to display:none - so
    the one control that answers "did my visit send?" was invisible to exactly the
@@ -854,15 +854,26 @@ body.fc-mode .main{padding-bottom:96px}
    the calm green state is the point, so an FC leaving a village can glance once
    and know. Counts come from queues the app already maintains - no new data and
    no Firebase read. */
+/* v249 - this is the only thing on the coordinator's screen that can tell
+   them their photos are still on the phone, so it is sized to be read at arm's
+   length rather than squeezed into one 12px line. Gujarati leads, in Hind
+   Vadodara; English sits under it for the office. */
 #fcSync{display:none;position:fixed;left:0;right:0;bottom:62px;z-index:190;
-  align-items:center;justify-content:center;gap:7px;padding:5px 12px;
+  flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:7px 12px 8px;
   font-size:12px;font-weight:700;border-top:1px solid var(--line);
-  background:var(--panel);color:var(--ink)}
+  background:var(--panel);color:var(--ink);text-align:center}
+#fcSync .gu{font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',system-ui,-apple-system,sans-serif;
+  font-size:14.5px;font-weight:700;line-height:1.4}
+#fcSync .do{font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',system-ui,-apple-system,sans-serif;
+  font-size:12.5px;font-weight:600;line-height:1.4;opacity:.92}
+#fcSync .pulse{display:inline-block;animation:fcPulse 1.6s ease-in-out infinite}
+@keyframes fcPulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){#fcSync .pulse{animation:none}}
 body.fc-mode #fcSync{display:flex}
 #fcSync.ok{background:#ecfdf5;color:#065f46;border-top-color:#a7f3d0}
 #fcSync.wait{background:#fffbeb;color:#92400e;border-top-color:#fde68a}
 #fcSync.off{background:#fef2f2;color:#991b1b;border-top-color:#fecaca}
-#fcSync .en{font-weight:600;opacity:.75;font-size:10.5px}
+#fcSync .en{font-weight:600;opacity:.72;font-size:10.5px;line-height:1.35}
 body.fc-mode .topbar{display:none}
 #fc-bnav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--panel);
   border-top:1px solid var(--line);z-index:200;
@@ -4186,7 +4197,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v248';
+const APP_VERSION = 'v249';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4314,22 +4325,41 @@ async function updateFcSync(){
     el.style.display='flex';
     const {total, photos}=await fcPendingTotal();
     const online=navigator.onLine;
-    let cls, gu, en;
+    /* v249 - three states, and in each one the coordinator is told WHAT is
+       waiting and WHAT TO DO. "N બાકી" on its own left a phone holding 76
+       photos looking exactly like a phone holding none. */
+    let cls, gu, doLine, en;
+    const others = Math.max(0, total - photos);
     if(total===0){
       cls='ok';
-      gu='\u2713 \u0aac\u0aa7\u0ac1\u0a82 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82';           // everything sent
+      gu='\u2713 \u0aac\u0aa7\u0ac1\u0a82 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0a97\u0aaf\u0ac1\u0a82';
+      doLine='';
       en='All sent';
     } else if(!online){
       cls='off';
-      gu='\u26a0 \u0a91\u0aab\u0ab2\u0abe\u0a87\u0aa8 \u2014 '+total+' \u0aac\u0abe\u0a95\u0ac0';                     // offline - N waiting
-      en=total+' waiting \u00b7 will send when you have signal';
+      gu = photos
+        ? '\u26a0 \u0a93\u0aab\u0ab2\u0abe\u0a87\u0aa8 \u2014 ' + photos + (photos===1?' \u0aab\u0acb\u0a9f\u0acb \u0aac\u0abe\u0a95\u0ac0':' \u0aab\u0acb\u0a9f\u0abe \u0aac\u0abe\u0a95\u0ac0')
+        : '\u26a0 \u0a93\u0aab\u0ab2\u0abe\u0a87\u0aa8 \u2014 ' + total + '\u0020\u0aac\u0abe\u0a95\u0ac0';
+      doLine='\u0aa8\u0ac7\u0a9f\u0ab5\u0ab0\u0acd\u0a95 \u0aae\u0ab3\u0aa4\u0abe\u0a82 \u0a86\u0aaa\u0acb\u0a86\u0aaa \u0aae\u0acb\u0a95\u0ab2\u0abe\u0ab6\u0ac7';
+      en = (photos ? photos+' photo'+(photos===1?'':'s') : total+' item'+(total===1?'':'s'))
+         + ' waiting \u00b7 will send by itself when you have signal';
     } else {
       cls='wait';
-      gu='\u2191 '+total+' \u0aac\u0abe\u0a95\u0ac0 \u2014 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0ab0\u0ab9\u0acd\u0aaf\u0ac1\u0a82 \u0a9b\u0ac7';   // N waiting - sending
-      en=photos? (photos+' photo'+(photos===1?'':'s')+' included') : 'Sending\u2026';
+      /* v249b - Gujarati marks the singular: one is ફોટો / વિગત, more than
+         one is ફોટા / વિગતો. "1 ફોટા" reads as broken Gujarati. */
+      gu = photos
+        ? '<span class="pulse">\ud83d\udcf7</span> ' + photos + (photos===1?' \u0aab\u0acb\u0a9f\u0acb \u0aae\u0acb\u0a95\u0ab2\u0ab5\u0abe\u0aa8\u0acb \u0aac\u0abe\u0a95\u0ac0 \u0a9b\u0ac7':' \u0aab\u0acb\u0a9f\u0abe \u0aae\u0acb\u0a95\u0ab2\u0ab5\u0abe\u0aa8\u0abe \u0aac\u0abe\u0a95\u0ac0 \u0a9b\u0ac7')
+        : '<span class="pulse">\u2191</span> ' + total + (total===1?' \u0ab5\u0abf\u0a97\u0aa4 \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0ab0\u0ab9\u0ac0 \u0a9b\u0ac7':' \u0ab5\u0abf\u0a97\u0aa4\u0acb \u0aae\u0acb\u0a95\u0ab2\u0abe\u0a88 \u0ab0\u0ab9\u0ac0 \u0a9b\u0ac7');
+      doLine='\u0a8f\u0aaa \u0a96\u0ac1\u0ab2\u0acd\u0ab2\u0ac0 \u0ab0\u0abe\u0a96\u0acb \u00b7 \u0ab8\u0acd\u0a95\u0acd\u0ab0\u0ac0\u0aa8 \u0aac\u0a82\u0aa7 \u0aa8 \u0a95\u0ab0\u0acb';
+      en = (photos ? photos+' photo'+(photos===1?'':'s') : total+' item'+(total===1?'':'s'))
+         + ' still to send'
+         + (photos && others ? ' (and '+others+' more item'+(others===1?'':'s')+')' : '')
+         + ' \u2014 keep the app open';
     }
     el.className=cls;
-    el.innerHTML='<span>'+gu+'</span><span class="en">'+esc(en)+'</span>';
+    el.innerHTML='<span class="gu">'+gu+'</span>'
+      + (doLine?'<span class="do">'+doLine+'</span>':'')
+      + '<span class="en">'+esc(en)+'</span>';
   } finally {
     _fcSyncBusy=false;
     if(_fcSyncAgain){ _fcSyncAgain=false; setTimeout(updateFcSync, 400); }

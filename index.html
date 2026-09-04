@@ -4208,7 +4208,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v251';
+const APP_VERSION = 'v252';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18282,7 +18282,10 @@ async function openRepairVerificationsModal(){
     + '<div style="text-align:right;white-space:nowrap;font-size:11.5px;color:var(--ink-soft)">'
     +   (it.summary.verifiedCount != null
           ? it.summary.verifiedCount + '/' + (it.summary.totalAsked||'?') + ' claims' : '')
-    +   (it.summary.score != null ? '<div><b style="color:var(--ink)">' + it.summary.score + '</b> / 100</div>' : '')
+    /* v252 - the score is gone from here too. It was written by several past
+       versions under different formulas (5 of 110 stored scores match the one
+       the app uses now), so two rows in this list were never comparable. The
+       counts on the line above say the same thing and cannot drift. */
     + '</div></div>').join('');
   modalShell('Repair unfinished verifications',
     '<div class="hint" style="margin-bottom:12px"><b>' + usable.length + '</b> verification'

@@ -4305,7 +4305,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v256';
+const APP_VERSION = 'v257';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -25886,7 +25886,12 @@ function enterAdminMode(){
     // is on the public landing.
     if(location.hash === '#admin' || location.hash === '#fc') location.hash = '';
     enterPublicMode('public_landing');
-    setTimeout(() => { if(typeof openLoginModal === 'function') openLoginModal(); }, 60);
+    /* v257 - same re-check as the boot timer. */
+    setTimeout(() => {
+      if(sessionStorage.getItem(USER_SESSION_KEY)) return;
+      if(typeof PUBLIC_MODE !== 'undefined' && !PUBLIC_MODE) return;
+      if(typeof openLoginModal === 'function') openLoginModal();
+    }, 60);
     return;
   }
   PUBLIC_MODE = false;
@@ -29191,7 +29196,17 @@ window.addEventListener('hashchange', () => {
       // removed from the farmer-facing landing. Open it directly instead.
       const h = (location.hash||'').toLowerCase();
       if((h === '#admin' || h === '#fc') && typeof openLoginModal === 'function'){
-        setTimeout(() => openLoginModal(), 60);
+        /* v257 - ASK AGAIN when the timer fires. This decided 60ms ago that
+           there was no session, and then opened the login box regardless.
+           A remembered session restored in the meantime, or a sign-in
+           completing in another part of boot, left the box sitting on top of
+           a fully signed-in dashboard - which is exactly what Guru saw and
+           had to Cancel out of every time. */
+        setTimeout(() => {
+          if(sessionStorage.getItem(USER_SESSION_KEY)) return;   // signed in after all
+          if(typeof PUBLIC_MODE !== 'undefined' && !PUBLIC_MODE) return;
+          openLoginModal();
+        }, 60);
       }
     } else {
       // Admin/FC mode — need data before showing anything.

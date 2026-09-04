@@ -17871,20 +17871,27 @@ function openDecisionModal(id){
     return;
   }
 
-  // v9 process-fix #54 — additional quality gates. Latest visit must be
-  // recent (within 180 days) AND score must clear a minimum threshold (40).
-  // Otherwise show an advisory before letting admin proceed.
+  // v9 process-fix #54 — additional quality gates before an approve/reject.
+  //
+  // v250c — the "verification score below 40" gate is GONE. That score is
+  // verified ticks over every question on the form, and across the 110
+  // verifications on file 49.3% of all ticks are N/A — a question that did not
+  // apply to that farm — against 1.2% not_verified. So it flagged farmers
+  // whose farms simply had fewer applicable questions, and never flagged the
+  // thing it claimed to: a claim the coordinator could not confirm. Removed
+  // from the printed sheet in v250 for the same reason. Do not reinstate it
+  // without a measure that actually counts contradicted claims.
+  //
+  // The two gates that remain each measure something real: a visit that has
+  // aged out, and one the coordinator themselves marked incomplete.
   const latestVisit = f.visits[f.visits.length-1] || {};
   const latestVisitDate = latestVisit.date ? new Date(latestVisit.date).getTime() : 0;
   const visitAgeDays = latestVisitDate ? Math.floor((Date.now()-latestVisitDate)/(24*60*60*1000)) : 9999;
-  const latestScore = +latestVisit.score || 0;
   const stale = visitAgeDays > 180;
-  const lowScore = latestScore < 40 && latestScore !== 0; // 0 = unscored, separate gate
   const incomplete = latestVisit.incomplete === true;
-  if(stale || lowScore || incomplete){
+  if(stale || incomplete){
     const issues = [];
     if(stale)      issues.push(`Latest visit is <b>${visitAgeDays} days old</b> (recommended ≤ 180)`);
-    if(lowScore)   issues.push(`Latest verification score is <b>${latestScore}/100</b> (recommended ≥ 40)`);
     if(incomplete) issues.push(`Latest visit was flagged <b>incomplete</b> (too few claims marked)`);
     const body=`<div class="hint" style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #d97706;color:#854f0b;padding:10px 13px;border-radius:0 7px 7px 0">
       <b>⚠ Decision-quality warning</b>

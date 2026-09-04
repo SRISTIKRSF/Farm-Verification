@@ -858,6 +858,99 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
    them their photos are still on the phone, so it is sized to be read at arm's
    length rather than squeezed into one 12px line. Gujarati leads, in Hind
    Vadodara; English sits under it for the office. */
+/* ===== v253 - the farmer record page ===== */
+:root{--rec-soft:#4a3a2e;--rec-faint:#7a6a5d;--rec-line2:#eee7e0}
+.rec-crumb{font-size:11.5px;color:var(--rec-faint);margin:0 0 9px}
+.rec-crumb a{color:var(--accent);font-weight:700;cursor:pointer;text-decoration:none}
+.rec-crumb a:hover{text-decoration:underline}
+.rec-wrap{display:grid;grid-template-columns:262px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:1100px){.rec-wrap{grid-template-columns:1fr}.rec-queue{display:none}}
+.rec-queue{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  position:sticky;top:12px;max-height:calc(100vh - 120px);display:flex;flex-direction:column}
+.rec-queue .qh{padding:11px 14px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+.rec-queue .qh .t{font-size:13.5px;font-weight:800}
+.rec-queue .qh .s{font-size:11px;color:var(--rec-faint)}
+.rec-queue .ql{overflow:auto;flex:1;min-height:0}
+.qrow{padding:9px 14px;border-bottom:1px solid var(--rec-line2);cursor:pointer;display:flex;gap:9px;align-items:flex-start}
+.qrow:hover{background:var(--panel-2)}
+.qrow.on{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--accent)}
+.qrow .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:var(--red)}
+.qrow.clean .dot{background:var(--green)}
+.qrow .n{font-size:13px;font-weight:700;line-height:1.3}
+.qrow .m{font-size:11px;color:var(--rec-faint);margin-top:1px}
+.qrow .b{font-size:10.5px;margin-top:2px;font-weight:700;color:var(--red)}
+.qrow.clean .b{color:var(--green)}
+.rec-main{min-width:0}
+.rec-head{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:11px}
+.rec-r1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rec-r1 h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.015em}
+.rec-r1 .who{font-size:12.5px;color:var(--rec-soft);font-weight:600}
+.rec-r1 .sp{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
+.rec-r2{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;margin-top:8px;padding-top:8px;
+  border-top:1px solid var(--rec-line2);font-size:12px}
+.rec-r2 .f{display:inline-flex;gap:5px;align-items:baseline}
+.rec-r2 .f .k{color:var(--rec-faint);font-size:11px}
+.rec-r2 .f .v{font-weight:700;color:var(--ink)}
+.rec-r2 .sep{color:var(--line)}
+.rec-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:11px}
+.rec-acts .spacer{margin-left:auto}
+.rec-menu{position:relative}
+.rec-menu .pop{position:absolute;right:0;top:calc(100% + 5px);background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;box-shadow:var(--sh-2);min-width:230px;padding:5px;display:none;z-index:60}
+.rec-menu.open .pop{display:block}
+.rec-menu .pop button{display:flex;width:100%;gap:9px;align-items:center;font:inherit;font-size:12.5px;
+  font-weight:600;padding:8px 10px;border:0;background:none;border-radius:7px;cursor:pointer;text-align:left;color:var(--ink)}
+.rec-menu .pop button:hover{background:var(--panel-2)}
+.rec-menu .pop hr{border:0;border-top:1px solid var(--rec-line2);margin:4px 2px}
+.rec-filt{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:12px}
+.rfb{font:inherit;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;border:1px solid var(--line);
+  background:var(--panel);color:var(--rec-soft);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.rfb .c{font-size:11px;opacity:.75;font-weight:600}
+.rfb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rfb.v.on{background:var(--green);border-color:var(--green)}
+.rfb.x.on{background:var(--red);border-color:var(--red)}
+.rfb.q.on{background:var(--orange);border-color:var(--orange)}
+.rec-srch{margin-left:auto;padding:7px 12px;border:1px solid var(--line);border-radius:20px;
+  font:inherit;font-size:12.5px;width:200px;background:var(--panel-2);color:var(--ink)}
+.rec-cols{column-count:3;column-gap:12px}
+@media (max-width:1279px){.rec-cols{column-count:2}}
+@media (max-width:980px){.rec-cols{column-count:1}}
+.rec-card{break-inside:avoid;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  margin:0 0 12px;overflow:hidden;display:inline-block;width:100%}
+.rec-card>h3{margin:0;font-size:11.5px;font-weight:800;padding:9px 13px;background:var(--panel-2);
+  border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.rec-card>h3 em{font-style:normal;font-weight:700;color:var(--rec-faint);font-size:10.5px}
+.rec-a{padding:8px 13px;border-bottom:1px solid var(--rec-line2);display:flex;gap:9px;align-items:flex-start}
+.rec-a:last-child{border-bottom:0}
+.rec-a.bad{background:#fdf0ee}
+.rec-a .mk{width:17px;height:17px;flex:none;border-radius:5px;display:grid;place-items:center;
+  font-size:11px;font-weight:800;margin-top:2px}
+.rec-a .mk.v{background:#eaf5ea;color:#33602e;border:1px solid #c4dfc6}
+.rec-a .mk.x{background:#fadfdb;color:#8f2119;border:1px solid #e6c4bf}
+.rec-a .mk.n{background:var(--panel-2);color:var(--rec-faint);border:1px solid var(--line)}
+.rec-a .mk.q{background:#fdf4e3;color:#8a4708;border:1px solid #ecdcbb}
+.rec-a .t{min-width:0;flex:1}
+.rec-a .q{font-size:12px;color:var(--rec-soft);line-height:1.4}
+.rec-a .q i{font-style:normal;color:var(--rec-faint);font-size:10.5px}
+.rec-a .val{font-size:13.5px;font-weight:700;line-height:1.4;margin-top:1px;overflow-wrap:anywhere}
+.rec-a .val.none{font-weight:500;color:var(--rec-faint)}
+.rec-pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.rec-pill{font-size:11px;padding:2px 8px;border-radius:13px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--rec-soft)}
+.rec-pill.ok{background:#eaf5ea;border-color:#c4dfc6;color:#33602e}
+.rec-obs{margin-top:5px;font-size:11.5px;color:var(--rec-soft)}
+.rec-obs b{color:#33602e}
+.rec-note{margin-top:5px;font-size:11.5px;background:#fdf4e3;border:1px solid #ecdcbb;
+  border-radius:7px;padding:5px 8px;color:#6d3a06;line-height:1.45}
+.rec-note b{color:#8a4708}
+.rec-ph{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px 13px}
+.rec-ph a{display:block;position:relative;padding-top:74%;border-radius:8px;overflow:hidden;
+  border:1px solid var(--line);background:var(--panel-2)}
+.rec-ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.rec-phl{font-size:10.5px;color:var(--rec-faint);padding:0 13px 4px;font-weight:700}
+.rec-empty{padding:34px;text-align:center;color:var(--rec-faint);font-size:13px}
+
 #fcSync{display:none;position:fixed;left:0;right:0;bottom:62px;z-index:190;
   flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:7px 12px 8px;
   font-size:12px;font-weight:700;border-top:1px solid var(--line);
@@ -4208,7 +4301,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v252';
+const APP_VERSION = 'v253';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13262,6 +13355,7 @@ const TITLES={
   farmMap:['Reach','Haat Catchment Map'],
   dupRecords:['Data quality','Duplicate records'],
   haat:['Organic Haat Program','Haat Farmers'],
+  haatRecord:['Organic Haat Program','Farmer record'],   /* v253 */
   verification:['Organic Haat Program','Verification Queue'],
   haats:['Organic Haat Program','Haats & Markets'],
   conversion:['Conversion Program','Conversion Farmers'],
@@ -17313,7 +17407,359 @@ function _renderHaatEnrollmentDataSingle(f){
   return h;
 }
 
+/* ===================== v253 - THE FARMER RECORD PAGE =====================
+   Replaces a 560px overlay with a page: the app's own sidebar stays, the queue
+   sits beside the record, and all ~88 answers lay out in three columns with the
+   coordinator's mark on every one. See the note on this version.
+
+   REC.ui is the switch. Setting it to 'drawer' puts the old overlay back for
+   everyone, instantly, without a deploy - it is under More on the record. */
+const REC = {id:null, filter:'all', q:'', ui:null};
+function recUiNew(){
+  if(REC.ui) return REC.ui === 'page';
+  try{ return localStorage.getItem('fv_record_ui') !== 'drawer'; }catch(e){ return true; }
+}
+function recSetUi(mode){
+  REC.ui = mode;
+  try{ localStorage.setItem('fv_record_ui', mode === 'page' ? 'page' : 'drawer'); }catch(e){}
+}
+
+/* the three states a claim can be in, decided in ONE place so the marks, the
+   counts and the filter can never disagree */
+function recMark(r){
+  const v = r && r.fcVerification;
+  if(v === 'verified')     return {k:'v', ch:'\u2713', en:'Verified'};
+  if(v === 'not_verified') return {k:'x', ch:'\u2717', en:'Not verified'};
+  if(v === 'na')           return {k:'n', ch:'\u2013', en:'Not applicable'};
+  return                          {k:'q', ch:'?',       en:'Not checked'};
+}
+function recTally(rows){
+  const t = {v:0,x:0,n:0,q:0};
+  (rows||[]).forEach(r => t[recMark(r).k]++);
+  return t;
+}
+/* the farmer's answers, preferring the copy stored ON the verification - that
+   is the one the coordinator actually saw and ticked against */
+function recClaims(f){
+  const cache = FORMS_CACHE[f.id] || {};
+  const verif = f.verificationFormFull || cache.verif || {};
+  const enrol = f.enrollmentFormFull   || cache.enrol || {};
+  if(Array.isArray(verif.claims) && verif.claims.length) return verif.claims;
+  if(Array.isArray(enrol.claims) && enrol.claims.length){
+    /* no verification yet - show the claims with nothing ticked */
+    return enrol.claims.map(c => Object.assign({}, c, {farmerAnswer: c.answer, fcVerification: null}));
+  }
+  return [];
+}
+function recPhotos(f){
+  const cache = FORMS_CACHE[f.id] || {};
+  const out = {};
+  [f.enrollmentFormFull || cache.enrol, f.verificationFormFull || cache.verif].forEach(src => {
+    const ph = (src && src.photos) || {};
+    Object.keys(ph).forEach(k => {
+      if(Array.isArray(ph[k]) && ph[k].length) (out[k] = out[k] || []).push(...ph[k]);
+    });
+  });
+  return out;
+}
+function recAnswerHtml(r){
+  const a = r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer;
+  const blank = a == null || (typeof a === 'string' && !a.trim()) || (Array.isArray(a) && !a.length);
+  if(blank) return '<div class="val none">\u2014 \u0a9c\u0ab5\u0abe\u0aac \u0aa8\u0aa5\u0ac0</div>';
+  /* the address cascade is an object, and printed [object Object] in the mock-up */
+  if(typeof a === 'object' && !Array.isArray(a)){
+    const order = ['village','taluka','district','pincode'];
+    const all = order.map(k => a[k])
+      .concat(Object.keys(a).filter(k => order.indexOf(k) < 0).map(k => a[k]))
+      .filter(x => x && String(x).trim());
+    return all.length ? '<div class="val">' + esc(all.join(', ')) + '</div>'
+                      : '<div class="val none">\u2014 \u0a9c\u0ab5\u0abe\u0aac \u0aa8\u0aa5\u0ac0</div>';
+  }
+  if(Array.isArray(a)){
+    if(a.length && typeof a[0] === 'object'){
+      return '<div class="rec-pills">' + a.map(o => '<span class="rec-pill">'
+        + esc(o.item || o.type || Object.values(o)[0] || '')
+        + (o.count ? ' \u00d7 ' + esc(o.count) : '')
+        + (o.area ? ' \u00b7 ' + esc(o.area) + ' acre' : '')
+        + (o.production ? ' \u00b7 ' + esc(o.production) : '') + '</span>').join('') + '</div>';
+    }
+    return '<div class="rec-pills">' + a.map(x => '<span class="rec-pill">' + esc(x) + '</span>').join('') + '</div>';
+  }
+  /* v253 - every date on this page goes through fmtDate: dd-mm-yyyy */
+  if(r.type === 'date') return '<div class="val">' + esc(fmtDate(a)) + '</div>';
+  return '<div class="val">' + esc(a) + '</div>';
+}
+
+function openHaatRecord(id){
+  const f = (DB.haatFarmers || []).find(x => x.id === id);
+  if(!f) return;
+  /* the forms live outside the farmer row - fetch once, then render */
+  if(!f.enrollmentFormFull && !f.verificationFormFull
+     && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted)){
+    REC.id = id; ROUTE = 'haatRecord'; render();
+    loadForms(id).then(() => { if(REC.id === id && ROUTE === 'haatRecord') render(); });
+    return;
+  }
+  REC.id = id; REC.filter = 'all'; REC.q = '';
+  ROUTE = 'haatRecord';
+  render();
+}
+
+function viewHaatRecord(){
+  const v = $('#view');
+  const f = (DB.haatFarmers || []).find(x => x.id === REC.id);
+  if(!f){ ROUTE = 'haat'; render(); return; }
+
+  /* the queue is the list the user was already looking at, in the same order */
+  let queue = [];
+  try{ queue = (typeof haatRowsForCurrentFilter === 'function') ? haatRowsForCurrentFilter() : []; }catch(e){ queue = []; }
+  if(!queue.length) queue = filterByCurrentFc(DB.haatFarmers || []);
+  if(!queue.some(x => x.id === f.id)) queue = [f].concat(queue);
+
+  const claims = recClaims(f);
+  const t = recTally(claims);
+  const byId = id => { const r = claims.find(c => c.id === id); return r ? (r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer) : null; };
+  const yrs  = byId('years_organic');
+  const cert = String(byId('has_cert') || '').trim().toLowerCase();
+  const certTxt = cert === 'yes' ? '\u0a9b\u0ac7' : cert === 'no' ? '\u0aa8\u0aa5\u0ac0' : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0';
+  const where = [f.village, f.taluka && talukaDisplayName ? talukaDisplayName(f.taluka) : f.taluka,
+                 districtDisplayName(f.district)].filter(Boolean).join(', ');
+  const visits = _fcRealVisitsAll ? _fcRealVisitsAll(f) : (f.visits || []);
+  const lastVisit = visits[visits.length - 1] || {};
+  const fcName = (fcById && fcById(f.fcId) ? fcById(f.fcId).name : '')
+              || lastVisit.verifierName || lastVisit.recordedBy || '\u2014';
+
+  const fld = (k, val) => '<span class="f"><span class="k">' + k + '</span><span class="v">' + val + '</span></span>';
+  const qrow = x => {
+    /* only the farmers whose forms are already in memory get a tally - reading
+       and counting 400 records on every keystroke is not worth a badge */
+    const scored = (x.verificationFormFull || (FORMS_CACHE[x.id] || {}).verif);
+    const tt = scored ? recTally(recClaims(x)) : {v:0,x:0,n:0,q:0};
+    return '<div class="qrow' + (x.id === f.id ? ' on' : '') + (tt.x ? '' : ' clean') + '" data-rec="' + esc(x.id) + '">'
+      + '<span class="dot"></span><div style="min-width:0">'
+      + '<div class="n">' + esc(x.name || '\u2014') + '</div>'
+      + '<div class="m">' + esc(x.village || '\u2014') + (x.landAcres != null ? ' \u00b7 ' + x.landAcres + ' acre' : '') + '</div>'
+      + (scored ? '<div class="b">' + (tt.x ? '\u2717 ' + tt.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
+                                            : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</div>' : '')
+      + '</div></div>';
+  };
+
+  v.innerHTML =
+      '<div class="rec-crumb"><a data-recback>\u2190 Haat Farmers</a> <span style="opacity:.5">/</span> ' + esc(f.name || '') + '</div>'
+    + '<div class="rec-wrap">'
+    +   '<div class="rec-queue"><div class="qh"><div class="t">Haat farmers</div>'
+    +     '<div class="s">' + queue.length + ' in this list</div></div>'
+    +     '<div class="ql">' + queue.slice(0, 150).map(qrow).join('')
+    +       (queue.length > 150 ? '<div class="rec-phl" style="padding:9px 14px">showing the first 150 · use the list to narrow</div>' : '')
+    +     '</div></div>'
+    +   '<div class="rec-main">'
+    +     '<div class="rec-head">'
+    +       '<div class="rec-r1"><h2>' + esc(f.name || '\u2014') + '</h2>'
+    +         (claims.length
+              ? '<span class="tag ' + (t.x ? 'red' : 'green') + '"><span class="d"></span>'
+                + (t.x ? '\u2717 ' + t.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
+                       : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</span>'
+              : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
+    +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
+    +         '<div class="sp">'
+    +           '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
+    +           '<button class="btn btn-ghost btn-sm" data-recact="verify">Verification form</button>'
+    +         '</div>'
+    +       '</div>'
+    +       '<div class="rec-r2">'
+    +         fld('ID', esc(f.id || '\u2014'))
+    +         '<span class="sep">|</span>'
+    +         fld('\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0',
+                 (yrs != null && String(yrs).trim()) ? esc(yrs) + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0' : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0')
+    +         '<span class="sep">|</span>'
+    +         fld('\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f', certTxt)
+    +         '<span class="sep">|</span>'
+    +         fld('FC', esc(fcName) + (lastVisit.date ? ' \u00b7 ' + esc(fmtDate(lastVisit.date)) : ''))
+    +       '</div>'
+    +     '</div>'
+    +     '<div class="rec-acts">'
+    +       '<button class="btn btn-ghost btn-sm" data-recact="compare">Compare forms</button>'
+    +       '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download PDF</button>'
+    +       '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>'
+    +       '<div class="rec-menu spacer" id="recMenu">'
+    +         '<button class="btn btn-ghost btn-sm" data-recact="menu">More \u25be</button>'
+    +         '<div class="pop">'
+    +           '<button data-recact="haat">' + (f.haat ? 'Change haat' : 'Assign haat') + '</button>'
+    +           '<button data-recact="active">Mark ' + (f.active ? 'inactive' : 'active') + '</button>'
+    +           '<hr>'
+    +           '<button data-recact="drawer">Open the old drawer view</button>'
+    +         '</div>'
+    +       '</div>'
+    +     '</div>'
+    +     (claims.length ? (
+            '<div class="rec-filt">'
+    +         recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
+    +         recFb('x', '\u2717 \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0', t.x, 'x')
+    +         recFb('v', '\u2713 \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe', t.v, 'v')
+    +         recFb('q', '? \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', t.q, 'q')
+    +         recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
+    +         '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
+    +       '</div>') : '')
+    +     '<div class="rec-cols" id="recCols"></div>'
+    +   '</div>'
+    + '</div>';
+
+  renderRecordBody(f, claims);
+
+  v.querySelectorAll('[data-rec]').forEach(el => el.onclick = () => openHaatRecord(el.dataset.rec));
+  const back = v.querySelector('[data-recback]');
+  if(back) back.onclick = () => { ROUTE = 'haat'; render(); };
+  v.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
+  const sr = document.getElementById('recSrch');
+  if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
+  v.querySelectorAll('[data-recact]').forEach(b => b.onclick = e => {
+    const a = b.dataset.recact;
+    const menu = document.getElementById('recMenu');
+    if(a === 'menu'){ e.stopPropagation(); menu.classList.toggle('open'); return; }
+    if(menu) menu.classList.remove('open');
+    /* every one of these is the SAME handler the old drawer used - the record
+       page changed where the buttons live, not what they do */
+    if(a === 'decide')  return openDecisionModal(f.id);
+    if(a === 'verify')  return openVerificationForm(f.id);
+    if(a === 'compare') return openCompareFormsModal(f.id);
+    if(a === 'edit')    return openFarmerModal('haat', f.id);
+    if(a === 'haat')    return openAssignHaatModal(f.id);
+    if(a === 'pdf'){
+      /* the farmer's own patrak, the way the drawer printed it: the newest form
+         on file, fetched first if it has not been pulled down yet */
+      (async () => {
+        let src = null;
+        const pick = () => { const list = farmerFormList(f); return list.length ? list[0].form : null; };
+        src = pick();
+        if(!src || !Array.isArray(src.claims)){ try{ await loadForms(f.id); src = pick(); }catch(e){} }
+        await downloadFarmerPdfOuter(f, src && src.claims, 'કિસાન નોંધણી પત્રક', b);
+      })();
+      return;
+    }
+    if(a === 'active'){
+      f.active = !f.active;
+      saveDB().then(() => { render(); toast(f.active ? 'Marked active' : 'Marked inactive'); });
+      return;
+    }
+    if(a === 'drawer'){ recSetUi('drawer'); ROUTE = 'haat'; render(); return openHaatDrawer(f.id); }
+  });
+  document.addEventListener('click', recCloseMenu, true);
+}
+function recCloseMenu(e){
+  const m = document.getElementById('recMenu');
+  if(m && !m.contains(e.target)) m.classList.remove('open');
+}
+function recFb(k, label, n, cls){
+  return '<button class="rfb ' + cls + (REC.filter === k ? ' on' : '') + '" data-f="' + k + '">'
+    + '<span>' + label + '</span><span class="c">' + n + '</span></button>';
+}
+
+/* headings for categories that predate the current schema - taken from the
+   questions those categories actually hold */
+const REC_CAT_GU = {
+  condition: 'ખેતરની સ્થિતિ અને માલિકી',
+  sales:     'વેચાણ અને બજાર',
+  digital:   'મોબાઇલ અને ડિજિટલ',
+  opinion:   'ખેડૂતનો અભિપ્રાય',
+  other:     'અન્ય વિગત'
+};
+function renderRecordBody(f, claims){
+  const box = document.getElementById('recCols');
+  if(!box) return;
+  document.querySelectorAll('.rfb').forEach(b => b.classList.toggle('on', b.dataset.f === REC.filter));
+  /* v253 - EVERY answer has to appear. Records written before the schema was
+     reorganised carry categories the current CATEGORIES_V5 no longer lists
+     (condition, sales, digital, opinion), and iterating the schema alone
+     silently dropped 24 of one farmer's 59 answers. Known categories keep
+     their order and their Gujarati heading; anything else follows, under a
+     heading of its own. */
+  const schema = window.CATEGORIES_V5 || [];
+  const known = schema.map(c => c.key);
+  const extra = [];
+  claims.forEach(r => {
+    const k = r.cat || 'other';
+    if(known.indexOf(k) < 0 && extra.indexOf(k) < 0) extra.push(k);
+  });
+  const cats = schema.concat(extra.map(k => ({key:k, gu:(REC_CAT_GU[k] || k), en:k})));
+  const ql = (REC.q || '').trim().toLowerCase();
+  const keep = r => (REC.filter === 'all' || recMark(r).k === REC.filter)
+    && (!ql || (r.gu || '').toLowerCase().indexOf(ql) >= 0
+            || (r.en || '').toLowerCase().indexOf(ql) >= 0
+            || JSON.stringify(r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer || '').toLowerCase().indexOf(ql) >= 0);
+
+  let h = '';
+  cats.forEach(c => {
+    const rows = claims.filter(r => (r.cat || 'other') === c.key && keep(r));
+    if(!rows.length) return;
+    h += '<div class="rec-card"><h3><span>' + esc(c.gu) + '</span><em>' + rows.length + '</em></h3>'
+      + rows.map(r => {
+          const m = recMark(r);
+          const ret = (Array.isArray(r.fcRetick) && r.fcRetick.length)
+            ? '<div class="rec-obs"><b>FC \u0a9c\u0acb\u0aaf\u0ac1\u0a82:</b><div class="rec-pills">'
+              + r.fcRetick.map(x => '<span class="rec-pill ok">'
+                  + esc(typeof x === 'object' ? ((x.type || '') + (x.count ? ' \u00d7 ' + x.count : '')) : x)
+                  + '</span>').join('') + '</div></div>' : '';
+          const fca = (r.fcAnswer != null && r.fcAnswer !== '' && !Array.isArray(r.fcAnswer))
+            ? '<div class="rec-obs"><b>FC \u0aa8\u0acb\u0a82\u0aa7\u0acd\u0aaf\u0ac1\u0a82:</b> '
+              + esc(r.type === 'date' ? fmtDate(r.fcAnswer) : r.fcAnswer) + '</div>' : '';
+          const note = r.fcNote ? '<div class="rec-note"><b>FC:</b> ' + esc(r.fcNote) + '</div>' : '';
+          return '<div class="rec-a' + (m.k === 'x' ? ' bad' : '') + '" title="' + m.en + '">'
+            + '<span class="mk ' + m.k + '">' + m.ch + '</span><div class="t">'
+            + '<div class="q">' + esc(r.gu || r.id) + (r.en ? ' <i>' + esc(r.en) + '</i>' : '') + '</div>'
+            + recAnswerHtml(r) + ret + fca + note + '</div></div>';
+        }).join('') + '</div>';
+  });
+
+  if(REC.filter === 'all' && !ql){
+    const ph = recPhotos(f);
+    const keys = Object.keys(ph).filter(k => ph[k].length);
+    if(keys.length){
+      h += '<div class="rec-card"><h3><span>\u0aab\u0acb\u0a9f\u0abe \u00b7 Photos</span><em>'
+         + keys.reduce((n, k) => n + ph[k].length, 0) + '</em></h3>';
+      keys.forEach(k => {
+        const lbl = (claims.find(r => r.id === k) || {}).gu || k;
+        h += '<div class="rec-phl">' + esc(lbl) + '</div><div class="rec-ph">'
+          + ph[k].map(p => '<a href="' + esc(photoSrc(p) || '') + '" data-photo><img loading="lazy" src="'
+              + esc(photoThumb(p, 320) || photoSrc(p) || '') + '"></a>').join('')
+          + '</div>';
+      });
+      h += '</div>';
+    }
+  }
+  /* two different nothings: a filter that excluded everything, and a farmer
+     whose form has never arrived. Saying "no answers match this filter" to
+     someone who set no filter reads like the screen is broken. */
+  if(!h){
+    h = '<div class="rec-card"><div class="rec-empty">'
+      + (claims.length
+          ? 'No answers match this filter.'
+          : 'આ ખેડૂતનું ફોર્મ હજુ મળ્યું નથી'
+            + '<div style="margin-top:5px;font-size:11.5px">No enrolment form on file for this farmer yet</div>')
+      + '</div></div>';
+  }
+  box.innerHTML = h;
+}
+
+/* v253 - "is this farmer on screen?", whichever view is in use. Five callers
+   re-open the drawer after a save so the screen shows the new value; each of
+   them asked `#drawer.show`, which is false on the record page, so an edit
+   made from the page would have left stale figures behind it. */
+function _farmerViewOpen(id){
+  if(ROUTE === 'haatRecord' && REC.id === id) return true;
+  const d = $('#drawer');
+  return !!(d && d.classList.contains('show'));
+}
 function openHaatDrawer(id){
+  /* v253 - the record is a page now. The old overlay below is untouched and
+     still reachable from More on that page, and via localStorage fv_record_ui. */
+  if(ROUTE === 'haatRecord' && REC.id === id){ render(); return; }
+  /* the switch is the ONLY thing that decides which view opens. Testing the
+     route as well meant that opening a DIFFERENT farmer while already on a
+     record page fell through to the old overlay - it painted the previous
+     farmer's header over the new one's page. Recursion is not a risk: the
+     "old drawer" action sets the preference to 'drawer' before it calls back
+     here, so recUiNew() is already false by then. */
+  if(recUiNew()) return openHaatRecord(id);
   const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
   // v11 — forms (claims + photos) are on-demand. Kick off the fetch; when it
   // lands, repaint the drawer once if it's still showing this farmer.
@@ -17485,7 +17931,7 @@ function openHaatDrawer(id){
       // v9 Batch 3 — show "Recorded by X · DD MMM HH:MM" if available
       const recBy = fmtRecordedBy(vis);
       h+=`<div class="tl-item"><div class="tl-card">
-        <div class="tl-date">${vis.date}${vis.time?' \u00b7 '+esc(vis.time):''}</div>
+        <div class="tl-date">${vis.date?esc(fmtDate(vis.date)):'\u2014'}${vis.time?' \u00b7 '+esc(vis.time):''}</div>
         <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${recBy?' <span style="color:var(--ink-faint);font-size:10.5px;margin-left:6px">· '+esc(recBy)+'</span>':''}</div>
         ${paramsHtml}
         ${(()=>{ /* v251 - the counts this visit actually recorded, where the
@@ -18028,7 +18474,7 @@ function _openDecisionInner(id){
         toast('Farmer suspended');
       }
       await saveDB();closeModal();render();
-      if($('#drawer').classList.contains('show'))openHaatDrawer(id);
+      if(_farmerViewOpen(id))openHaatDrawer(id);   /* v253 - drawer OR record page */
     };
     return;
   }
@@ -18119,7 +18565,7 @@ function _openDecisionInner(id){
     const decLabel={green:'onboarded',yellow:'put on hold',red:'rejected'}[pick];
     logActivity('decision',`<b>${esc(f.name)}</b> (${f.id}) ${decLabel}${pick==='green'&&f.haat?' — assigned to '+esc(f.haat):''}`);
     await saveDB();closeModal();render();
-    if($('#drawer').classList.contains('show'))openHaatDrawer(id);
+    if(_farmerViewOpen(id))openHaatDrawer(id);   /* v253 - drawer OR record page */
     toast('Decision saved');
   };
 }
@@ -18164,7 +18610,7 @@ function openAssignHaatModal(id){
                 : `moved from <b>${esc(old)}</b> to <b>${esc(newHaat)}</b>`;
     logActivity('haat',`${esc(f.name)} (${f.id}) ${label}${note?' — '+esc(note):''}`);
     await saveDB();closeModal();render();
-    if($('#drawer').classList.contains('show'))openHaatDrawer(id);
+    if(_farmerViewOpen(id))openHaatDrawer(id);   /* v253 - drawer OR record page */
     toast(newHaat?'Haat assigned':'Haat cleared');
   };
 }
@@ -19427,7 +19873,7 @@ async function undoVerifEdit(farmerId, editId){
   await saveDB(true);
   toast('Put back \u00b7 the change is recorded in the history');
   if(typeof render === 'function') render();
-  if($('#drawer') && $('#drawer').classList.contains('show')) openHaatDrawer(farmerId);
+  if(_farmerViewOpen(farmerId)) openHaatDrawer(farmerId);   /* v253 */
 }
 function stampAsVerifier(vis, verifierName, fallbackFcId){
   if(!vis) return vis;
@@ -23027,6 +23473,7 @@ function render(){
   if(count){pc.textContent=count;pc.style.display='inline-block';}
   else pc.style.display='none';
   ({dashboard:viewDashboard,haat:viewHaat,verification:viewVerification,
+    haatRecord:viewHaatRecord,   /* v253 - the farmer record is a page now */
     // v118 — the standalone Haats screen is gone (haats are managed in
     // Settings → Manage Haats). Any saved link or stale hash still lands
     // somewhere useful instead of dead-ending.

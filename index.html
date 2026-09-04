@@ -4301,7 +4301,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v254';
+const APP_VERSION = 'v255';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5073,8 +5073,25 @@ function seedDemoHaatFarmers(d){
   const demos = [modi, gandhi, patel];
 
   // upsert by id: insert if missing; upgrade in place if older formData version
+  /* v255 - DO NOT CREATE DEMO FARMERS ON A REAL INSTALLATION.
+     They exist so an empty install has something to explore. On a database
+     with 516 real farmers they are three rows of noise, and worse: this runs
+     from normaliseDB() at every boot, so a browser with no local cache - a new
+     device, cleared site data, a fresh profile - re-created Gandhi and Modi
+     WITHOUT the archive flag, moments before the cloud copy arrived. A save in
+     that window diffs the fresh copy against the cached one, finds `_archived`
+     missing, and writes null for it: the archive is undone in the database by
+     a device that was only starting up.
+     Verified 2026-09-04: both records ARE archived in Firebase (stamped
+     11:39 UTC), so the archive itself always worked. This was the only way
+     back. */
+  const _realFarmers = (d.haatFarmers||[]).filter(
+    f => f && !/^(HF-DEMO-|HF_VANSHITA_|HF_MESSI_)/.test(String(f.id||''))).length;
+  const _mayCreateDemos = _realFarmers === 0;
+
   demos.forEach(demoData=>{
     const existing = d.haatFarmers.find(f=>f.id===demoData.id);
+    if(!existing && !_mayCreateDemos) return;
     /* v254 - an archived demo is left completely alone. This upsert runs from
        normaliseDB() on every load, and the `if(!existing) push` branch below
        would re-create one that had been removed.
@@ -5392,6 +5409,12 @@ function seedVanshitaDemo(d){
   };
 
   const existing = d.haatFarmers.find(f => f.id===id);
+
+  /* v255 - same door as the demo seeder above: never create her on a
+
+     database that already holds real farmers. */
+
+  if(!existing && (d.haatFarmers||[]).filter(f => f && !/^(HF-DEMO-|HF_VANSHITA_|HF_MESSI_)/.test(String(f.id||''))).length) return;
   if(!existing){
     d.haatFarmers.push(vanshita);
   } else if(existing.editedBy || existing.fcChangeHistory || existing.decisionBy){

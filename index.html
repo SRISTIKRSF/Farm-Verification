@@ -4305,7 +4305,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v257';
+const APP_VERSION = 'v258';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -17963,6 +17963,10 @@ function openHaatDrawer(id){
     ${(f.enrollmentFormFull||f.verificationFormFull||f.enrollmentFormSubmittedAt||f.verificationFormSubmittedAt)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
     <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
     <button class="btn btn-ghost btn-sm" id="drawerPdfBtn">${svg(I.download,2.2)}Download PDF</button>
+    ${/* v258 - the way BACK. v253 put "open the old drawer" on the record page
+          and nothing anywhere to undo it, so choosing it once left you here for
+          good. Guru: "I switched to old drawer. Now I cant go back". */''}
+    <button class="btn btn-ghost btn-sm" data-d="newview" style="margin-left:auto">Switch to the new full-page view</button>
   </div>`;
 
   // v132 — every piece of land this farmer works, each with its own
@@ -18116,6 +18120,7 @@ function openHaatDrawer(id){
       else if(a==='editCrops')openCropsEditor(id);
       else if(a==='cropsHistory'){ if(ev&&ev.preventDefault)ev.preventDefault(); openCropsHistoryModal(id); }
       else if(a==='toggle'){f.active=!f.active;await saveDB();closeDrawer();render();toast(f.active?'Marked active':'Marked inactive');}
+      else if(a==='newview'){ recSetUi('page'); closeDrawer(); openHaatRecord(id); }   /* v258 */
     };
   });
   // v130 — switch between Form 1 / Form 2 without leaving the drawer.
@@ -26911,7 +26916,16 @@ function openLoginModal(){
            whoever picks it up is signed in as you, so this has to be a
            deliberate choice, not something that happens to everyone. -->
       <label style="display:flex;align-items:flex-start;gap:8px;margin:2px 0 12px;cursor:pointer;font-size:12.5px;color:#cfd8e6;line-height:1.4">
-        <input type="checkbox" id="lmKeep" style="margin-top:2px;width:16px;height:16px;flex:none;cursor:pointer">
+        <input type="checkbox" id="lmKeep" style="margin-top:2px;width:16px;height:16px;flex:none;cursor:pointer"${(function(){
+        /* v258 - remember what this device already chose. The box came up
+           EMPTY every time, and saveSession() DELETES the remembered login when
+           it is not ticked - so one sign-in where nobody noticed the tick
+           silently cancelled a 30-day session, and the app asked for a password
+           on every launch afterwards. Guru: "I click dar vakhate password
+           earlier. not today." Unticking it still forgets the device; it just
+           has to be done on purpose now. */
+        try{ return localStorage.getItem(USER_SESSION_KEY) ? ' checked' : ''; }catch(e){ return ''; }
+      })()}>
         <span>દર વખતે પાસવર્ડ ન પૂછો · Don't ask for my password every time
           <span style="display:block;font-size:11px;color:#8fa0b8">30 દિવસ સુધી. જે ફોન બીજા લોકો પણ વાપરે છે તેમાં આ ટિક ન કરો. · For 30 days. Do not tick this on a phone other people also use.</span>
         </span>

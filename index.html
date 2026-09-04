@@ -913,9 +913,13 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rfb.q.on{background:var(--orange);border-color:var(--orange)}
 .rec-srch{margin-left:auto;padding:7px 12px;border:1px solid var(--line);border-radius:20px;
   font:inherit;font-size:12.5px;width:200px;background:var(--panel-2);color:var(--ink)}
-.rec-cols{column-count:3;column-gap:12px}
-@media (max-width:1279px){.rec-cols{column-count:2}}
-@media (max-width:980px){.rec-cols{column-count:1}}
+/* v256 - real columns, not flowed ones. column-count decides placement by
+   height, which is how the certificate ended up buried and પશુધન took a whole
+   column to itself. */
+.rec-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.rec-col{min-width:0}
+@media (max-width:1279px){.rec-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:980px){.rec-cols{grid-template-columns:1fr}}
 .rec-card{break-inside:avoid;background:var(--panel);border:1px solid var(--line);border-radius:12px;
   margin:0 0 12px;overflow:hidden;display:inline-block;width:100%}
 .rec-card>h3{margin:0;font-size:11.5px;font-weight:800;padding:9px 13px;background:var(--panel-2);
@@ -4301,7 +4305,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v255';
+const APP_VERSION = 'v256';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -17557,11 +17561,16 @@ function openHaatRecord(id){
   REC.loading = needFetch;
   render();
   if(needFetch){
-    loadForms(id).then(() => {
+    /* v256 - patch the four things that change, instead of re-rendering the
+       whole page. render() rewrites the sidebar, the topbar and the header
+       too, and that full swap is the blip Guru could still see. */
+    const done = () => {
       if(REC.id !== id || ROUTE !== 'haatRecord') return;
       REC.loading = false;
-      render();
-    }).catch(() => { REC.loading = false; if(REC.id === id) render(); });
+      if(typeof recPatchAfterLoad === 'function' && document.getElementById('recCols')) recPatchAfterLoad();
+      else render();
+    };
+    loadForms(id).then(done).catch(done);
   }
 }
 
@@ -17586,7 +17595,8 @@ function viewHaatRecord(){
   const fcName = (fcById && fcById(f.fcId) ? fcById(f.fcId).name : '')
               || lastVisit.verifierName || lastVisit.recordedBy || '\u2014';
 
-  const fld = (k, val) => '<span class="f"><span class="k">' + k + '</span><span class="v">' + val + '</span></span>';
+  const fld = (k, val, id) => '<span class="f"><span class="k">' + k + '</span><span class="v"'
+    + (id ? ' id="' + id + '"' : '') + '>' + val + '</span></span>';
   /* v254 - qrow removed with the queue column it built */
 
   v.innerHTML =
@@ -17597,6 +17607,7 @@ function viewHaatRecord(){
     +   '<div class="rec-main">'
     +     '<div class="rec-head">'
     +       '<div class="rec-r1"><h2>' + esc(f.name || '\u2014') + '</h2>'
+    +         '<span id="recTag">'
     +         (REC.loading
               ? '<span class="tag grey"><span class="d"></span>\u2026</span>'
               : claims.length
@@ -17604,6 +17615,7 @@ function viewHaatRecord(){
                   + (t.x ? '\u2717 ' + t.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
                          : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</span>'
                 : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
+    +         '</span>'
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
     +         '<div class="sp">'
     +           '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
@@ -17616,9 +17628,9 @@ function viewHaatRecord(){
     +         fld('\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0',
                  REC.loading ? '\u2026'
                  : (yrs != null && String(yrs).trim()) ? esc(yrs) + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0'
-                 : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0')
+                 : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', 'recYrs')
     +         '<span class="sep">|</span>'
-    +         fld('\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f', certTxt)
+    +         fld('\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f', certTxt, 'recCert')
     +         '<span class="sep">|</span>'
     +         fld('FC', esc(fcName) + (lastVisit.date ? ' \u00b7 ' + esc(fmtDate(lastVisit.date)) : ''))
     +       '</div>'
@@ -17637,6 +17649,7 @@ function viewHaatRecord(){
     +         '</div>'
     +       '</div>'
     +     '</div>'
+    +     '<div id="recFiltWrap">'
     +     (REC.loading || !claims.length ? '' : (
             '<div class="rec-filt">'
     +         recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
@@ -17646,6 +17659,7 @@ function viewHaatRecord(){
     +         recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
     +         '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
     +       '</div>'))
+    +     '</div>'
     +     '<div class="rec-cols" id="recCols"></div>'
     +   '</div>'
     + '</div>';
@@ -17694,6 +17708,49 @@ function recCloseMenu(e){
   const m = document.getElementById('recMenu');
   if(m && !m.contains(e.target)) m.classList.remove('open');
 }
+/* v256 - fills in what was still loading, without touching the rest of the page */
+function recPatchAfterLoad(){
+  const f = (DB.haatFarmers || []).find(x => x.id === REC.id);
+  if(!f) return;
+  const claims = recClaims(f);
+  const t = recTally(claims);
+  const byId = id => { const r = claims.find(c => c.id === id); return r ? (r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer) : null; };
+
+  const tag = document.getElementById('recTag');
+  if(tag) tag.innerHTML = claims.length
+    ? '<span class="tag ' + (t.x ? 'red' : 'green') + '"><span class="d"></span>'
+      + (t.x ? '\u2717 ' + t.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
+             : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</span>'
+    : '<span class="tag grey"><span class="d"></span>Not verified yet</span>';
+
+  const yrs = byId('years_organic');
+  const yEl = document.getElementById('recYrs');
+  if(yEl) yEl.textContent = (yrs != null && String(yrs).trim())
+    ? yrs + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0' : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0';
+
+  const cert = String(byId('has_cert') || '').trim().toLowerCase();
+  const cEl = document.getElementById('recCert');
+  if(cEl) cEl.textContent = cert === 'yes' ? '\u0a9b\u0ac7'
+                          : cert === 'no'  ? '\u0aa8\u0aa5\u0ac0'
+                          : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0';
+
+  const fw = document.getElementById('recFiltWrap');
+  if(fw){
+    fw.innerHTML = !claims.length ? '' :
+        '<div class="rec-filt">'
+      + recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
+      + recFb('x', '\u2717 \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0', t.x, 'x')
+      + recFb('v', '\u2713 \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe', t.v, 'v')
+      + recFb('q', '? \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', t.q, 'q')
+      + recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
+      + '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
+      + '</div>';
+    fw.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
+    const sr = document.getElementById('recSrch');
+    if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
+  }
+  renderRecordBody(f, claims);
+}
 function recFb(k, label, n, cls){
   return '<button class="rfb ' + cls + (REC.filter === k ? ' on' : '') + '" data-f="' + k + '">'
     + '<span>' + label + '</span><span class="c">' + n + '</span></button>';
@@ -17725,19 +17782,15 @@ function renderRecordBody(f, claims){
     const k = r.cat || 'other';
     if(known.indexOf(k) < 0 && extra.indexOf(k) < 0) extra.push(k);
   });
-  /* v254 - Guru: livestock is nearly empty for most farmers and it sat third;
-     the certificate is what an admin looks for. Certificate up, photos under
-     it, livestock last. Any category not named here keeps its schema order in
-     the middle, so a future section cannot fall off the page. */
-  const REC_ORDER = ['basic','farm','cert','__photos__','practices','irrigation','livestock'];
+  /* v256 - which COLUMN each section sits in, decided here rather than left to
+     the browser. Guru pointed at the right-hand column: certificate first,
+     photos under it, પશુધન under those. */
+  const REC_COLS = [
+    ['basic', 'farm', 'condition'],
+    ['practices', 'irrigation', 'sales', 'digital', 'opinion'],
+    ['cert', '__photos__', 'livestock']
+  ];
   const all = schema.concat(extra.map(k => ({key:k, gu:(REC_CAT_GU[k] || k), en:k})));
-  const cats = all.slice().sort((a, b) => {
-    const ia = REC_ORDER.indexOf(a.key), ib = REC_ORDER.indexOf(b.key);
-    const ra = ia < 0 ? REC_ORDER.indexOf('irrigation') + 0.5 : ia;
-    const rb = ib < 0 ? REC_ORDER.indexOf('irrigation') + 0.5 : ib;
-    if(ra !== rb) return ra - rb;
-    return all.indexOf(a) - all.indexOf(b);
-  });
   const photoAfter = 'cert';
   const ql = (REC.q || '').trim().toLowerCase();
   const keep = r => (REC.filter === 'all' || recMark(r).k === REC.filter)
@@ -17745,6 +17798,17 @@ function renderRecordBody(f, claims){
             || (r.en || '').toLowerCase().indexOf(ql) >= 0
             || JSON.stringify(r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer || '').toLowerCase().indexOf(ql) >= 0);
 
+  /* a section nobody planned for joins the shortest column rather than
+     vanishing - the same rule that stopped 24 answers disappearing in v253 */
+  const cats = all;
+  const colOf = key => {
+    for(let i = 0; i < REC_COLS.length; i++) if(REC_COLS[i].indexOf(key) >= 0) return i;
+    const load = REC_COLS.map(names =>
+      all.filter(c => names.indexOf(c.key) >= 0)
+         .reduce((n, c) => n + claims.filter(r => (r.cat || 'other') === c.key).length, 0));
+    return load.indexOf(Math.min.apply(null, load));
+  };
+  const colHtml = ['', '', ''];
   let h = '';
   const photoCardHtml = () => {
     if(REC.filter !== 'all' || ql) return '';
@@ -17764,9 +17828,8 @@ function renderRecordBody(f, claims){
   };
   cats.forEach(c => {
     const rows = claims.filter(r => (r.cat || 'other') === c.key && keep(r));
-    if(c.key === photoAfter) { /* photos land straight after the certificate */ }
-    if(!rows.length){ if(c.key === photoAfter) h += photoCardHtml(); return; }
-    h += '<div class="rec-card"><h3><span>' + esc(c.gu) + '</span><em>' + rows.length + '</em></h3>'
+    if(!rows.length){ if(c.key === photoAfter) colHtml[colOf('__photos__')] += photoCardHtml(); return; }
+    colHtml[colOf(c.key)] += '<div class="rec-card"><h3><span>' + esc(c.gu) + '</span><em>' + rows.length + '</em></h3>'
       + rows.map(r => {
           const m = recMark(r);
           const ret = (Array.isArray(r.fcRetick) && r.fcRetick.length)
@@ -17783,8 +17846,9 @@ function renderRecordBody(f, claims){
             + '<div class="q">' + esc(r.gu || r.id) + (r.en ? ' <i>' + esc(r.en) + '</i>' : '') + '</div>'
             + recAnswerHtml(r) + ret + fca + note + '</div></div>';
         }).join('') + '</div>';
-    if(c.key === photoAfter) h += photoCardHtml();
+    if(c.key === photoAfter) colHtml[colOf('__photos__')] += photoCardHtml();
   });
+  if(colHtml.some(x => x)) h = colHtml.map(x => '<div class="rec-col">' + x + '</div>').join('');
   /* two different nothings: a filter that excluded everything, and a farmer
      whose form has never arrived. Saying "no answers match this filter" to
      someone who set no filter reads like the screen is broken. */

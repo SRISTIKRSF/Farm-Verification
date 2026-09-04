@@ -4305,7 +4305,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v258';
+const APP_VERSION = 'v259';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8652,9 +8652,21 @@ const USER_SESSION_KEY = 'sristi_user_session_v1';
 const SESSION_KEEP_MS = 30*24*60*60*1000;
 /* The same test detectPublicMode() applies. Kept separate because loadSession()
    runs during parse, long before PUBLIC_MODE exists. */
+/* v259 - the hashes that belong to a FARMER, not to staff. A remembered
+   session is deliberately ignored on these, so an admin's laptop can still be
+   handed to someone to fill in a form. */
+const PUBLIC_ONLY_HASHES = ['#haat','#apply','#public_haat_form',
+                            '#conv','#convert','#public_conv_form','#join','#forms'];
 function _sessionHashWantsApp(){
   const h = ((typeof location !== 'undefined' && location.hash) || '').toLowerCase();
-  return h === '#admin' || h === '#fc';
+  if(h === '#admin' || h === '#fc') return true;
+  /* v259 - AND the plain address. "Keep me signed in on this device" only
+     counted when the URL already said #admin, so opening the app from a
+     bookmark, a WhatsApp link or the address bar landed on the public page and
+     asked for a password every single time - however many times the tick had
+     been set. Guru ticked it and was still asked on every launch. */
+  if(h === '' || h === '#') return true;
+  return false;
 }
 /* v221 - the user has just asked to go into the app. If this device was told to
    remember them, this is the moment it counts: on the public landing the
@@ -17472,7 +17484,16 @@ function _renderHaatEnrollmentDataSingle(f){
 const REC = {id:null, filter:'all', q:'', ui:null, loading:false};
 function recUiNew(){
   if(REC.ui) return REC.ui === 'page';
-  try{ return localStorage.getItem('fv_record_ui') !== 'drawer'; }catch(e){ return true; }
+  try{
+    /* v259 - Guru: "By default, keep the new drawer view." Anyone left on the
+       old drawer from before the way back existed is moved across once. The
+       toggle still works afterwards; this only clears the stranded setting. */
+    if(!localStorage.getItem('fv_record_ui_reset')){
+      localStorage.setItem('fv_record_ui_reset', '1');
+      if(localStorage.getItem('fv_record_ui') === 'drawer') localStorage.removeItem('fv_record_ui');
+    }
+    return localStorage.getItem('fv_record_ui') !== 'drawer';
+  }catch(e){ return true; }
 }
 function recSetUi(mode){
   REC.ui = mode;
@@ -25871,9 +25892,13 @@ function detectPublicMode(){
      late, because nothing reaches enterAdminMode() until this function has
      already decided we are not public. On the public landing nothing is
      restored and the app boots exactly as it did before v221. */
-  if(h === '#admin' || h === '#fc') restoreKeptSession();
+  /* v259 - the plain address counts as "into the app" too, but ONLY when this
+     device holds a remembered session. With no remembered session nothing
+     changes: the farmer landing page loads exactly as before. */
+  const wantsApp = (h === '#admin' || h === '#fc' || h === '' || h === '#');
+  if(wantsApp) restoreKeptSession();
   const hasSession = !!sessionStorage.getItem(USER_SESSION_KEY);
-  if((h === '#admin' || h === '#fc') && hasSession) return false;
+  if(wantsApp && hasSession) return false;
   return true;
 }
 

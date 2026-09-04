@@ -863,8 +863,8 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rec-crumb{font-size:11.5px;color:var(--rec-faint);margin:0 0 9px}
 .rec-crumb a{color:var(--accent);font-weight:700;cursor:pointer;text-decoration:none}
 .rec-crumb a:hover{text-decoration:underline}
-.rec-wrap{display:grid;grid-template-columns:262px minmax(0,1fr);gap:14px;align-items:start}
-@media (max-width:1100px){.rec-wrap{grid-template-columns:1fr}.rec-queue{display:none}}
+.rec-wrap{display:block}   /* v254 - one column now */
+/* v254 - nothing left to collapse */
 .rec-queue{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
   position:sticky;top:12px;max-height:calc(100vh - 120px);display:flex;flex-direction:column}
 .rec-queue .qh{padding:11px 14px;border-bottom:1px solid var(--line);background:var(--panel-2)}
@@ -4301,7 +4301,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v253';
+const APP_VERSION = 'v254';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5075,6 +5075,15 @@ function seedDemoHaatFarmers(d){
   // upsert by id: insert if missing; upgrade in place if older formData version
   demos.forEach(demoData=>{
     const existing = d.haatFarmers.find(f=>f.id===demoData.id);
+    /* v254 - an archived demo is left completely alone. This upsert runs from
+       normaliseDB() on every load, and the `if(!existing) push` branch below
+       would re-create one that had been removed.
+       NOT proven to be why Gandhi and Modi kept coming back for Guru: the
+       same test passes on v252, because Object.assign never deletes a key the
+       source object lacks, so `_archived` survived the in-place upgrade after
+       all. Kept because it is correct either way. The thing that actually
+       takes them off his screen is the demo filter in archFilterRows(). */
+    if(existing && existing._archived) return;
     if(!existing){
       d.haatFarmers.push(demoData);
     } else if(existing.editedBy || existing.fcChangeHistory || existing.decisionBy){
@@ -13911,9 +13920,28 @@ function archivedCount(p){ return archivedRows(p).filter(f => !_isMergedAway(f))
 function mergedAwayCount(p){ return archivedRows(p).filter(_isMergedAway).length; }
 /* The one place the archived-list filter is defined, so the two lists cannot drift. */
 function archFilterRows(p, rows){
+  /* v254 - Guru: "Mohandas Gandhi and Narendra Modi come back often. I
+     archived them. But still come back."
+
+     They are demo records that ship with the app - Gandhi, Modi, Patel and
+     Vanshita Amin, four rows out of 516 - and the ARCHIVED list has always
+     excluded seeded records, so archiving them made them vanish from both
+     lists with nothing to show for it. Whatever was undoing the archive (both
+     are in the live database today carrying `_seeded:true` and no archive
+     flag), the demo rows do not belong in a real farmer list at all.
+
+     They are HIDDEN, not deleted. Nothing is written, and flipping
+     showSeededInStats in Settings brings them straight back. */
+  /* ⛔ by ID ONLY, never by `_seeded`. seedDB()'s tag() stamps _seeded:true on
+     EVERY bulk-seeded farmer, so filtering on that flag emptied the entire
+     list in demo mode - 582 farmers gone - and would empty a real one the day
+     any live record picked the flag up. These four ids are the demo rows the
+     app ships with and nothing else can match them. */
+  const noDemos = r => !/^(HF-DEMO-|HF_VANSHITA_|HF_MESSI_|CF_RONALDO_)/.test(String((r && r.id) || ''));
   return ARCH_SHOW[p]
-    ? rows.filter(r => r._archived && !_isSeededRecord(r) && (ARCH_MERGED[p] || !_isMergedAway(r)))
-    : rows.filter(r => !r._archived);
+    ? rows.filter(r => r._archived && noDemos(r) && (ARCH_MERGED[p] || !_isMergedAway(r)))
+    : rows.filter(r => !r._archived && (
+        (DB.settings && DB.settings.showSeededInStats) ? true : noDemos(r)));
 }
 async function archiveFarmers(p, ids){
   if(!ids || !ids.length) return;
@@ -17414,7 +17442,7 @@ function _renderHaatEnrollmentDataSingle(f){
 
    REC.ui is the switch. Setting it to 'drawer' puts the old overlay back for
    everyone, instantly, without a deploy - it is under More on the record. */
-const REC = {id:null, filter:'all', q:'', ui:null};
+const REC = {id:null, filter:'all', q:'', ui:null, loading:false};
 function recUiNew(){
   if(REC.ui) return REC.ui === 'page';
   try{ return localStorage.getItem('fv_record_ui') !== 'drawer'; }catch(e){ return true; }
@@ -17493,16 +17521,25 @@ function recAnswerHtml(r){
 function openHaatRecord(id){
   const f = (DB.haatFarmers || []).find(x => x.id === id);
   if(!f) return;
-  /* the forms live outside the farmer row - fetch once, then render */
-  if(!f.enrollmentFormFull && !f.verificationFormFull
-     && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted)){
-    REC.id = id; ROUTE = 'haatRecord'; render();
-    loadForms(id).then(() => { if(REC.id === id && ROUTE === 'haatRecord') render(); });
-    return;
-  }
   REC.id = id; REC.filter = 'all'; REC.q = '';
   ROUTE = 'haatRecord';
+  /* v254 - the answers live outside the farmer row. This used to paint the
+     page, then paint it AGAIN when they arrived - and the second paint
+     contradicted the first, because the verification tag, the years and the
+     certificate are all read from those answers. It said "Not verified yet"
+     and then changed its mind: the flicker Guru recorded.
+     Now it says it is loading, and the answers appear once, in place. */
+  const needFetch = !f.enrollmentFormFull && !f.verificationFormFull
+                    && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted);
+  REC.loading = needFetch;
   render();
+  if(needFetch){
+    loadForms(id).then(() => {
+      if(REC.id !== id || ROUTE !== 'haatRecord') return;
+      REC.loading = false;
+      render();
+    }).catch(() => { REC.loading = false; if(REC.id === id) render(); });
+  }
 }
 
 function viewHaatRecord(){
@@ -17510,18 +17547,15 @@ function viewHaatRecord(){
   const f = (DB.haatFarmers || []).find(x => x.id === REC.id);
   if(!f){ ROUTE = 'haat'; render(); return; }
 
-  /* the queue is the list the user was already looking at, in the same order */
-  let queue = [];
-  try{ queue = (typeof haatRowsForCurrentFilter === 'function') ? haatRowsForCurrentFilter() : []; }catch(e){ queue = []; }
-  if(!queue.length) queue = filterByCurrentFc(DB.haatFarmers || []);
-  if(!queue.some(x => x.id === f.id)) queue = [f].concat(queue);
-
   const claims = recClaims(f);
   const t = recTally(claims);
   const byId = id => { const r = claims.find(c => c.id === id); return r ? (r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer) : null; };
   const yrs  = byId('years_organic');
   const cert = String(byId('has_cert') || '').trim().toLowerCase();
-  const certTxt = cert === 'yes' ? '\u0a9b\u0ac7' : cert === 'no' ? '\u0aa8\u0aa5\u0ac0' : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0';
+  /* while the answers are still coming, say nothing rather than "\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0" */
+  const certTxt = REC.loading ? '\u2026'
+                : cert === 'yes' ? '\u0a9b\u0ac7' : cert === 'no' ? '\u0aa8\u0aa5\u0ac0'
+                : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0';
   const where = [f.village, f.taluka && talukaDisplayName ? talukaDisplayName(f.taluka) : f.taluka,
                  districtDisplayName(f.district)].filter(Boolean).join(', ');
   const visits = _fcRealVisitsAll ? _fcRealVisitsAll(f) : (f.visits || []);
@@ -17530,36 +17564,23 @@ function viewHaatRecord(){
               || lastVisit.verifierName || lastVisit.recordedBy || '\u2014';
 
   const fld = (k, val) => '<span class="f"><span class="k">' + k + '</span><span class="v">' + val + '</span></span>';
-  const qrow = x => {
-    /* only the farmers whose forms are already in memory get a tally - reading
-       and counting 400 records on every keystroke is not worth a badge */
-    const scored = (x.verificationFormFull || (FORMS_CACHE[x.id] || {}).verif);
-    const tt = scored ? recTally(recClaims(x)) : {v:0,x:0,n:0,q:0};
-    return '<div class="qrow' + (x.id === f.id ? ' on' : '') + (tt.x ? '' : ' clean') + '" data-rec="' + esc(x.id) + '">'
-      + '<span class="dot"></span><div style="min-width:0">'
-      + '<div class="n">' + esc(x.name || '\u2014') + '</div>'
-      + '<div class="m">' + esc(x.village || '\u2014') + (x.landAcres != null ? ' \u00b7 ' + x.landAcres + ' acre' : '') + '</div>'
-      + (scored ? '<div class="b">' + (tt.x ? '\u2717 ' + tt.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
-                                            : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</div>' : '')
-      + '</div></div>';
-  };
+  /* v254 - qrow removed with the queue column it built */
 
   v.innerHTML =
       '<div class="rec-crumb"><a data-recback>\u2190 Haat Farmers</a> <span style="opacity:.5">/</span> ' + esc(f.name || '') + '</div>'
     + '<div class="rec-wrap">'
-    +   '<div class="rec-queue"><div class="qh"><div class="t">Haat farmers</div>'
-    +     '<div class="s">' + queue.length + ' in this list</div></div>'
-    +     '<div class="ql">' + queue.slice(0, 150).map(qrow).join('')
-    +       (queue.length > 150 ? '<div class="rec-phl" style="padding:9px 14px">showing the first 150 · use the list to narrow</div>' : '')
-    +     '</div></div>'
+    /* v254 - Guru: the farmer list beside the record is gone. The app's own
+       sidebar is the navigation; a second list next to it was noise. */
     +   '<div class="rec-main">'
     +     '<div class="rec-head">'
     +       '<div class="rec-r1"><h2>' + esc(f.name || '\u2014') + '</h2>'
-    +         (claims.length
-              ? '<span class="tag ' + (t.x ? 'red' : 'green') + '"><span class="d"></span>'
-                + (t.x ? '\u2717 ' + t.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
-                       : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</span>'
-              : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
+    +         (REC.loading
+              ? '<span class="tag grey"><span class="d"></span>\u2026</span>'
+              : claims.length
+                ? '<span class="tag ' + (t.x ? 'red' : 'green') + '"><span class="d"></span>'
+                  + (t.x ? '\u2717 ' + t.x + ' \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0'
+                         : '\u2713 \u0aac\u0aa7\u0abe \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe') + '</span>'
+                : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
     +         '<div class="sp">'
     +           '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
@@ -17570,7 +17591,9 @@ function viewHaatRecord(){
     +         fld('ID', esc(f.id || '\u2014'))
     +         '<span class="sep">|</span>'
     +         fld('\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0',
-                 (yrs != null && String(yrs).trim()) ? esc(yrs) + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0' : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0')
+                 REC.loading ? '\u2026'
+                 : (yrs != null && String(yrs).trim()) ? esc(yrs) + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0'
+                 : '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0')
     +         '<span class="sep">|</span>'
     +         fld('\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f', certTxt)
     +         '<span class="sep">|</span>'
@@ -17591,7 +17614,7 @@ function viewHaatRecord(){
     +         '</div>'
     +       '</div>'
     +     '</div>'
-    +     (claims.length ? (
+    +     (REC.loading || !claims.length ? '' : (
             '<div class="rec-filt">'
     +         recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
     +         recFb('x', '\u2717 \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0', t.x, 'x')
@@ -17599,14 +17622,13 @@ function viewHaatRecord(){
     +         recFb('q', '? \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', t.q, 'q')
     +         recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
     +         '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
-    +       '</div>') : '')
+    +       '</div>'))
     +     '<div class="rec-cols" id="recCols"></div>'
     +   '</div>'
     + '</div>';
 
   renderRecordBody(f, claims);
 
-  v.querySelectorAll('[data-rec]').forEach(el => el.onclick = () => openHaatRecord(el.dataset.rec));
   const back = v.querySelector('[data-recback]');
   if(back) back.onclick = () => { ROUTE = 'haat'; render(); };
   v.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
@@ -17680,7 +17702,20 @@ function renderRecordBody(f, claims){
     const k = r.cat || 'other';
     if(known.indexOf(k) < 0 && extra.indexOf(k) < 0) extra.push(k);
   });
-  const cats = schema.concat(extra.map(k => ({key:k, gu:(REC_CAT_GU[k] || k), en:k})));
+  /* v254 - Guru: livestock is nearly empty for most farmers and it sat third;
+     the certificate is what an admin looks for. Certificate up, photos under
+     it, livestock last. Any category not named here keeps its schema order in
+     the middle, so a future section cannot fall off the page. */
+  const REC_ORDER = ['basic','farm','cert','__photos__','practices','irrigation','livestock'];
+  const all = schema.concat(extra.map(k => ({key:k, gu:(REC_CAT_GU[k] || k), en:k})));
+  const cats = all.slice().sort((a, b) => {
+    const ia = REC_ORDER.indexOf(a.key), ib = REC_ORDER.indexOf(b.key);
+    const ra = ia < 0 ? REC_ORDER.indexOf('irrigation') + 0.5 : ia;
+    const rb = ib < 0 ? REC_ORDER.indexOf('irrigation') + 0.5 : ib;
+    if(ra !== rb) return ra - rb;
+    return all.indexOf(a) - all.indexOf(b);
+  });
+  const photoAfter = 'cert';
   const ql = (REC.q || '').trim().toLowerCase();
   const keep = r => (REC.filter === 'all' || recMark(r).k === REC.filter)
     && (!ql || (r.gu || '').toLowerCase().indexOf(ql) >= 0
@@ -17688,9 +17723,26 @@ function renderRecordBody(f, claims){
             || JSON.stringify(r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer || '').toLowerCase().indexOf(ql) >= 0);
 
   let h = '';
+  const photoCardHtml = () => {
+    if(REC.filter !== 'all' || ql) return '';
+    const ph = recPhotos(f);
+    const keys = Object.keys(ph).filter(k => ph[k].length);
+    if(!keys.length) return '';
+    let p = '<div class="rec-card"><h3><span>\u0aab\u0acb\u0a9f\u0abe \u00b7 Photos</span><em>'
+          + keys.reduce((n, k) => n + ph[k].length, 0) + '</em></h3>';
+    keys.forEach(k => {
+      const lbl = (claims.find(r => r.id === k) || {}).gu || k;
+      p += '<div class="rec-phl">' + esc(lbl) + '</div><div class="rec-ph">'
+        + ph[k].map(x => '<a href="' + esc(photoSrc(x) || '') + '" data-photo><img loading="lazy" src="'
+            + esc(photoThumb(x, 320) || photoSrc(x) || '') + '"></a>').join('')
+        + '</div>';
+    });
+    return p + '</div>';
+  };
   cats.forEach(c => {
     const rows = claims.filter(r => (r.cat || 'other') === c.key && keep(r));
-    if(!rows.length) return;
+    if(c.key === photoAfter) { /* photos land straight after the certificate */ }
+    if(!rows.length){ if(c.key === photoAfter) h += photoCardHtml(); return; }
     h += '<div class="rec-card"><h3><span>' + esc(c.gu) + '</span><em>' + rows.length + '</em></h3>'
       + rows.map(r => {
           const m = recMark(r);
@@ -17708,30 +17760,16 @@ function renderRecordBody(f, claims){
             + '<div class="q">' + esc(r.gu || r.id) + (r.en ? ' <i>' + esc(r.en) + '</i>' : '') + '</div>'
             + recAnswerHtml(r) + ret + fca + note + '</div></div>';
         }).join('') + '</div>';
+    if(c.key === photoAfter) h += photoCardHtml();
   });
-
-  if(REC.filter === 'all' && !ql){
-    const ph = recPhotos(f);
-    const keys = Object.keys(ph).filter(k => ph[k].length);
-    if(keys.length){
-      h += '<div class="rec-card"><h3><span>\u0aab\u0acb\u0a9f\u0abe \u00b7 Photos</span><em>'
-         + keys.reduce((n, k) => n + ph[k].length, 0) + '</em></h3>';
-      keys.forEach(k => {
-        const lbl = (claims.find(r => r.id === k) || {}).gu || k;
-        h += '<div class="rec-phl">' + esc(lbl) + '</div><div class="rec-ph">'
-          + ph[k].map(p => '<a href="' + esc(photoSrc(p) || '') + '" data-photo><img loading="lazy" src="'
-              + esc(photoThumb(p, 320) || photoSrc(p) || '') + '"></a>').join('')
-          + '</div>';
-      });
-      h += '</div>';
-    }
-  }
   /* two different nothings: a filter that excluded everything, and a farmer
      whose form has never arrived. Saying "no answers match this filter" to
      someone who set no filter reads like the screen is broken. */
   if(!h){
     h = '<div class="rec-card"><div class="rec-empty">'
-      + (claims.length
+      + (REC.loading
+          ? '\u0a9c\u0ab5\u0abe\u0aac \u0ab2\u0abe\u0ab5\u0ac0\u0aa8\u0ac7...<div style="margin-top:5px;font-size:11.5px">Loading answers</div>'
+          : claims.length
           ? 'No answers match this filter.'
           : 'આ ખેડૂતનું ફોર્મ હજુ મળ્યું નથી'
             + '<div style="margin-top:5px;font-size:11.5px">No enrolment form on file for this farmer yet</div>')

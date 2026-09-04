@@ -4197,7 +4197,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v249';
+const APP_VERSION = 'v250';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19521,6 +19521,53 @@ function openCompareFormsModal(id, opts){
   }
 
   /* Match indicator per row */
+
+  /* v250 - the two facts that replaced the verification percentage. See the
+     note on this version: the percentage was driven by how many questions did
+     not apply, so it said nothing about the farm. These two say something.
+
+     The coordinator's own answer wins over the farmer's claim wherever one was
+     recorded - the whole point of the sheet is what was found, not what was
+     said - and each point carries the same tick the rest of the page uses, so
+     "certificate: none" and "certificate: never checked" cannot be confused. */
+  function _cmpKeyPoints(){
+    const stated = id => {
+      const fc = fcVerifs[id], fm = farmerClaims[id];
+      if(fc && fc.fcAnswer != null && fc.fcAnswer !== '' && !Array.isArray(fc.fcAnswer)) return fc.fcAnswer;
+      return fm ? fm.answer : null;
+    };
+    const mark = id => {
+      const fc = fcVerifs[id];
+      if(!fc || !fc.fcVerification)          return {ch:'?', col:'#a4560c'};
+      if(fc.fcVerification === 'verified')   return {ch:'\u2713', col:'#3f6b3a'};
+      if(fc.fcVerification === 'not_verified') return {ch:'\u2717', col:'#9b2c24'};
+      return {ch:'\u2014', col:'#8a7768'};
+    };
+    const pts = [];
+
+    /* 1 - years of natural farming */
+    const yRaw = stated('years_organic');
+    const yNum = parseFloat(String(yRaw == null ? '' : yRaw).replace(/[^0-9.]/g, ''));
+    pts.push(Object.assign({}, mark('years_organic'), (isFinite(yNum) && yNum > 0)
+      ? {gu: yNum + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0 \u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0 \u0a95\u0ab0\u0ac7 \u0a9b\u0ac7', en: 'Natural farming for ' + yNum + ' year' + (yNum === 1 ? '' : 's')}
+      : {gu: '\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0 \u0a95\u0ac7\u0a9f\u0ab2\u0abe\u0a82 \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0 \u2014 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', en: 'Years of natural farming \u2014 not recorded', col:'#8a7768', ch:'\u2014'}));
+
+    /* 2 - organic certificate, with the issuing agency when it is on file */
+    const cRaw = String(stated('has_cert') == null ? '' : stated('has_cert')).trim().toLowerCase();
+    const agencyC = farmerClaims['cert_agency'];
+    const agency = agencyC && agencyC.answer ? String(agencyC.answer).trim() : '';
+    if(cRaw === 'yes' || cRaw === 'true'){
+      pts.push(Object.assign({}, mark('has_cert'),
+        {gu: '\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u0a9b\u0ac7' + (agency ? ' \u2014 ' + agency : ''),
+         en: 'Holds an organic certificate' + (agency ? ' \u2014 ' + agency : '')}));
+    } else if(cRaw === 'no' || cRaw === 'false'){
+      pts.push(Object.assign({}, mark('has_cert'), {gu:'\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u0aa8\u0aa5\u0ac0', en:'No organic certificate'}));
+    } else {
+      pts.push({ch:'\u2014', col:'#8a7768', gu:'\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u2014 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', en:'Organic certificate \u2014 not recorded'});
+    }
+    return pts;
+  }
+
   function matchIcon(q, farmerC, fcC){
     if(q.displayOnly) return '<span style="color:var(--ink-faint)" title="Identity field — no verification">—</span>';
     if(!farmerC && !fcC) return '<span style="color:var(--ink-faint)">—</span>';
@@ -19654,13 +19701,12 @@ function openCompareFormsModal(id, opts){
      or a pinned older one contradicts its own banner two lines below. */
   const _stripDate = _pinVisit ? (_pinVisit.date || '') : (f.verificationFormSubmittedAt || '');
   body += '<span><b style="color:var(--ink)">Verification ' + (_pinVisit ? 'date' : 'submitted') + ':</b> ' + (_stripDate?esc(fmtDate(_stripDate)):'—') + '</span>';
-  /* v235 - the visit carries the score too, for a verification whose form
-     never arrived. */
-  const _cmpScore = (verif.summary && verif.summary.score != null) ? verif.summary.score
-                  : ((_cmpVisit && _cmpVisit.score != null) ? _cmpVisit.score : null);
-  if(_cmpScore != null){
-    body += '<span><b style="color:var(--ink)">Verification score:</b> ' + _cmpScore + '%</span>';
-  }
+  /* v250 - the same two facts the PDF prints, so the screen and the printout
+     cannot disagree. The percentage that stood here is gone; see the note on
+     this version for what it actually measured. */
+  _cmpKeyPoints().forEach(p => {
+    body += '<span><b style="color:' + p.col + '">' + p.ch + '</b> ' + esc(p.gu) + '</span>';
+  });
   body += '</div>';
   /* v235 - never let a recovered view pass for a stored form. */
   if(_pinVisit){
@@ -19792,16 +19838,17 @@ function openCompareFormsModal(id, opts){
                     _cmpVisitDate ? esc(fmtDate(_cmpVisitDate)) : '\u2014')
       +   '</div>'
       + '</div>';
-    /* v247 - a pinned verification's score lives on the visit; verif.summary
-       is empty for one whose sheet was overwritten before v247. */
-    const _pdfScore = (verif.summary && verif.summary.score != null) ? verif.summary.score
-                    : ((_cmpVisit && _cmpVisit.score != null) ? _cmpVisit.score : null);
-    if(_pdfScore != null){
-      h += '<div style="width:132px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:11px 10px;text-align:center;background:#faf7f5;display:flex;flex-direction:column;justify-content:center">'
-        + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700">\u0a9a\u0a95\u0abe\u0ab8\u0aa3\u0ac0 \u0ab8\u0acd\u0a95\u0acb\u0ab0</div>'
-        + '<div style="font-size:30px;font-weight:800;color:#723e31;line-height:1.15">' + _pdfScore + '<span style="font-size:15px">%</span></div>'
-        + '</div>';
-    }
+    /* v250 - two facts where the percentage used to be. */
+    h += '<div style="width:252px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:10px 12px;background:#faf7f5">'
+      + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:6px">\u0aae\u0ac1\u0a96\u0acd\u0aaf \u0aae\u0ac1\u0aa6\u0acd\u0aa6\u0abe \u00b7 Key points</div>'
+      + _cmpKeyPoints().map(p =>
+          '<div style="display:flex;gap:7px;align-items:flex-start;margin-top:5px">'
+          + '<span style="color:' + p.col + ';font-weight:800;font-size:12px;line-height:1.45;flex-shrink:0">' + p.ch + '</span>'
+          + '<div style="min-width:0">'
+          +   '<div style="font-size:12px;font-weight:700;color:#2e1f16;line-height:1.45;overflow-wrap:anywhere">' + esc(p.gu) + '</div>'
+          +   '<div style="font-size:9px;color:#a1968d;line-height:1.35;overflow-wrap:anywhere">' + esc(p.en) + '</div>'
+          + '</div></div>').join('')
+      + '</div>';
     h += '</div>';
     /* the legend, because the marks are the whole point of the page */
     h += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;color:#5b4638;margin:0 0 12px;padding:8px 12px;background:#faf7f5;border:1px solid #e6dcd4;border-radius:7px">'

@@ -19531,40 +19531,33 @@ function openCompareFormsModal(id, opts){
      said - and each point carries the same tick the rest of the page uses, so
      "certificate: none" and "certificate: never checked" cannot be confused. */
   function _cmpKeyPoints(){
+    /* The coordinator's own answer wins over the farmer's claim wherever one
+       was recorded - the sheet reports what was found, not what was said. */
     const stated = id => {
       const fc = fcVerifs[id], fm = farmerClaims[id];
       if(fc && fc.fcAnswer != null && fc.fcAnswer !== '' && !Array.isArray(fc.fcAnswer)) return fc.fcAnswer;
       return fm ? fm.answer : null;
     };
-    const mark = id => {
-      const fc = fcVerifs[id];
-      if(!fc || !fc.fcVerification)          return {ch:'?', col:'#a4560c'};
-      if(fc.fcVerification === 'verified')   return {ch:'\u2713', col:'#3f6b3a'};
-      if(fc.fcVerification === 'not_verified') return {ch:'\u2717', col:'#9b2c24'};
-      return {ch:'\u2014', col:'#8a7768'};
+    /* the question exactly as the form asks it, so this box and the table
+       below cannot word the same question two different ways */
+    const ask = (id, fallbackGu, fallbackEn) => {
+      const q = qs.find(x => x && x.id === id);
+      return {gu: (q && q.gu) || fallbackGu, en: (q && q.en) || fallbackEn};
     };
     const pts = [];
 
-    /* 1 - years of natural farming */
     const yRaw = stated('years_organic');
     const yNum = parseFloat(String(yRaw == null ? '' : yRaw).replace(/[^0-9.]/g, ''));
-    pts.push(Object.assign({}, mark('years_organic'), (isFinite(yNum) && yNum > 0)
-      ? {gu: yNum + ' \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0 \u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0 \u0a95\u0ab0\u0ac7 \u0a9b\u0ac7', en: 'Natural farming for ' + yNum + ' year' + (yNum === 1 ? '' : 's')}
-      : {gu: '\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0 \u0a95\u0ac7\u0a9f\u0ab2\u0abe\u0a82 \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0 \u2014 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', en: 'Years of natural farming \u2014 not recorded', col:'#8a7768', ch:'\u2014'}));
+    pts.push(Object.assign(ask('years_organic', '\u0a95\u0ac7\u0a9f\u0ab2\u0abe \u0ab5\u0ab0\u0acd\u0ab7\u0aa5\u0ac0 \u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0 \u0a95\u0ab0\u0acb \u0a9b\u0acb?', 'Years of organic farming'),
+      (isFinite(yNum) && yNum > 0)
+        ? {aGu: yNum + ' \u0ab5\u0ab0\u0acd\u0ab7', aEn: yNum + ' year' + (yNum === 1 ? '' : 's'), known: true}
+        : {aGu: '\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', aEn: 'Not recorded', known: false}));
 
-    /* 2 - organic certificate, with the issuing agency when it is on file */
     const cRaw = String(stated('has_cert') == null ? '' : stated('has_cert')).trim().toLowerCase();
-    const agencyC = farmerClaims['cert_agency'];
-    const agency = agencyC && agencyC.answer ? String(agencyC.answer).trim() : '';
-    if(cRaw === 'yes' || cRaw === 'true'){
-      pts.push(Object.assign({}, mark('has_cert'),
-        {gu: '\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u0a9b\u0ac7' + (agency ? ' \u2014 ' + agency : ''),
-         en: 'Holds an organic certificate' + (agency ? ' \u2014 ' + agency : '')}));
-    } else if(cRaw === 'no' || cRaw === 'false'){
-      pts.push(Object.assign({}, mark('has_cert'), {gu:'\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u0aa8\u0aa5\u0ac0', en:'No organic certificate'}));
-    } else {
-      pts.push({ch:'\u2014', col:'#8a7768', gu:'\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0ac0\u0aab\u0ac0\u0a95\u0ac7\u0a9f \u2014 \u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', en:'Organic certificate \u2014 not recorded'});
-    }
+    pts.push(Object.assign(ask('has_cert', '\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f \u0a9b\u0ac7?', 'Has organic certificate?'),
+      (cRaw === 'yes' || cRaw === 'true')  ? {aGu:'\u0ab9\u0abe', aEn:'Yes', known:true} :
+      (cRaw === 'no'  || cRaw === 'false') ? {aGu:'\u0aa8\u0abe',  aEn:'No',  known:true} :
+                                             {aGu:'\u0aae\u0abe\u0ab9\u0abf\u0aa4\u0ac0 \u0aa8\u0aa5\u0ac0', aEn:'Not recorded', known:false}));
     return pts;
   }
 
@@ -19705,7 +19698,7 @@ function openCompareFormsModal(id, opts){
      cannot disagree. The percentage that stood here is gone; see the note on
      this version for what it actually measured. */
   _cmpKeyPoints().forEach(p => {
-    body += '<span><b style="color:' + p.col + '">' + p.ch + '</b> ' + esc(p.gu) + '</span>';
+    body += '<span>' + esc(p.gu) + ' <b style="color:var(--ink)">' + esc(p.aGu) + '</b></span>';
   });
   body += '</div>';
   /* v235 - never let a recovered view pass for a stored form. */
@@ -19838,16 +19831,17 @@ function openCompareFormsModal(id, opts){
                     _cmpVisitDate ? esc(fmtDate(_cmpVisitDate)) : '\u2014')
       +   '</div>'
       + '</div>';
-    /* v250 - two facts where the percentage used to be. */
+    /* v250 - the two questions and their answers, where the percentage used to
+       be. Laid out like the farmer card beside it: the question as a small grey
+       label, the answer bold underneath. */
     h += '<div style="width:252px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:10px 12px;background:#faf7f5">'
-      + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:6px">\u0aae\u0ac1\u0a96\u0acd\u0aaf \u0aae\u0ac1\u0aa6\u0acd\u0aa6\u0abe \u00b7 Key points</div>'
-      + _cmpKeyPoints().map(p =>
-          '<div style="display:flex;gap:7px;align-items:flex-start;margin-top:5px">'
-          + '<span style="color:' + p.col + ';font-weight:800;font-size:12px;line-height:1.45;flex-shrink:0">' + p.ch + '</span>'
-          + '<div style="min-width:0">'
-          +   '<div style="font-size:12px;font-weight:700;color:#2e1f16;line-height:1.45;overflow-wrap:anywhere">' + esc(p.gu) + '</div>'
-          +   '<div style="font-size:9px;color:#a1968d;line-height:1.35;overflow-wrap:anywhere">' + esc(p.en) + '</div>'
-          + '</div></div>').join('')
+      + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:7px">\u0aae\u0ac1\u0a96\u0acd\u0aaf \u0aae\u0ac1\u0aa6\u0acd\u0aa6\u0abe \u00b7 Key points</div>'
+      + _cmpKeyPoints().map((p, n) =>
+          '<div style="' + (n ? 'margin-top:9px;padding-top:9px;border-top:1px solid #ece2da' : '') + '">'
+          + '<div style="font-size:10px;color:#8a7768;line-height:1.4;overflow-wrap:anywhere">' + esc(p.gu) + '</div>'
+          + '<div style="font-size:14px;font-weight:800;line-height:1.35;margin-top:1px;color:' + (p.known ? '#2e1f16' : '#a1968d') + '">' + esc(p.aGu) + '</div>'
+          + '<div style="font-size:9px;color:#a1968d;line-height:1.3;overflow-wrap:anywhere">' + esc(p.en) + ' \u00b7 ' + esc(p.aEn) + '</div>'
+          + '</div>').join('')
       + '</div>';
     h += '</div>';
     /* the legend, because the marks are the whole point of the page */

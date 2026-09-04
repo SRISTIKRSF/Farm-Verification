@@ -3104,7 +3104,11 @@ function buildVerificationPdfHtml(lastClaims, summary){
   });
   const d = new Date();
   const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-  const score = summary ? summary.score : 0;
+  /* v251b - the counts, not the percentage. See the note on v251: verified
+     ticks over every question on the form said more about which questions
+     applied than about the farm. summary already carries both numbers. */
+  const _vDone = summary && summary.verifiedCount != null ? summary.verifiedCount : null;
+  const _vAsked = summary && summary.totalAsked != null ? summary.totalAsked : null;
   return '<div style="font-family:' + "'Hind Vadodara','Noto Sans Gujarati',system-ui,sans-serif" + ';width:' + PDF_W + 'px;color:#2e1f16;background:#fff">'
     + pdfLetterhead()
     /* the farmer, as a labelled grid across the full width */
@@ -3120,8 +3124,10 @@ function buildVerificationPdfHtml(lastClaims, summary){
         + '</div>'
       + '</div>'
       + '<div style="width:132px;flex-shrink:0;border:1px solid #e6dcd4;border-radius:8px;padding:11px 10px;text-align:center;background:#faf7f5;display:flex;flex-direction:column;justify-content:center">'
-        + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700">ચકાસણી સ્કોર</div>'
-        + '<div style="font-size:30px;font-weight:800;color:#723e31;line-height:1.15">' + score + '<span style="font-size:15px">%</span></div>'
+        + '<div style="font-size:9px;color:#8a7768;text-transform:uppercase;letter-spacing:.1em;font-weight:700">ચકાસ્યા · Verified</div>'
+        + '<div style="font-size:26px;font-weight:800;color:#723e31;line-height:1.2">'
+          + (_vDone == null ? '\u2014' : _vDone + '<span style="font-size:14px;color:#8a7768"> / ' + (_vAsked == null ? '?' : _vAsked) + '</span>')
+        + '</div>'
         + '<div style="font-size:9.5px;color:#8a7768">' + esc(dateStr) + '</div>'
       + '</div>'
     + '</div>'
@@ -3966,7 +3972,11 @@ function updateSummary(){
   });
   const score = total ? Math.round(verified*100/total) : 0;
   const sb = $('#summaryBox');
-  if(sb) sb.innerHTML = \`Verified: \${verified} · Not verified: \${notVerified} · N/A: \${na} · Not answered: \${missing}<br>Verification score: <b>\${score}%</b> of \${total} verifiable claims\`;
+  /* v251 - the counts, without the percentage that used to sit under
+     them. See the note on this version: N/A is half of every tick ever
+     recorded, so the derived percentage described the form, not the farm.
+     The counts themselves are what shows a coordinator their progress. */
+  if(sb) sb.innerHTML = \`Verified: \${verified} · Not verified: \${notVerified} · N/A: \${na} · Not answered: \${missing}<br>\${total} verifiable claims on this form\`;
 }
 function goto(i){
   const ss = sections();
@@ -4081,7 +4091,8 @@ function submit(){
     $('#actionsBar').style.display = 'none';
     $('#dotsWrap').style.display = 'none';
     const summaryEl = $('#verifySuccessSummary');
-    if(summaryEl) summaryEl.textContent = FARMER.name + ' — ' + verified + ' / ' + totalAsked + ' verified (' + score + '%)';
+    /* v251 - the count, not the percentage. */
+    if(summaryEl) summaryEl.textContent = FARMER.name + ' — ' + verified + ' / ' + totalAsked + ' verified';
     $('#verifySuccessScreen').classList.add('show');
     const closeNow = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'farm-verification-closed'}, '*'); };
     const dlBtn = $('#downloadVerifPdfBtn');
@@ -4197,7 +4208,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v250';
+const APP_VERSION = 'v251';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12166,7 +12177,7 @@ function openFcRefModal(program, id){
       const vfc=(DB.fcs||[]).find(x=>x.id===vis.fc);
       return `<div class="tl-item"><div class="tl-card">
         <div class="tl-date">${esc(fmtDate(vis.date||''))}${vis.time?' · '+esc(vis.time):''}</div>
-        <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${vis.score!=null?' · Score '+vis.score:''}</div>
+        <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}</div>
         ${vis._superseded ? `<div style="margin-top:5px;font-size:11px;color:#5b4a2a;background:#fef6e7;border-left:3px solid var(--yellow);border-radius:0 6px 6px 0;padding:5px 9px;line-height:1.45">
           \u21bb <b>Replaced later the same day</b> by the same coordinator, so it is not counted as a second visit \u2014 kept here so you can still read it.</div>` : ''}
         ${_verifEditLogHtml(vis, {farmerId: f.id})}
@@ -17477,8 +17488,22 @@ function openHaatDrawer(id){
         <div class="tl-date">${vis.date}${vis.time?' \u00b7 '+esc(vis.time):''}</div>
         <div class="tl-meta">By ${vfc?esc(vfc.name):(vis.verifierName?esc(vis.verifierName):'—')}${recBy?' <span style="color:var(--ink-faint);font-size:10.5px;margin-left:6px">· '+esc(recBy)+'</span>':''}</div>
         ${paramsHtml}
-        <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 2px">Verification score: <b>${vis.score}</b>/100</div>
-        <div class="score-bar"><div class="fill" style="width:${vis.score}%"></div></div>
+        ${(()=>{ /* v251 - the counts this visit actually recorded, where the
+             score and its bar used to be. A bar filling to 90% was the loudest
+             thing on the card and the least true. Stays silent for a visit with
+             no per-claim record rather than inventing zeroes. */
+          const cv = vis.claimVerifications;
+          if(!cv || typeof cv !== 'object') return '';
+          const st = Object.values(cv).map(x => x && x.state);
+          const cnt = s => st.filter(x => x === s).length;
+          const ok = cnt('verified'), no = cnt('not_verified'), na = cnt('na');
+          if(!(ok + no + na)) return '';
+          return `<div style="font-size:11px;color:var(--ink-soft);margin:5px 0 2px">`
+            + `<b style="color:var(--green)">${ok}</b> verified`
+            + (no ? ` \u00b7 <b style="color:var(--red)">${no}</b> not verified` : '')
+            + (na ? ` \u00b7 ${na} N/A` : '')
+            + `</div>`;
+        })()}
         ${fcObsHtml}
         ${observations?`<div class="tl-note" style="margin-top:7px">"${esc(observations)}"</div>`:''}
         ${vis.notes&&!isNew?`<div class="tl-note" style="margin-top:7px">"${esc(vis.notes)}"</div>`:''}

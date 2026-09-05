@@ -4314,7 +4314,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v262';
+const APP_VERSION = 'v263';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6337,6 +6337,55 @@ let _saveRetryCount=0;
    cancelled - the SDK still delivers it if the connection comes back inside
    this page load - so the worst case is the same data written twice, once by
    the SDK and once by the durable queue. That is a trade worth making. */
+/* ================= v263 - a public submission is never lost ================
+   Queue it, then try to send it, and only drop the queued copy once the server
+   has confirmed. Returns whether it was confirmed, so the thank-you screen can
+   say something true. See the note on this version. */
+async function publicPersistRecord(col, rec, actEntry){
+  const key = col + '/' + rec.id;
+  const row = { key: key, col: col, id: rec.id,
+                rec: sanitizeForFB(_stripEphemeral(rec)),
+                at: Date.now(), atIso: new Date().toISOString() };
+  let queued = false;
+  /* FIRST, and awaited: if this device dies one line later the record is still
+     here, and flushOfflineWrites will send it on the next run. */
+  try{ await idbPut('offlineWrites', row); queued = true; }
+  catch(e){ console.warn('[Sristi] could not queue the submission on this device:', e); }
+  try{ cacheLocal(); }catch(e){}
+
+  if(!(FB && FB.ready && navigator.onLine)) return { confirmed:false, queued:queued };
+
+  /* the activity line is a courtesy: sent, never waited for. Waiting on it was
+     how the old code could hang before the farmer's record was even attempted. */
+  try{
+    if(actEntry && actEntry.id){
+      fbRef('activity/' + actEntry.id).set(sanitizeForFB(actEntry)).catch(function(){});
+    }
+  }catch(e){}
+
+  try{
+    /* Six seconds, not thirty. The record is already safe on the device, so
+       this wait only decides which screen the farmer sees - and nobody should
+       watch a spinner for half a minute to be told the same thing. A write
+       that lands after the timeout is harmless: the queued copy is re-sent
+       with the same id and the same content, so it overwrites itself. */
+    const g = await _fbWriteGuard(fbRef(col + '/' + rec.id).set(row.rec), 6000);
+    if(g.timedOut){
+      console.warn('[Sristi] submission not confirmed within 6s - kept on the device for retry:', key);
+      return { confirmed:false, queued:queued };
+    }
+    try{ await idbDel('offlineWrites', key); }catch(e){}
+    return { confirmed:true, queued:queued };
+  }catch(e){
+    console.warn('[Sristi] submission failed - kept on the device for retry:', e);
+    return { confirmed:false, queued:queued };
+  }
+}
+/* has this submission left the device yet? the thank-you screen polls it */
+async function publicSubmissionPending(col, id){
+  try{ return !!(await idbGet('offlineWrites', col + '/' + id)); }catch(e){ return false; }
+}
+
 function _fbWriteGuard(p, ms){
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -16370,21 +16419,15 @@ function openConvEnrollmentForm(){
       window._pfLastApp = rec;
       logActivity('enroll', `📥 New Conversion application submitted via public form — <b>${esc(rec.name)}</b>, ${esc(rec.village)} <span style="color:var(--ink-faint)">(awaiting FC visit)</span>`);
       const finish = () => { closeModal(); enterPublicMode('public_thanks'); };
-      if(FB && FB.ready){
-        // v9 audit-test fix — push activity entry FIRST (per-id) so the live
-        // listener never observes a state with the farmer record but without
-        // the matching activity entry (race wiped local activity in tests).
-        const newAct = DB.activity[0];
-        const pushAct = (newAct && newAct.id) ? fbRef('activity/'+newAct.id).set(sanitizeForFB(newAct)) : Promise.resolve();
-        pushAct
-          .then(() => fbRef('convFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))))
-          .then(finish)
-          .catch(e => { console.warn('public conv push:',e); finish(); });
-      } else {
-        cacheLocal();
-        idbPut('offlineWrites', {key:'convFarmers/'+rec.id, col:'convFarmers', id:rec.id, rec:sanitizeForFB(_stripEphemeral(rec))}).catch(()=>{});
+      /* v263 - the same guarantee the Haat form now has: queued on this device
+         BEFORE the network is touched, sent with a time limit, and the queued
+         copy dropped only once the server confirms. The screen then says which
+         of those happened. See the note on publicPersistRecord. */
+      publicPersistRecord('convFarmers', rec, DB.activity[0]).then(function(_r){
+        rec._notConfirmed   = !_r.confirmed;
+        rec._queuedOnDevice = _r.queued;
         finish();
-      }
+      });
       return;
     }
     // Phone-based dedup for the FC/admin path too — was public-only (see
@@ -24822,19 +24865,11 @@ window.addEventListener('message',async ev=>{
       window._lastPublicAppId = rec.id;
       window._pfLastApp = rec;
       logActivity('enroll', `📥 New Haat application submitted via public form — <b>${esc(name)}</b>${f.village?', '+esc(f.village):''} <span style="color:var(--ink-faint)">(awaiting FC visit)</span>`);
-      cacheLocal();
-      if(!FB || !FB.ready) idbPut('offlineWrites', {key:'haatFarmers/'+rec.id, col:'haatFarmers', id:rec.id, rec:sanitizeForFB(_stripEphemeral(rec))}).catch(()=>{});
-      try {
-        if(FB && FB.ready){
-          // v9 audit-test fix — push the new activity entry FIRST (per-id),
-          // THEN the farmer record. Otherwise the per-record farmer write
-          // triggers our live listener, which pulls cloud state where the
-          // activity entry is still missing and wipes our local entry.
-          const newAct = DB.activity[0];   // the entry we just unshifted
-          if(newAct && newAct.id) await fbRef('activity/'+newAct.id).set(sanitizeForFB(newAct));
-          await fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec)));
-        }
-      } catch(e) { console.warn('public Haat push:',e); }
+      /* v263 - queued before it is sent, and the farmer is told the truth
+         about which of those two happened. See the note on publicPersistRecord. */
+      const _res = await publicPersistRecord('haatFarmers', rec, DB.activity[0]);
+      rec._notConfirmed = !_res.confirmed;
+      rec._queuedOnDevice = _res.queued;
     } else {
       // #39 — when offline, durably queue so an FC enrollment survives a tab close
       // before reconnect (SDK in-memory queue is lost on close); flushOfflineWrites replays it.
@@ -27729,11 +27764,24 @@ function viewPublicThanks(){
     return;
   }
 
+  /* v263 - only say it arrived if it did. `_notConfirmed` is set by
+     publicPersistRecord when the record is still queued on this device. */
+  const _pending = !!app._notConfirmed;
   v.innerHTML = `
     <div class="pf-thanks">
+      ${_pending ? `
+      <div class="check" style="background:#fdf4e3;color:#8a4708">↑</div>
+      <h1 id="pfPendH">ફોર્મ મોકલાઈ રહ્યું છે…</h1>
+      <p style="font-size:13px;color:#8a4708;font-weight:700;margin-top:0" id="pfPendSub">Sending — do not close this page yet</p>
+      <div id="pfPendBox" style="background:#fdf4e3;border:1px solid #ecdcbb;border-radius:10px;padding:13px 15px;margin:14px 0;text-align:left;line-height:1.7">
+        <b>તમારું ફોર્મ આ ફોનમાં સાચવાયેલું છે.</b><br>
+        આ પેજ ખુલ્લું રાખો. નેટવર્ક મળતાં આપોઆપ મોકલાઈ જશે અને અહીં ✓ દેખાશે.
+        <div style="font-size:12.5px;color:#6d3a06;margin-top:7px">Your form is saved on this phone but has not reached us yet.
+        Keep this page open — it will send by itself when you have signal.</div>
+      </div>` : `
       <div class="check">✓</div>
-      <h1>તમારી અરજી મળી!</h1>
-      <p style="font-size:13px;color:#929fb5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-top:0">Application received</p>
+      <h1>તમારી અરજી મળી!</h1>`}
+      ${_pending ? '' : `<p style="font-size:13px;color:#929fb5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-top:0">Application received</p>`}
       <div class="id">અરજી નં / Application ID: <b>${esc(app.id||'-')}</b></div>
       <p><b>${esc(app.name||'')}</b>${app.village?', '+esc(app.village):''}</p>
       <p style="margin-top:14px"><b>આગળ શું?</b><br>
@@ -27748,6 +27796,25 @@ function viewPublicThanks(){
       <a href="#farmer" class="home-link" id="pfHome">← Home page પર પાછા જાઓ</a>
     </div>
   `;
+  /* v263 - watch the device queue and turn this into the normal received
+     screen the moment the record actually leaves. The pump retries every 30s,
+     so a farmer who keeps the page open sees it land without doing anything. */
+  if(_pending && app.id){
+    const _col = (app.program === 'haat' || isHaat) ? 'haatFarmers' : 'convFarmers';
+    let _tries = 0;
+    const _watch = setInterval(async () => {
+      _tries++;
+      let still = true;
+      try{ still = await publicSubmissionPending(_col, app.id); }catch(e){}
+      if(!still){
+        clearInterval(_watch);
+        app._notConfirmed = false;
+        if(ROUTE === 'public_thanks') viewPublicThanks();
+        return;
+      }
+      if(_tries > 120) clearInterval(_watch);   // ten minutes, then stop asking
+    }, 5000);
+  }
   $('#pfHome').onclick = e => { e.preventDefault(); enterPublicMode('public_landing'); };
   $('#pfPdfBtn').onclick = async () => {
     const btn = $('#pfPdfBtn');

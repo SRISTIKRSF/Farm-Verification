@@ -954,6 +954,15 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rec-ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .rec-phl{font-size:10.5px;color:var(--rec-faint);padding:0 13px 4px;font-weight:700}
 .rec-empty{padding:34px;text-align:center;color:var(--rec-faint);font-size:13px}
+/* v261 - one tab per enrolment form, for the farmers who submitted twice */
+.rec-forms{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:11px}
+.rec-formtab{font:inherit;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:9px;
+  border:1px solid var(--line);background:var(--panel);color:var(--rec-soft);cursor:pointer;
+  display:inline-flex;align-items:baseline;gap:7px}
+.rec-formtab:hover{border-color:var(--accent)}
+.rec-formtab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rec-formtab .d{font-size:10.5px;font-weight:600;opacity:.75}
+.rec-formnote{font-size:11.5px;color:var(--rec-faint)}
 
 #fcSync{display:none;position:fixed;left:0;right:0;bottom:62px;z-index:190;
   flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:7px 12px 8px;
@@ -4305,7 +4314,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v260';
+const APP_VERSION = 'v261';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13582,7 +13591,7 @@ function viewDashboard(){
     <div class="card mini-card">
       <div class="mini-tbl-head">
         <h3>Haat-wise Active Farmers</h3>
-        <span class="mini-tbl-sub">monthly active = farmers who came to the haat that month</span>
+        <span class="mini-tbl-sub">monthly active = farmers who came to the haat that month \u00b7 a farmer selling at several haats is counted under each, so the total counts people</span>
       </div>
       <div class="mini-tbl-wrap"><table class="mini-tbl"><thead><tr>
         <th class="rk">#</th><th>Haat</th><th class="num">Onboarded</th>
@@ -13606,7 +13615,14 @@ function viewDashboard(){
   h+=`<tr class="tfill"><td colspan="${3+recent3M.length}"></td></tr>
     </tbody><tfoot><tr>
     <td class="lbl" colspan="2">Total</td>
-    <td class="num">${haatRowsMo.reduce((t,r)=>t+(r.onboarded||0),0)}</td>
+    ${/* v261 - adding the rows up double-counts anyone selling at more than one
+         haat, so this counts DISTINCT farmers. The rows above deliberately
+         count a farmer at each of their haats; the total counts people. */''}
+    <td class="num">${(function(){
+      const ids = new Set();
+      DB.haatFarmers.forEach(f => { if(f.status === 'green' && farmerHaats(f).length) ids.add(f.id); });
+      return ids.size;
+    })()}</td>
     ${recent3M.map((m,i)=>`<td class="num">${haatRowsMo.reduce((t,r)=>t+((r.monthly[i]&&r.monthly[i].n)||0),0)}</td>`).join('')}
   </tr></tfoot></table></div></div>
 
@@ -17481,7 +17497,7 @@ function _renderHaatEnrollmentDataSingle(f){
 
    REC.ui is the switch. Setting it to 'drawer' puts the old overlay back for
    everyone, instantly, without a deploy - it is under More on the record. */
-const REC = {id:null, filter:'all', q:'', ui:null, loading:false};
+const REC = {id:null, filter:'all', q:'', ui:null, loading:false, form:undefined};
 function recUiNew(){
   if(REC.ui) return REC.ui === 'page';
   try{
@@ -17569,7 +17585,7 @@ function recAnswerHtml(r){
 function openHaatRecord(id){
   const f = (DB.haatFarmers || []).find(x => x.id === id);
   if(!f) return;
-  REC.id = id; REC.filter = 'all'; REC.q = '';
+  REC.id = id; REC.filter = 'all'; REC.q = ''; REC.form = undefined;   /* v261 */
   ROUTE = 'haatRecord';
   /* v254 - the answers live outside the farmer row. This used to paint the
      page, then paint it AGAIN when they arrived - and the second paint
@@ -17600,7 +17616,32 @@ function viewHaatRecord(){
   const f = (DB.haatFarmers || []).find(x => x.id === REC.id);
   if(!f){ ROUTE = 'haat'; render(); return; }
 
-  const claims = recClaims(f);
+  /* v261 - three farmers submitted the enrolment form twice, and an admin
+     merging duplicates can attach a second one. The old drawer had tabs for
+     them; the record page had no way to reach the second form at all. */
+  const forms = (typeof farmerFormList === 'function') ? farmerFormList(f) : [];
+  /* the chosen form's answers, still carrying the coordinator's marks: those
+     live on the verification and are matched back by question id, so a tick
+     stays with its question whichever form is on screen */
+  let claims = recClaims(f);
+  if(forms.length > 1){
+    const pickId = (REC.form !== undefined) ? REC.form : forms[0].id;
+    const chosen = forms.find(x => x.id === pickId) || forms[0];
+    if(chosen && chosen.form && Array.isArray(chosen.form.claims)){
+      const marks = {};
+      recClaims(f).forEach(r => { if(r && r.id) marks[r.id] = r; });
+      claims = chosen.form.claims.map(c => {
+        const m = marks[c.id] || {};
+        return Object.assign({}, c, {
+          farmerAnswer: (c.answer !== undefined ? c.answer : c.farmerAnswer),
+          fcVerification: chosen.isMain ? m.fcVerification : null,
+          fcRetick: chosen.isMain ? m.fcRetick : null,
+          fcAnswer: chosen.isMain ? m.fcAnswer : null,
+          fcNote:   chosen.isMain ? m.fcNote : ''
+        });
+      });
+    }
+  }
   const t = recTally(claims);
   const byId = id => { const r = claims.find(c => c.id === id); return r ? (r.farmerAnswer !== undefined ? r.farmerAnswer : r.answer) : null; };
   const yrs  = byId('years_organic');
@@ -17674,6 +17715,19 @@ function viewHaatRecord(){
     +         '</div>'
     +       '</div>'
     +     '</div>'
+    +     (forms.length > 1
+            ? '<div class="rec-forms">'
+              + forms.map(function(x, i){
+                  const on = ((REC.form !== undefined ? REC.form : forms[0].id) === x.id);
+                  return '<button class="rec-formtab' + (on ? ' on' : '') + '" data-recform="' + esc(x.id) + '">'
+                    + esc(x.label) + (x.at ? '<span class="d">' + esc(fmtDate(x.at)) + '</span>' : '')
+                    + (x.isMain ? '' : '<span class="d">added later</span>') + '</button>';
+                }).join('')
+              + '<span class="rec-formnote">This farmer submitted the form '
+              + forms.length + ' times \u00b7 showing '
+              + esc(((REC.form !== undefined ? forms.find(function(x){return x.id===REC.form;}) : forms[0]) || forms[0]).label)
+              + '</span></div>'
+            : '')
     +     '<div id="recFiltWrap">'
     +     (REC.loading || !claims.length ? '' : (
             '<div class="rec-filt">'
@@ -17693,6 +17747,7 @@ function viewHaatRecord(){
 
   const back = v.querySelector('[data-recback]');
   if(back) back.onclick = () => { ROUTE = 'haat'; render(); };
+  v.querySelectorAll('[data-recform]').forEach(b => b.onclick = () => { REC.form = b.dataset.recform; render(); });
   v.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
   const sr = document.getElementById('recSrch');
   if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };

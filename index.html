@@ -4305,7 +4305,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v259';
+const APP_VERSION = 'v260';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13531,7 +13531,7 @@ function viewDashboard(){
   // ===== two summary tables, sitting under the two charts =====
   // LEFT: haat-wise active farmers   RIGHT: FC-wise verifications (last 3 months + total)
   const haatRows=getHaatList().map(_h=>_h.name).map(hn=>{
-    const all=DB.haatFarmers.filter(f=>f.haat===hn&&f.status==='green');
+    const all=DB.haatFarmers.filter(f=>farmerSellsAt(f,hn)&&f.status==='green');
     return {haat:hn, active:all.filter(f=>f.active).length, onboarded:all.length};
   }).sort((a,b)=>b.active-a.active);
 
@@ -13570,7 +13570,7 @@ function viewDashboard(){
   // whose latest visit fell in that month).
   const recent3M=recentMonths(3);   // v138 — see above
   const haatRowsMo=getHaatList().map(_h=>_h.name).map(hn=>{
-    const all=DB.haatFarmers.filter(f=>f.haat===hn&&f.status==='green');
+    const all=DB.haatFarmers.filter(f=>farmerSellsAt(f,hn)&&f.status==='green');
     const monthly=recent3M.map(m=>{
       const n=all.filter(f=>f.active && (f.visits||[]).some(v=>(v.date||'').startsWith(m))).length;
       return {m,n};
@@ -14175,7 +14175,7 @@ function viewHaat(){
   else if(F.status==='verified') rows=rows.filter(r=>r.stage==='verified');
   else if(F.status==='green'||F.status==='yellow'||F.status==='red')
     rows=rows.filter(r=>r.status===F.status);
-  if(F.haat) rows=rows.filter(r=>r.haat===F.haat);
+  if(F.haat) rows=rows.filter(r=>farmerSellsAt(r,F.haat))   /* v260 - any of their haats */;
   if(F.state) rows=rows.filter(r=>r.state===F.state);
   if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
   if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
@@ -14247,7 +14247,7 @@ function viewHaat(){
         <div class="sub">${(r.landAcres==null||r.landAcres==='')?'—':r.landAcres} acres · ${(r.yearsOrganic==null||r.yearsOrganic==='')?'—':r.yearsOrganic} yr organic</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td class="crop-cell" style="max-width:260px">${cropsHtml}</td>
-      <td>${r.haat?esc(r.haat):'<span style="color:var(--ink-faint)">—</span>'}</td>
+      <td>${farmerHaats(r).length?esc(farmerHaatLabel(r)):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${fcCellHtml(r)}</td>
       <td><span class="tag ${st.cls}"><span class="d"></span>${st.label}</span></td>
       <td>${activeCell}</td>
@@ -14443,7 +14443,7 @@ function exportHaatCSV(rows){
     certification:f.certification||'',
     field_coordinator:((farmerFcInfo(f).fc)||{}).name||'',
     fc_source:f.fcId?'assigned':(farmerFcInfo(f).fc?'by district':''),
-    haat:f.haat||'',juth:f.juth||'',status:haatStatusMeta(f).label,
+    haat:farmerHaats(f).join(' | '),juth:f.juth||'',status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',
     joined_month_year:farmerJoinedLabel(f),
   }));
@@ -17654,6 +17654,10 @@ function viewHaatRecord(){
     +         fld('\u0a93\u0ab0\u0acd\u0a97\u0ac7\u0aa8\u0abf\u0a95 \u0ab8\u0ab0\u0acd\u0a9f\u0abf\u0aab\u0abf\u0a95\u0ac7\u0a9f', certTxt, 'recCert')
     +         '<span class="sep">|</span>'
     +         fld('FC', esc(fcName) + (lastVisit.date ? ' \u00b7 ' + esc(fmtDate(lastVisit.date)) : ''))
+    +         (farmerHaats(f).length
+                ? '<span class="sep">|</span>'
+                  + fld('Haat' + (farmerHaats(f).length > 1 ? 's' : ''), esc(farmerHaats(f).join(', ')))
+                : '')
     +       '</div>'
     +     '</div>'
     +     '<div class="rec-acts">'
@@ -17663,7 +17667,7 @@ function viewHaatRecord(){
     +       '<div class="rec-menu spacer" id="recMenu">'
     +         '<button class="btn btn-ghost btn-sm" data-recact="menu">More \u25be</button>'
     +         '<div class="pop">'
-    +           '<button data-recact="haat">' + (f.haat ? 'Change haat' : 'Assign haat') + '</button>'
+    +           '<button data-recact="haat">' + (farmerHaats(f).length ? 'Change haats' : 'Assign haats') + '</button>'
     +           '<button data-recact="active">Mark ' + (f.active ? 'inactive' : 'active') + '</button>'
     +           '<hr>'
     +           '<button data-recact="drawer">Open the old drawer view</button>'
@@ -17965,7 +17969,7 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic} yrs</div></div>
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fcCellHtml(f)}</div></div>
-    <div class="detail-cell"><div class="k">Haat assigned</div><div class="v">${f.haat?esc(f.haat):'—'}</div></div>
+    <div class="detail-cell"><div class="k">Haat${farmerHaats(f).length>1?'s':''} assigned</div><div class="v">${farmerHaats(f).length?esc(farmerHaats(f).join(', ')):'—'}</div></div>
     <div class="detail-cell"><div class="k">Juth / FPC</div><div class="v">${f.juth?esc(f.juth):'<span style="color:var(--ink-faint)">—</span>'}</div></div>
     <div class="detail-cell"><div class="k">Joined</div><div class="v">${farmerJoinedLabel(f)}</div></div>
     <div class="detail-cell full"><div class="k">Crops grown</div>
@@ -18726,6 +18730,37 @@ function _openDecisionInner(id){
    onboarding decision modal already handles haat assignment for new
    enrolments; this modal lets the admin assign or re-assign a haat
    afterwards (e.g. farmer moved to a different market). */
+/* ================= v260 - a farmer can sell at more than one haat =========
+   `f.haat` is still the MAIN haat and still a plain string, so every existing
+   reader keeps working. `f.haats` holds the full list when there is more than
+   one. These two functions are the only places that know that. */
+function farmerHaats(f){
+  if(!f) return [];
+  const out = [];
+  const add = x => { const v = String(x == null ? '' : x).trim(); if(v && out.indexOf(v) < 0) out.push(v); };
+  add(f.haat);                                   // the main one always comes first
+  if(Array.isArray(f.haats)) f.haats.forEach(add);
+  return out;
+}
+function setFarmerHaats(f, list){
+  if(!f) return;
+  const clean = [];
+  (list || []).forEach(x => { const v = String(x == null ? '' : x).trim(); if(v && clean.indexOf(v) < 0) clean.push(v); });
+  f.haat = clean[0] || '';
+  /* only carry an array when there is genuinely more than one - a
+     single-haat farmer stays byte-identical to how they were stored before */
+  if(clean.length > 1) f.haats = clean;
+  else delete f.haats;
+}
+function farmerHaatLabel(f){
+  const hs = farmerHaats(f);
+  if(!hs.length) return '';
+  return hs.length === 1 ? hs[0] : hs[0] + ' +' + (hs.length - 1);
+}
+function farmerSellsAt(f, name){
+  return farmerHaats(f).indexOf(String(name || '').trim()) >= 0;
+}
+
 function openAssignHaatModal(id){
   const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
   const list=getHaatList();
@@ -18735,34 +18770,76 @@ function openAssignHaatModal(id){
       `<button class="btn btn-ghost" onclick="closeModal()">Close</button>`);
     return;
   }
-  const opts=[['','— select haat —'],...list.map(h=>h.name)];
-  const body=`<div class="hint" style="margin-bottom:10px">
-      Pick the haat <b>${esc(f.name)}</b> sells at. Leave blank to clear the current assignment.
-    </div>
-    ${fld('Haat',sel('ahHaat',opts,f.haat||''))}
-    ${fld('Note (optional)',`<textarea id="ahNote" placeholder="Reason for change, e.g. moved to nearer market…"></textarea>`)}`;
-  modalShell((f.haat?'Change haat':'Assign haat')+' — '+esc(f.name),body,
+  /* v260 - tick every haat this farmer sells at. The FIRST one ticked is the
+     main haat, which is what every existing screen and export shows. */
+  const chosen = farmerHaats(f);
+  const body = '<div class="hint" style="margin-bottom:10px">Tick every haat <b>' + esc(f.name)
+    + '</b> sells at — a farmer can go to more than one. Untick everything to clear it.</div>'
+    + '<div id="ahList" style="display:grid;gap:6px;max-height:280px;overflow:auto;padding:2px">'
+    + list.map(function(h){
+        return '<label style="display:flex;gap:9px;align-items:center;padding:9px 11px;border:1px solid var(--line);'
+          + 'border-radius:9px;cursor:pointer;background:var(--panel)">'
+          + '<input type="checkbox" class="ah-cb" value="' + esc(h.name) + '"'
+          + (chosen.indexOf(h.name) >= 0 ? ' checked' : '')
+          + ' style="width:17px;height:17px;flex:none;cursor:pointer">'
+          + '<span style="font-size:13.5px;font-weight:600">' + esc(h.name) + '</span></label>';
+      }).join('')
+    + '</div>'
+    + '<div id="ahMain" style="font-size:11.5px;color:var(--ink-soft);margin:8px 2px 0"></div>'
+    + fld('Note (optional)', '<textarea id="ahNote" placeholder="Reason for the change"></textarea>');
+  modalShell((farmerHaats(f).length?'Change haats':'Assign haats')+' — '+esc(f.name),body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="ahSave">${svg(I.check)}Save</button>`);
+  /* say which one will be the main haat, so the order in the lists and the
+     exports is never a surprise */
+  const _ahEcho = function(){
+    let picked = [].slice.call(document.querySelectorAll('.ah-cb')).filter(function(c){return c.checked;}).map(function(c){return c.value;});
+    const _cur = farmerHaats(f);
+    if(_cur.length && picked.indexOf(_cur[0]) > 0){
+      picked = [_cur[0]].concat(picked.filter(function(x){ return x !== _cur[0]; }));
+    }
+    const el = document.getElementById('ahMain');
+    if(!el) return;
+    el.innerHTML = !picked.length ? 'No haat assigned.'
+      : picked.length === 1 ? 'Main haat: <b>' + esc(picked[0]) + '</b>'
+      : 'Main haat: <b>' + esc(picked[0]) + '</b> · also sells at ' + esc(picked.slice(1).join(', '));
+  };
+  document.querySelectorAll('.ah-cb').forEach(function(c){ c.onchange = _ahEcho; });
+  _ahEcho();
   $('#ahSave').onclick=async()=>{
-    const newHaat=$('#ahHaat').value||'';
+    let picked = [].slice.call(document.querySelectorAll('.ah-cb')).filter(function(c){return c.checked;}).map(function(c){return c.value;});
     const note=$('#ahNote').value.trim();
-    const old=f.haat||'';
-    if(newHaat===old){toast('No change');return;}
-    f.haat=newHaat;
+    const before = farmerHaats(f);
+    /* v260 - KEEP THE MAIN HAAT. picked[0] becomes f.haat, which is what the
+       exports, the map and every existing screen read. Taking it straight from
+       the checkbox order meant adding a second haat silently moved the farmer's
+       main one to whichever haat happens to sort first - Himmatnagar became
+       Anand just by ticking another box. If the current main haat is still
+       ticked, it stays first. */
+    if(before.length && picked.indexOf(before[0]) > 0){
+      picked = [before[0]].concat(picked.filter(function(x){ return x !== before[0]; }));
+    }
+    const newHaat = picked[0] || '';
+    const old = before[0] || '';
+    if(before.join('|') === picked.join('|')){ toast('No change'); return; }
+    setFarmerHaats(f, picked);
     if(note) f.haatChangeNote=note;
     // v9 Batch 3 — audit stamp on the haat assignment change.
     const aH = actor();
     f.haatChangedBy   = aH.name;
     f.haatChangedById = aH.id;
     f.haatChangedAt   = new Date().toISOString();
-    const label = !old ? `assigned to <b>${esc(newHaat)}</b>`
-                : !newHaat ? `cleared from <b>${esc(old)}</b>`
-                : `moved from <b>${esc(old)}</b> to <b>${esc(newHaat)}</b>`;
+    /* v260 - the log describes a LIST now, not a swap */
+    const _j = function(arr){ return arr.join(', '); };
+    const label = !picked.length ? 'cleared from <b>' + esc(_j(before)) + '</b>'
+                : !before.length ? 'assigned to <b>' + esc(_j(picked)) + '</b>'
+                : 'haats changed from <b>' + esc(_j(before)) + '</b> to <b>' + esc(_j(picked)) + '</b>';
     logActivity('haat',`${esc(f.name)} (${f.id}) ${label}${note?' — '+esc(note):''}`);
     await saveDB();closeModal();render();
     if(_farmerViewOpen(id))openHaatDrawer(id);   /* v253 - drawer OR record page */
-    toast(newHaat?'Haat assigned':'Haat cleared');
+    toast(!picked.length ? 'Haat cleared'
+        : picked.length === 1 ? 'Haat assigned'
+        : picked.length + ' haats assigned');
   };
 }
 
@@ -21979,7 +22056,7 @@ function renderHaatManager(v){
   const tops = haats.filter(h => !h.parent);
   // Compute per-haat stats.
   function haatRowStats(name){
-    const fr = DB.haatFarmers.filter(f => f.haat === name);
+    const fr = DB.haatFarmers.filter(f => farmerSellsAt(f, name));   /* v260 */
     const active = fr.filter(f => f.active).length;
     const haat = getHaatByName(name);
     let distSum = 0, distCount = 0, distMax = 0;
@@ -22065,10 +22142,10 @@ function renderHaatManager(v){
   v.querySelectorAll('[data-haat-edit]').forEach(b => b.onclick = () => openHaatEditModal(b.dataset.haatEdit));
   v.querySelectorAll('[data-haat-del]').forEach(b => b.onclick = () => {
     const name = b.dataset.haatDel;
-    const ct = DB.haatFarmers.filter(f => f.haat === name).length;
+    const ct = DB.haatFarmers.filter(f => farmerSellsAt(f, name)).length;   /* v260 */
     if(!confirm(`Delete "${name}"?${ct?'\n\n'+ct+' farmer(s) will become unassigned.':''}`)) return;
     DB.haats = DB.haats.filter(x => normHaat(x).name !== name);
-    DB.haatFarmers.forEach(f => { if(f.haat === name) f.haat = ''; });
+    DB.haatFarmers.forEach(f => { const hs = farmerHaats(f); if(hs.indexOf(name) >= 0) setFarmerHaats(f, hs.filter(x => x !== name)); });   /* v260 - drop a deleted haat from the LIST too */
     saveDB().catch(()=>{}); render();
   });
   $('#haatAdd').onclick = () => openHaatEditModal(null);
@@ -22191,7 +22268,7 @@ function openHaatEditModal(name){
       const oldName = DB.haats[idx].name;
       DB.haats[idx] = rec;
       if(oldName !== newName){
-        DB.haatFarmers.forEach(f => { if(f.haat === oldName) f.haat = newName; });
+        DB.haatFarmers.forEach(f => { const hs = farmerHaats(f); if(hs.indexOf(oldName) >= 0) setFarmerHaats(f, hs.map(x => x === oldName ? newName : x)); });   /* v260 - rename it wherever it appears */
       }
     } else {
       DB.haats.push(rec);
@@ -22452,7 +22529,7 @@ function viewFarmMap(){
 
     // Haats last, so they are never hidden behind a bubble.
     plottable.forEach(hx => {
-      const n = shown.filter(f => f.haat === hx.name).length;
+      const n = shown.filter(f => farmerSellsAt(f, hx.name)).length   /* v260 */;
       L.circleMarker([hx.lat, hx.lng], {radius:9, color:'#fff', fillColor:'#1d4ed8',
         fillOpacity:1, weight:2.5}).addTo(map)
        .bindPopup(`<b>🛒 ${esc(hx.name)}</b><br>${esc(hx.city||'')}<br>
@@ -23473,7 +23550,7 @@ function viewData(){
   $('#expHaat').onclick=()=>download('haat-farmers.csv',toCSV(DB.haatFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,certification:f.certification||'',
-    field_coordinator:(fcById(f.fcId)||{}).name||'',haat:f.haat||'',juth:f.juth||'',
+    field_coordinator:(fcById(f.fcId)||{}).name||'',haat:farmerHaats(f).join(' | '),juth:f.juth||'',
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
     status:haatStatusMeta(f).label,
     active:f.status==='green'?(f.active?'Yes':'No'):'',visits:(f.visits||[]).length,enrolled:f.enrolledMonth||'',

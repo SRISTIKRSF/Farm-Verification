@@ -4314,7 +4314,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v261';
+const APP_VERSION = 'v262';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7825,7 +7825,12 @@ async function loadForms(farmerId){
   }catch(e){}
   /* v215 - if the phone's copy is still good, stop here and do not spend a
      Firebase download on it. See _formsCacheIsFresh for how that is decided. */
-  if(_formsCacheIsFresh(fc, rec)){
+  /* v262 - ...but only when the extra forms are here too. Freshness is judged
+     on the revision of forms/{id}, which does not move when formsExtra gains an
+     entry - so a phone that cached the form BEFORE the second one was attached
+     took this shortcut for ever and never fetched it. */
+  const _missingExtras = ((rec && (rec.extraForms||[]).length) > 0) && !fc.extra;
+  if(_formsCacheIsFresh(fc, rec) && !_missingExtras){
     fc._complete = true;
     fc._attempted = true;
     _attachFormsToRecord(farmerId);
@@ -17593,8 +17598,16 @@ function openHaatRecord(id){
      certificate are all read from those answers. It said "Not verified yet"
      and then changed its mind: the flicker Guru recorded.
      Now it says it is loading, and the answers appear once, in place. */
-  const needFetch = !f.enrollmentFormFull && !f.verificationFormFull
-                    && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted);
+  /* v262 - THE SECOND FORM. A farmer whose enrolment form is already attached
+     to their record needed no fetch, so loadForms() never ran, so FORMS_CACHE
+     .extra stayed empty, so farmerFormList() only ever saw one form and the
+     tabs never appeared. 23 farmers have a second form and not one of them
+     showed it. Ask whenever the record says there is one and we have not got
+     it yet. */
+  const _fcEntry = FORMS_CACHE[id] || {};
+  const _wantExtras = ((f.extraForms || []).length > 0) && !_fcEntry.extra;
+  const needFetch = _wantExtras
+                    || (!f.enrollmentFormFull && !f.verificationFormFull && !_fcEntry._attempted);
   REC.loading = needFetch;
   render();
   if(needFetch){
@@ -17604,6 +17617,14 @@ function openHaatRecord(id){
     const done = () => {
       if(REC.id !== id || ROUTE !== 'haatRecord') return;
       REC.loading = false;
+      /* v262 - the tabs are drawn by viewHaatRecord, and the second form only
+         arrives here, AFTER that. Patching in place cannot add a tab, so a
+         farmer whose extra form landed with this fetch showed no tabs at all -
+         which is why Guru still could not find the second form. Redraw when
+         the count changed; patch in place when it did not, so the ordinary
+         open still costs one paint. */
+      const _now = (typeof farmerFormList === 'function') ? farmerFormList(f).length : 0;
+      if(_now !== REC.formsDrawn) return render();
       if(typeof recPatchAfterLoad === 'function' && document.getElementById('recCols')) recPatchAfterLoad();
       else render();
     };
@@ -17620,6 +17641,7 @@ function viewHaatRecord(){
      merging duplicates can attach a second one. The old drawer had tabs for
      them; the record page had no way to reach the second form at all. */
   const forms = (typeof farmerFormList === 'function') ? farmerFormList(f) : [];
+  REC.formsDrawn = forms.length;   /* v262 - see recPatchAfterLoad */
   /* the chosen form's answers, still carrying the coordinator's marks: those
      live on the verification and are matched back by question id, so a tick
      stays with its question whichever form is on screen */

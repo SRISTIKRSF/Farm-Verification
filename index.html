@@ -4314,7 +4314,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v263';
+const APP_VERSION = 'v265';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4361,7 +4361,26 @@ function fbConfigured(){
   return FB_CONFIG.apiKey && FB_CONFIG.apiKey!=='YOUR_API_KEY'
       && FB_CONFIG.databaseURL && !FB_CONFIG.databaseURL.includes('YOUR_PROJECT');
 }
-function fbRef(path){return FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));}
+/* v265 - every write in this file goes through here, so this is where a
+   view-only account is stopped. The shadow inherits from the real reference,
+   so reads (get / on / off / orderByChild) are the real thing untouched; only
+   the five methods that change data are replaced. Built solely for a viewer
+   session, so an admin or an FC gets exactly the object they got before and
+   there is nothing here for them to regress on. */
+const _RO_WRITE_METHODS = ['set','update','remove','push','transaction','setWithPriority','setPriority'];
+function _readOnlyRef(ref, path){
+  const shadow = Object.create(ref);
+  _RO_WRITE_METHODS.forEach(function(m){
+    shadow[m] = function(){ return _viewerRefuse(m + '() on ' + (path || '/')); };
+  });
+  shadow.child = function(p){ return _readOnlyRef(ref.child(p), (path || '') + '/' + p); };
+  return shadow;
+}
+function fbRef(path){
+  const ref = FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));
+  if(typeof isViewerUser === 'function' && isViewerUser()) return _readOnlyRef(ref, path);
+  return ref;
+}
 
 /* v238 - the one question the first-ever-load branch must get right: does this
    database already hold anything at all? `?shallow=true` returns the ROOT's
@@ -5438,6 +5457,25 @@ function seedVanshitaDemo(d){
   }
 }
 
+/* v265 - drop every farmer this viewer was not granted, whichever way the
+   collection arrived. One function, called from the two funnels below, so a
+   screen cannot read an unfiltered copy by taking a different route to it.
+   A no-op for everybody who is not a viewer. */
+function _applyViewerScope(d){
+  if(!d || typeof isViewerUser !== 'function' || !isViewerUser()) return d;
+  if(Array.isArray(d.haatFarmers))
+    d.haatFarmers = viewerCanSeeProgramme('haat')
+      ? d.haatFarmers.filter(f => viewerCanSeeFarmer(f, 'haat')) : [];
+  if(Array.isArray(d.convFarmers))
+    d.convFarmers = viewerCanSeeProgramme('conv')
+      ? d.convFarmers.filter(f => viewerCanSeeFarmer(f, 'conv')) : [];
+  /* Not fetched for a viewer either, so anything here came off a stale local
+     cache written while a different account was signed in on this browser. */
+  d.activity = []; d.pendingEnrolments = []; d.incomeRecords = [];
+  d.verificationPlans = [];
+  return d;
+}
+
 function normaliseDB(d){
   d.fcs=d.fcs||[]; d.haatFarmers=d.haatFarmers||[]; d.convFarmers=d.convFarmers||[];
   d.haats=d.haats||SEED.haats;
@@ -5586,6 +5624,7 @@ function normaliseDB(d){
     if(!('stage' in f)) f.stage='verification_pending';
     if(!('active' in f)) f.active=false;
   });
+  _applyViewerScope(d);   /* v265 - a viewer's DB holds only their districts */
   return d;
 }
 /* ---- cloud <-> app shape conversion ----
@@ -5768,6 +5807,20 @@ function cloudToDB(c){
 }
 let _quotaWarned=false;
 function cacheLocal(){
+  /* v265 - A VIEWER NEVER WRITES THE LOCAL MIRROR.
+
+     Caught in testing, and it is the sharp edge of scoping by filtering DB. A
+     viewer for two districts holds two districts; cacheLocal wrote that to
+     localStorage as though it were the whole database, and the next person to
+     sign in on the same browser - an admin - booted from the truncated copy.
+     Two of four conversion farmers had simply gone before any listener ran.
+     Nothing would have been lost in Firebase, and saveDB's delete guard would
+     have refused to push it, but an admin reading a short list and believing
+     it is a bad enough outcome by itself.
+
+     A viewer has no use for the mirror. It exists so a coordinator can open the
+     app in a field with no signal; a viewer reads a dashboard at a desk. */
+  if(typeof isViewerUser === 'function' && isViewerUser()) return;
   // v11 — forms are excluded from the localStorage mirror (they're cached in
   // IndexedDB instead, which has far more quota). Keeps the cache small.
   try{ localStorage.setItem(STORE_KEY,JSON.stringify(DB,_stripReplacer)); _quotaWarned=false; }
@@ -5925,6 +5978,42 @@ function _mobFarmerIds(){
   return [];
 }
 function _scopedFcQueries(key){
+  /* v265 - district-scoped, server side, exactly as the FC branch below does
+     it, minus the three fallbacks. An FC also fetches blank-district records
+     and anything stamped with their own code, because for an FC a missing
+     district must never hide a farmer they own. A viewer owns nothing and has
+     been granted named districts, so there is no equivalent case: no districts
+     means no query, which means no farmers.
+
+     Two queries per district, not one. Districts are stored bilingual, and a
+     small number of older records hold the English half only; equalTo compares
+     the RAW stored string, so asking only for "Aravalli (___)" would leave
+     those records invisible with nothing to show it had happened. */
+  if(SESSION && SESSION.role === 'viewer'){
+    if(key !== 'haatFarmers' && key !== 'convFarmers') return null;
+    /* Never null and never empty here. null means "no scoping, fetch the whole
+       collection", which for a viewer is the one answer that must be
+       impossible. An empty array is worse than it looks: attachLiveListener
+       waits for every query to report before it processes anything, and no
+       queries means nothing ever reports, so the app would sit on a blank
+       screen for ever. A query that cannot match anything answers immediately
+       with nothing, which is what "granted nothing" should look like. */
+    const nothing = [{tag:'v:none', ref: fbRef(key).orderByChild('district').equalTo('\u0000__none__')}];
+    const prog = (key === 'haatFarmers') ? 'haat' : 'conv';
+    if(!viewerCanSeeProgramme(prog)) return nothing;
+    const ds = viewerDistricts();
+    if(!ds.length) return nothing;
+    const out = [];
+    const seen = {};
+    ds.forEach(function(d){
+      [d, _distEng(d)].forEach(function(form){
+        if(!form || seen[form]) return;
+        seen[form] = 1;
+        out.push({tag:'v:'+form, ref: fbRef(key).orderByChild('district').equalTo(form)});
+      });
+    });
+    return out;
+  }
   if(SESSION && SESSION.role === 'mobilizer'){
     if(key !== 'convFarmers') return null;
     const ids = _mobFarmerIds();
@@ -5973,6 +6062,22 @@ function _activeSyncKeys(){
   if(SESSION && SESSION.role === 'mobilizer'){
     const base = ['meta','fcs','fieldCoordinators'];
     if(_mobFarmerIds().length) base.push('convFarmers');
+    return base;
+  }
+  /* v265 - a viewer reads their granted programmes and nothing else. The
+     activity log, the applications queue, verification plans, the verification
+     index and income records are all out of scope for a view-only account and
+     are also four of the larger nodes, so not subscribing is the scope and the
+     saving at once. fcs and fieldCoordinators stay because the requirement
+     says a viewer must see which coordinator each farmer belongs to.
+     The programme collections join only once districts are known; config/users
+     arrives on its own listener and re-runs attachLiveListener when it does. */
+  if(SESSION && SESSION.role === 'viewer'){
+    const base = ['meta','fcs','fieldCoordinators'];
+    if(viewerDistricts().length){
+      if(viewerCanSeeProgramme('haat')) base.push('haatFarmers');
+      if(viewerCanSeeProgramme('conv')) base.push('convFarmers');
+    }
     return base;
   }
   return LIVE_SYNC_KEYS;
@@ -6440,6 +6545,17 @@ async function saveDB(silent){
      submitted, via targeted fbRef().set() — so this is a guard against a future
      edit wiring one up by mistake, not a live bug. Belt and braces alongside
      the v105 MAX_AUTO_DELETE cap. */
+  /* v265 - a view-only account never writes, and this is the second of the
+     three places that is true. It matters more than it looks: a viewer's copy
+     of the farmer collections is deliberately partial (see _activeSyncKeys),
+     and saveDB is diff-based, so letting it run would compare the two or three
+     districts they fetched against the whole database and compute a mass
+     deletion. The MAX_AUTO_DELETE cap and the _explicitDeletes guard would
+     both refuse it, but the right place to stop is before any of that. */
+  if(typeof isViewerUser === 'function' && isViewerUser()){
+    console.warn('[Sristi] saveDB() suppressed for a view-only account.');
+    return true;
+  }
   if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
     console.warn('[Sristi] saveDB() suppressed in public mode — public submissions write their own record directly.');
     return true;
@@ -8850,6 +8966,94 @@ let SESSION = loadSession();
    fc-mode toggle and before every caller of this, so the public landing page is
    unaffected - verified before changing it. */
 function isAdminUser(){ return !!SESSION && SESSION.role === 'admin'; }
+
+/* ==================== VIEWER (v265) ==================================
+
+   "View-only access to selected programme and district data. The Viewer
+   cannot add, edit, verify, assign, delete, approve, or change any data."
+
+   A viewer is not a small admin and not a large FC. Two things describe one:
+   which PROGRAMMES they may look at - Organic Haat, Conversion, or both - and
+   which DISTRICTS. Both live on the account in config/users, next to the
+   districts an FC already carries, so a person's access is written down in one
+   place and read from one place.
+
+   Read-only is enforced three times over, independently, because hiding a
+   button is a promise about a screen and not about the database:
+
+     fbRef() hands a viewer a reference whose set, update, remove, push and
+     transaction all refuse. That is the actual guarantee, and it covers every
+     write in this file including ones nobody has written yet.
+
+     saveDB() returns before it computes anything at all.
+
+     the screens hide what a viewer may not do, so nobody is invited to press
+     something that is going to refuse.
+
+   Scope is enforced by NOT FETCHING, the way the mobilizer role works: a
+   viewer subscribes to their own programmes, district by district, so a viewer
+   for two districts downloads two districts. Firebase reads go DOWN against an
+   admin session, never up.
+
+   Every one of these answers FAILS CLOSED. No districts, no programmes, or an
+   account list that has not arrived yet all answer "nothing", never
+   "everything". An FC with no districts deliberately sees everyone, because
+   for an FC blank means "not restricted yet"; for a viewer blank means nobody
+   has granted anything, and those must not be the same answer. */
+function isViewerUser(){ return !!SESSION && SESSION.role === 'viewer'; }
+
+/* The account behind the current viewer session. SESSION.userId holds
+   fcCode || id, and a viewer has no fcCode, so it is the username. */
+function _viewerAccount(){
+  if(!isViewerUser()) return null;
+  const me = SESSION.userId || '';
+  if(!me) return null;
+  return (typeof getUsersList === 'function' ? getUsersList() : [])
+    .find(u => u && u.id === me) || null;
+}
+/* 'haat' and/or 'conv'. Anything unrecognised is dropped rather than trusted. */
+function viewerProgrammes(){
+  const u = _viewerAccount();
+  const raw = (u && Array.isArray(u.programmes)) ? u.programmes : [];
+  return raw.filter(p => p === 'haat' || p === 'conv');
+}
+function viewerDistricts(){
+  const u = _viewerAccount();
+  return (u && Array.isArray(u.districts)) ? u.districts.filter(Boolean) : [];
+}
+/* Asked by every screen and every nav entry. Non-viewers are unaffected. */
+function viewerCanSeeProgramme(p){
+  if(!isViewerUser()) return true;
+  return viewerProgrammes().indexOf(p) >= 0;
+}
+/* The belt to the sync braces. Districts are normally stored bilingual -
+   "Aravalli (___)" - but a handful of records hold the English half only, and
+   comparing raw strings would silently drop exactly those. _distEng reduces
+   both sides, the same way fcCodesCoveringDistrict already does. */
+function viewerCanSeeFarmer(f, programme){
+  if(!isViewerUser()) return true;
+  if(!f) return false;
+  if(programme && !viewerCanSeeProgramme(programme)) return false;
+  const ds = viewerDistricts();
+  if(!ds.length) return false;                 // nothing granted = nothing seen
+  const fd = _distEng(f.district);
+  if(!fd) return false;                        // a blank district is not "everywhere"
+  return ds.some(d => _distEng(d) === fd);
+}
+/* One question for every action surface in the app. */
+function canEditData(){ return !isViewerUser(); }
+/* A viewer uses the desktop layout - dashboard, tables, the record page - but
+   is not an admin. Everywhere that asked isAdminUser() to mean "show me the
+   full-size UI rather than the phone UI" asks this instead. */
+function usesAdminLayout(){ return isAdminUser() || isViewerUser(); }
+
+/* What a viewer is told when something is refused. Loud enough to be reported,
+   quiet enough that it cannot itself break a screen. */
+function _viewerRefuse(what){
+  console.warn('[Sristi] view-only account - ' + what + ' refused.');
+  try{ if(typeof toast === 'function') toast('View-only access \u2014 nothing was changed.'); }catch(e){}
+  return Promise.reject(new Error('This account has view-only access.'));
+}
 function currentFcId(){ return SESSION && SESSION.role === 'fc' ? SESSION.userId : null; }
 /* v(district-scoping) — per-FC district assignment, applied ONLY to the FC's
    own mobile discovery screens (My Work queue, Haat Farmers reference list),
@@ -8956,7 +9160,10 @@ function paintUserPill(){
     avatar.style.background = SESSION.role === 'admin' ? 'var(--accent)' :
       ['#16a34a','#d97706','#dc2626','#8b5cf6'][((SESSION.userId||'').charCodeAt(0)+1) % 4];
   }
-  pill.title = SESSION.role === 'admin' ? 'Logged in as Admin · click to switch' : 'Logged in as ' + name + ' (Field Coordinator) · click to switch';
+  /* v265 - and say plainly when the account cannot change anything. */
+  pill.title = SESSION.role === 'admin'  ? 'Logged in as Admin · click to switch'
+             : SESSION.role === 'viewer' ? 'Logged in as ' + name + ' (view only) · click to switch'
+             : 'Logged in as ' + name + ' (Field Coordinator) · click to switch';
 }
 
 const initials=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -11738,7 +11945,7 @@ function convScoreCard(f){
       +   '<div><div style="font-size:11px;font-weight:700;color:var(--yellow);letter-spacing:.04em;margin-bottom:4px">⚠️ હજુ સ્કોર આપ્યો નથી</div>'
       +   '<div style="font-size:13px;color:var(--ink)">આ ખેડૂતનું 100-ગુણનું મૂલ્યાંકન હજુ થયું નથી.'
       +   '</div></div>'
-      +   '<button class="btn btn-primary btn-sm" data-d="score">' + svg(I.check,2.2) + ' Score now</button>'
+      +   (canEditData() ? '<button class="btn btn-primary btn-sm" data-d="score">' + svg(I.check,2.2) + ' Score now</button>' : '')
       + '</div></div>';
   }
   const status = CONV_SCORE_STATUS[cs.status];
@@ -12230,10 +12437,10 @@ function donut(segs,centerNum,centerTxt){
 function renderNav(){
   const _vb = document.getElementById('appVerBadge');
   if(_vb) _vb.textContent = APP_VERSION;
-  if(!isAdminUser()){$('#nav').innerHTML='';return;}
+  if(!usesAdminLayout()){$('#nav').innerHTML='';return;}
   const hs=haatStats(),cs=convStats();
   // v8 — FC users see a reduced nav (no Settings, no Data & Backup, no Team).
-  const adminMode = isAdminUser();
+  const adminMode = usesAdminLayout();   /* v265 - SHAPE of screen, not permission */
   const pendingCount   = (DB.pendingEnrolments||[]).filter(x => !isAttention(x)).length;
   const attentionCount = attentionList().length;
   // v9 Batch 4 — FC sidebar is action-focused: Verification Queue first, then
@@ -12268,8 +12475,26 @@ function renderNav(){
     {sec:'My Farmers'},
     {id:'conversion',label:'Conversion Farmers',ico:I.convert,badge:cs.total},
   ];
+  /* v265 - the same sidebar, cut down to what this viewer was granted. Built
+     by filtering the admin list rather than writing a second one, so a screen
+     added to the app later cannot appear for a viewer by being forgotten
+     here: anything not named is dropped. */
+  const viewerItems = ['dashboard','haat','conversion','farmMap'];
+  const viewerSecs  = ['Overview','Organic Haat Program','Conversion Program','Reach'];
+  let items2 = items;
+  if(isViewerUser()){
+    items2 = items.filter(it => {
+      if(it.sec) return viewerSecs.indexOf(it.sec) >= 0;
+      if(viewerItems.indexOf(it.id) < 0) return false;
+      if(it.id === 'haat' || it.id === 'farmMap') return viewerCanSeeProgramme('haat');
+      if(it.id === 'conversion') return viewerCanSeeProgramme('conv');
+      return true;
+    });
+    // drop a section heading left with nothing under it
+    items2 = items2.filter((it, i) => !it.sec || (items2[i+1] && !items2[i+1].sec));
+  }
   let h='';
-  items.forEach(it=>{
+  items2.forEach(it=>{
     if(it.sec){h+=`<div class="nav-label">${it.sec}</div>`;return;}
     h+=`<button class="nav-item ${ROUTE===it.id?'active':''}" data-route="${it.id}">
       ${svg(it.ico)}<span>${it.label}</span>${it.badge!=null?`<span class="badge">${it.badge}</span>`:''}</button>`;
@@ -13576,6 +13801,29 @@ function viewDashboard(){
   // v139 — the filter no longer opens the page. It sits with the applications
   // it filters, further down; see "Recent applications" below.
   let h = '';
+  /* v265 - a viewer granted one programme sees that programme, and no
+     section reading zero for the other. Zero would look like "there are no
+     farmers here" when it means "you were not given this": their copy of the
+     other collection is empty by design, because it was never fetched. */
+  const _shHaat = viewerCanSeeProgramme('haat');
+  const _shConv = viewerCanSeeProgramme('conv');
+  /* v265 - failing closed is right; a blank page is not. The Add user dialog
+     will not create a viewer without a programme and a district, so this is
+     only reachable through an account edited outside it or a grant taken away
+     later - but when it happens, say which of the two is missing rather than
+     showing an empty screen that reads as a broken app. */
+  if(isViewerUser() && (!viewerProgrammes().length || !viewerDistricts().length)){
+    const _missing = (!viewerProgrammes().length && !viewerDistricts().length) ? 'a programme or a district'
+                   : !viewerProgrammes().length ? 'a programme' : 'a district';
+    v.innerHTML = '<div class="card" style="padding:36px;text-align:center;max-width:530px;margin:44px auto">'
+      + '<div style="font-size:15.5px;font-weight:700;margin-bottom:8px">Nothing has been shared with you yet</div>'
+      + '<div style="font-size:13px;color:var(--ink-soft);line-height:1.8">This account has view-only access and has not been given '
+      + _missing + ' to look at.<br>Ask an administrator to open <b>Settings \u2192 Users</b>, edit '
+      + esc((SESSION && SESSION.userName) || 'this account')
+      + ', and tick the programmes and districts you should see.</div></div>';
+    return;
+  }
+  if(_shHaat){
   h+=`<div class="section-head"><h3>🛒 Prakrutik Khedut Haat Program — Farmers</h3><div class="line"></div></div>`;
   h+=journeyBoxesHtml(hs,'nav');
 
@@ -13717,6 +13965,8 @@ function viewDashboard(){
   // the Haat funnel, where its own "applications" number sat right next to
   // the Haat funnel's "Farmers applied" number and read as one confusing
   // pipeline instead of two separate programs).
+  }
+  if(_shConv){
   h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program — Farmers</h3><div class="line"></div></div>`;
   h+=convPointerHtml(cs);
 
@@ -13727,6 +13977,13 @@ function viewDashboard(){
   // Both panels are now rendered, and the filter sits immediately above them
   // rather than above the tiles, so it is clear what it does and does not
   // touch: the counts and charts above stay totals, always.
+  }
+  /* Applications and the activity log are not a viewer's business, and are not
+     fetched for one either - see _activeSyncKeys. Drawing them would put two
+     permanently empty panels on the screen and invite a question about missing
+     data. The closing brace is after the activity card below, whose opening
+     <div class="card"> is inside this block. */
+  if(!isViewerUser()){
   h+=`<div class="section-head"><h3>📥 Recent applications</h3><div class="line"></div></div>
   <div class="hint" style="margin:0 0 10px">Applications farmers sent in themselves, newest first. The filter below applies
     to these two lists only — every count and chart above this line is a running total and does not change with it.</div>`;
@@ -13809,6 +14066,7 @@ function viewDashboard(){
     </div>`;
   }
   h+=`</div>`;
+  }
 
   v.innerHTML=h;
   /* v229 */
@@ -14121,6 +14379,9 @@ function archEmptyMsg(p, searching){
     : 'No archived farmers.';
 }
 function archToggleHtml(p){
+  /* v265 - archiving, restoring and permanent delete all live behind this
+     control, so a view-only account gets none of it. */
+  if(typeof canEditData === 'function' && !canEditData()) return '';
   const n = archivedCount(p), on = ARCH_SHOW[p];
   const onStyle = on ? 'background:#fef3c7;color:#92400e;border-color:#fcd34d;' : '';
   let h = `<button class="btn btn-sm btn-ghost" id="archToggle_${p}" style="margin-left:8px;${onStyle}">${svg(on?I.eye:I.trash,2)} ${on?'Showing archived':'Show archived'} (${n})</button>`;
@@ -14282,7 +14543,7 @@ function viewHaat(){
   </div>`;
   const _haatAllSel = pagedRows.length && pagedRows.every(r=>ARCH_SEL.haat.has(r.id));
   h+=`<div class="table-wrap"><table><thead><tr>
-    <th style="width:34px"><input type="checkbox" id="archSelAll_haat" ${_haatAllSel?'checked':''} aria-label="Select all on this page"></th>
+    ${canEditData()?`<th style="width:34px"><input type="checkbox" id="archSelAll_haat" ${_haatAllSel?'checked':''} aria-label="Select all on this page"></th>`:''}
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>${th('haat','Haat')}<th>Field Coordinator</th>
     ${th('status','Status')}<th>Active</th><th>Last visit</th>${th('_sortTs','Joined')}
@@ -14308,7 +14569,7 @@ function viewHaat(){
         ? '<span class="tag green" style="font-size:10.5px"><span class="d"></span>Active</span>'
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
     h+=`<tr data-id="${r.id}">
-      <td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>
+      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
       <td><span class="id-code">${r.id}</span>${(function(){
         const st = recordStamp(r);
         return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
@@ -15238,7 +15499,7 @@ function viewConversion(){
   </div>`;
   const _convAllSel = pagedConvRows.length && pagedConvRows.every(r=>ARCH_SEL.conv.has(r.id));
   h+=`<div class="table-wrap"><table><thead><tr>
-    <th style="width:34px"><input type="checkbox" id="archSelAll_conv" ${_convAllSel?'checked':''} aria-label="Select all on this page"></th>
+    ${canEditData()?`<th style="width:34px"><input type="checkbox" id="archSelAll_conv" ${_convAllSel?'checked':''} aria-label="Select all on this page"></th>`:''}
     ${th('id','ID')}${th('name','Farmer')}${th('village','Location')}
     <th>Crops</th>
     ${th('fcId','FC')}<th>Mobilizer</th><th>Organic progress</th>
@@ -15262,7 +15523,7 @@ function viewConversion(){
         + (cropsArr.length>3 ? `<span style="font-size:10.5px;color:var(--ink-faint)"> +${cropsArr.length-3}</span>` : '')
       : '<span style="color:var(--ink-faint)">—</span>';
     h+=`<tr data-id="${r.id}">
-      <td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>
+      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
       <td><span class="id-code">${esc(r.id)}</span></td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres||0} acres</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
@@ -15273,7 +15534,7 @@ function viewConversion(){
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
       <td style="font-size:11.5px">${farmerJoinedLabel(r)}</td>
-      <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button></td>
+      <td>${canEditData()?`<button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button>`:'—'}</td>
       ${ARCH_SHOW.conv?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
@@ -16655,7 +16916,7 @@ function viewFcInbox(){
       <td style="font-size:11.5px">${esc(r.lastVisitAt||'—')}</td>
       <td style="font-size:11.5px">${esc(r.nextVisitDue||'—')}</td>
       <td>${convScoreCell(r)}</td>
-      <td><button class="btn btn-clay btn-sm" data-act="score" data-id="${esc(r.id)}">${svg(I.check,2.2)}Log visit + score</button></td>
+      <td>${canEditData()?`<button class="btn btn-clay btn-sm" data-act="score" data-id="${esc(r.id)}">${svg(I.check,2.2)}Log visit + score</button>`:'—'}</td>
     </tr>`;
   });
   h+=`</tbody></table></div>`;
@@ -16779,7 +17040,7 @@ function renderV5EnrollmentSummary(f){
     h += '<div class="card" style="padding:11px 13px;margin-bottom:10px;background:var(--panel-2);border-left:3px solid var(--accent)">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px">'
       + '<div style="font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em">&#127806; Current crops (' + crops.length + ')</div>'
-      + '<button class="btn btn-clay btn-sm" data-d="editCrops" style="padding:4px 10px;font-size:11px">' + svg(I.edit,2.2) + ' Update crops</button>'
+      + (canEditData() ? '<button class="btn btn-clay btn-sm" data-d="editCrops" style="padding:4px 10px;font-size:11px">' + svg(I.edit,2.2) + ' Update crops</button>' : '')
       + '</div>'
       // Total expected yield header
       + '<div style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--green-line);border-radius:6px;padding:5px 10px;margin-bottom:9px;font-size:12px"><span style="color:var(--ink-soft)">Total expected yield:</span><b style="color:var(--green);font-size:13px">' + (totalKg ? totalKg.toLocaleString('en-IN') + ' kg' : '—') + '</b></div>'
@@ -17744,10 +18005,12 @@ function viewHaatRecord(){
                 : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
     +         '</span>'
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
-    +         '<div class="sp">'
-    +           '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
-    +           '<button class="btn btn-ghost btn-sm" data-recact="verify">Verification form</button>'
-    +         '</div>'
+    +         (canEditData()      /* v265 - both of these change the record */
+              ? '<div class="sp">'
+                + '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
+                + '<button class="btn btn-ghost btn-sm" data-recact="verify">Verification form</button>'
+              + '</div>'
+              : '')
     +       '</div>'
     +       '<div class="rec-r2">'
     +         fld('ID', esc(f.id || '\u2014'))
@@ -17769,8 +18032,9 @@ function viewHaatRecord(){
     +     '<div class="rec-acts">'
     +       '<button class="btn btn-ghost btn-sm" data-recact="compare">Compare forms</button>'
     +       '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download PDF</button>'
-    +       '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>'
-    +       '<div class="rec-menu spacer" id="recMenu">'
+    +       (canEditData() ? '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>' : '')
+    +       (!canEditData() ? '' :
+            '<div class="rec-menu spacer" id="recMenu">'
     +         '<button class="btn btn-ghost btn-sm" data-recact="menu">More \u25be</button>'
     +         '<div class="pop">'
     +           '<button data-recact="haat">' + (farmerHaats(f).length ? 'Change haats' : 'Assign haats') + '</button>'
@@ -17778,7 +18042,7 @@ function viewHaatRecord(){
     +           '<hr>'
     +           '<button data-recact="drawer">Open the old drawer view</button>'
     +         '</div>'
-    +       '</div>'
+    +       '</div>')
     +     '</div>'
     +     (forms.length > 1
             ? '<div class="rec-forms">'
@@ -18101,12 +18365,13 @@ function openHaatDrawer(id){
 
   // actions
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    ${f.stage!=='decided'?`<button class="btn btn-clay btn-sm" data-d="verify">${svg(I.plus,2.2)}Field verification form</button>`:''}
-    <button class="btn btn-primary btn-sm" data-d="decide">${svg(I.check,2.2)}Set status</button>
-    ${(f.status==='green'&&isAdminUser())?`<button class="btn btn-clay btn-sm" data-d="haat">${svg(I.haat,2.2)}${f.haat?'Change haat':'Assign haat'}</button>`:''}
-    ${f.status==='green'?`<button class="btn btn-ghost btn-sm" data-d="toggle">${svg(I.leaf,2.2)}Mark ${f.active?'inactive':'active'}</button>`:''}
+${/* v265 - everything from here to Edit details changes the record. */''}
+    ${canEditData()&&f.stage!=='decided'?`<button class="btn btn-clay btn-sm" data-d="verify">${svg(I.plus,2.2)}Field verification form</button>`:''}
+    ${canEditData()?`<button class="btn btn-primary btn-sm" data-d="decide">${svg(I.check,2.2)}Set status</button>`:''}
+    ${(canEditData()&&f.status==='green'&&isAdminUser())?`<button class="btn btn-clay btn-sm" data-d="haat">${svg(I.haat,2.2)}${f.haat?'Change haat':'Assign haat'}</button>`:''}
+    ${(canEditData()&&f.status==='green')?`<button class="btn btn-ghost btn-sm" data-d="toggle">${svg(I.leaf,2.2)}Mark ${f.active?'inactive':'active'}</button>`:''}
     ${(f.enrollmentFormFull||f.verificationFormFull||f.enrollmentFormSubmittedAt||f.verificationFormSubmittedAt)?`<button class="btn btn-ghost btn-sm" data-d="compare">${svg(I.haat,2.2)}Compare forms side-by-side</button>`:''}
-    <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
+    ${canEditData()?`<button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>`:''}
     <button class="btn btn-ghost btn-sm" id="drawerPdfBtn">${svg(I.download,2.2)}Download PDF</button>
     ${/* v258 - the way BACK. v253 put "open the old drawer" on the record page
           and nothing anywhere to undo it, so choosing it once left you here for
@@ -18408,10 +18673,11 @@ function openConvDrawer(id){
   // v184 - the answers the farmer actually submitted. Previously invisible.
   h+=convEnrolmentCard(f);
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    <button class="btn btn-primary btn-sm" data-d="score">${svg(I.check,2.2)}Log visit + score</button>
-    ${!f.fcId?`<button class="btn btn-primary btn-sm" data-d="assign">${svg(I.fc,2.2)}Assign FC</button>`:''}
-    <button class="btn btn-ghost btn-sm" data-d="status">${svg(I.check,2.2)}Override stage</button>
-    <button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>
+${/* v265 - a view-only account gets the record and the PDF, nothing else. */''}
+    ${canEditData()?`<button class="btn btn-primary btn-sm" data-d="score">${svg(I.check,2.2)}Log visit + score</button>`:''}
+    ${(canEditData()&&!f.fcId)?`<button class="btn btn-primary btn-sm" data-d="assign">${svg(I.fc,2.2)}Assign FC</button>`:''}
+    ${canEditData()?`<button class="btn btn-ghost btn-sm" data-d="status">${svg(I.check,2.2)}Override stage</button>`:''}
+    ${canEditData()?`<button class="btn btn-ghost btn-sm" data-d="edit">${svg(I.edit,2.2)}Edit details</button>`:''}
     <button class="btn btn-ghost btn-sm" id="drawerPdfBtnConv">${svg(I.download,2.2)}Download PDF</button>
   </div>`;
   // Legacy "Practice package adoption" grid (Land demarcation, Composting, etc.)
@@ -22002,7 +22268,7 @@ function viewSettings(){
     h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">Logins</div>
-        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Admins and mobilizers. The dialog asks which.</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Admins, mobilizers and viewers. The dialog asks which.</div>
       </div>
       ${canEdit ? '<button class="btn btn-primary btn-sm" id="uAddBtn">+ Add user</button>' : ''}
     </div>`;
@@ -22024,7 +22290,11 @@ function viewSettings(){
             <div style="font-size:11.5px;color:var(--ink-faint)">@${esc(u.id)}${u.fcCode?' &middot; '+esc(u.fcCode):''}</div>
           </div>
           ${u.active===false ? '<span class="tag" style="font-size:10.5px;flex-shrink:0;background:var(--panel-2);color:var(--ink-faint)">Inactive</span>' : ''}
-          <span class="tag ${u.role==='admin'?'blue':'green'}" style="font-size:10.5px;flex-shrink:0">${u.role==='admin'?'Admin':'FC'}</span>
+          <span class="tag ${u.role==='admin'?'blue':u.role==='viewer'?'yellow':'green'}" style="font-size:10.5px;flex-shrink:0">${
+            u.role==='admin'?'Admin':u.role==='viewer'?'Viewer':u.role==='mobilizer'?'Mobilizer':'FC'}</span>
+          ${u.role==='viewer' ? `<span style="font-size:10.5px;color:var(--ink-faint);flex-shrink:0" title="What this viewer may look at">${
+            esc((Array.isArray(u.programmes)&&u.programmes.length?u.programmes.map(p=>p==='haat'?'Haat':'Conversion').join(' + '):'no programme'))
+            + ' \u00b7 ' + ((u.districts||[]).length ? (u.districts||[]).length + ' district' + ((u.districts||[]).length===1?'':'s') : 'no district')}</span>` : ''}
           ${canEdit ? `
             <button class="btn btn-ghost btn-sm" data-uedit="${esc(u.id)}" style="padding:4px 10px;flex-shrink:0">Edit</button>
             ${SESSION && u.id !== SESSION.userId ? (u.active===false
@@ -23747,6 +24017,13 @@ function download(name,content,mime){
 
 /* ============ ROUTER ============ */
 function render(){
+  /* v265 - the scope has to be applied where the answer is KNOWN. normaliseDB
+     runs at boot, before a session exists, so isViewerUser() was false there
+     and the filter did nothing: the sidebar read "Conversion Farmers 4" for a
+     viewer granted two districts. Here the session is settled, this runs before
+     any screen is drawn, and it is idempotent - so no screen can paint a farmer
+     the account was not granted. An immediate no-op for everybody else. */
+  if(typeof _applyViewerScope === 'function') _applyViewerScope(DB);
   syncPracticesFromDB();   // pick up any Settings edits before computing batteries / drawers
   // v9 process-fix #53 — stale session check. If the signed-in FC has been
   // removed/soft-deleted from DB.fcs since they signed in, bounce them to
@@ -23782,13 +24059,35 @@ function render(){
   // v9 Batch 4 — route guard: FCs are confined to their action surfaces.
   // Any analytics, system, or config route bounces them to their home
   // (Verification Queue).
-  if(!isAdminUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','dupRecords'].indexOf(ROUTE) >= 0){
+  /* v265 - a viewer is confined before the FC rule below is reached, because
+     that rule would bounce them off the dashboard, which is the one screen the
+     requirement names first. Programme access decides the rest: a viewer
+     granted Conversion only has no route to a Haat screen at all, not merely
+     no link to one. Anything unrecognised lands on the dashboard. */
+  if(isViewerUser()){
+    const okRoutes = ['dashboard'];
+    if(viewerCanSeeProgramme('haat')) okRoutes.push('haat', 'haatRecord', 'farmMap');
+    if(viewerCanSeeProgramme('conv')) okRoutes.push('conversion');
+    if(viewerCanSeeProgramme('conv') && !viewerCanSeeProgramme('haat')) okRoutes.push('haatRecord');
+    if(okRoutes.indexOf(ROUTE) < 0) ROUTE = 'dashboard';
+  }
+  if(!isAdminUser() && !isViewerUser() && ['settings','data','fieldCoordinators','haats','dashboard','farmMap','dupRecords'].indexOf(ROUTE) >= 0){
     ROUTE = 'verification';
   }
   /* v163 — a mobilizer only ever has two screens. Anything else, including
      every FC screen, bounces to their own farmer list. */
   if(isMobilizerUser() && ['mob_farmers','fc_profile'].indexOf(ROUTE) < 0) ROUTE = 'mob_farmers';
-  document.body.classList.toggle('fc-mode', !isAdminUser());
+  /* v265 - a viewer works at a desk, not in a field, so they get the desktop
+     layout rather than the coordinator's phone UI. usesAdminLayout is about
+     which SHAPE of screen to draw and never about permission; every permission
+     question in this file still asks isAdminUser or canEditData. */
+  document.body.classList.toggle('fc-mode', !usesAdminLayout());
+  document.body.classList.toggle('viewer-mode', isViewerUser());
+  /* v265 - the one action button that lives in the top bar rather than inside a
+     screen, so no screen-level gate reaches it. Found by listing everything
+     clickable on a viewer session, not by guessing where they all are. */
+  const _qa = document.getElementById('quickAdd');
+  if(_qa) _qa.style.display = canEditData() ? '' : 'none';
   updateFcSync();   // v186 - the strip follows fc-mode on and off
   renderNav();
   if(isMobilizerUser()){
@@ -23796,7 +24095,7 @@ function render(){
     (ROUTE === 'fc_profile' ? viewFcProfile : viewMobFarmers)();
     return;
   }
-  if(!isAdminUser()){
+  if(!usesAdminLayout()){
     renderFcBottomNav();
     ({haat:viewFcActivity,conversion:viewFcConversion,verification:viewFcQueue,
       planning:viewFcPlanning,
@@ -26009,7 +26308,11 @@ async function signOutNow(ask){
   // v122 — clear the real key (USER_SESSION_KEY), and the remembered copy.
   try{ sessionStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
+  /* v265 - and drop what a viewer was shown, so the next account signing in on
+     this browser cannot inherit a district-filtered copy still in memory. */
+  const _wasViewer = isViewerUser();
   SESSION = null;
+  if(_wasViewer){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} DB = normaliseDB(seedDB()); }
   /* v225 - '#login' was handled nowhere in the file, so both buttons landed on
      the farmer-facing page while the confirm promised the login page. '#admin'
      with no session opens the login modal at boot, which is what it says. */
@@ -26895,7 +27198,24 @@ function openUserModal(userId, opts) {
           <option value="admin" ${!lockFc && (!editing || editing.role==='admin') ? 'selected' : ''}>Admin \u2014 full access</option>
           <option value="fc"    ${lockFc || (editing && editing.role==='fc')    ? 'selected' : ''}>Field Coordinator</option>
           <option value="mobilizer" ${editing && editing.role==='mobilizer' ? 'selected' : ''}>Mobilizer \u2014 a few conversion farmers only</option>
+          <option value="viewer" ${editing && editing.role==='viewer' ? 'selected' : ''}>Viewer \u2014 view only, chosen programmes and districts</option>
         </select>
+      </div>
+      <div id="umViewerRow" style="${(editing && editing.role==='viewer') ? '' : 'display:none'}">
+        <div class="hint" style="margin-bottom:11px">A viewer can <b>look at</b> the programmes and districts you tick below \u2014 the dashboard, the farmer list, each farmer's answers, their verification visits and their field coordinator. They cannot add, edit, verify, assign, approve or delete anything, anywhere.</div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">Programme access *</label>
+        <div id="umVwProgs" style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px">
+          ${[['haat','Organic Haat Program'],['conv','Conversion Program']].map(function(p){
+            const on = !!(editing && Array.isArray(editing.programmes) && editing.programmes.indexOf(p[0])>=0);
+            return '<label style="display:flex;gap:8px;align-items:center;padding:9px 13px;border:1px solid var(--line-strong);border-radius:9px;cursor:pointer;background:var(--panel)">'
+              + '<input type="checkbox" class="vw-prog" value="'+p[0]+'"'+(on?' checked':'')+' style="width:17px;height:17px;cursor:pointer">'
+              + '<span style="font-size:13.5px;font-weight:600">'+p[1]+'</span></label>';
+          }).join('')}
+        </div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">District access *</label>
+        <div style="font-size:11px;color:var(--ink-faint);margin-bottom:8px">Tick every district this viewer may see. They will see farmers from these districts and no others. <b>Unlike a field coordinator, leaving this blank shows them nothing at all</b> \u2014 a viewer only ever sees what you have deliberately granted.</div>
+        <div class="checkgrid" id="umVwDistricts">${GUJARAT_DISTRICTS.map(d=>
+          `<label><input type="checkbox" value="${esc(d)}" ${((editing && editing.role==='viewer' && editing.districts)||[]).includes(d)?'checked':''}>${esc(d)}</label>`).join('')}</div>
       </div>
       <div id="umFcRow" style="${(lockFc || (editing && editing.role==='fc')) ? '' : 'display:none'}">
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px">FC Code <span style="font-weight:400;color:var(--ink-faint)">(e.g. FC004)</span></label>
@@ -26929,8 +27249,11 @@ function openUserModal(userId, opts) {
   modalShell((isNew ? 'Add ' : 'Edit ') + noun + (editing ? ' \u2014 ' + esc(editing.name) : ''), body,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="umSave">${isNew ? 'Create ' + noun.toLowerCase() : 'Save changes'}</button>`);
-  const roleEl = $('#umRole'), fcRow = $('#umFcRow');
-  roleEl.onchange = () => { fcRow.style.display = roleEl.value === 'fc' ? '' : 'none'; };
+  const roleEl = $('#umRole'), fcRow = $('#umFcRow'), vwRow = $('#umViewerRow');
+  roleEl.onchange = () => {
+    fcRow.style.display = roleEl.value === 'fc'     ? '' : 'none';
+    if(vwRow) vwRow.style.display = roleEl.value === 'viewer' ? '' : 'none';
+  };
   if(editing){ const umIdEl=$('#umId'); umIdEl.oninput=()=>{ const w=$('#umIdWarn'); if(w) w.style.display=umIdEl.value.trim().toLowerCase()!==(umIdEl.dataset.orig||'')?'block':'none'; }; }
   $('#umSave').onclick = async () => {
     const name    = ($('#umName').value||'').trim();
@@ -26940,6 +27263,11 @@ function openUserModal(userId, opts) {
     const role    = $('#umRole').value;
     const fcCode  = ($('#umFcCode').value||'').trim().toUpperCase();
     const districts = [...$('#umDistricts').querySelectorAll('input:checked')].map(c=>c.value);
+    /* v265 - a viewer's own two grids. Read here rather than inside the save so
+       the checks below can refuse an account that would be able to see nothing. */
+    const vwProgs = [...document.querySelectorAll('.vw-prog:checked')].map(c=>c.value);
+    const vwDists = [...(document.getElementById('umVwDistricts') || document.createDocumentFragment())
+                        .querySelectorAll('input:checked')].map(c=>c.value);
     const phone   = (($('#umPhone')   || {}).value || '').trim();
     const state   = (($('#umState')   || {}).value || '').trim();
     const partner = (($('#umPartner') || {}).value || '').trim();
@@ -26948,6 +27276,11 @@ function openUserModal(userId, opts) {
     if (!name) return showErr('Display name is required.');
     if (!uid || !/^[a-z0-9_]{2,20}$/.test(uid)) return showErr('Username: 2\u201320 lowercase letters or numbers only.');
     if (isNew && !pw) return showErr('Password is required for new users.');
+    /* Both are required. An account granted neither can see nothing at all, and
+       the person setting it up should find that out here rather than from a
+       viewer ringing to ask why their screen is empty. */
+    if (role === 'viewer' && !vwProgs.length) return showErr('Choose at least one programme for a viewer.');
+    if (role === 'viewer' && !vwDists.length) return showErr('Choose at least one district for a viewer \u2014 a viewer with no districts sees nothing.');
     if (pw && pw.length < 4) return showErr('Password must be at least 4 characters.');
     if (isNew && users.some(u => u.id === uid)) return showErr('Username already taken.');
     if (!isNew && uid !== origId && users.some(u => u.id === uid)) return showErr('Username already taken.');
@@ -26970,7 +27303,12 @@ function openUserModal(userId, opts) {
       }
       const record = {
         id: uid, name, role, fcCode: role === 'fc' ? fcCode : '',
-        districts: role === 'fc' ? districts : [],
+        /* v265 - districts are shared with the FC role but come from a
+           different grid, and `programmes` is a viewer's alone. Anyone else is
+           written with both cleared, so changing a viewer to another role
+           cannot leave a stale grant behind on the account. */
+        districts: role === 'fc' ? districts : role === 'viewer' ? vwDists : [],
+        programmes: role === 'viewer' ? vwProgs : [],
         // v120 — roster display fields now live on the account too, so the
         // Field Coordinators list is purely derived and cannot disagree with it.
         phone:   role === 'fc' ? phone   : '',

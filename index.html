@@ -1409,9 +1409,17 @@ body.lang-hi .thi{display:inline}
 <div class="wrap" id="formWrap">
   <div id="sections"></div>
   <div class="success" id="successScreen">
-    <div class="ico">✓</div>
-    <h2><span class="tgu">પત્રક સફળતાપૂર્વક જમા થયું!</span><span class="thi">फॉर्म सफलतापूर्वक जमा हुआ!</span><span class="ten">Form submitted successfully!</span></h2>
-    <p><span class="tgu">તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</span><span class="thi">आपकी नोंधणी स्वीकार हो गई है। FC जल्द ही आपके खेत की मुलाकात के लिए संपर्क करेंगे।</span><span class="ten">Your enrolment has been received. An FC will contact you soon to visit your farm.</span></p>
+    <div class="ico" id="successIco">✓</div>
+    <div id="answersPendingBox" style="display:none;background:#fdf4e3;border:1px solid #ecdcbb;border-radius:12px;padding:16px 18px;margin:0 auto 14px;max-width:440px;text-align:left;line-height:1.8">
+      <div style="font-size:16.5px;font-weight:800;color:#8a4708;margin-bottom:6px">
+        <span class="tgu">ફોર્મ મોકલાઈ રહ્યું છે…</span><span class="thi">फ़ॉर्म भेजा जा रहा है…</span><span class="ten">Still sending…</span>
+      </div>
+      <div style="font-size:13.5px;color:#6d3a06">
+        <span class="tgu">તમારા જવાબ આ ફોનમાં સચવાયા છે, પણ હજુ અમારા સુષી પહોંચ્યા નથી. <b>આ પેજ ખુલ્લું રાખો</b> — નેટવર્ક મળતાં આપોઆપ મોકલાઈ જશે અને અહીં ✓ દેખાશે.</span><span class="thi">आपके उत्तर इस फ़ोन में सुरक्षित हैं, पर अभी हम तक नहीं पहुँचे हैं। <b>यह पेज खुला रखें</b> — सिग्नल मिलते ही अपने आप भेज दिए जाएंगे।</span><span class="ten">Your answers are saved on this phone but have not reached us yet. <b>Keep this page open</b> — they will send by themselves when you have signal.</span>
+      </div>
+    </div>
+    <h2 id="successTitle"><span class="tgu">પત્રક સફળતાપૂર્વક જમા થયું!</span><span class="thi">फॉर्म सफलतापूर्वक जमा हुआ!</span><span class="ten">Form submitted successfully!</span></h2>
+    <p id="successSub"><span class="tgu">તમારી નોંધણી ગ્રહણ થઈ ગઈ છે. FC ટૂંક સમયમાં તમારા ખેતરની મુલાકાત માટે સંપર્ક કરશે.</span><span class="thi">आपकी नोंधणी स्वीकार हो गई है। FC जल्द ही आपके खेत की मुलाकात के लिए संपर्क करेंगे।</span><span class="ten">Your enrolment has been received. An FC will contact you soon to visit your farm.</span></p>
     <p id="successRef" style="font-size:13px;color:var(--ink-soft);background:#f4f4f4;border-radius:8px;padding:10px 16px;display:inline-block;margin-top:8px"></p>
     <p id="photoUploadStatus" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-top:10px"></p>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
@@ -2550,7 +2558,13 @@ function submit(){
   // off) — the timer routinely won, yanking the screen away before the
   // download could happen. Now the farmer decides when to move on.
   const _continueBtn = $('#successContinueBtn');
-  const _goDone = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done'}, '*'); };
+  /* v267 - 'pending' until the parent says otherwise. Declared out here so
+     _goDone can carry it: the thank-you screen the farmer lands on next knows
+     whether the APPLICATION arrived, and needs to know about the ANSWERS too,
+     or it will say "your application has been received" over answers that are
+     still sitting on this phone. */
+  let _answersState = 'pending';
+  const _goDone = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'kisan-haat-done', answers:_answersState}, '*'); };
   // v85 — photos only finish uploading while THIS tab stays open (a ~30s
   // background timer does it); a public farmer typically closes the tab
   // within seconds of reaching this screen. Without waiting here, a photo
@@ -2571,7 +2585,22 @@ function submit(){
     let _answersMsg = '', _photosMsg = '';
     let _answersDone = false, _photosDone = !_hasPhotos;
 
+    /* v267 - a green tick and "submitted successfully" over answers that are
+       still on the phone is the reason eight farmers walked away believing they
+       had applied. While they are unsent the celebration is simply not shown. */
+    const _renderAnswerState = () => {
+      const ok = _answersState === 'sent';
+      const ico = document.getElementById('successIco');
+      const ttl = document.getElementById('successTitle');
+      const sub = document.getElementById('successSub');
+      const box = document.getElementById('answersPendingBox');
+      if(ico){ ico.textContent = ok ? '✓' : '⏳'; ico.style.color = ok ? '' : '#8a4708'; ico.style.background = ok ? '' : '#fdf4e3'; }
+      if(ttl) ttl.style.display = ok ? '' : 'none';
+      if(sub) sub.style.display = ok ? '' : 'none';
+      if(box) box.style.display = ok ? 'none' : '';
+    };
     const _paint = () => {
+      _renderAnswerState();
       if(!_statusEl) return;
       _statusEl.style.display = '';
       _statusEl.innerHTML = [_answersMsg, _photosMsg].filter(Boolean).join('<br>');
@@ -2605,6 +2634,7 @@ function submit(){
       window.removeEventListener('message', _onSaved);
       clearTimeout(_answersTimer);
       _answersDone = true;
+      _answersState = dd.state || 'pending';   /* v267 - drives the screen */
       _answersMsg = dd.state === 'sent'
         ? '✓ તમારા જવાબો સચવાઈ ગયા (Your answers are saved)'
         : (dd.state === 'saved'
@@ -4314,7 +4344,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v265';
+const APP_VERSION = 'v267';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8241,6 +8271,52 @@ function _reportEnrolNotSaved(rec){
       const id = uid('ACT');
       fbRef('activity/' + id).set({ id:id, kind:'alert', text:txt, ts:Date.now(),
         actorName:'Public form', actorId:'', actorRole:'public' }).catch(()=>{});
+    }
+  }catch(e){}
+}
+
+/* v266 - the answers reached this phone but not the server.
+
+   Only ever called on the PUBLIC path, where there is no second chance: the
+   30-second pump does the retrying, this only watches for it to succeed, so
+   nothing here competes with it or re-sends anything. If the queue row is
+   still there at the end, the office is told once. */
+async function _watchPublicFormLanding(rec){
+  if(!rec || !rec.id) return;
+  for(let i = 0; i < 10; i++){                 // about two and a half minutes
+    await new Promise(r => setTimeout(r, 15000));
+    let stillQueued = true;
+    try{ stillQueued = !!(await idbGet('formWrites', rec.id)); }
+    catch(e){ stillQueued = true; }            // cannot tell - assume the worst
+    if(!stillQueued) return;                   // the pump got them away
+  }
+  _reportPublicFormNotReceived(rec);
+}
+/* Written straight to the server, not through saveDB: public mode suppresses
+   that deliberately, so an entry made with logActivity alone dies with the tab
+   - and this is the one message the office most needs to see. */
+function _reportPublicFormNotReceived(rec){
+  const who = esc((rec && (rec.name || rec.id)) || 'A farmer');
+  const txt = '\u26a0 <b>' + who + '</b>'
+    + (rec && rec.phone ? ' (' + esc(rec.phone) + ')' : '')
+    + ' \u2014 the application arrived but <b>the answers did not</b>. They are on the '
+    + 'farmer\'s phone only and will not arrive by themselves. Please ask them to fill the form again.';
+  try{ logActivity('alert', txt); }catch(e){}
+  const id = uid('ACT');
+  const entry = { id:id, kind:'alert', text:txt, ts:Date.now(),
+                  actorName:'Public form', actorId:'', actorRole:'public' };
+  /* v266 - queued BEFORE it is sent. The circumstance this alert exists for is
+     a phone with a poor connection, so the alert is exactly as likely to fail
+     as the answers were. Queued first, it keeps trying on the 30-second pump
+     for as long as the page is open and goes the moment there is signal. */
+  try{ idbPut('offlineWrites', { key:'activity/'+id, col:'activity', id:id,
+        rec: sanitizeForFB(entry), at: Date.now(), atIso: new Date().toISOString() })
+        .catch(function(){}); }catch(e){}
+  try{
+    if(FB && FB.ready){
+      fbRef('activity/' + id).set(sanitizeForFB(entry))
+        .then(function(){ try{ idbDel('offlineWrites', 'activity/'+id).catch(function(){}); }catch(e){} })
+        .catch(function(){});
     }
   }catch(e){}
 }
@@ -18267,6 +18343,16 @@ function renderRecordBody(f, claims){
           ? '\u0a9c\u0ab5\u0abe\u0aac \u0ab2\u0abe\u0ab5\u0ac0\u0aa8\u0ac7...<div style="margin-top:5px;font-size:11.5px">Loading answers</div>'
           : claims.length
           ? 'No answers match this filter.'
+          /* v266 - "not received yet" is true but reads as "still on its
+             way". For a farmer who filled the public form it is not on its
+             way: their answers stopped on their own phone and nothing will
+             bring them. Say so, and say what to do about it. */
+          : (f && f.source === 'self-enrolled-public')
+          ? 'આ ખેડૂતના જવાબો આપણા સુધી પહોંચ્યા નથી'
+            + '<div style="margin-top:7px;font-size:12px;line-height:1.8;max-width:430px;margin-left:auto;margin-right:auto">'
+            + 'આ ખેડૂતે ફોર્મ ભર્યું હતું અને અરજી મળી છે, પણ જવાબો તેમના ફોનમાં જ રહી ગયા છે.'
+            + '<br>તેમને ફરીથી ફોર્મ ભરવાનું કહો.'
+            + '<div style="margin-top:8px;font-size:11.5px;color:var(--ink-faint)">The application arrived but the answers never did \u2014 they stopped on the farmer\'s own phone. Ask them to fill the form again; there is nothing to wait for.</div></div>'
           : 'આ ખેડૂતનું ફોર્મ હજુ મળ્યું નથી'
             + '<div style="margin-top:5px;font-size:11.5px">No enrolment form on file for this farmer yet</div>')
       + '</div></div>';
@@ -24819,6 +24905,10 @@ window.addEventListener('message',async ev=>{
           catch(e){ console.warn('[Sristi] enrolment save:', e); }
           _ackEnrolSaved(_enrolSaved);
           if(_enrolSaved === 'lost') _reportEnrolNotSaved(rec);
+          /* v266 - 'saved' means "on this phone". On a coordinator's phone that
+             is fine; on a farmer's it is where eight sets of answers stopped.
+             Not awaited: the farmer's screen must not wait on it. */
+          else if(_enrolSaved === 'saved') _watchPublicFormLanding(rec);
           rec.enrollmentFormSubmittedAt = d.data._submittedAt || todayISO();
           const claims = Array.isArray(d.data.claims) ? d.data.claims : [];
           const cropsClaim = claims.find(c => c.id === 'crops_table');
@@ -25182,6 +25272,11 @@ window.addEventListener('message',async ev=>{
     // v8.2 — public mode: close the iframe and show our branded thank-you
     // screen with the application ID + WhatsApp link.
     if(PUBLIC_MODE){
+      /* v267 - carry the answers' state across. Without this the thank-you
+         screen knows only whether the application record arrived, and would
+         tell a farmer their application had been received while their answers
+         were still queued on the phone. */
+      try{ if(window._pfLastApp) window._pfLastApp._answersPending = (d.answers !== 'sent'); }catch(e){}
       closeEnrollmentForm();
       enterPublicMode('public_thanks');
       return;
@@ -28104,7 +28199,7 @@ function viewPublicThanks(){
 
   /* v263 - only say it arrived if it did. `_notConfirmed` is set by
      publicPersistRecord when the record is still queued on this device. */
-  const _pending = !!app._notConfirmed;
+  const _pending = !!(app._notConfirmed || app._answersPending);   /* v267 */
   v.innerHTML = `
     <div class="pf-thanks">
       ${_pending ? `
@@ -28143,10 +28238,22 @@ function viewPublicThanks(){
     const _watch = setInterval(async () => {
       _tries++;
       let still = true;
-      try{ still = await publicSubmissionPending(_col, app.id); }catch(e){}
+      try{
+        const recStill = await publicSubmissionPending(_col, app.id);
+        /* v267 - the answers have their own queue, so ask about both. If the
+           question cannot be answered, keep waiting rather than declaring
+           success: this screen exists to stop exactly that. */
+        let ansStill = !!app._answersPending;
+        if(app._answersPending){
+          try{ ansStill = !!(await idbGet('formWrites', app.id)); }catch(e){ ansStill = true; }
+        }
+        if(!ansStill) app._answersPending = false;
+        still = recStill || ansStill;
+      }catch(e){}
       if(!still){
         clearInterval(_watch);
         app._notConfirmed = false;
+        app._answersPending = false;
         if(ROUTE === 'public_thanks') viewPublicThanks();
         return;
       }

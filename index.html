@@ -4344,7 +4344,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v268';
+const APP_VERSION = 'v269';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9118,6 +9118,22 @@ function viewerCanSeeFarmer(f, programme){
 }
 /* One question for every action surface in the app. */
 function canEditData(){ return !isViewerUser(); }
+/* v269 - which coordinators may a viewer be offered in a filter? The ones on
+   the farmers they can see, and nobody else. Taken from the visible records
+   rather than from a district rule of its own, so the dropdown and the table
+   are answering the same question and cannot disagree. A no-op for anyone who
+   is not a viewer: they get the list they were given. */
+function filterFcChoices(list, farmers){
+  if(!isViewerUser()) return list || [];
+  const seen = {};
+  (farmers || []).forEach(function(f){
+    if(!f) return;
+    const info = (typeof farmerFcInfo === 'function') ? farmerFcInfo(f) : null;
+    if(f.fcId) seen[f.fcId] = 1;
+    if(info && info.fc && info.fc.id) seen[info.fc.id] = 1;
+  });
+  return (list || []).filter(function(x){ return x && seen[x.id]; });
+}
 /* A viewer uses the desktop layout - dashboard, tables, the record page - but
    is not an admin. Everywhere that asked isAdminUser() to mean "show me the
    full-size UI rather than the phone UI" asks this instead. */
@@ -14556,7 +14572,7 @@ function viewHaat(){
     </select>
     <select id="fFc"><option value="">All field coordinators</option>
       <option value="__none__" ${F.fc==='__none__'?'selected':''}>— No coordinator —</option>
-      ${activeFcs().map(x=>`<option value="${esc(x.id)}" ${F.fc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
+      ${filterFcChoices(activeFcs(), DB.haatFarmers).map(x=>`<option value="${esc(x.id)}" ${F.fc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
     </select>
     <select id="fCrop"><option value="">All crops</option>
       ${(window.CROPS_CATALOG||[]).filter(x=>x!=='Other (અન્ય)').map(x=>`<option ${F.crop===x?'selected':''}>${esc(x)}</option>`).join('')}
@@ -15525,7 +15541,7 @@ function viewConversion(){
     </select>
     <select id="cFc"><option value="">All field coordinators</option>
       <option value="__none__" ${F.fc==='__none__'?'selected':''}>— Unassigned —</option>
-      ${DB.fcs.map(x=>`<option value="${x.id}" ${F.fc===x.id?'selected':''}>${x.name}</option>`).join('')}
+      ${filterFcChoices(DB.fcs, DB.convFarmers).map(x=>`<option value="${x.id}" ${F.fc===x.id?'selected':''}>${x.name}</option>`).join('')}
     </select>
     <select id="cMobF"><option value="">All mobilizers</option>
       <option value="__none__" ${F.mob==='__none__'?'selected':''}>— No mobilizer —</option>

@@ -5,8 +5,11 @@ _*.js
 # Claude Code session files
 .claude/
 
-# Local version backups (keep on disk, don't push to GitHub)
+# Local version backups (keep on disk, don't push to GitHub). Every release
+# saves index-V<n>.html and its matching sw-V<n>.js beside the live pair, so
+# any earlier version can be restored by copying two files back.
 index-V*.html
+sw-V*.js
 
 # Firebase data snapshots — real farmer PII, this repo is public. Never push.
 _backups/

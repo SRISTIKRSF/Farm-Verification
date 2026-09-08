@@ -4344,7 +4344,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v269';
+const APP_VERSION = 'v270';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10603,10 +10603,12 @@ function clearVerificationSubmitted(farmerId){
   if(DB.verifIndex) delete DB.verifIndex[farmerId];
   if(FB && FB.ready){ fbRef('verifIndex/'+farmerId).remove().catch(()=>{}); }
 }
-function haatStats(){
+function haatStats(list){
   // v8 — FC users see only their own farmers in the dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
-  const f=_excludeSeeds(filterByCurrentFc(DB.haatFarmers)).filter(x=>!x._archived);
+  /* v270 - an optional subset, so the Haat screen can count the farmers its own
+     filter bar has selected. Omitted by every other caller. */
+  const f=_excludeSeeds(filterByCurrentFc(list || DB.haatFarmers)).filter(x=>!x._archived);
   return{
     total:f.length,
     pending:f.filter(x=>x.stage==='verification_pending').length,
@@ -12183,10 +12185,13 @@ function convScoreCard(f){
     + head + bar + noCompRow + breakdownRows + footer
     + '</div>';
 }
-function convStats(){
+function convStats(list){
   // v8 — FC users see only their own conversion farmers in dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
-  const f=_excludeSeeds(filterByCurrentFc(DB.convFarmers)).filter(x=>!x._archived);
+  /* v270 - an optional subset, so the Conversion screen can count the farmers
+     its own filter bar has selected rather than the whole programme. Omitted
+     everywhere else, which is every other caller, so nothing else changes. */
+  const f=_excludeSeeds(filterByCurrentFc(list || DB.convFarmers)).filter(x=>!x._archived);
   const today=todayISO();
   let pending=0, red=0, yellow=0, green=0;
   let enrolled=0, assigned=0, inProgress=0, adopted=0, chemFlag=0, firstVisitDue=0, overdue=0, readyToAdopt=0;
@@ -14551,8 +14556,31 @@ function wireArch(v, p, pagedIds){
 function viewHaat(){
   const v=$('#view');
   const F=FILTERS.haat;
-  const hs=haatStats();
   if(!F.dateRange) F.dateRange={preset:'all',from:'',to:''};
+  /* v270 - who this screen is about. Every filter except the status box, which
+     is what the pipeline strip breaks down. The table below starts from this
+     same list, so the strip and the rows cannot describe different people. */
+  const _audience = (function(){
+    let a = filterByCurrentFc(DB.haatFarmers).slice();
+    if(F.haat) a=a.filter(r=>farmerSellsAt(r,F.haat));
+    if(F.state) a=a.filter(r=>r.state===F.state);
+    if(F.district) a=a.filter(r=>districtDisplayName(r.district)===F.district);
+    if(F.crop) a=a.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
+    if(F.juth==='__none__') a=a.filter(r=>!String(r.juth||'').trim());
+    else if(F.juth) a=a.filter(r=>String(r.juth||'')===F.juth);
+    if(F.fc==='__none__') a=a.filter(r=>!farmerFcInfo(r).fc);
+    else if(F.fc) a=a.filter(r=>{const i=farmerFcInfo(r); return i.fc && i.fc.id===F.fc;});
+    /* the same expression the table uses: F.status picks WHICH date to compare,
+       it does not exclude anyone by status. */
+    if(F.dateRange.preset!=='all') a=a.filter(r=>inDateRange(F.dateRange,farmerStageTs(r,F.status)));
+    if(F.active==='1') a=a.filter(r=>r.status==='green'&&r.active);
+    if(F.active==='0') a=a.filter(r=>r.status==='green'&&!r.active);
+    if(window._q){ const q=window._q.toLowerCase();
+      a=a.filter(r=>r.name.toLowerCase().includes(q)||r.village.toLowerCase().includes(q)
+                 ||r.id.toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)); }
+    return a;
+  })();
+  const hs=haatStats(_audience);
 
   /* ---- clickable pipeline strip — same simplified 4-step flow as the Dashboard ---- */
   let h=journeyBoxesHtml(hs,'filter',F.status);
@@ -14589,8 +14617,12 @@ function viewHaat(){
   </div>`;
 
   /* ---- filtering ---- */
-  // v8 — role filter: FC users see only their own farmers.
-  let rows=filterByCurrentFc(DB.haatFarmers).slice();
+  /* v270 - the same list the strip above was counted from. Only the status box
+     and the archive view are applied on top; everything else is in _audience.
+     v194 - the coordinator match, over in _audience, uses the SAME rule the
+     column shows: the stamped coordinator if there is one, otherwise the
+     district's, and "No coordinator" means neither. */
+  let rows = _audience.slice();
   // archive: hide archived farmers unless the "Show archived" toggle is on (then show ONLY archived)
   rows = archFilterRows('haat', rows);
   // status box keys: pending & verified are pipeline STAGES; green/yellow/red are decision STATUSES
@@ -14598,25 +14630,6 @@ function viewHaat(){
   else if(F.status==='verified') rows=rows.filter(r=>r.stage==='verified');
   else if(F.status==='green'||F.status==='yellow'||F.status==='red')
     rows=rows.filter(r=>r.status===F.status);
-  if(F.haat) rows=rows.filter(r=>farmerSellsAt(r,F.haat))   /* v260 - any of their haats */;
-  if(F.state) rows=rows.filter(r=>r.state===F.state);
-  if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
-  if(F.crop) rows=rows.filter(r=>(r.crops||[]).some(c=>cropDisplayName(c)===F.crop));
-  /* v220 - "no juth" is the one people ask for first: which farmers have I not
-     put into a group yet. */
-  if(F.juth==='__none__') rows=rows.filter(r=>!String(r.juth||'').trim());
-  else if(F.juth) rows=rows.filter(r=>String(r.juth||'')===F.juth);
-  /* v194 - matches on the SAME rule the column shows: the stamped coordinator
-     if there is one, otherwise the district's. "No coordinator" means neither. */
-  if(F.fc==='__none__') rows=rows.filter(r=>!farmerFcInfo(r).fc);
-  else if(F.fc) rows=rows.filter(r=>{const i=farmerFcInfo(r); return i.fc && i.fc.id===F.fc;});
-  /* v243 - judged on the date that matches the stage being shown */
-  if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerStageTs(r,F.status)));
-
-  if(F.active==='1') rows=rows.filter(r=>r.status==='green'&&r.active);
-  if(F.active==='0') rows=rows.filter(r=>r.status==='green'&&!r.active);
-  if(window._q){const q=window._q.toLowerCase();
-    rows=rows.filter(r=>r.name.toLowerCase().includes(q)||r.village.toLowerCase().includes(q)||r.id.toLowerCase().includes(q)||farmerCropsMatch(r.crops,q));}
   rows=sortRows(rows);
 
   const HAAT_PAGE_SIZE = 50;
@@ -15526,9 +15539,30 @@ async function updatePlanStatus(planId, newStatus, noShowReason){
 /* ============ VIEW: CONVERSION ============ */
 function viewConversion(){
   const v=$('#view');
-  const cs=convStats();
   const F=FILTERS.conv;
   if(!F.dateRange) F.dateRange={preset:'all',from:'',to:''};
+  /* v270 - who this screen is about. Every filter except the score band and
+     the "not interested" toggle, because those two are what the cards break
+     down: folding them in would leave each card describing only itself.
+     The table below starts from this same list, so the summary and the rows
+     can never be about different people again. */
+  const _audience = (function(){
+    let a = filterByCurrentFc(DB.convFarmers).slice();
+    if(F.state) a=a.filter(r=>r.state===F.state);
+    if(F.district) a=a.filter(r=>districtDisplayName(r.district)===F.district);
+    if(F.fc==='__none__') a=a.filter(r=>!r.fcId);
+    else if(F.fc) a=a.filter(r=>r.fcId===F.fc);
+    if(F.mob==='__none__') a=a.filter(r=>!r.mobilizerId);
+    else if(F.mob) a=a.filter(r=>r.mobilizerId===F.mob);
+    if(F.juth==='__none__') a=a.filter(r=>!String(r.juth||'').trim());
+    else if(F.juth) a=a.filter(r=>String(r.juth||'')===F.juth);
+    if(F.dateRange.preset!=='all') a=a.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
+    if(window._q){ const q=window._q.toLowerCase();
+      a=a.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)
+                 ||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)); }
+    return a;
+  })();
+  const cs=convStats(_audience);
   let h=convFunnelHtml(cs,F.status,F.notInterested);
   h+=dateRangePillsHtml(F.dateRange);   /* v243 - "Submitted", as before */
   const convDistricts=[...new Set(DB.convFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
@@ -15553,28 +15587,18 @@ function viewConversion(){
     </select>`:''}
     <button class="chip" id="cClear">Clear all filters</button>
   </div>`;
-  // v8 — role filter: FC users see only their own farmers.
-  let rows=filterByCurrentFc(DB.convFarmers).slice();
+  /* v270 - the same list the cards above were counted from, so the two can
+     never describe different people. Only the score band, the "not interested"
+     toggle and the archive view are applied on top; every other filter is
+     already in _audience.
+     v243 - conversion keeps the enrolment date rather than a decision date:
+     its green/yellow/red mean adopted / in progress / not chemical-free, not a
+     decision the office made, so there is no decision date to filter on. */
+  let rows = _audience.slice();
   // archive: hide archived unless "Show archived" is on (then show ONLY archived)
   rows = archFilterRows('conv', rows);
   if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
-  if(F.state) rows=rows.filter(r=>r.state===F.state);
-  if(F.district) rows=rows.filter(r=>districtDisplayName(r.district)===F.district);
-  if(F.fc==='__none__') rows=rows.filter(r=>!r.fcId);
-  else if(F.fc) rows=rows.filter(r=>r.fcId===F.fc);
-  if(F.mob==='__none__') rows=rows.filter(r=>!r.mobilizerId);
-  else if(F.mob) rows=rows.filter(r=>r.mobilizerId===F.mob);
-  /* v220 */
-  if(F.juth==='__none__') rows=rows.filter(r=>!String(r.juth||'').trim());
-  else if(F.juth) rows=rows.filter(r=>String(r.juth||'')===F.juth);
-  /* v243 - judged on the date that matches the stage being shown */
-  /* v243 - conversion keeps the enrolment date: its green/yellow/red mean
-     adopted / in progress / not chemical-free, not a decision the office made,
-     and there is no decision date to filter on. */
-  if(F.dateRange.preset!=='all') rows=rows.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
-  if(window._q){const q=window._q.toLowerCase();
-    rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q));}
   rows=sortRows(rows);
 
   const CONV_PAGE_SIZE = 50;

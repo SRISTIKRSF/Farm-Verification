@@ -4344,7 +4344,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v267';
+const APP_VERSION = 'v268';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14615,7 +14615,7 @@ function viewHaat(){
     <span class="meta">${rows.length} of ${DB.haatFarmers.length} records</span>
     <div class="spacer"></div>
     ${archToggleHtml('haat')}
-    <button class="btn btn-excel btn-sm" id="exportHaat">${svg(I.download,2.2)}Export CSV</button>
+    ${canEditData()?`<button class="btn btn-excel btn-sm" id="exportHaat">${svg(I.download,2.2)}Export CSV</button>`:''}
   </div>`;
   const _haatAllSel = pagedRows.length && pagedRows.every(r=>ARCH_SEL.haat.has(r.id));
   h+=`<div class="table-wrap"><table><thead><tr>
@@ -14696,7 +14696,7 @@ function viewHaat(){
   setF('haat','fHaat');setF('state','fState');setF('district','fDistrict');
   setF('crop','fCrop');setF('active','fActive');setF('fc','fFc');setF('juth','fJuth');
   $('#clearF').onclick=()=>{FILTERS.haat={};render();};
-  $('#exportHaat').onclick=()=>exportHaatCSV(rows);
+  { const _x = $('#exportHaat'); if(_x) _x.onclick=()=>exportHaatCSV(rows); }   /* v268 - absent for a viewer */
 }
 function pct(n,d){return d?Math.round(n/d*100)+'%':'0%';}
 
@@ -14844,6 +14844,9 @@ function wireTable(v,onClick){
   });
 }
 function exportHaatCSV(rows){
+  /* v268 - a whole-list download of names, phones, villages and coordinators
+     should not rest on a button being where I remember it. */
+  if(!canEditData()){ toast('View-only access \u2014 export is not available.'); return; }
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,
@@ -14858,6 +14861,7 @@ function exportHaatCSV(rows){
   toast('Downloaded: haat-farmers.csv');
 }
 function exportConvCSV(rows){
+  if(!canEditData()){ toast('View-only access \u2014 export is not available.'); return; }
   const data=rows.map(f=>({
     id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
@@ -15568,7 +15572,7 @@ function viewConversion(){
     <span class="meta">${rows.length} of ${DB.convFarmers.length} records</span>
     <div class="spacer"></div>
     ${archToggleHtml('conv')}
-    <button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>
+    ${canEditData()?`<button class="btn btn-excel btn-sm" id="exportConv">${svg(I.download,2.2)}Export CSV</button>`:''}
     ${isAdminUser()?`<button class="btn btn-ghost btn-sm" id="cAuto">${svg(I.fc,2.2)}Auto-assign by district</button><button class="btn btn-ghost btn-sm" id="cBulk">${svg(I.fc,2.2)}Bulk-assign by taluka</button><button class="btn btn-ghost btn-sm" id="cMove">${svg(I.fc,2.2)}Move between coordinators</button><button class="btn btn-ghost btn-sm" id="cMob">${svg(I.user,2.2)}Assign to mobilizer</button>
     <button class="btn btn-ghost btn-sm" id="cImport">${svg(I.download,2.2)}Import from form</button>
     <button class="btn btn-primary btn-sm" id="cNewKrsf">${svg(I.plus,2.2)}Add new conversion farmer</button>`:''}
@@ -15655,7 +15659,7 @@ function viewConversion(){
   $('#cClear').onclick=()=>{FILTERS.conv={};render();};
   const cImportBtn=$('#cImport'); if(cImportBtn) cImportBtn.onclick=openImportFormModal;
   const newKrsfBtn = $('#cNewKrsf'); if(newKrsfBtn) newKrsfBtn.onclick = openConvEnrollmentForm;
-  $('#exportConv').onclick=()=>exportConvCSV(rows);
+  { const _x = $('#exportConv'); if(_x) _x.onclick=()=>exportConvCSV(rows); }   /* v268 - absent for a viewer */
   wireArch(v, 'conv', pagedConvRows.map(r=>r.id));
   wireDateRangePills(v, F.dateRange);
 }

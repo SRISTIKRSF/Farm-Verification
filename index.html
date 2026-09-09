@@ -2631,7 +2631,14 @@ function submit(){
     window.addEventListener('message', function _onSaved(ev){
       const dd = ev.data;
       if(!dd || dd.type !== 'enrol-saved') return;
-      window.removeEventListener('message', _onSaved);
+      /* v274 - only stop listening on a FINAL answer. This removed itself on
+         the first message of any kind, and with no signal the first message is
+         always 'saved' - answers are on the phone, not sent. So the 'sent' that
+         follows when the queue drains reached nobody, and the screen kept the
+         hourglass and the words "has not reached us yet" while the answers were
+         already on the server. The farmer walks away believing they must fill
+         the whole form again. */
+      if(dd.state === 'sent' || dd.state === 'lost') window.removeEventListener('message', _onSaved);
       clearTimeout(_answersTimer);
       _answersDone = true;
       _answersState = dd.state || 'pending';   /* v267 - drives the screen */
@@ -4344,7 +4351,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v271';
+const APP_VERSION = 'v274';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4474,7 +4481,12 @@ async function fcPendingTotal(){
      memory just to count them - 15 MB twice a minute on the phone holding 76.
      Same fix v241 made to updatePhotoBadge; this counter was missed. */
   try{ photos=(await idbKeys('photoQueue')).length; }catch(e){}
-  try{ (await idbAll('offlineWrites')).forEach(x=>{ if(x && x.key) keys.add(String(x.key)); }); }catch(e){}
+  /* v272c - the durable rows for a verification and a conversion visit carry a
+     '#verif' / '#visit' suffix so they cannot overwrite an enrolment row for the
+     same farmer. The suffix is dropped HERE so this still de-duplicates against
+     the pending-sync set, which keys on col/id - otherwise one verification
+     showed in the coordinator's strip as two things waiting. */
+    try{ (await idbAll('offlineWrites')).forEach(x=>{ if(x && x.key) keys.add(String(x.key).split('#')[0]); }); }catch(e){}
   try{ forms =(await idbAll('formWrites')).length; }catch(e){}
   try{ _readPendingSync().forEach(k=>keys.add(String(k))); }catch(e){}
   return {total: keys.size+forms+photos, photos: photos};
@@ -4649,7 +4661,14 @@ async function loadDB(){
         }
       }
       cacheLocal();
-      await preCleanBlobsFromRTDB();
+      /* v272 - NOT AWAITED. This is a one-time tidy-up of old form blobs, and
+         it holds unguarded network calls that run before the live listener is
+         attached - so they cannot be answered from the SDK's cache and must
+         reach the server. On a link that is up but dead a Firebase promise
+         never settles, and loadDB never resolved: no render, and no
+         startBackgroundPumps, so nothing queued on that phone was ever sent
+         for the whole session. Nothing below depends on it having finished. */
+      preCleanBlobsFromRTDB().catch(e => console.warn('[Sristi] blob pre-clean:', e));
       attachLiveListener();
       attachQuestionSchemaLiveListener();   // Question Manager cross-device sync
       /* v185 - this ran unconditionally at boot, before any login and even in
@@ -4729,13 +4748,45 @@ let _bgSuspendTimer=null;
 function attachBackgroundThrottle(){
   if(!FB.ready || typeof firebase==='undefined' || typeof document==='undefined') return;
   const BG_GRACE_MS=60000;
+  /* v272 - never while work is still waiting to go. A coordinator pockets the
+     phone the moment they finish a farm, and goOffline() turns every queued
+     write into a promise that HANGS rather than fails - so the pump stops
+     making progress entirely until the app is opened again, which may be the
+     next day. Look again in a minute instead; the saving this exists for is
+     just as real in a minute's time. */
+  let _bgDeferrals = 0;
+  const _bgTrySuspend = () => {
+    if(!document.hidden){ _bgDeferrals = 0; return; }
+    /* v272b - a ceiling. pendingSyncCount reads a localStorage set that nothing
+       prunes, so a single id that can never be cleared would defer suspension
+       on every beat, all night - and a phone that stays subscribed keeps
+       downloading, which is the Firebase increase this release must not cause.
+       Ten minutes of grace, then suspend regardless: the queued work is durable
+       and the next launch sends it. */
+    if(_bgDeferrals >= 10){ try{ firebase.database().goOffline(); }catch(e){} return; }
+    let unsent = 0;
+    /* All three are synchronous and already kept up to date by the pump, so
+       this costs nothing. fcPendingTotal would have been the obvious choice and
+       is the wrong one: it is async, and a Promise is truthy but not > 0, so
+       the guard would have gone offline every time while looking correct. */
+    try{ if(typeof pendingSyncCount === 'function') unsent += pendingSyncCount() || 0; }catch(e){}
+    try{ if(typeof _formQueueCount === 'number')  unsent += _formQueueCount; }catch(e){}
+    try{ if(typeof _photoQueueCount === 'number') unsent += _photoQueueCount; }catch(e){}
+    if(unsent > 0){ _bgDeferrals++; _bgSuspendTimer = setTimeout(_bgTrySuspend, BG_GRACE_MS); return; }
+    try{ firebase.database().goOffline(); }catch(e){}
+  };
   document.addEventListener('visibilitychange', ()=>{
     clearTimeout(_bgSuspendTimer);
     if(document.hidden){
-      _bgSuspendTimer=setTimeout(()=>{
-        if(document.hidden){ try{ firebase.database().goOffline(); }catch(e){} }
-      }, BG_GRACE_MS);
+      _bgSuspendTimer=setTimeout(_bgTrySuspend, BG_GRACE_MS);
     }else{
+      /* v272c - HERE, not inside _bgTrySuspend. That reset was dead code: the
+         line above clears the timer, so _bgTrySuspend never runs with the page
+         visible. The count was cumulative for the life of the page, so after
+         about ten pocketed minutes the ceiling fired on every backgrounding
+         from then on and suspended the socket with work still queued - the very
+         thing this exists to prevent. */
+      _bgDeferrals = 0;
       try{ firebase.database().goOnline(); }catch(e){}
     }
   });
@@ -5851,6 +5902,16 @@ function cacheLocal(){
      A viewer has no use for the mirror. It exists so a coordinator can open the
      app in a field with no signal; a viewer reads a dashboard at a desk. */
   if(typeof isViewerUser === 'function' && isViewerUser()) return;
+  /* v272c - A MOBILIZER MUST KEEP WRITING IT. I stopped them here and it was
+     wrong: unlike a viewer, a mobilizer's phone SEEDS ITSELF from this mirror
+     at boot and works offline all day. Without the writer their phone holds a
+     frozen copy - or on a fresh phone, none at all, so they boot into demo
+     records and cannot work. Worse: a visit recorded with no signal would not
+     be on screen after a reload, so it gets recorded again and the second
+     durable row overwrites the first under the same key.
+     The real risk - a partial copy poisoning the next person's boot on a shared
+     phone - is handled the way v265 handles it for viewers: the mirror is
+     cleared on sign-out. See signOutNow. */
   // v11 — forms are excluded from the localStorage mirror (they're cached in
   // IndexedDB instead, which has far more quota). Keeps the cache small.
   try{ localStorage.setItem(STORE_KEY,JSON.stringify(DB,_stripReplacer)); _quotaWarned=false; }
@@ -5882,7 +5943,14 @@ const _localTouches = new Map();   // key: `${col}/${id}` -> expiresAt ms
 // cloud write waits for its retry (default stays 5 s).
 function markLocalTouch(col, id, ms){
   if(!col || !id) return;
-  _localTouches.set(col+'/'+id, Date.now() + (ms || 5000));
+  /* v272 - EXTEND, never shorten. The verification path sets 20000 on purpose
+     (v244, and its comment explains the exact race), and a later plain call
+     with no ms was silently putting it back to 5000 - reopening the race a
+     fix had already closed. Taking the later of the two means no call site can
+     undo another's protection, today or in future. */
+  const _until = Date.now() + (ms || 5000);
+  const _cur = _localTouches.get(col+'/'+id) || 0;
+  _localTouches.set(col+'/'+id, _cur > _until ? _cur : _until);
 }
 function isLocallyProtected(col, id){
   if(!col || !id) return false;
@@ -5904,13 +5972,24 @@ async function preCleanBlobsFromRTDB(){
   const authUser = firebase.auth && firebase.auth().currentUser;
   if(!authUser) return;
   try{
-    const flagSnap = await fbRef('meta/blobsCleanedV2').get();
-    if(flagSnap.val()){ return; }  // already clean
-    const token = await authUser.getIdToken();
+    /* v272 - bounded, all of it. Detached from boot now, but a promise that
+       never settles still pins whatever it holds, and this used to be the
+       thing that stopped the whole app. */
+    const _fg = await _fbWriteGuard(fbRef('meta/blobsCleanedV2').get(), 8000);
+    if(_fg.timedOut) return;
+    if(_fg.value && _fg.value.val()){ return; }  // already clean
+    const _tg = await _fbWriteGuard(authUser.getIdToken(), 8000);
+    if(_tg.timedOut) return;
+    const token = _tg.value;
     const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
     const cleanups = {};
     for(const col of ['haatFarmers','convFarmers']){
-      const resp = await fetch(base+'/'+col+'.json?shallow=true&auth='+token);
+      /* v272 - and the fetch, which had no abort at all. */
+      const _ac = new AbortController();
+      const _t = setTimeout(() => _ac.abort(), 15000);
+      let resp;
+      try{ resp = await fetch(base+'/'+col+'.json?shallow=true&auth='+token, {signal:_ac.signal}); }
+      finally{ clearTimeout(_t); }
       if(!resp.ok) continue;
       const keys = await resp.json();
       if(!keys || typeof keys!=='object') continue;
@@ -5967,6 +6046,13 @@ function _runPendingCatchUp(){
   if(pendingSyncCount() > 0 && navigator.onLine && FB.ready) saveDB(true);
 }
 const _liveSnapshotSeen = new Set();
+/* v272b - ids whose baseline is the SERVER's copy while DB deliberately keeps
+   this device's older one (see the merge in _processLiveSnapshot). For those,
+   and only those, "a key in the baseline but not in DB" does NOT mean this
+   device removed it - it means the server has something we have not merged yet.
+   Rebuilt on every merge, so an id leaves the set as soon as its protection
+   lapses and the two copies agree again. */
+const _baselineSubstituted = new Set();
 /* v99 — district-scoped FC sync. haatFarmers/convFarmers are ~95% of every
    boot download (see the forms/ finding above), and every device — FC or
    admin — was syncing the full collection regardless of role. This reuses
@@ -6179,6 +6265,10 @@ function attachLiveListener(){
 }
 function _processLiveSnapshot(){
     const cloud=cloudToDB(_liveSnapshot);
+    /* v272 - what the SERVER says it holds, taken NOW, before the merge below
+       substitutes this device's own copy of any locally-protected record.
+       _lastSnap is built from this further down; the note there says why. */
+    let _serverSnap = null;   /* built inside the branch below, only when needed */
     // v9 audit-fix #2 — include new collections in the diff so cross-FC
     // plan visibility and Forms-Received auto-promotes actually refresh
     // the UI on remote devices.
@@ -6186,7 +6276,13 @@ function _processLiveSnapshot(){
     // on-demand forms don't make the comparison permanently unequal.
     const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[])+JSON.stringify(cloud.verifIndex||{});
     const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[])+JSON.stringify(DB.verifIndex||{});
+    /* v272b - the merge below REPLACES entries in cloud[col] with this device's
+       copies, so the server's own arrays are kept here first. This is a shallow
+       copy of six array references, not a clone. */
+    const _cloudBefore = {};
+    try{ SYNC_COLS.forEach(col => { _cloudBefore[col] = (cloud[col]||[]).slice(); }); }catch(e){}
     if(incoming!==current){
+      _baselineSubstituted.clear();   /* v272b - rebuilt by the merge below */
       // For each record this session JUST touched, keep the local copy until
       // the protection expires (5 s). All other records take the cloud value.
       // Cross-device writes are NOT blocked because their record ids aren't
@@ -6196,7 +6292,10 @@ function _processLiveSnapshot(){
         (DB[col]||[]).forEach(r => { if(r && r.id) localById[r.id] = r; });
         cloud[col] = (cloud[col]||[]).map(rec => {
           if(!rec || !rec.id) return rec;
-          if(isLocallyProtected(col, rec.id) && localById[rec.id]) return localById[rec.id];
+          if(isLocallyProtected(col, rec.id) && localById[rec.id]){
+            _baselineSubstituted.add(col + '/' + rec.id);   /* v272b */
+            return localById[rec.id];
+          }
           return rec;
         });
         // Also preserve locally-created records that the cloud snapshot
@@ -6224,7 +6323,32 @@ function _processLiveSnapshot(){
       // Keeping _lastSnap in sync with every state this device has actually
       // seen (own saves AND live updates) closes the vulnerability: the diff
       // then only fires for a record THIS device's own UI genuinely removed.
-      _lastSnap=_excludePendingFromSnap(snapAll());
+      /* v272 - FROM THE SERVER'S SNAPSHOT, NOT FROM DB.
+
+         snapAll() serialises the current DB, and a few lines above this we
+         deliberately KEPT the local copy of every locally-protected record.
+         So a coordinator's unsent visit was being written into the baseline as
+         "already on the server": saveDB's next diff found nothing to send, the
+         pill said Synced, and when the shield lapsed the next snapshot replaced
+         the record with the server's copy and the visit was gone - from memory
+         and, via cacheLocal, from the phone too. This runs on every activity
+         line any device on the programme writes, so it fired constantly.
+
+         Built from the server's own snapshot, a record the server does not have
+         reads as NEW on the next diff and gets sent. It cannot read as a delete:
+         a delete needs the id to be in the baseline and absent from DB, and an
+         id absent from the server is absent from this baseline. */
+      /* v272b - built HERE rather than on every listener fire: this runs on
+         every activity line anyone on the programme writes, and stringifying
+         1,800 records each time is real work on the weakest phone. And on any
+         failure fall back to the old behaviour rather than to a PARTIAL
+         baseline - a missing collection would leave every record in it with no
+         baseline at all, which routes each one into a separate server read. */
+      try{
+        _serverSnap = {};
+        SYNC_COLS.forEach(col => { _serverSnap[col] = snapCol(_cloudBefore[col]||[]); });
+      }catch(e){ console.warn('[Sristi] server snapshot:', e); _serverSnap = null; }
+      _lastSnap=_excludePendingFromSnap(_serverSnap || snapAll());
       // v11 — re-attach any on-demand forms this session already loaded, so
       // an open drawer doesn't lose them when the snapshot replaces records.
       try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
@@ -6309,7 +6433,12 @@ function buildAttentionRecord(program, fields, formPayload, existingRef, reason)
 async function saveAttentionSubmission(rec){
   try{
     if(FB && FB.ready && navigator.onLine){
-      await fbRef('pendingEnrolments/'+rec.id).set(sanitizeForFB(rec));
+      /* v272b - BOUNDED, and durable when it does not land. In public mode the
+         record is deliberately kept out of DB and saveDB is suppressed, so this
+         write is the ONLY copy of the farmer's whole answer set. The fallback
+         below is in a catch, and a hang is not a throw. */
+      const _ag = await _fbWriteGuard(fbRef('pendingEnrolments/'+rec.id).set(sanitizeForFB(rec)), 8000);
+      if(_ag.timedOut){ await idbPut('pendingEnrolments', rec).catch(()=>{}); }
     } else {
       await idbPut('pendingEnrolments', rec).catch(()=>{});
     }
@@ -6550,7 +6679,13 @@ async function _serverDecisionAt(col, id){
     if(!navigator.onLine) return {ok:false};
     const u = (firebase.auth && firebase.auth().currentUser) || null;
     if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return {ok:false};
-    const tok = await u.getIdToken();
+    /* v272 - bounded. This is awaited in a loop inside saveDB, once per record
+       with no baseline - exactly the records that were written offline. When it
+       hung, saveDB never returned and the caller's own durable write never ran.
+       The restore tool has guarded this same call since v225. */
+    const _tg = await _fbWriteGuard(u.getIdToken(), 8000);
+    if(_tg.timedOut) return {ok:false};
+    const tok = _tg.value;
     const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -6682,9 +6817,18 @@ async function saveDB(silent){
           if(_isFarmerCol && OFFICE_OWNED_FIELDS.indexOf(k) >= 0) _off[k]=curObj[k];
           else updates[col+'/'+id+'/'+k]=curObj[k];
         });
-        Object.keys(prevObj).forEach(k=>{
-          if(!(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
-        });
+        /* v272b - SKIPPED for a record whose baseline is the server's copy
+           while DB is holding this device's older one. There, a key present in
+           the baseline and absent locally is something the office has just
+           written and we have not merged - nulling it would delete the office's
+           own decision, with no owner filter and no cap. For every other record
+           the baseline and DB came from the same place and this is exactly the
+           "the UI removed a field" case it was written for. */
+        if(!_baselineSubstituted.has(col + '/' + id)){
+          Object.keys(prevObj).forEach(k=>{
+            if(!(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
+          });
+        }
         if(Object.keys(_off).length) _officeCheck.push({col:col, id:id, obj:_off, mine:curObj.decisionAt||null});
       } else if(_isFarmerCol && _pathSafe(curObj)){
         /* No baseline: either a brand-new record, or one _excludePendingFromSnap
@@ -6895,6 +7039,12 @@ async function saveDB(silent){
     // retry still bypasses the cap instead of silently falling back under it.
     Object.keys(updates).forEach(k=>{ if(updates[k]===null) _explicitDeletes.delete(k); });
     _lastSnap=snap;
+    /* v272c - the baseline is this device's own state again, so the
+       substitution guard no longer applies. Left standing, a genuine field
+       removal made later on the same page - un-archiving a farmer, lifting a
+       suspension, releasing a stale lock - was silently skipped and quietly
+       undid itself. */
+    try{ _baselineSubstituted.clear(); }catch(e){}
     _saveRetryCount=0;
     setSyncPill(navigator.onLine?'synced':'offline');
     // Only clear the pending marker once we're online — matches the SDK's
@@ -7585,7 +7735,19 @@ async function extractPhotos(payload, ctx, outIds){
 }
 
 /* ---------- background uploader ---------- */
-let _photoFlushBusy = false;
+/* v272 - a timestamp, not a bare flag. The other three queues take a token
+   that goes stale after 90 seconds and self-heals; this one was cleared only in
+   a finally, so a single hung await inside stopped photo uploads for the rest
+   of the session with nothing on screen to say so. */
+let _photoFlushBusy = false, _photoFlushAt = 0;
+/* v272b - fifteen minutes, and a HEARTBEAT rather than a start time. A real
+   flush of forty photos on a 2G link takes thirteen minutes, so a 90-second
+   window meant a second run took over a healthy one, then a third, each
+   re-uploading the same images - which is the concurrency a previous fix
+   removed from the other queues. Progress refreshes the clock, so "stale" now
+   means no progress at all for fifteen minutes: a genuine wedge. */
+const _PHOTO_FLUSH_STALE_MS = 900000;
+function _photoFlushBeat(){ _photoFlushAt = Date.now(); }
 let _photoFlushLastErr = '';
 // Uploads one already-queued photo and applies the result to whatever
 // farmer record / cached form holds it. Throws on failure — callers decide
@@ -7656,9 +7818,10 @@ async function _uploadQueuedPhoto(it){
   await idbPut('photoQueue', it).catch(e => _storageTrouble('photoQueue-url', e));
 }
 async function flushPhotoQueue(){
-  if(_photoFlushBusy) return;
+  if(_photoFlushBusy && (Date.now() - _photoFlushAt) < _PHOTO_FLUSH_STALE_MS) return;
+  if(_photoFlushBusy) console.warn('[Sristi] photo queue looked wedged - taking it over');
   if(!navigator.onLine || !cloudinaryConfigured()){ updatePhotoBadge(); return; }
-  _photoFlushBusy = true;
+  _photoFlushBusy = true; _photoFlushAt = Date.now();
   let uploaded = 0, failed = 0;
   try{
     const items = await idbAll('photoQueue').catch(()=>[]);
@@ -7677,6 +7840,7 @@ async function flushPhotoQueue(){
        something that is not coming. The bytes stay in the queue either way. */
     items.forEach(it => { if((it.tries||0) >= 8){ delete _photoQueuedHere[it.photoId]; _photoGaveUp[it.photoId] = true; } });
     for(const it of realItems){
+      _photoFlushBeat();   /* v272b - progress, so a healthy long flush never looks wedged */
       try{
         await _uploadQueuedPhoto(it);
         uploaded++;
@@ -7909,9 +8073,18 @@ async function updateUnsentCounts(){
      v241 pushed more of into that queue. */
   try{
     const a = await idbKeys('formWrites');
-    let b = [];
-    try{ b = await idbKeys('offlineWrites'); }catch(e2){}
-    _formQueueCount = a.length + b.length;
+    /* v272 - if the second queue cannot be read, that is not zero. Swallowing
+       it left the count short by exactly the queue that carries a verification's
+       visit, so the closing warning did not fire and the coordinator was told
+       everything had been sent. */
+    let b = null;
+    try{ b = await idbKeys('offlineWrites'); }catch(e2){ b = null; }
+    /* v272b - do NOT pin it at 1. A single failed read would then hold the
+       count above zero for the rest of the session, which keeps the closing
+       warning up and (with the change above) keeps the socket open all night.
+       Keep the last known figure instead: unknown, not invented. */
+    if(b === null){ _formQueueCount = Math.max(a.length, _formQueueCount || 0); }
+    else { _formQueueCount = a.length + b.length; }
   }
   catch(e){ /* cannot read the queue - leave the last known figure alone */ }
 }
@@ -8080,8 +8253,15 @@ async function loadForms(farmerId){
       // says there are some, so this costs nothing for the 99% with one form.
       if((rec && (rec.extraForms||[]).length)){
         try{
-          const ex = await fbRef('formsExtra/'+farmerId).get();
-          if(ex.exists()) fc.extra = Object.assign({}, fc.extra || {}, ex.val() || {});
+          /* v272b - the one read in here that was never bounded. An unopenable
+             verification form leaves the farmer LOCKED to that coordinator,
+             which is why every other read here is guarded. */
+          const _xg = await _fbWriteGuard(fbRef('formsExtra/'+farmerId).get(), 15000);
+          const ex = _xg.timedOut ? null : _xg.value;
+          /* v272c - and null must not be asked whether it exists. The throw was
+             caught by the surrounding try, so nothing broke, but it logged the
+             wrong reason for skipping the attached forms. */
+          if(ex && ex.exists()) fc.extra = Object.assign({}, fc.extra || {}, ex.val() || {});
         }catch(e){ console.warn('[Sristi] attached forms load failed:', e); }
       }
       fc._complete = true;
@@ -8283,14 +8463,32 @@ function _reportEnrolNotSaved(rec){
    still there at the end, the office is told once. */
 async function _watchPublicFormLanding(rec){
   if(!rec || !rec.id) return;
+  /* v273 - which queue holds this farmer's RECORD, as opposed to the answers.
+     Both have to be empty before the screen may show a tick. */
+  const _col = (rec.program === 'conv' || rec.vertical === 'conv') ? 'convFarmers' : 'haatFarmers';
+  let _answersGone = false;
   for(let i = 0; i < 10; i++){                 // about two and a half minutes
     await new Promise(r => setTimeout(r, 15000));
-    let stillQueued = true;
-    try{ stillQueued = !!(await idbGet('formWrites', rec.id)); }
-    catch(e){ stillQueued = true; }            // cannot tell - assume the worst
-    if(!stillQueued) return;                   // the pump got them away
+    if(!_answersGone){
+      try{ _answersGone = !(await idbGet('formWrites', rec.id)); }
+      catch(e){ _answersGone = false; }        // cannot tell - assume the worst
+    }
+    /* v273 - AND TELL THE FARMER. This used to return the moment the answers
+       left and say nothing, while their screen still read "saved on this phone,
+       has not reached us yet" and promised a tick that could never appear. On
+       staging the record and the answers were both on the server twelve seconds
+       after signal returned and the screen never changed - a farmer reading it
+       walks away believing they have to fill the whole form again.
+       Both queues, because a tick shown while the record is still waiting would
+       be the same untruth pointing the other way. */
+    if(_answersGone){
+      let _recQueued = true;
+      try{ _recQueued = await publicSubmissionPending(_col, rec.id); }
+      catch(e){ _recQueued = true; }
+      if(!_recQueued){ try{ _ackEnrolSaved('sent'); }catch(e){} return; }
+    }
   }
-  _reportPublicFormNotReceived(rec);
+  if(!_answersGone) _reportPublicFormNotReceived(rec);
 }
 /* Written straight to the server, not through saveDB: public mode suppresses
    that deliberately, so an entry made with logActivity alone dies with the tab
@@ -8623,7 +8821,22 @@ async function flushOfflineWrites(){
                 const _srv = Array.isArray(_srvRaw) ? _srvRaw : Object.values(_srvRaw || {});
                 const _sig = v => [v&&v.date, v&&v.fc, v&&v.score, v&&v.notes, v&&v.recordedAt].join('|');
                 const _have = new Set(patch.visits.map(_sig));
-                const _missing = _srv.filter(v => v && !_have.has(_sig(v)));
+                /* v273 - a visit this device EDITED is not a visit it has never
+                   seen. The signature is built from date, fc, score, notes and
+                   recordedAt, and a correction differs from the original in
+                   exactly those - so the original was kept alongside it and the
+                   farmer ended up with two visits for one day, one of them
+                   carrying the numbers that had just been corrected.
+                   The app already writes editedFromVisitAt on the correction,
+                   naming the recordedAt of the row it replaced. Only a row named
+                   that way is dropped; everything else the union keeps, exactly
+                   as before. */
+                const _superseded = new Set();
+                patch.visits.forEach(v => {
+                  if(v && v.editedFromVisitAt) _superseded.add(String(v.editedFromVisitAt));
+                });
+                const _missing = _srv.filter(v => v && !_have.has(_sig(v))
+                                             && !_superseded.has(String(v.recordedAt || '')));
                 if(_missing.length){
                   patch.visits = patch.visits.concat(_missing)
                     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
@@ -11889,36 +12102,66 @@ function openConvScoreModal(id){
        read afterwards could queue the server's version and quietly drop the
        visit we just wrote. */
     const _cvRow = sanitizeForFB(_stripEphemeral(f));
-    const _cvSynced = await saveDB(true);
-    if(!_cvSynced){
-      /* Did not reach the server. Park the whole record in the durable queue -
-         it survives the tab closing, which the Firebase SDK's own in-memory
-         queue does not, and flushOfflineWrites replays and deletes it on
-         reconnect.
-         Firebase cost, measured: an online visit is one write of 15,139 bytes;
-         offline-then-synced is 16,447 across two, because the reconnect
-         catch-up save and this queue both carry the record. 1,308 bytes, once,
-         per visit done without signal. Deduplicating them would mean teaching
-         the durable queue to skip rows another path had already sent, and
-         getting that wrong loses the visit - which is the thing this exists to
-         prevent. Not worth 1.3 KB. */
-      const _cvFields = ['visits','conversionScoring','conversionScoringHistory','chemFreeFlag',
-                         'stage','transitionStatus','lastVisitAt','nextVisitDue']
-                        .concat(_cvSetFc ? ['fcId','assignedAt'] : []);
-      await idbPut('offlineWrites', {key:'convFarmers/'+f.id, col:'convFarmers', id:f.id,
-                                     at: Date.now(), atIso: new Date().toISOString(), fields: _cvFields, rec:_cvRow})   /* v244 */
-        .catch(() => { try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office'); }catch(e){} });
+    /* v272b - saveDB returns TRUE from its own early exit when Firebase never
+       started, so this used to report a visit as sent when nothing had left the
+       phone - and because that early exit is above markPendingSync, the next
+       boot folded the visit into the baseline as already synced. The haat
+       verification has tested this since v242; the conversion score, which is
+       what every mobilizer uses, did not. */
+    /* v272b - DURABLE FIRST, exactly as the haat verification now is. This used
+       to be written only after saveDB had already reported failure, so between
+       the visit being recorded and that point - photo work, a server read per
+       record inside saveDB, the guarded root write - it existed nowhere but
+       memory. Android reclaims a pocketed phone without asking. */
+    const _cvFields = ['visits','conversionScoring','conversionScoringHistory','chemFreeFlag',
+                       'stage','transitionStatus','lastVisitAt','nextVisitDue']
+                      .concat(_cvSetFc ? ['fcId','assignedAt'] : []);
+    const _cvKey = 'convFarmers/' + f.id + '#visit';
+    let _cvDurable = false;
+    try{
+      await idbPut('offlineWrites', {key:_cvKey, col:'convFarmers', id:f.id,
+                                     at: Date.now(), atIso: new Date().toISOString(),
+                                     fields: _cvFields, rec:_cvRow});
+      _cvDurable = true;
+    }catch(e){
+      try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> could not be saved to this device \u2014 tell the office'); }catch(e2){}
+      try{ _storageTrouble('offlineWrites-convvisit', e); }catch(e2){}
     }
+    const _cvSaveOk = await saveDB(true);
+    const _cvSynced = !!_cvSaveOk && !!(FB && FB.ready);
+    if(_cvSynced){
+      /* On the server. Drop the queued copy; anything less leaves it for the
+         pump, which deletes only after its own guarded write succeeds. */
+      try{ await idbDel('offlineWrites', _cvKey); }catch(e){}
+    }
+    /* v272b - the queue row above replaces what used to be written here, in a
+       branch that only ran once the app had already decided the network had
+       failed. The old note about Firebase cost still holds: an online visit is
+       one write of about 15 KB; offline-then-synced is about 16 KB across two,
+       because the reconnect catch-up and this queue both carry the record.
+       1,308 bytes, once, per visit done without signal - and now that row
+       exists from the first moment rather than the last. */
     /* v219 - the visit is recorded, so the draft is finished with. Cancel
        first: a debounced save still in flight would write it straight back and
        the next open would offer to restore a visit that had already been
        saved. That is what the enrolment patrak did before v141. */
     _cvSaved = true;
-    _cvCancel();
-    window.__cvDraftSchedule = null;
-    window.__cvDraftFlush = null;
-    window.__cvDraftCancel = null;
-    try{ draftClear('conv', f.id, 'new'); }catch(e){}
+    /* v272b - and ONLY once something durable actually holds this visit. If the
+       phone was too short of room to store the queue row AND the server never
+       confirmed, the draft is the last copy there is; the haat verification has
+       kept its draft on that condition since v242 and this one now does too. */
+    if(_cvDurable || _cvSynced){
+      _cvCancel();
+      window.__cvDraftSchedule = null;
+      window.__cvDraftFlush = null;
+      window.__cvDraftCancel = null;
+      try{ draftClear('conv', f.id, 'new'); }catch(e){}
+    } else {
+      /* v272c - no room on this phone AND no confirmation from the server. The
+         draft is the only copy of this visit that exists, so it stays, and the
+         coordinator is told rather than left to find out. */
+      try{ logActivity('alert','\u26a0 Visit for <b>'+esc(f.name)+'</b> is not saved anywhere yet \u2014 keep the app open and tell the office'); }catch(e){}
+    }
     window._verifBusyUntil = 0;   /* v219 - written; a queued update may apply */
     closeModal();
     if(typeof render === 'function') render();
@@ -15925,7 +16168,13 @@ async function claimPhoneForPublic(phone, program, farmerId, fingerprint){
     // Kept well inside the 64-character cap in the .validate rule.
     const val = String(program || '') + ':' + String(farmerId)
               + (fingerprint ? ':' + fingerprint + ':' + Date.now() : '');
-    await fbRef('phoneIndex/' + key).set(val);
+    /* v272b - BOUNDED. This is the first thing the public conversion form
+       awaits, and both of its durable steps come after it. It short-circuits on
+       !navigator.onLine, which is not the dangerous case: with a dead socket
+       navigator.onLine is TRUE and a Firebase promise never settles, so the
+       farmer tapped Submit and the whole application simply stopped here. */
+    const _pg = await _fbWriteGuard(fbRef('phoneIndex/' + key).set(val), 8000);
+    if(_pg.timedOut) return 'unknown';
     return 'claimed';
   }catch(e){
     try{
@@ -24369,6 +24618,21 @@ function openEnrollmentForm(){
     $('#enrollClose').onclick=closeEnrollmentForm;
   }
   const frame=$('#enrollFrame');
+  /* v274 - AND FORGET THE LAST SUBMISSION. These globals carry the id of the
+     farmer enrolled most recently, and the answers handler waits on them to
+     learn which record its answers belong to. Nothing cleared them, so a second
+     enrolment from the same phone with no page reload - a camp, or simply the
+     thank-you screen's own "back to home page" link, which does not reload -
+     found the PREVIOUS farmer's id already set and already in DB, stopped
+     waiting at once, and wrote this farmer's answers onto that farmer's record.
+     Two farmers damaged each time: the new one arrives as a name with no
+     answers, the earlier one has their answer sheet overwritten.
+     Cleared here, the wait does what its name says and waits for the record
+     this submission creates. */
+  window._lastPublicAppId = null;
+  window._pfLastApp = null;
+  window._lastNewHaatId = null;
+  window._lastNewHaatAt = 0;
   const enrollHtml = KISAN_FORM_HTML.replace('</body>', buildEnrollmentInject()+'</body>');
   frame.srcdoc=enrollHtml;     // load a fresh, blank form each time (enhanced)
   host.classList.add('show');
@@ -24981,6 +25245,16 @@ window.addEventListener('message',async ev=>{
           }
           cacheLocal();
           await _photoPromise;   /* v242 - started above, awaited here */
+        } else {
+          /* v274 - there was no else at all: the answers were dropped without a
+             word to anybody, which is how a farmer reaches the office as a name
+             and nothing else with nobody any the wiser. The alert built for
+             exactly this case now fires. */
+          const _c = Array.isArray(d.data.claims) ? d.data.claims : [];
+          const _nmC = _c.find(x => x && (x.id === 'farmer_name' || x.id === 'name'));
+          const _nm = (_nmC && _nmC.answer) || '';
+          console.warn('[Sristi] v274 - the enrolment record never appeared; answers not saved', newId);
+          try{ _reportEnrolNotSaved({ name: _nm, id: newId || '' }); }catch(e){}
         }
         return;
       }
@@ -26134,6 +26408,41 @@ window.addEventListener('message',async ev=>{
            it. This call existed since v125 but sat in the `farm-verification-full`
            handler, which the FC form never posts to - so verifIndex has never
            held a single entry, and that is why HF394au534 sat unrecoverable. */
+        /* ================= v272 - DURABLE FIRST =================
+           Before a single byte goes near the network. If this device dies one
+           line later - and a pocketed phone is reclaimed by Android without
+           warning - the visit is still here and the 30-second pump sends it.
+           The row shape is the one flushOfflineWrites already replays, and
+           `fields` names exactly what this verification changed so the replay
+           can never carry a stale copy of anything else. */
+        /* v272b - its OWN key. offlineWrites is keyed col/id, so writing
+           'haatFarmers/<id>' here overwrote a queued ENROLMENT for the same
+           farmer and then deleted it on success. The row carries col and id of
+           its own, which is what the replay uses for the path, so the key is
+           free to be anything unique. */
+        const _vKey = 'haatFarmers/' + f.id + '#verif';
+        const _viKey = 'verifIndex/' + f.id;
+        let _durablePlaced = false;
+        try{
+          await idbPut('offlineWrites', {key:_vKey, col:'haatFarmers', id:f.id,
+                                         at: Date.now(), atIso: new Date().toISOString(),
+                                         fields: ['verificationFormSubmittedAt','visits','stage','verificationLock','formsRev'],
+                                         rec: sanitizeForFB(_stripEphemeral(f))});
+          _durablePlaced = true;
+        }catch(e){
+          logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device \u2014 tell the office');
+          _storageTrouble('offlineWrites-verif', e);
+        }
+        /* v216 - verifIndex is not in SYNC_COLS, so saveDB never carries it and
+           markVerificationSubmitted writes it straight to Firebase, which with
+           no signal means it lives only in the SDK's in-memory queue and dies
+           with the tab. The one record whose whole purpose is to let a lost
+           verification be found again was itself lost exactly when it was
+           needed. Durable now, and durable BEFORE the attempt. */
+        if(f.verificationFormSubmittedAt){
+          try{ await idbPut('offlineWrites', {key:_viKey, col:'verifIndex', id:f.id,
+                                              rec: f.verificationFormSubmittedAt}); }catch(e){}
+        }
         markVerificationSubmitted(f.id, f.verificationFormSubmittedAt);
         /* v199 - and write the row's own fields straight to its path. update()
            sets ONLY these keys, so it can never remove anything, and unlike the
@@ -26143,6 +26452,7 @@ window.addEventListener('message',async ev=>{
            the SDK started, not that it can reach anything, and writing into a
            queue that cannot flush just duplicates what idbPut below stores
            durably. */
+        let _rowConfirmed = false;   /* v272 */
         if(FB && FB.ready && navigator.onLine){
           try{
             /* v216 - GUARDED. Unguarded, this is where an offline submission
@@ -26151,12 +26461,16 @@ window.addEventListener('message',async ev=>{
                fallback fifteen lines below was unreachable. Measured on both
                v214 and v215 - the form reached the server and the farmer's own
                row went back to "verification pending" with zero visits. */
-            await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
+            /* v272 - the result is kept now. Whether THIS write confirmed is
+               the only trustworthy evidence the server has the visit; saveDB
+               returning true is exactly what could not be relied on. */
+            const _rowG = await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
               verificationFormSubmittedAt: f.verificationFormSubmittedAt,
               stage: f.stage,
               visits: sanitizeForFB(f.visits),
               verificationLock: null
             }), _fbWriteWaitMs());
+            _rowConfirmed = !(_rowG && _rowG.timedOut);
           }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
         }
         /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.
@@ -26176,29 +26490,18 @@ window.addEventListener('message',async ev=>{
         window._lastVerifSynced = _vSynced;
         /* v242 - did the emergency copy actually get stored? The draft below is
            cleared on the strength of it. */
-        let _durableOk = true;
-        if(!_vSynced){
-          _durableOk = false;
-          /* v218 - name what this verification actually changed, so the replay
-             cannot carry a stale copy of anything else (an onboarding decided
-             while this sat in the queue, above all). */
-          await idbPut('offlineWrites', {key:'haatFarmers/'+f.id, col:'haatFarmers', id:f.id,
-                                         at: Date.now(), atIso: new Date().toISOString(),   /* v244 - comparable with the office's clock */
-                                         fields: ['verificationFormSubmittedAt','visits','stage','verificationLock','formsRev'],
-                                         rec:sanitizeForFB(_stripEphemeral(f))})
-            .then(() => { _durableOk = true; })
-            .catch(e => { logActivity('alert','\u26a0 Verification for <b>'+esc(f.name)+'</b> could not be saved to this device either \u2014 tell the office');
-                          _storageTrouble('offlineWrites-verif', e); });
-          /* v216 - and make the durable marker actually durable. verifIndex is
-             not in SYNC_COLS, so saveDB never carries it; markVerificationSubmitted
-             writes it straight to Firebase, which offline means it lives only in
-             the SDK's in-memory queue and dies with the tab. The one record whose
-             entire purpose is to let a lost verification be found again was itself
-             lost exactly when it was needed. */
-          if(f.verificationFormSubmittedAt){
-            await idbPut('offlineWrites', {key:'verifIndex/'+f.id, col:'verifIndex', id:f.id,
-                                           rec: f.verificationFormSubmittedAt}).catch(()=>{});
-          }
+        /* v272 - the durable copy was written before any of this. It is
+           removed only when the server has actually confirmed the row, and
+           confirmation means THIS device's own guarded write came back in time
+           - not that saveDB returned true, which is what used to be trusted and
+           what a swapped-out record made a lie. Anything less and the row stays
+           for the pump, which deletes it only after its own guarded write
+           succeeds. One repeated write of one record is the price of never
+           losing a visit again. */
+        const _durableOk = _durablePlaced;
+        if(_vSynced && _rowConfirmed){
+          try{ await idbDel('offlineWrites', _vKey); }catch(e){}
+          try{ await idbDel('offlineWrites', _viKey); }catch(e){}
         }
         /* v219 - the visit is recorded, so the draft has done its job. This is
            the path every real submission takes; the block further down handles
@@ -26453,9 +26756,14 @@ async function signOutNow(ask){
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   /* v265 - and drop what a viewer was shown, so the next account signing in on
      this browser cannot inherit a district-filtered copy still in memory. */
-  const _wasViewer = isViewerUser();
+  /* v272c - a mobilizer's copy is scoped to their own handful of farmers, just
+     as a viewer's is scoped to their districts. Both must go on the way out, or
+     the next person to sign in on this phone boots from a database that holds
+     five farmers. They differ only in that a mobilizer needs the mirror WHILE
+     signed in, because they work offline from it. */
+  const _wasScoped = isViewerUser() || (typeof isMobilizerUser === 'function' && isMobilizerUser());
   SESSION = null;
-  if(_wasViewer){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} DB = normaliseDB(seedDB()); }
+  if(_wasScoped){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} DB = normaliseDB(seedDB()); }
   /* v225 - '#login' was handled nowhere in the file, so both buttons landed on
      the farmer-facing page while the confirm promised the login page. '#admin'
      with no session opens the login modal at boot, which is what it says. */
@@ -29939,6 +30247,9 @@ window.addEventListener('hashchange', () => {
       if(!DB) DB = normaliseDB(seedDB());
       render();
       // Now connect to Firebase in background (non-blocking).
+      /* v272 - same safety net as the coordinator path: a farmer's own
+         submission is queued before it is sent, and only a pump can carry it. */
+      setTimeout(() => { try{ startBackgroundPumps(); }catch(e){} }, 6000);
       loadDB()
         .then(startBackgroundPumps)   // pumps start once Firebase init resolves
         .catch(e => console.warn('[Sristi] Background DB load failed:', e));
@@ -29963,6 +30274,11 @@ window.addEventListener('hashchange', () => {
       }
     } else {
       // Admin/FC mode — need data before showing anything.
+      /* v272 - the pumps are how queued work reaches the server, so they must
+         not depend on anything finishing. Started on a timer as well as after
+         loadDB; startBackgroundPumps latches on _pumpsStarted, so whichever
+         runs first wins and the second is a no-op. */
+      setTimeout(() => { try{ startBackgroundPumps(); }catch(e){} }, 6000);
       await loadDB();
       render();
       startBackgroundPumps();   // pumps start now that Firebase init is done

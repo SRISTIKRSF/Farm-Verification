@@ -904,13 +904,16 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rec-menu .pop hr{border:0;border-top:1px solid var(--rec-line2);margin:4px 2px}
 .rec-filt{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--panel);
   border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:12px}
-.rfb{font:inherit;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;border:1px solid var(--line);
-  background:var(--panel);color:var(--rec-soft);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
-.rfb .c{font-size:11px;opacity:.75;font-weight:600}
-.rfb.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.rfb.v.on{background:var(--green);border-color:var(--green)}
-.rfb.x.on{background:var(--red);border-color:var(--red)}
-.rfb.q.on{background:var(--orange);border-color:var(--orange)}
+/* v275 - Guru: the answer filters went; the coordinator's overall comment from
+   the visit sits in their place, in the same amber as the FC's note on an answer */
+.rec-filt.cmt{align-items:flex-start;background:none;border:0;padding:0}   /* the comment is the box; no card around it */
+.rec-cmt{flex:1 1 320px;min-width:0;font-size:12.5px;line-height:1.55;color:#4a2a06;
+  background:#fdf4e3;border:1px solid #ecdcbb;border-radius:12px;padding:9px 13px}
+.rec-cmt .h{font-size:11px;font-weight:800;color:#8a4708;margin-bottom:3px;
+  display:flex;gap:4px 10px;flex-wrap:wrap;align-items:baseline}
+.rec-cmt .h span{font-weight:600;color:var(--rec-faint)}
+.rec-cmt .b{white-space:pre-line;overflow-wrap:anywhere}
+.rec-cmt.none{background:none;border:0;padding:5px 2px;color:var(--rec-faint);font-size:12px}
 .rec-srch{margin-left:auto;padding:7px 12px;border:1px solid var(--line);border-radius:20px;
   font:inherit;font-size:12.5px;width:200px;background:var(--panel-2);color:var(--ink)}
 /* v256 - real columns, not flowed ones. column-count decides placement by
@@ -4351,7 +4354,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v274';
+const APP_VERSION = 'v275';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18355,6 +18358,10 @@ function viewHaatRecord(){
   const lastVisit = visits[visits.length - 1] || {};
   const fcName = (fcById && fcById(f.fcId) ? fcById(f.fcId).name : '')
               || lastVisit.verifierName || lastVisit.recordedBy || '\u2014';
+  /* v275 - a verification PDF only for a farmer who has been verified; for
+     anyone else it would print the farmer's answers beside an empty column */
+  const hasVerif = !!(f.verificationFormSubmittedAt || f.verificationFormFull
+                   || (f.visits || []).some(x => x && x.claimVerifications));
 
   const fld = (k, val, id) => '<span class="f"><span class="k">' + k + '</span><span class="v"'
     + (id ? ' id="' + id + '"' : '') + '>' + val + '</span></span>';
@@ -18403,8 +18410,10 @@ function viewHaatRecord(){
     +       '</div>'
     +     '</div>'
     +     '<div class="rec-acts">'
-    +       '<button class="btn btn-ghost btn-sm" data-recact="compare">Compare forms</button>'
-    +       '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download PDF</button>'
+    /* v275 - Guru: "Compare forms" goes - this page already shows every answer
+       beside the coordinator's mark - and the PDF it held comes out here */
+    +       '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download form</button>'
+    +       (hasVerif ? '<button class="btn btn-ghost btn-sm" data-recact="vpdf">Download verification PDF</button>' : '')
     +       (canEditData() ? '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>' : '')
     +       (!canEditData() ? '' :
             '<div class="rec-menu spacer" id="recMenu">'
@@ -18430,17 +18439,7 @@ function viewHaatRecord(){
               + esc(((REC.form !== undefined ? forms.find(function(x){return x.id===REC.form;}) : forms[0]) || forms[0]).label)
               + '</span></div>'
             : '')
-    +     '<div id="recFiltWrap">'
-    +     (REC.loading || !claims.length ? '' : (
-            '<div class="rec-filt">'
-    +         recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
-    +         recFb('x', '\u2717 \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0', t.x, 'x')
-    +         recFb('v', '\u2713 \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe', t.v, 'v')
-    +         recFb('q', '? \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', t.q, 'q')
-    +         recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
-    +         '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
-    +       '</div>'))
-    +     '</div>'
+    +     '<div id="recFiltWrap">' + (REC.loading ? '' : recCommentRow(f, claims)) + '</div>'
     +     '<div class="rec-cols" id="recCols"></div>'
     +   '</div>'
     + '</div>';
@@ -18450,7 +18449,6 @@ function viewHaatRecord(){
   const back = v.querySelector('[data-recback]');
   if(back) back.onclick = () => { ROUTE = 'haat'; render(); };
   v.querySelectorAll('[data-recform]').forEach(b => b.onclick = () => { REC.form = b.dataset.recform; render(); });
-  v.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
   const sr = document.getElementById('recSrch');
   if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
   v.querySelectorAll('[data-recact]').forEach(b => b.onclick = e => {
@@ -18462,8 +18460,18 @@ function viewHaatRecord(){
        page changed where the buttons live, not what they do */
     if(a === 'decide')  return openDecisionModal(f.id);
     if(a === 'verify')  return openVerificationForm(f.id);
-    if(a === 'compare') return openCompareFormsModal(f.id);
     if(a === 'edit')    return openFarmerModal('haat', f.id);
+    if(a === 'vpdf'){
+      /* v275 - the side-by-side screen's own PDF, from the SAME builder the
+         Verification Queue uses, run with the dialog kept off screen. The
+         button shows the wait and comes back when the file is done. */
+      if(b.disabled) return;
+      const lbl = b.innerHTML;
+      b.disabled = true; b.textContent = '\u23f3 Preparing\u2026';
+      openCompareFormsModal(f.id, {pdf: true, silent: true,
+        onDone: () => { b.disabled = false; b.innerHTML = lbl; }});
+      return;
+    }
     if(a === 'haat')    return openAssignHaatModal(f.id);
     if(a === 'pdf'){
       /* the farmer's own patrak, the way the drawer printed it: the newest form
@@ -18518,24 +18526,43 @@ function recPatchAfterLoad(){
 
   const fw = document.getElementById('recFiltWrap');
   if(fw){
-    fw.innerHTML = !claims.length ? '' :
-        '<div class="rec-filt">'
-      + recFb('all', '\u0aac\u0aa7\u0abe \u0a9c\u0ab5\u0abe\u0aac', claims.length, '')
-      + recFb('x', '\u2717 \u0aae\u0ac7\u0ab3 \u0aa8\u0aa5\u0ac0', t.x, 'x')
-      + recFb('v', '\u2713 \u0aae\u0ac7\u0ab3 \u0a96\u0abe\u0aa7\u0abe', t.v, 'v')
-      + recFb('q', '? \u0a9a\u0a95\u0abe\u0ab8\u0acd\u0aaf\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', t.q, 'q')
-      + recFb('n', '\u2013 \u0ab2\u0abe\u0a97\u0ac1 \u0aa8\u0aa5\u0ac0', t.n, '')
-      + '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
-      + '</div>';
-    fw.querySelectorAll('.rfb').forEach(b => b.onclick = () => { REC.filter = b.dataset.f; renderRecordBody(f, claims); });
+    fw.innerHTML = recCommentRow(f, claims);   /* v275 */
     const sr = document.getElementById('recSrch');
     if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
   }
   renderRecordBody(f, claims);
 }
-function recFb(k, label, n, cls){
-  return '<button class="rfb ' + cls + (REC.filter === k ? ' on' : '') + '" data-f="' + k + '">'
-    + '<span>' + label + '</span><span class="c">' + n + '</span></button>';
+/* v275 - Guru: "I don't think we need filters there. Instead, just write field
+   coordinator's comments after his visit." The source rule is the side-by-side
+   screen's own (_cmpComments): the stored verification first, then the newest
+   visit that carries a verification. So the comment shown is always the one
+   written with the ticks on this page, never an older visit's. */
+function recComment(f){
+  const verif = f.verificationFormFull || (FORMS_CACHE[f.id] || {}).verif || {};
+  const sum = verif.summary || {};
+  const vis = (f.visits || []).slice().reverse().find(v => v && v.claimVerifications) || null;
+  const fc = (vis && vis.fc && typeof fcById === 'function') ? fcById(vis.fc) : null;
+  return {
+    text: String(verif.comments || sum.comments || (vis && vis.comments) || '').trim(),
+    who:  sum.verifierName || (vis && vis.verifierName) || (fc && fc.name) || '',
+    when: (vis && vis.date) || sum.date || '',
+    visited: !!(vis || (Array.isArray(verif.claims) && verif.claims.length))
+  };
+}
+function recCommentRow(f, claims){
+  const c = recComment(f);
+  const meta = [c.who, c.when ? fmtDate(c.when) : ''].filter(Boolean).join(' \u00b7 ');
+  const body = c.text
+    ? '<div class="rec-cmt"><div class="h">એકંદર નોંધ \u00b7 Overall comments'
+      + (meta ? '<span>' + esc(meta) + '</span>' : '') + '</div>'
+      + '<div class="b">' + esc(c.text) + '</div></div>'
+    : '<div class="rec-cmt none">' + (c.visited
+        ? 'FC એ એકંદર નોંધ લખી નથી \u00b7 No overall comment from the FC'
+        : 'હજુ FC ની મુલાકાત થઈ નથી \u00b7 No FC visit yet') + '</div>';
+  const srch = (claims && claims.length)
+    ? '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
+    : '';
+  return '<div class="rec-filt cmt">' + body + srch + '</div>';
 }
 
 /* headings for categories that predate the current schema - taken from the
@@ -18550,7 +18577,6 @@ const REC_CAT_GU = {
 function renderRecordBody(f, claims){
   const box = document.getElementById('recCols');
   if(!box) return;
-  document.querySelectorAll('.rfb').forEach(b => b.classList.toggle('on', b.dataset.f === REC.filter));
   /* v253 - EVERY answer has to appear. Records written before the schema was
      reorganised carry categories the current CATEGORIES_V5 no longer lists
      (condition, sales, digital, opinion), and iterating the schema alone
@@ -20945,10 +20971,12 @@ async function setCoordinatorActive(code, makeActive){
    side-by-side review (like the screenshot, but for all ~55 questions, grouped by category). */
 function openCompareFormsModal(id, opts){
   opts = opts || {};   /* v211 - {pdf:true} starts the download as soon as it opens */
-  const f = DB.haatFarmers.find(x=>x.id===id); if(!f) return;
+  const f = DB.haatFarmers.find(x=>x.id===id);
+  if(!f){ if(opts.onDone) opts.onDone(); return; }   /* v275 - the record page's button waits on this */
   // v11 — fetch the on-demand forms first (one retry, then render whatever exists).
   if(!f.enrollmentFormFull && !f.verificationFormFull && !(FORMS_CACHE[id] && FORMS_CACHE[id]._attempted)){
-    loadForms(id).then(()=>openCompareFormsModal(id, opts));
+    loadForms(id).then(()=>openCompareFormsModal(id, opts))
+      .catch(()=>{ if(opts.onDone) opts.onDone(); });   /* v275 */
     return;
   }
   const cats = window.CATEGORIES_V5 || [];
@@ -21440,17 +21468,30 @@ function openCompareFormsModal(id, opts){
       toast('Could not build the PDF — try again', 'error');
     }finally{
       cmpBtn.disabled = false; cmpBtn.innerHTML = orig;
+      if(typeof opts.onDone === 'function'){ try{ opts.onDone(); }catch(e){} }   /* v275 */
     }
   };
+  /* v275 - {silent:true}: the record page wants only the file. The dialog is
+     still built, so the one PDF builder runs unchanged, but it is taken off
+     screen in the same task it was put on and never paints. Nor is it marked
+     wide: closeModal is what clears that, a dialog never shown is never
+     closed, and the next one to open would have come up wide. */
+  if(opts.silent){
+    $('#overlay').classList.remove('show');
+    $('#modal').classList.remove('show');
+  }
   // Expand the modal to the wide variant so 4-column comparison + multi-pill
   // FC notes don't get cropped on the right.
   const modalEl = document.getElementById('modal');
-  if(modalEl) modalEl.classList.add('wide');
+  if(modalEl && !opts.silent) modalEl.classList.add('wide');
   _wireVerifEditLog(modalEl);   /* v211 */
   /* v211 - the PDF button on the FC's card opens this same modal and presses
      its own download button. One builder, so the sheet and the page can never
      drift apart. */
-  if(opts.pdf && cmpBtn) setTimeout(()=>{ if(document.getElementById('cmpPdfBtn')) cmpBtn.click(); }, 80);
+  if(opts.pdf && cmpBtn) setTimeout(()=>{
+    if(document.getElementById('cmpPdfBtn')) cmpBtn.click();
+    else if(typeof opts.onDone === 'function') opts.onDone();   /* v275 - replaced before it ran */
+  }, 80);
 }
 
 /* ============ VIEW: SETTINGS ============

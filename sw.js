@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v276';
+const CACHE = 'sristi-fv-v277';
 
 // The one entry that IS the app. Everything else in SHELL is a library the app
 // can survive one session without; without this there is nothing to show.

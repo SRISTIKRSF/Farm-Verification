@@ -810,6 +810,39 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
 }
 .enroll-close:hover{background:rgba(255,255,255,.26)}
 .enroll-frame{flex:1;width:100%;border:none;background:#f4f1e8}
+/* v277 - the સંમતિ પત્રક a farmer reads before the haat application form.
+   Hind Vadodara throughout, sized for reading on a phone. No CSS-generated
+   text anywhere (the numbers are real text): generated Gujarati mis-shapes. */
+.cns-host{position:fixed;inset:0;z-index:300;background:#f4f1e8;display:none;flex-direction:column}
+.cns-host.show{display:flex}
+.cns-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.cns-wrap{max-width:620px;margin:0 auto;padding:16px 14px 48px;
+  font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',system-ui,sans-serif;color:#2e1f16}
+.cns-card{background:#fff;border:1.5px solid #e7e9f0;border-radius:14px;padding:20px 18px}
+.cns-card h1{font-size:21px;font-weight:700;line-height:1.45;color:#3d2419;margin:0 0 6px}
+.cns-lead{font-size:16px;line-height:1.75;color:#5b4a3e;margin:0 0 18px}
+.cns-pt{display:flex;gap:11px;margin:0 0 16px;font-size:17px;line-height:1.8}
+.cns-pt .n{flex:none;width:28px;height:28px;border-radius:50%;background:#f3e7df;color:#8b5d4e;
+  font-weight:700;font-size:14px;display:grid;place-items:center;margin-top:2px}
+.cns-pt .t{flex:1;min-width:0}
+.cns-pt p{margin:8px 0 0}
+.cns-sub{font-weight:700;color:#3d2419;margin:12px 0 4px}
+.cns-ul{list-style:none;margin:0;padding:0}
+.cns-ul li{position:relative;padding:6px 0 6px 20px;font-size:16.5px;line-height:1.7;border-bottom:1px dashed #efe6dd}
+.cns-ul li:last-child{border-bottom:0}
+.cns-ul li::before{content:'';position:absolute;left:4px;top:17px;width:7px;height:7px;border-radius:50%;background:#8b5d4e}
+.cns-h2{font-size:18px;font-weight:700;color:#3d2419;margin:22px 0 0;padding-top:18px;border-top:1.5px solid #efe6dd}
+.cns-agree{display:flex;gap:12px;align-items:flex-start;margin:12px 0 0;padding:14px;border:2px solid #d6dae3;
+  border-radius:12px;background:#fff;cursor:pointer}
+.cns-agree.on{border-color:#1c976a;background:#eef8f2}
+.cns-agree.need{border-color:#d9543f;background:#fdf0ee}
+.cns-agree input{flex:none;width:26px;height:26px;margin:3px 0 0;accent-color:#1c976a;cursor:pointer}
+.cns-agree .t{font-size:16.5px;line-height:1.75;font-weight:600;color:#3d2419}
+.cns-err{display:none;margin:12px 0 0;color:#b42318;font-size:15.5px;font-weight:600;line-height:1.6}
+.cns-err.show{display:block}
+.cns-go{display:block;width:100%;margin-top:14px;min-height:54px;padding:13px 14px;border:2px solid #c9b8ad;
+  border-radius:12px;background:#fff;color:#8b5d4e;font:inherit;font-size:17px;font-weight:700;cursor:pointer}
+.cns-go.ready{background:#8b5d4e;border-color:#8b5d4e;color:#fff}
 
 /* ============ ORGANIC PROGRESS BAR ============ */
 .battery{display:inline-flex;align-items:center;gap:8px;vertical-align:middle;line-height:1}
@@ -4359,7 +4392,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v276';
+const APP_VERSION = 'v277';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24704,6 +24737,93 @@ function closeEnrollmentForm(){
   if(window._runPendingReload) window._runPendingReload();   /* v219 */
 }
 
+/* v277 - Guru: "whenever farmer clicks that he wants to apply for haat
+   programme, a sammati-patrak should open up ... If he ticks the box that he
+   agrees, only then the next form opens up."
+   Its own page IN FRONT of the form, so the form, its iframe and everything it
+   saves are untouched - that is where the answer-loss fixes of v263-v274 live.
+   Both public ways in come here (the landing card, viewPublicHaatForm); staff
+   adding a farmer (quickAdd) go straight to the form as before. Built fresh
+   every time, so the box is never found already ticked. */
+function openHaatConsent(){
+  let host = document.getElementById('consentHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'consentHost';
+    host.className = 'cns-host';
+    host.setAttribute('role', 'dialog');
+    host.setAttribute('aria-modal', 'true');
+    host.setAttribute('aria-labelledby', 'cnsTitle');
+    document.body.appendChild(host);
+  }
+  const pt = (n, body) => '<div class="cns-pt"><span class="n">' + n + '</span><div class="t">' + body + '</div></div>';
+  const watch = [
+    'જમીનના પોષણ અને જમીનના સ્વાસ્થ્ય માટેની વ્યવસ્થા',
+    'પાક સંરક્ષણ માટે ઉપલબ્ધ સામગ્રી અને વ્યવસ્થાઓ',
+    'નિંદણ નિયંત્રણની વ્યવસ્થા તથા નિંદણની હાજરી અને વિવિધતા',
+    'મધમાખી, કીટકો, પક્ષીઓ સહિત નાના અને સૂક્ષ્મ સજીવોની હાજરી',
+    'પાક વૈવિધ્ય, મિશ્રપાકો અને બીજ વ્યવસ્થા',
+    'બાજુના રાસાયણિક ખેતરમાંથી આવતા વરસાદી પાણીને રોકવા માટે કરેલ પાળા',
+    'ખેતર ફરતે લીલી વાડ',
+    'પાકના પોષણ અને જમીનની ફળદ્રુપતા વધારવા માટેના પ્રયત્નો'
+  ];
+  host.innerHTML =
+      '<div class="enroll-topbar">'
+    +   '<div class="enroll-title">સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ \u2014 નોંધણી</div>'
+    +   '<button class="enroll-close" id="cnsBack">\u2715 બંધ કરો</button>'
+    + '</div>'
+    + '<div class="cns-scroll"><div class="cns-wrap"><div class="cns-card">'
+    +   '<h1 id="cnsTitle">સૃષ્ટિ ખેડૂત હાટ અંગે મહત્વની સૂચના</h1>'
+    +   '<p class="cns-lead">કૃપા કરીને નોંધણી કરતાં પહેલાં નીચેની સૂચનાઓ ધ્યાનપૂર્વક વાંચો:</p>'
+    +   pt(1, 'આ નોંધણી છેલ્લાં ઓછામાં ઓછાં 3 વર્ષથી ઝેરમુક્ત પ્રાકૃતિક ખેતી કરતા ખેડૂતો માટે છે.')
+    +   pt(2, 'ઓનલાઇન નોંધણી બાદ સૃષ્ટિ ટીમ દ્વારા ફાર્મ વેરિફિકેશન (ખેતર ચકાસણી) કરવામાં આવશે.')
+    +   pt(3, 'ફાર્મ વેરિફિકેશન દરમિયાન ખેતરની ખેતી પદ્ધતિ, ઉપલબ્ધ વ્યવસ્થાઓ અને કુદરતી સૂચકો અંગે સ્થળ પર માહિતી અને પુરાવાનું વૈજ્ઞાનિક ઢબે દસ્તાવેજીકરણ કરવામાં આવશે.'
+          + '<div class="cns-sub">વેરિફિકેશન દરમિયાન મુખ્યત્વે નીચેની બાબતોનું નિરીક્ષણ કરવામાં આવશે:</div>'
+          + '<ul class="cns-ul">' + watch.map(x => '<li>' + x + '</li>').join('') + '</ul>')
+    +   pt(4, 'માત્ર નોંધણી કરાવવાથી ખેડૂત હાટમાં વેચાણ માટેની મંજૂરી મળતી નથી.'
+          + '<p>વેરિફિકેશનના પરિણામના આધારે યોગ્ય જણાતા ખેડૂતોને વેચાણની તક ક્રમશઃ આપવામાં આવી શકે છે.</p>')
+    +   '<div class="cns-h2">ખેડૂતની સંમતિ</div>'
+    +   '<label class="cns-agree" id="cnsAgreeBox">'
+    +     '<input type="checkbox" id="cnsAgree">'
+    +     '<span class="t">મેં ઉપરોક્ત તમામ સૂચનાઓ વાંચી અને સમજી છે. હું આપેલી માહિતી સાચી હોવાનું જાહેર કરું છું અને ફાર્મ વેરિફિકેશન માટે સંમત છું. હવે હું મારી સાચી વિગતો ભરીશ.</span>'
+    +   '</label>'
+    +   '<div class="cns-err" id="cnsErr" role="alert">આગળ વધવા માટે પહેલાં ઉપરનું ખાનું \u2713 ટિક કરો.</div>'
+    +   '<button class="cns-go" id="cnsGo">સબમિટ કરો અને ફોર્મ ખોલો \u2192</button>'
+    + '</div></div></div>';
+
+  const box  = document.getElementById('cnsAgree');
+  const wrap = document.getElementById('cnsAgreeBox');
+  const go   = document.getElementById('cnsGo');
+  const err  = document.getElementById('cnsErr');
+  box.onchange = () => {
+    go.classList.toggle('ready', box.checked);
+    wrap.classList.toggle('on', box.checked);
+    if(box.checked){ wrap.classList.remove('need'); err.classList.remove('show'); }
+  };
+  /* never a dead button: pressed too early, it says what is missing and
+     brings the box into view */
+  go.onclick = () => {
+    if(!box.checked){
+      err.classList.add('show');
+      wrap.classList.add('need');
+      try{ wrap.scrollIntoView({block: 'center', behavior: 'smooth'}); }catch(e){}
+      return;
+    }
+    closeHaatConsent();
+    openEnrollmentForm();
+  };
+  document.getElementById('cnsBack').onclick = closeHaatConsent;
+  const sc = host.querySelector('.cns-scroll');
+  if(sc) sc.scrollTop = 0;
+  host.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeHaatConsent(){
+  const host = document.getElementById('consentHost');
+  if(host) host.classList.remove('show');
+  document.body.style.overflow = '';
+}
+
 /* =============================================================
    QUESTION MANAGER — add / edit / delete / reorder questions used by the
    New Farmer Enrollment form (and, since they share one schema, the
@@ -27296,7 +27416,7 @@ function renderPublicLanding(){
       // v8.2 — Haat & Conv use the EXISTING detailed forms. PUBLIC_MODE
       // routes submissions to pendingEnrolments instead of the live collections.
       const a = b.dataset.action;
-      if(a === 'haat') openEnrollmentForm();
+      if(a === 'haat') openHaatConsent();   /* v277 - the સંમતિ પત્રક first */
       else if(a === 'conv') openConvEnrollmentForm();
       else if(a === 'login') openLoginModal();
     };
@@ -28211,7 +28331,7 @@ function viewPublicHaatForm(){
   // Render the landing skeleton (so closing the iframe lands back here),
   // then immediately open the real Haat enrolment form in its iframe.
   renderPublicLanding();
-  setTimeout(() => openEnrollmentForm(), 100);
+  setTimeout(() => openHaatConsent(), 100);   /* v277 - the direct link reads it too */
 }
 function viewPublicConvForm(){
   renderPublicLanding();

@@ -881,19 +881,26 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .qrow .b{font-size:10.5px;margin-top:2px;font-weight:700;color:var(--red)}
 .qrow.clean .b{color:var(--green)}
 .rec-main{min-width:0}
-.rec-head{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:11px}
+.rec-head{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:11px;
+  display:flex;gap:10px 18px;align-items:flex-start;flex-wrap:wrap}
+/* v276 - Guru: every button sits in the header, on the right - Set status,
+   Edit details, More on one row, the two downloads under them */
+.rec-id{flex:1 1 380px;min-width:0}
+.rec-btns{display:flex;flex-direction:column;gap:7px;align-items:flex-end;margin-left:auto}
+.rec-brow{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+/* on a phone the buttons drop under the name and start from the left.
+   ⛔ must stay BELOW the two rules above, or it does nothing */
+@media (max-width:767px){.rec-btns{align-items:flex-start;margin-left:0;width:100%}
+  .rec-brow{justify-content:flex-start}}
 .rec-r1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .rec-r1 h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.015em}
 .rec-r1 .who{font-size:12.5px;color:var(--rec-soft);font-weight:600}
-.rec-r1 .sp{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
 .rec-r2{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;margin-top:8px;padding-top:8px;
   border-top:1px solid var(--rec-line2);font-size:12px}
 .rec-r2 .f{display:inline-flex;gap:5px;align-items:baseline}
 .rec-r2 .f .k{color:var(--rec-faint);font-size:11px}
 .rec-r2 .f .v{font-weight:700;color:var(--ink)}
 .rec-r2 .sep{color:var(--line)}
-.rec-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:11px}
-.rec-acts .spacer{margin-left:auto}
 .rec-menu{position:relative}
 .rec-menu .pop{position:absolute;right:0;top:calc(100% + 5px);background:var(--panel);border:1px solid var(--line);
   border-radius:10px;box-shadow:var(--sh-2);min-width:230px;padding:5px;display:none;z-index:60}
@@ -914,8 +921,6 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rec-cmt .h span{font-weight:600;color:var(--rec-faint)}
 .rec-cmt .b{white-space:pre-line;overflow-wrap:anywhere}
 .rec-cmt.none{background:none;border:0;padding:5px 2px;color:var(--rec-faint);font-size:12px}
-.rec-srch{margin-left:auto;padding:7px 12px;border:1px solid var(--line);border-radius:20px;
-  font:inherit;font-size:12.5px;width:200px;background:var(--panel-2);color:var(--ink)}
 /* v256 - real columns, not flowed ones. column-count decides placement by
    height, which is how the certificate ended up buried and પશુધન took a whole
    column to itself. */
@@ -4354,7 +4359,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v275';
+const APP_VERSION = 'v276';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -18374,6 +18379,7 @@ function viewHaatRecord(){
        sidebar is the navigation; a second list next to it was noise. */
     +   '<div class="rec-main">'
     +     '<div class="rec-head">'
+    +      '<div class="rec-id">'
     +       '<div class="rec-r1"><h2>' + esc(f.name || '\u2014') + '</h2>'
     +         '<span id="recTag">'
     +         (REC.loading
@@ -18385,12 +18391,6 @@ function viewHaatRecord(){
                 : '<span class="tag grey"><span class="d"></span>Not verified yet</span>')
     +         '</span>'
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
-    +         (canEditData()      /* v265 - both of these change the record */
-              ? '<div class="sp">'
-                + '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
-                + '<button class="btn btn-ghost btn-sm" data-recact="verify">Verification form</button>'
-              + '</div>'
-              : '')
     +       '</div>'
     +       '<div class="rec-r2">'
     +         fld('ID', esc(f.id || '\u2014'))
@@ -18408,23 +18408,32 @@ function viewHaatRecord(){
                   + fld('Haat' + (farmerHaats(f).length > 1 ? 's' : ''), esc(farmerHaats(f).join(', ')))
                 : '')
     +       '</div>'
-    +     '</div>'
-    +     '<div class="rec-acts">'
-    /* v275 - Guru: "Compare forms" goes - this page already shows every answer
-       beside the coordinator's mark - and the PDF it held comes out here */
-    +       '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download form</button>'
-    +       (hasVerif ? '<button class="btn btn-ghost btn-sm" data-recact="vpdf">Download verification PDF</button>' : '')
-    +       (canEditData() ? '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>' : '')
-    +       (!canEditData() ? '' :
-            '<div class="rec-menu spacer" id="recMenu">'
-    +         '<button class="btn btn-ghost btn-sm" data-recact="menu">More \u25be</button>'
-    +         '<div class="pop">'
-    +           '<button data-recact="haat">' + (farmerHaats(f).length ? 'Change haats' : 'Assign haats') + '</button>'
-    +           '<button data-recact="active">Mark ' + (f.active ? 'inactive' : 'active') + '</button>'
-    +           '<hr>'
-    +           '<button data-recact="drawer">Open the old drawer view</button>'
-    +         '</div>'
-    +       '</div>')
+    +      '</div>'
+    /* v276 - Guru: Set status, Edit details and More on the first row, the two
+       downloads under them. The row of buttons below the header is gone, and so
+       is the Verification form button. (v275 had already taken Compare forms
+       away; its PDF is the verification form download.) */
+    +      '<div class="rec-btns">'
+    +       (canEditData()      /* v265 - everything on this row changes the record */
+              ? '<div class="rec-brow">'
+                + '<button class="btn btn-primary btn-sm" data-recact="decide">Set status</button>'
+                + '<button class="btn btn-ghost btn-sm" data-recact="edit">Edit details</button>'
+                + '<div class="rec-menu" id="recMenu">'
+                +   '<button class="btn btn-ghost btn-sm" data-recact="menu">More \u25be</button>'
+                +   '<div class="pop">'
+                +     '<button data-recact="haat">' + (farmerHaats(f).length ? 'Change haats' : 'Assign haats') + '</button>'
+                +     '<button data-recact="active">Mark ' + (f.active ? 'inactive' : 'active') + '</button>'
+                +     '<hr>'
+                +     '<button data-recact="drawer">Open the old drawer view</button>'
+                +   '</div>'
+                + '</div>'
+              + '</div>'
+              : '')
+    +       '<div class="rec-brow">'
+    +         '<button class="btn btn-ghost btn-sm" data-recact="pdf">Download application form</button>'
+    +         (hasVerif ? '<button class="btn btn-ghost btn-sm" data-recact="vpdf">Download verification form</button>' : '')
+    +       '</div>'
+    +      '</div>'
     +     '</div>'
     +     (forms.length > 1
             ? '<div class="rec-forms">'
@@ -18449,17 +18458,28 @@ function viewHaatRecord(){
   const back = v.querySelector('[data-recback]');
   if(back) back.onclick = () => { ROUTE = 'haat'; render(); };
   v.querySelectorAll('[data-recform]').forEach(b => b.onclick = () => { REC.form = b.dataset.recform; render(); });
-  const sr = document.getElementById('recSrch');
-  if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
   v.querySelectorAll('[data-recact]').forEach(b => b.onclick = e => {
     const a = b.dataset.recact;
     const menu = document.getElementById('recMenu');
-    if(a === 'menu'){ e.stopPropagation(); menu.classList.toggle('open'); return; }
+    if(a === 'menu'){
+      e.stopPropagation(); menu.classList.toggle('open');
+      /* v276 - on a narrow phone More wraps to the start of its row, and the
+         menu, hung from its right edge, opened off the left of the screen
+         (320px: 128px of it cut off). Hang it from the left edge instead
+         whenever the right would cut it. */
+      const pop = menu.querySelector('.pop');
+      if(pop){
+        pop.style.left = ''; pop.style.right = '';
+        if(menu.classList.contains('open') && pop.getBoundingClientRect().left < 4){
+          pop.style.left = '0'; pop.style.right = 'auto';
+        }
+      }
+      return;
+    }
     if(menu) menu.classList.remove('open');
     /* every one of these is the SAME handler the old drawer used - the record
        page changed where the buttons live, not what they do */
     if(a === 'decide')  return openDecisionModal(f.id);
-    if(a === 'verify')  return openVerificationForm(f.id);
     if(a === 'edit')    return openFarmerModal('haat', f.id);
     if(a === 'vpdf'){
       /* v275 - the side-by-side screen's own PDF, from the SAME builder the
@@ -18527,8 +18547,6 @@ function recPatchAfterLoad(){
   const fw = document.getElementById('recFiltWrap');
   if(fw){
     fw.innerHTML = recCommentRow(f, claims);   /* v275 */
-    const sr = document.getElementById('recSrch');
-    if(sr) sr.oninput = () => { REC.q = sr.value; renderRecordBody(f, claims); };
   }
   renderRecordBody(f, claims);
 }
@@ -18559,10 +18577,8 @@ function recCommentRow(f, claims){
     : '<div class="rec-cmt none">' + (c.visited
         ? 'FC એ એકંદર નોંધ લખી નથી \u00b7 No overall comment from the FC'
         : 'હજુ FC ની મુલાકાત થઈ નથી \u00b7 No FC visit yet') + '</div>';
-  const srch = (claims && claims.length)
-    ? '<input class="rec-srch" id="recSrch" placeholder="\u0a9c\u0ab5\u0abe\u0aac\u0aae\u0abe\u0a82 \u0ab6\u0acb\u0aa7\u0acb" value="' + esc(REC.q) + '">'
-    : '';
-  return '<div class="rec-filt cmt">' + body + srch + '</div>';
+  /* v276 - Guru: the search box goes too */
+  return '<div class="rec-filt cmt">' + body + '</div>';
 }
 
 /* headings for categories that predate the current schema - taken from the

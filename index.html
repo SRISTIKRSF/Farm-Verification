@@ -803,7 +803,13 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:11px 18px;background:var(--navy);color:#fff;flex-shrink:0;
 }
-.enroll-title{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700}
+.enroll-title{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;min-width:0}
+/* v278 - Guru: the Sristi and KRSF logos in the top bar, where they stay in view
+   the whole time a farmer fills the form. They are the small copies already
+   inside this file for the PDF letterhead: no download, and they show offline. */
+.enroll-logos{display:flex;gap:5px;flex:none}
+.enroll-logo{width:30px;height:30px;border-radius:50%;background:#fff;object-fit:contain;padding:2px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.35)}
 .enroll-close{
   background:rgba(255,255,255,.14);color:#fff;border-radius:8px;
   padding:7px 15px;font-size:12.5px;font-weight:600;transition:.13s;
@@ -1403,6 +1409,15 @@ body{background:linear-gradient(180deg,#f8f1e9 0, var(--bg) 210px);padding-botto
 .head h1{font-size:17px}.head .sub{font-size:11.5px}.head .step{font-variant-numeric:tabular-nums;white-space:nowrap;padding:5px 10px;background:rgba(255,255,255,.15)}
 .progress{top:68px;height:5px;background:#e8ddd2}.progress .fill{background:linear-gradient(90deg,#c9a68e,#8b5d4e)}
 .dots{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:10px 14px 6px;gap:7px;scrollbar-width:none}.dots::-webkit-scrollbar{display:none}.dot{min-width:26px;width:26px;height:26px;border:1px solid var(--line);background:#fff;font-size:11px}.dot.current{box-shadow:0 3px 9px rgba(139,93,78,.26)}
+/* v279 - the heading and the progress line stick as ONE block, so the line
+   always sits on the heading's bottom edge whatever the heading's height. The
+   fixed top:68px above left a 15px gap on phones, questions showing through.
+   The shadow moves to the block so it falls below the line, not across it.
+   The step circles are centred like the language buttons; auto margins centre
+   them without ever clipping the first one if a form had many steps. */
+.topstick{position:sticky;top:0;z-index:45;box-shadow:0 5px 18px rgba(74,42,32,.2)}
+.topstick .head,.topstick .progress{position:static;box-shadow:none}
+.dots{padding:12px 14px 4px}.dots>.dot:first-child{margin-left:auto}.dots>.dot:last-child{margin-right:auto}
 .wrap{padding:10px 12px;max-width:720px}.card{padding:17px 14px;margin-bottom:12px;border-radius:15px;box-shadow:0 7px 20px -18px rgba(74,42,32,.45)}
 .section-title{gap:11px;margin-bottom:18px}.section-title .num{width:36px;height:36px;border-radius:11px;font-size:14px;box-shadow:0 4px 10px rgba(139,93,78,.22)}.section-title .h{font-size:16px}.section-title .s{font-size:12px;line-height:1.35}
 .field{margin-bottom:19px}.field>label.q,.field>.q-label{font-size:14px;margin-bottom:7px}.field .desc{font-size:12px;line-height:1.5;margin-bottom:8px}.field input[type=text],.field input[type=tel],.field input[type=number],.field input[type=date],.field select,.field textarea{min-height:48px;padding:12px 13px;border-radius:11px;font-size:16px;background:#fff}.field textarea{min-height:88px}
@@ -1426,14 +1441,15 @@ body.lang-hi .thi{display:inline}
 </head>
 <body>
 
+<div class="topstick">
 <div class="head">
   <div>
-    <h1>કિસાન નોંધણી પત્રક</h1>
-    <div class="sub">સૃષ્ટિ પ્રાકૃતિક ખેડૂતહાટ — Farmer enrolment</div>
+    <h1>ખેડૂત નોંધણી પત્રક</h1>
   </div>
   <div class="step" id="stepLabel">1 / —</div>
 </div>
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
+</div>
 <div class="dots" id="dotsWrap"></div>
 
 <div class="langbar" id="langBar">
@@ -4392,7 +4408,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v277';
+const APP_VERSION = 'v279';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24697,9 +24713,8 @@ function openEnrollmentForm(){
     host.innerHTML=`
       <div class="enroll-topbar">
         <div class="enroll-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
-            <path d="M12 2v9M12 22c0-6.5 4.2-9.5 8.5-9.5C20.5 18 17 22 12 22zM12 22c0-6.5-4.2-9.5-8.5-9.5C3.5 18 7 22 12 22z"/></svg>
-          New Farmer Enrollment — સૃષ્ટિ પ્રાકૃતિક ખેડૂતહાટ
+          <span class="enroll-logos"><img class="enroll-logo" alt="Sristi" src="${PDF_LOGO_SRISTI}"><img class="enroll-logo" alt="KRSF" src="${PDF_LOGO_KRSF}"></span>
+          સૃષ્ટિ પ્રાકૃતિક ખેડૂતહાટ
         </div>
         <button class="enroll-close" id="enrollClose">✕ Close</button>
       </div>
@@ -24769,7 +24784,10 @@ function openHaatConsent(){
   ];
   host.innerHTML =
       '<div class="enroll-topbar">'
-    +   '<div class="enroll-title">સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ \u2014 નોંધણી</div>'
+    +   '<div class="enroll-title"><span class="enroll-logos">'   /* v278 */
+    +     '<img class="enroll-logo" alt="Sristi" src="' + PDF_LOGO_SRISTI + '">'
+    +     '<img class="enroll-logo" alt="KRSF" src="' + PDF_LOGO_KRSF + '">'
+    +   '</span><span>સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ \u2014 નોંધણી</span></div>'
     +   '<button class="enroll-close" id="cnsBack">\u2715 બંધ કરો</button>'
     + '</div>'
     + '<div class="cns-scroll"><div class="cns-wrap"><div class="cns-card">'

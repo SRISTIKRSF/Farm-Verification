@@ -4359,7 +4359,17 @@ function submit(){
     $('#verifySuccessScreen').classList.add('show');
     const closeNow = () => { if(window.parent && window.parent !== window) window.parent.postMessage({type:'farm-verification-closed'}, '*'); };
     const dlBtn = $('#downloadVerifPdfBtn');
-    if(dlBtn) dlBtn.onclick = () => downloadVerificationPdf(payload.claims, payload.summary);
+    /* v287 - one verification PDF for everyone: the app builds the same
+       side-by-side sheet the record page downloads. The old sheet is used only
+       when this form runs on its own, outside the app. */
+    if(dlBtn) dlBtn.onclick = () => {
+      if(!(window.parent && window.parent !== window)) return downloadVerificationPdf(payload.claims, payload.summary);
+      if(dlBtn.disabled) return;
+      dlBtn.dataset.lbl = dlBtn.innerHTML;
+      dlBtn.disabled = true;
+      dlBtn.innerHTML = '\u23f3 Preparing\u2026';
+      window.parent.postMessage({type:'verif-pdf-request', farmerId: FARMER.id, submittedAt: payload.submittedAt}, '*');
+    };
     const closeBtn = $('#closeVerifyBtn');
     if(closeBtn) closeBtn.onclick = closeNow;
   };
@@ -4381,6 +4391,11 @@ function submit(){
 window.addEventListener('message', ev => {
   const d = ev.data;
   if(!d || typeof d !== 'object') return;
+  if(d.type === 'verif-pdf-done'){   /* v287 - the app finished (or gave up on) the PDF */
+    const b = document.getElementById('downloadVerifPdfBtn');
+    if(b){ b.disabled = false; if(b.dataset.lbl) b.innerHTML = b.dataset.lbl; }
+    return;
+  }
   if(d.type === 'verif-prefill'){
     if(d.schema){ CATEGORIES = d.schema.categories || []; QUESTIONS = d.schema.questions || []; }
     FARMER = Object.assign({}, FARMER, d.farmer || {});
@@ -4471,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v286';
+const APP_VERSION = 'v287';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -21257,6 +21272,15 @@ function openCompareFormsModal(id, opts){
           return '<span class="pill" style="max-width:100%;overflow-wrap:anywhere;white-space:normal">'+esc(r.item||'')+(parts?' — '+parts:'')+'</span>';
         }).join(''))
       : '—';
+    /* v287 - District / Taluka / Village / Pincode arrive as one object and
+       printed "[object Object]". */
+    if(a && typeof a === 'object' && !Array.isArray(a)){
+      const parts = [['\u0a9c\u0abf\u0ab2\u0acd\u0ab2\u0acb', a.district], ['\u0aa4\u0abe\u0ab2\u0ac1\u0a95\u0acb', a.taluka], ['\u0a97\u0abe\u0aae', a.village], ['\u0aaa\u0abf\u0aa8\u0a95\u0acb\u0aa1', a.pincode]]
+        .filter(r => r[1] != null && String(r[1]).trim() !== '');
+      return parts.length
+        ? parts.map(r => '<div><span style="color:var(--ink-soft);font-size:11px">' + r[0] + ':</span> ' + esc(String(r[1])) + '</div>').join('')
+        : '<span style="color:var(--ink-faint)">—</span>';
+    }
     if(a == null || a === '') return '<span style="color:var(--ink-faint)">—</span>';
     return esc(String(a));
   }
@@ -26928,6 +26952,19 @@ function countFcPhotos(p){
 window.addEventListener('message',async ev=>{
   const d=ev.data;
   if(!d||typeof d!=='object')return;
+  /* v287 - the verification form's own "Download PDF". Waits (up to 20 s) for
+     THIS submit's sheet to be in memory, so it never prints the previous visit,
+     then runs the record page's builder. Reads and builds only. */
+  if(d.type==='verif-pdf-request' && d.farmerId){
+    const _reply = () => { try{ const fr = document.getElementById('verifyFrame'); if(fr && fr.contentWindow) fr.contentWindow.postMessage({type:'verif-pdf-done'}, '*'); }catch(e){} };
+    const _until = Date.now() + 20000;
+    const _ready = () => { const v = (FORMS_CACHE[d.farmerId] || {}).verif; return !!(v && (!d.submittedAt || v.submittedAt === d.submittedAt)); };
+    while(!_ready() && Date.now() < _until) await new Promise(r => setTimeout(r, 250));
+    _attachFormsToRecord(d.farmerId);
+    try{ openCompareFormsModal(d.farmerId, {pdf: true, silent: true, onDone: _reply}); }
+    catch(e){ console.warn('[Sristi] verification PDF:', e); toast('Could not build the PDF \u2014 try again', 'error'); _reply(); }
+    return;
+  }
   if(d.type==='farm-verification-done' && _verifyTargetId){
     /* v219 - hold any queued version update back until this has finished
        writing. Cleared at both exits below; the deadline is the backstop. */

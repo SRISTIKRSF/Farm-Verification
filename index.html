@@ -967,6 +967,10 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rpt-tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
 .rpt-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .rpt-bar select{font:inherit;font-size:12.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);max-width:230px;min-height:36px}
+/* v285 - the programme switch */
+.rpt-prog{display:inline-flex;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:2px}
+.rpt-prog button{border:0;background:none;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:6px 13px;border-radius:8px;cursor:pointer;min-height:32px;white-space:nowrap}
+.rpt-prog button[aria-pressed="true"]{background:var(--accent);color:#fff}
 .rpt-asof{margin-left:auto;font-size:12px;color:var(--ink-faint)}
 .rpt-asof button{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0 0 0 6px;cursor:pointer;text-decoration:underline}
 .rpt-lede{margin:0;font-size:13.5px;color:var(--ink-soft);max-width:880px;line-height:1.55}
@@ -4467,7 +4471,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v284';
+const APP_VERSION = 'v286';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24703,7 +24707,7 @@ function render(){
    forms/{id}/enrol is read (never the verification sheet); only the 12 answers
    these reports use are kept, on this device, for a week. Nothing here writes
    to the database. */
-const RPT = {tab:'coverage', district:'all', fc:'all', period:'all'};
+const RPT = {prog:'haat', tab:'coverage', district:'all', fc:'all', period:'all'};   /* v285 - prog: haat | conv */
 const RPT_STORE = 'fv_reports_answers_v1';
 const RPT_MAX_AGE = 7 * 24 * 3600 * 1000;
 const RPT_FIELDS = ['has_cert','cert_agency','cert_expiry','have_you_done_soil_testing','do_you_have_fassai_certificate',
@@ -24847,6 +24851,28 @@ function rptConversion(conv, today){
   });
   return {total: conv.length, stage, last, practices, intake};
 }
+/* v285 - district coverage for conversion farmers. Visited = a last-visit date
+   or any visit row; stages as the app names them (CONV_STATUS). */
+function rptConvCoverage(conv){
+  const by = {}, tal = {};
+  const row = d => by[d] || (by[d] = {district:d, farmers:0, visited:0, notAssigned:0, assigned:0, inProgress:0, adopted:0});
+  conv.forEach(f => {
+    const d = String(f.district || 'Unknown').trim(), r = row(d);
+    r.farmers++;
+    if(f.lastVisitAt || _rptVisits(f).length) r.visited++;
+    const st = f.stage || '';
+    if(st === 'verification_pending' || st === 'enrolled') r.notAssigned++;
+    else if(st === 'assigned') r.assigned++;
+    else if(st === 'inProgress') r.inProgress++;
+    else if(st === 'adopted') r.adopted++;
+    if(String(f.taluka || '').trim()) _rptInc(tal, d +'\u0001' + String(f.taluka || '?').trim());
+  });
+  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.farmers - a.farmers);
+  const talukas = _rptTop(tal, 8).map(e => ({district:e[0].split('\u0001')[0], taluka:e[0].split('\u0001')[1], farmers:e[1]}));
+  const sum = key => rows.reduce((n, r) => n + r[key], 0);
+  return {rows, talukas, noVisit: rows.filter(r => r.farmers >= 10 && r.visited === 0),
+          farmers: sum('farmers'), visited: sum('visited'), districts: rows.length};
+}
 /* REPORTS-PURE-END */
 
 function _rptN(n){ return Number(n || 0).toLocaleString('en-IN'); }
@@ -24872,32 +24898,55 @@ function _rptLoadStored(){
   }catch(e){}
   return _rptAnswers;
 }
-async function rptFetchAnswers(onProgress, online){
+/* v286 - read only what the reports use. A whole application sheet is about 23 KB;
+   the 12 answers are also stored directly on the sheet, about 2 KB with the reads
+   themselves. Older sheets without them fall back to the whole sheet. Answers stay on
+   this computer, and a refresh reads only farmers not read before. Still no writes. */
+async function rptFetchAnswers(onProgress, online, readAll){
   if(_rptBusy) return _rptAnswers;
   _rptBusy = true;
   try{
     const list = (typeof _excludeSeeds === 'function' ? _excludeSeeds(DB.haatFarmers || []) : (DB.haatFarmers || []))
       .filter(f => f && f.id && !f._archived);
-    const data = {};
-    let done = 0, fromDevice = 0, fetched = 0, missing = 0;
+    const prev = (!readAll && _rptAnswers) || {};
+    const prevData = prev.data || {}, prevNone = {};
+    (prev.none || []).forEach(id => { prevNone[id] = true; });
+    const data = {}, none = [];
+    let done = 0, fromDevice = 0, kept = 0, fetched = 0, missing = 0, bytes = 0;
     const pick = enrol => { const a = {}; (enrol.claims || []).forEach(c => { if(c && RPT_FIELDS.indexOf(c.id) >= 0) a[c.id] = c.answer; }); return a; };
     const usable = e => e && Array.isArray(e.claims) && e.claims.length ? e : null;
+    const get = async p => {
+      const g = await _fbWriteGuard(fbRef(p).get(), 20000);
+      if(!g || g.timedOut || !g.value) throw new Error('read failed');
+      const v = g.value.exists() ? g.value.val() : null;
+      try{ bytes += 80 + JSON.stringify(v).length; }catch(e){ bytes += 80; }
+      return v;
+    };
     const one = async f => {
+      let a = null, gone = false;
       let enrol = usable(f.enrollmentFormFull) || usable((FORMS_CACHE[f.id] || {}).enrol);
       if(!enrol){ try{ const c = await idbGet('forms', f.id); enrol = usable(c && c.enrol); }catch(e){} }
-      if(enrol) fromDevice++;
+      if(enrol){ a = pick(enrol); fromDevice++; }
+      else if(prevData[f.id]){ a = prevData[f.id]; kept++; }
+      else if(prevNone[f.id]){ gone = true; }
       else if(online){
         try{
-          const g = await _fbWriteGuard(fbRef('forms/' + f.id + '/enrol').get(), 20000);
-          if(g && !g.timedOut && g.value && g.value.exists()){ enrol = usable(g.value.val()); if(enrol) fetched++; }
+          const base = 'forms/' + f.id + '/enrol', flat = {};
+          const put = (keys, vals) => vals.forEach((v, i) => { if(v !== null && v !== undefined) flat[keys[i]] = v; });
+          put(RPT_FIELDS, await Promise.all(RPT_FIELDS.map(k => get(base + '/' + k))));
+          if(Object.keys(flat).length){ a = flat; fetched++; }
+          else {
+            let e = usable(await get(base));
+            if(e){ a = pick(e); fetched++; } else gone = true;
+          }
         }catch(e){}
       }
-      if(enrol) data[f.id] = pick(enrol); else missing++;
+      if(a) data[f.id] = a; else { missing++; if(gone) none.push(f.id); }
       done++;
       if(onProgress) onProgress(done, list.length);
     };
     for(let k = 0; k < list.length; k += 8) await Promise.all(list.slice(k, k + 8).map(one));
-    _rptAnswers = {at: Date.now(), data, n: Object.keys(data).length, fromDevice, fetched, missing};
+    _rptAnswers = {at: Date.now(), data, n: Object.keys(data).length, none, fromDevice, kept, fetched, missing, bytes};
     try{ localStorage.setItem(RPT_STORE, JSON.stringify(_rptAnswers)); }catch(e){}
     return _rptAnswers;
   } finally { _rptBusy = false; }
@@ -24916,25 +24965,35 @@ function viewReports(){
   const seeds = typeof _excludeSeeds === 'function' ? _excludeSeeds : (x => x);
   const haatAll = seeds(DB.haatFarmers || []).filter(f => f && !f._archived);
   const convAll = seeds(DB.convFarmers || []).filter(f => f && !f._archived && !f._mergedInto);
-  const districts = Array.from(new Set(haatAll.concat(convAll).map(f => String(f.district || '').trim()).filter(Boolean))).sort();
+  const districts = Array.from(new Set((RPT.prog === 'conv' ? convAll : haatAll).map(f => String(f.district || '').trim()).filter(Boolean))).sort();
   if(RPT.district !== 'all' && districts.indexOf(RPT.district) < 0) RPT.district = 'all';
   const fcs = (DB.fcs || []).filter(x => x && x.id && !x.deleted);
   const haat = rptFilter(haatAll, RPT, today, false), conv = rptFilter(convAll, RPT, today, true);
   const opt = (val, label, cur) => '<option value="' + esc(val) + '"' + (val === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
-  const needsAnswers = RPT.tab === 'cert' || RPT.tab === 'profile';
+  /* v285 - each programme has its own reports */
+  const TABS = RPT.prog === 'conv'
+    ? [['coverage','District coverage'],['conv','Progress &amp; practices']]
+    : [['coverage','District coverage'],['cert','Certificates &amp; compliance'],['profile','Farm profile']];
+  if(!TABS.some(t => t[0] === RPT.tab)) RPT.tab = TABS[0][0];
+  const needsAnswers = RPT.prog === 'haat' && (RPT.tab === 'cert' || RPT.tab === 'profile');
 
   let asof = 'Worked out from the farmer records on this device \u00b7 no extra download';
   if(needsAnswers && _rptAnswers){
-    const old = Date.now() - _rptAnswers.at > RPT_MAX_AGE;
-    asof = 'Application answers from ' + esc(fmtDate(new Date(_rptAnswers.at).toISOString().slice(0, 10))) + (old ? ' (over a week old)' : '')
-         + ' \u00b7 ' + _rptN(_rptAnswers.n) + ' farmers<button type="button" id="rptRefresh">Refresh</button>';
+    /* v286 - no weekly expiry: say how many farmers are not read yet and what reading them costs */
+    const have = _rptAnswers.data || {}, none = {};
+    (_rptAnswers.none || []).forEach(id => { none[id] = true; });
+    const fresh = haatAll.filter(f => f.id && !have[f.id] && !none[f.id]).length;
+    asof = 'Application answers from ' + esc(fmtDate(new Date(_rptAnswers.at).toISOString().slice(0, 10))) + ' \u00b7 ' + _rptN(_rptAnswers.n) + ' farmers'
+         + (fresh ? '<button type="button" id="rptRefresh">Read ' + fresh + ' new (about ' + _rptSize(fresh * RPT_KB_EACH) + ')</button>' : ' \u00b7 up to date')
+         + '<button type="button" id="rptReadAll" title="Reads every farmer\u2019s answers again, about ' + _rptSize(haatAll.length * RPT_KB_EACH) + '">Read all again</button>';
   }
   let h = '<div class="rpt">'
     + '<div class="rpt-tabs" role="tablist">'
-    + [['coverage','District coverage'],['cert','Certificates &amp; compliance'],['profile','Farm profile'],['conv','Conversion programme']]
+    + TABS
         .map(t => '<button type="button" class="rpt-tab" role="tab" aria-selected="' + (RPT.tab === t[0]) + '" data-rtab="' + t[0] + '">' + t[1] + '</button>').join('')
     + '</div>'
     + '<div class="rpt-bar">'
+    +   '<div class="rpt-prog" role="group" aria-label="Programme">' + [['haat','Haat'],['conv','Conversion']].map(p => '<button type="button" data-rprog="' + p[0] + '" aria-pressed="' + (RPT.prog === p[0]) + '">' + p[1] + '</button>').join('') + '</div>'
     +   '<select data-rf="district" aria-label="District">' + opt('all', 'All districts', RPT.district) + districts.map(d => opt(d, d, RPT.district)).join('') + '</select>'
     +   '<select data-rf="fc" aria-label="Coordinator">' + opt('all', 'All coordinators', RPT.fc) + fcs.map(x => opt(x.id, x.name || x.id, RPT.fc)).join('') + '</select>'
     +   '<select data-rf="period" aria-label="Applied">' + opt('all', 'Applied: any time', RPT.period) + opt('30', 'Applied: last 30 days', RPT.period) + opt('90', 'Applied: last 90 days', RPT.period) + opt('year', 'Applied: this programme year', RPT.period) + '</select>'
@@ -24943,8 +25002,8 @@ function viewReports(){
     + '</div>';
 
   _rptExport = {tab: RPT.tab, rows: []};
-  if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, conv, P));
-  else if(RPT.tab === 'conv') h += _rptConvHtml(rptConversion(conv, today));
+  if(RPT.prog === 'conv') h += RPT.tab === 'conv' ? _rptConvHtml(rptConversion(conv, today)) : _rptConvCoverageHtml(rptConvCoverage(conv));
+  else if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, [], P));
   else if(!_rptAnswers) h += _rptAnswersPanel(haatAll.length);
   else {
     const A = rptAnswers(haat, _rptAnswers.data, today);
@@ -24953,6 +25012,7 @@ function viewReports(){
   v.innerHTML = h + '</div>';
 
   v.querySelectorAll('[data-rtab]').forEach(b => b.onclick = () => { RPT.tab = b.dataset.rtab; viewReports(); });
+  v.querySelectorAll('[data-rprog]').forEach(b => b.onclick = () => { if(RPT.prog !== b.dataset.rprog){ RPT.prog = b.dataset.rprog; RPT.tab = 'coverage'; viewReports(); } });
   v.querySelectorAll('[data-rf]').forEach(s => s.onchange = () => { RPT[s.dataset.rf] = s.value; viewReports(); });
   v.querySelectorAll('[data-rid]').forEach(b => b.onclick = () => openHaatRecord(b.dataset.rid));
   const csv = document.getElementById('rptCsv');
@@ -24962,17 +25022,20 @@ function viewReports(){
     download(name, toCSV(_rptExport.rows));
     toast('Downloaded: ' + name);
   };
-  const go = document.getElementById('rptFetch') || document.getElementById('rptRefresh');
-  if(go) go.onclick = async () => {
+  const run = (btn, readAll) => async () => {
     const online = !!(typeof FB !== 'undefined' && FB && FB.ready && navigator.onLine);
-    go.disabled = true;
-    const prog = document.getElementById('rptProg');
+    btn.disabled = true;
     try{
-      await rptFetchAnswers((i, n) => { const p = document.getElementById('rptProg'); if(p) p.textContent = 'Reading application answers\u2026 ' + i + ' of ' + n; }, online);
+      const r = await rptFetchAnswers((i, n) => { const p = document.getElementById('rptProg') || btn; p.textContent = 'Reading application answers\u2026 ' + i + ' of ' + n; }, online, readAll);
       if(!online) toast('No internet \u2014 only answers already on this computer were used');
+      else if(r && r.fetched) toast('Read ' + r.fetched + ' farmers\u2019 answers \u00b7 about ' + _rptSize(r.bytes / 1024));
     }catch(e){ toast('Could not read the application answers \u2014 try again', 'error'); }
     if(ROUTE === 'reports') viewReports();
   };
+  const go = document.getElementById('rptFetch') || document.getElementById('rptRefresh');
+  if(go) go.onclick = run(go, false);
+  const again = document.getElementById('rptReadAll');
+  if(again) again.onclick = run(again, true);
 }
 
 function _rptCoverageHtml(cov){
@@ -24988,23 +25051,51 @@ function _rptCoverageHtml(cov){
   const rows = cov.rows.map(r => {
     const share = _rptPct(r.visited, r.applied);
     const flag = (r.applied >= 10 && r.visited === 0) ? '<span class="rpt-chip red">No visits</span>' : (r.applied && share >= 50 ? '<span class="rpt-chip green">Well covered</span>' : '');
-    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.applied + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.waitingVisit + '</td><td class="rpt-n">' + r.waitingDecision + '</td><td class="rpt-n">' + r.onboarded + '</td><td class="rpt-n">' + r.conversion + '</td><td>' + flag + '</td></tr>';
+    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.applied + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.waitingVisit + '</td><td class="rpt-n">' + r.waitingDecision + '</td><td class="rpt-n">' + r.onboarded + '</td><td>' + flag + '</td></tr>';
   }).join('');
   h += '<div class="rpt-g2">'
-    + _rptCard('Districts', 'haat applications and conversion farmers',
-        cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">APPLIED</th><th>VISITED</th><th class="rpt-n">WAITING VISIT</th><th class="rpt-n">WAITING DECISION</th><th class="rpt-n">ONBOARDED</th><th class="rpt-n">CONVERSION</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + _rptCard('Districts', 'haat applications',
+        cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">APPLIED</th><th>VISITED</th><th class="rpt-n">WAITING VISIT</th><th class="rpt-n">WAITING DECISION</th><th class="rpt-n">ONBOARDED</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
                         : '<div class="rpt-empty">No farmers match this selection.</div>')
     + _rptCard('Busiest talukas', 'by haat applications', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.applied]), 'var(--accent)'))
     + '</div>';
-  _rptExport.rows = cov.rows.map(r => ({district:r.district, applied:r.applied, visited:r.visited, visited_percent:_rptPct(r.visited, r.applied), waiting_for_visit:r.waitingVisit, waiting_for_decision:r.waitingDecision, onboarded:r.onboarded, conversion_farmers:r.conversion}));
+  _rptExport.rows = cov.rows.map(r => ({district:r.district, applied:r.applied, visited:r.visited, visited_percent:_rptPct(r.visited, r.applied), waiting_for_visit:r.waitingVisit, waiting_for_decision:r.waitingDecision, onboarded:r.onboarded}));
   return h;
 }
 
+/* v285 - district coverage for the conversion programme */
+function _rptConvCoverageHtml(cov){
+  const noV = cov.noVisit, never = cov.farmers - cov.visited;
+  const names = noV.map(r => _rptOpt(r.district));
+  let h = '<p class="rpt-lede">Where conversion farmers are, how far each district has moved, and where no coordinator has visited anyone yet. Use it to plan visits district by district.</p>';
+  h += _rptKpis([
+    ['Districts with conversion farmers', _rptN(cov.districts), 'in this selection'],
+    ['Farmers with a coordinator visit', _rptPct(cov.visited, cov.farmers) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.farmers) + ' farmers', 'var(--blue)'],
+    ['Never visited', _rptN(never), 'no visit recorded yet', never ? 'var(--red)' : 'var(--ink)'],
+    ['Districts with no visit yet', _rptN(noV.length), 'with 10 or more farmers', noV.length ? 'var(--red)' : 'var(--ink)']
+  ]);
+  if(noV.length) h += '<div class="rpt-call red"><b>No coordinator has visited a conversion farmer in ' + esc(names.slice(0, 8).join(', ')) + (names.length > 8 ? ' and ' + (names.length - 8) + ' more districts' : '') + '.</b> Together ' + _rptN(noV.reduce((n, r) => n + r.farmers, 0)) + ' farmers there are waiting for a first visit.</div>';
+  const rows = cov.rows.map(r => {
+    const share = _rptPct(r.visited, r.farmers);
+    const flag = (r.farmers >= 10 && r.visited === 0) ? '<span class="rpt-chip red">No visits</span>' : (r.farmers && share >= 50 ? '<span class="rpt-chip green">Well covered</span>' : '');
+    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.farmers + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.notAssigned + '</td><td class="rpt-n">' + r.assigned + '</td><td class="rpt-n">' + r.inProgress + '</td><td class="rpt-n">' + r.adopted + '</td><td>' + flag + '</td></tr>';
+  }).join('');
+  h += '<div class="rpt-g2">'
+    + _rptCard('Districts', 'conversion farmers',
+        cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">FARMERS</th><th>VISITED</th><th class="rpt-n">NOT ASSIGNED</th><th class="rpt-n">FC ASSIGNED</th><th class="rpt-n">IN PROGRESS</th><th class="rpt-n">ADOPTED</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+                        : '<div class="rpt-empty">No conversion farmers match this selection.</div>')
+    + _rptCard('Busiest talukas', 'by conversion farmers', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.farmers]), 'var(--accent)'))
+    + '</div>';
+  _rptExport.rows = cov.rows.map(r => ({district:r.district, conversion_farmers:r.farmers, visited:r.visited, visited_percent:_rptPct(r.visited, r.farmers), not_assigned:r.notAssigned, fc_assigned:r.assigned, in_progress:r.inProgress, adopted:r.adopted}));
+  return h;
+}
+
+const RPT_KB_EACH = 2.7;   /* v286 - measured on the 9 Sep copy of live data: 1.37 MB for 517 sheets */
+function _rptSize(kb){ return kb < 950 ? Math.max(1, Math.round(kb)) + ' KB' : (kb / 1024).toFixed(1) + ' MB'; }
 function _rptAnswersPanel(nFarmers){
-  const mb = Math.max(1, Math.round(nFarmers * 24 / 1024));
   return '<div class="rpt-card"><div class="rpt-empty">'
     + '<b style="color:var(--ink);font-size:15px">This report needs the farmers\u2019 application answers</b><br>'
-    + 'They are read once and kept on this computer for a week. Answers already on this computer are reused; the rest is at most about ' + mb + ' MB. Nothing is changed in the database.'
+    + 'Only the answers these reports use are read, not the whole form \u2014 about ' + _rptSize(nFarmers * RPT_KB_EACH) + ', once. They stay on this computer, and after that only farmers who applied since are read, a few KB. Nothing is changed in the database.'
     + '<div style="margin-top:14px"><button type="button" class="btn btn-primary" id="rptFetch">Load application answers</button></div>'
     + '<div id="rptProg" style="margin-top:10px;font-size:12.5px;color:var(--ink-faint)"></div>'
     + '</div></div>';

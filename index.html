@@ -960,6 +960,59 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rec-cmt .h span{font-weight:600;color:var(--rec-faint)}
 .rec-cmt .b{white-space:pre-line;overflow-wrap:anywhere}
 .rec-cmt.none{background:none;border:0;padding:5px 2px;color:var(--rec-faint);font-size:12px}
+/* v284 - Reports page (Overview). Semantic colours stay semantic; plum only as the accent. */
+.rpt{display:flex;flex-direction:column;gap:16px}
+.rpt-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto}
+.rpt-tab{border:0;background:none;padding:10px 14px 11px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:pointer}
+.rpt-tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.rpt-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.rpt-bar select{font:inherit;font-size:12.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);max-width:230px;min-height:36px}
+.rpt-asof{margin-left:auto;font-size:12px;color:var(--ink-faint)}
+.rpt-asof button{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0 0 0 6px;cursor:pointer;text-decoration:underline}
+.rpt-lede{margin:0;font-size:13.5px;color:var(--ink-soft);max-width:880px;line-height:1.55}
+.rpt-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.rpt-kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 17px;min-width:0}
+.rpt-kpi small{display:block;font-size:11.5px;color:var(--ink-faint);font-weight:600}
+.rpt-kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.02em;margin:5px 0 2px;font-variant-numeric:tabular-nums}
+.rpt-kpi span{font-size:12px;color:var(--ink-soft)}
+.rpt-g2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;align-items:start}
+.rpt-g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.rpt-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.rpt-ch{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;padding:14px 16px 10px}
+.rpt-ch h3{margin:0;font-size:14.5px;font-weight:700;color:var(--ink)}
+.rpt-ch p{margin:0;font-size:12px;color:var(--ink-faint)}
+.rpt-scroll{overflow-x:auto}
+.rpt-t{width:100%;border-collapse:collapse;font-size:13px;min-width:560px!important}
+.rpt-t th{background:var(--panel-2);color:var(--ink-soft);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rpt-t td{padding:9px 12px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:middle;color:var(--ink)}
+.rpt-t tr:last-child td{border-bottom:0}
+.rpt-t .rpt-n{text-align:right}
+.rpt-dim{color:var(--ink-faint)}
+.rpt-link{font:inherit;color:var(--accent);font-weight:600;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+.rpt-chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.rpt-chip.red{background:#fdecec;color:#dc2626}.rpt-chip.amber{background:#fdf4e3;color:#8a4708}.rpt-chip.green{background:#e8f7ee;color:#16a34a}
+.rpt-meter{display:flex;align-items:center;gap:8px;min-width:110px}
+.rpt-meter .rail{flex:1;height:6px;border-radius:4px;background:#eee6ea;overflow:hidden}
+.rpt-meter i{display:block;height:6px;background:var(--c-visit)}
+.rpt-bars{padding:4px 16px 14px;display:flex;flex-direction:column;gap:9px}
+.rpt-b{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,2fr) 52px;align-items:center;gap:10px;font-size:13px}
+.rpt-b .lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rpt-b .rail{height:10px;border-radius:5px;background:#f1ecee;overflow:hidden}
+.rpt-b .rail i{display:block;height:100%;border-radius:5px}
+.rpt-b .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.rpt-call{padding:13px 16px;border-radius:14px;border:1px solid #ecdcbb;background:#fdf4e3;color:#4a2a06;font-size:13.5px;line-height:1.55}
+.rpt-call b{color:#8a4708}
+.rpt-call.red{border-color:#f5c2c2;background:#fdecec;color:#5e1313}.rpt-call.red b{color:#dc2626}
+.rpt-funnel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.rpt-fs{padding:18px 20px;min-width:0}.rpt-fs+.rpt-fs{border-left:1px solid var(--line)}
+.rpt-fs small{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink-faint)}
+.rpt-fs b{display:block;font-size:28px;font-weight:800;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.rpt-fs span{font-size:12px;color:var(--ink-soft)}
+.rpt-fbar{height:8px;border-radius:5px;background:#f1ecee;margin-top:10px;overflow:hidden}.rpt-fbar i{display:block;height:100%}
+.rpt-empty{padding:26px 20px;text-align:center;color:var(--ink-soft);font-size:13.5px;line-height:1.6}
+/* the phone rules must stay BELOW the rules they override */
+@media (max-width:980px){.rpt-g2,.rpt-g3{grid-template-columns:1fr}.rpt-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.rpt-funnel{grid-template-columns:repeat(2,minmax(0,1fr))}.rpt-fs:nth-child(3){border-left:0}.rpt-fs:nth-child(n+3){border-top:1px solid var(--line)}}
+@media (max-width:520px){.rpt-kpi b{font-size:22px}.rpt-fs b{font-size:22px}.rpt-asof{margin-left:0;width:100%}}
 /* v256 - real columns, not flowed ones. column-count decides placement by
    height, which is how the certificate ended up buried and પશુધન took a whole
    column to itself. */
@@ -4414,7 +4467,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v283';
+const APP_VERSION = 'v284';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12852,6 +12905,7 @@ function renderNav(){
   const items = adminMode ? [
     {sec:'Overview'},
     {id:'dashboard',label:'Manager Dashboard',ico:I.dash},
+    ...(isAdminUser() ? [{id:'reports',label:'Reports',ico:I.trend}] : []),   /* v284 - admins only */
     // v124 — only appears when something is actually waiting, so it is a
     // signal rather than another permanent item to ignore.
     ...(attentionCount ? [{id:'attention',label:'Needs attention',ico:I.clock,badge:attentionCount}] : []),
@@ -14104,6 +14158,7 @@ const TITLES={
   // fcs:['Team','Field Coordinators'],
   fieldCoordinators:['Field Coordinators','Field Coordinators'],
   attention:['Overview','Needs attention'],
+  reports:['Overview','Reports'],   /* v284 */
   settings:['System','Settings'],
   data:['System','Data & Backup'],
   // v8.2 — public + pending queue routes
@@ -24622,6 +24677,7 @@ function render(){
     haats:()=>{ ROUTE='settings'; FILTERS.settings=FILTERS.settings||{}; FILTERS.settings.tab='haats'; viewSettings(); },
     conversion:viewConversion,
     attention:viewAttention,
+    reports:viewReports,   /* v284 */
     fieldCoordinators:viewFieldCoordinators,
     settings:viewSettings,data:viewData,
     farmMap:viewFarmMap,
@@ -24632,6 +24688,413 @@ function render(){
     public_thanks:viewPublicThanks,
     pending:viewPendingEnrolments,
   }[ROUTE]||viewDashboard)();
+}
+
+/* ============ REPORTS (v284) ============
+   Guru 2026-09-14: "a Reports page ... under overview ... interesting reports or
+   data analysis which can help me in driving actionable insights". He chose
+   district coverage, certificates & compliance, farm profile and the conversion
+   programme, and approved the mock-up.
+
+   Firebase: coverage and conversion are worked out from the farmer records the
+   app has already loaded - no extra reads. Certificates and farm profile need the
+   farmers' application answers. Those are read only when an admin presses the
+   button; any answer sheet already on this device is reused; only
+   forms/{id}/enrol is read (never the verification sheet); only the 12 answers
+   these reports use are kept, on this device, for a week. Nothing here writes
+   to the database. */
+const RPT = {tab:'coverage', district:'all', fc:'all', period:'all'};
+const RPT_STORE = 'fv_reports_answers_v1';
+const RPT_MAX_AGE = 7 * 24 * 3600 * 1000;
+const RPT_FIELDS = ['has_cert','cert_agency','cert_expiry','have_you_done_soil_testing','do_you_have_fassai_certificate',
+  'organic_acres','years_organic','manure_methods','major_crops_table','livestock_counts','sale_channels','irrigation_methods'];
+let _rptAnswers = null;
+let _rptBusy = false;
+let _rptExport = {tab:'', rows:[]};
+
+/* REPORTS-PURE-START - no DOM, no app globals: tested against real data */
+function _rptReal(a){
+  if(a === null || a === undefined || a === '') return false;
+  if(Array.isArray(a)) return a.length > 0;
+  if(typeof a === 'object') return Object.keys(a).length > 0;
+  const s = String(a).trim();
+  if(!s) return false;
+  if(/^(sample |farmer answer for )/i.test(s)) return false;
+  return ['ha','test','na'].indexOf(s.toLowerCase()) < 0;
+}
+function _rptOpt(x){ return String(x == null ? '' : x).replace(/\s*\(.*?\)\s*/g, '').trim(); }
+function _rptList(v){ return Array.isArray(v) ? v : []; }
+function _rptVisits(f){ const v = f && f.visits; return Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []); }
+function _rptYes(v){ return _rptReal(v) ? String(v).trim().toLowerCase() : 'not answered'; }
+function _rptInc(o, k, n){ o[k] = (o[k] || 0) + (n === undefined ? 1 : n); }
+function _rptTop(o, n){ return Object.keys(o || {}).map(k => [k, o[k]]).sort((a, b) => b[1] - a[1]).slice(0, n || 999); }
+function _rptNum(v){ const s = String(v == null ? '' : v).trim(); if(!s) return NaN; return Number(s); }
+function _rptAgency(v){
+  const s = String(v == null ? '' : v).trim();
+  if(!_rptReal(s)) return null;
+  const u = s.toUpperCase();
+  if(s.indexOf('\u0a97\u0acb\u0aaa\u0a95\u0abe') >= 0 || /GOPCA|GOPKA/.test(u)) return 'GOPCA';
+  if(/RSOCA/.test(u)) return 'RSOCA';
+  if(/ROCO/.test(u)) return 'ROCO';
+  if(/NPOP|APEDA|CONTROL UNION|ECOCERT|INDOCERT|ONECERT/.test(u)) return 'NPOP / other accredited';
+  if(/PGS/.test(u)) return 'PGS India';
+  return 'Other / unclear';
+}
+function _rptAppliedOn(f){ return String(f.publicSubmittedAt || f.submittedAt || f.enrollmentFormSubmittedAt || f.assignedAt || '').slice(0, 10); }
+function _rptInPeriod(f, period, today){
+  if(!period || period === 'all') return true;
+  const d = _rptAppliedOn(f);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  if(period === 'year'){
+    const y = +today.slice(0, 4), m = +today.slice(5, 7);
+    return d >= ((m >= 4 ? y : y - 1) + '-04-01');
+  }
+  return (Date.parse(today) - Date.parse(d)) / 864e5 <= +period;
+}
+function rptFilter(list, F, today, isConv){
+  return (list || []).filter(f => f && !f._archived && !(isConv && f._mergedInto)
+    && (F.district === 'all' || String(f.district || '').trim() === F.district)
+    && (F.fc === 'all' || f.fcId === F.fc || _rptVisits(f).some(v => v && v.fc === F.fc))
+    && _rptInPeriod(f, F.period, today));
+}
+function rptCoverage(haat, conv, P){
+  const by = {}, tal = {};
+  const row = d => by[d] || (by[d] = {district:d, applied:0, visited:0, waitingVisit:0, waitingDecision:0, onboarded:0, conversion:0});
+  haat.forEach(f => {
+    const d = String(f.district || 'Unknown').trim(), r = row(d);
+    r.applied++;
+    if(P.waitingVisit(f)) r.waitingVisit++;
+    if(P.waitingDecision(f)) r.waitingDecision++;
+    if(P.onboarded(f)) r.onboarded++;
+    if(_rptVisits(f).some(v => v && v.claimVerifications)) r.visited++;
+    _rptInc(tal, d + '\u0001' + String(f.taluka || '?').trim());
+  });
+  conv.forEach(f => { row(String(f.district || 'Unknown').trim()).conversion++; });
+  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => (b.applied - a.applied) || (b.conversion - a.conversion));
+  const talukas = _rptTop(tal, 8).map(e => ({district:e[0].split('\u0001')[0], taluka:e[0].split('\u0001')[1], applied:e[1]}));
+  const sum = key => rows.reduce((n, r) => n + r[key], 0);
+  return {rows, talukas, noVisit: rows.filter(r => r.applied >= 10 && r.visited === 0),
+          applied: sum('applied'), visited: sum('visited'), waitingVisit: sum('waitingVisit'),
+          districtsApplied: rows.filter(r => r.applied > 0).length};
+}
+function rptAnswers(haat, data, today){
+  const hasCert = {}, soil = {}, fssai = {}, agency = {}, expiry = {}, manure = {}, crops = {}, years = {}, livestock = {}, sale = {}, irr = {};
+  const acres = [], renew = [];
+  let sheets = 0;
+  haat.forEach(f => {
+    const a = data && data[f.id];
+    if(!a) return;
+    sheets++;
+    _rptInc(hasCert, _rptYes(a.has_cert));
+    _rptInc(soil, _rptYes(a.have_you_done_soil_testing));
+    _rptInc(fssai, _rptYes(a.do_you_have_fassai_certificate));
+    const ag = _rptAgency(a.cert_agency);
+    if(ag) _rptInc(agency, ag);
+    if(_rptReal(a.cert_expiry)){
+      const day = String(a.cert_expiry).slice(0, 10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(day) && !isNaN(Date.parse(day))){
+        const gap = Math.round((Date.parse(day) - Date.parse(today)) / 864e5);
+        _rptInc(expiry, gap < 0 ? 'expired' : gap <= 90 ? 'within 90 days' : 'later');
+        if(gap <= 90) renew.push({id:f.id, name:f.name || '', phone:f.phone || '', district:f.district || '', agency:ag || '', expiry:day, gap});
+      } else _rptInc(expiry, 'unreadable date');
+    }
+    _rptList(a.manure_methods).forEach(x => _rptInc(manure, _rptOpt(x)));
+    _rptList(a.major_crops_table).forEach(r => { if(r && _rptReal(r.item)) _rptInc(crops, _rptOpt(r.item)); });
+    const yv = _rptNum(a.years_organic);
+    _rptInc(years, isNaN(yv) ? 'not answered' : yv < 3 ? 'under 3' : yv <= 5 ? '3 to 5' : yv <= 10 ? '6 to 10' : 'over 10');
+    const av = _rptNum(a.organic_acres);
+    if(!isNaN(av) && av > 0 && av < 500) acres.push(av);
+    _rptList(a.livestock_counts).forEach(r => {
+      if(r && _rptReal(r.item)){ const c = Number(r.count || 0); if(!isNaN(c)) _rptInc(livestock, _rptOpt(r.item), Math.trunc(c)); }
+    });
+    _rptList(a.sale_channels).forEach(x => _rptInc(sale, _rptOpt(x)));
+    _rptList(a.irrigation_methods).forEach(x => _rptInc(irr, _rptOpt(x)));
+  });
+  acres.sort((a, b) => a - b);
+  renew.sort((a, b) => ((a.gap < 0) - (b.gap < 0)) || (a.gap < 0 ? b.gap - a.gap : a.gap - b.gap));
+  return {sheets, hasCert, soil, fssai, agency:_rptTop(agency), expiry, renew,
+          acresTotal: Math.round(acres.reduce((n, x) => n + x, 0)), acresMedian: acres.length ? acres[Math.floor(acres.length / 2)] : null,
+          farmersWithAcres: acres.length, years, manure:_rptTop(manure, 8), crops:_rptTop(crops, 10), livestock:_rptTop(livestock, 6),
+          sale:_rptTop(sale, 6), irrigation:_rptTop(irr, 5)};
+}
+function rptConversion(conv, today){
+  const stage = {}, last = {}, practices = {}, intake = {n:0, noChem:0, chem:0, fym:0, willing:0};
+  conv.forEach(f => {
+    _rptInc(stage, f.stage || 'none');
+    if(f.lastVisitAt){
+      const d = String(f.lastVisitAt).slice(0, 10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(d)){
+        const gap = (Date.parse(today) - Date.parse(d)) / 864e5;
+        _rptInc(last, gap <= 30 ? 'within 30 days' : gap <= 90 ? '31 to 90 days' : 'over 90 days');
+      } else _rptInc(last, 'unreadable');
+    } else _rptInc(last, 'never visited');
+    const p = f.practices;
+    if(p && typeof p === 'object' && !Array.isArray(p)){
+      Object.keys(p).forEach(k => {
+        const v = p[k], st = (v && typeof v === 'object' ? v.status : v) || 'not_started';
+        practices[k] = practices[k] || {};
+        _rptInc(practices[k], String(st));
+      });
+    }
+    const it = f.intake;
+    if(it && it.submittedAt){
+      intake.n++;
+      if(it.usesChemicals === false) intake.noChem++;
+      if(it.usesChemicals === true) intake.chem++;
+      if(it.usesFYM === true) intake.fym++;
+      if(it.willingChemFree === 'yes') intake.willing++;
+    }
+  });
+  return {total: conv.length, stage, last, practices, intake};
+}
+/* REPORTS-PURE-END */
+
+function _rptN(n){ return Number(n || 0).toLocaleString('en-IN'); }
+function _rptPct(a, b){ return b ? Math.round(a * 100 / b) : 0; }
+function _rptKpis(items){
+  return '<div class="rpt-kpis">' + items.map(k => '<div class="rpt-kpi"><small>' + k[0] + '</small><b style="color:' + (k[3] || 'var(--ink)') + '">' + k[1] + '</b><span>' + k[2] + '</span></div>').join('') + '</div>';
+}
+function _rptBars(rows, color, empty){
+  if(!rows.length) return '<div class="rpt-empty">' + (empty || 'Nothing to show for this selection.') + '</div>';
+  const max = Math.max.apply(null, rows.map(r => r[1])) || 1;
+  return '<div class="rpt-bars">' + rows.map(r => {
+    const c = typeof color === 'function' ? color(r) : color;
+    return '<div class="rpt-b"><span class="lab" title="' + esc(r[0]) + '">' + esc(r[0]) + '</span><span class="rail"><i style="width:' + Math.max(2, Math.round(r[1] * 100 / max)) + '%;background:' + c + '"></i></span><span class="val">' + _rptN(r[1]) + '</span></div>';
+  }).join('') + '</div>';
+}
+function _rptCard(title, sub, body){ return '<div class="rpt-card"><div class="rpt-ch"><h3>' + title + '</h3>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + body + '</div>'; }
+
+function _rptLoadStored(){
+  if(_rptAnswers) return _rptAnswers;
+  try{
+    const raw = localStorage.getItem(RPT_STORE);
+    if(raw){ const o = JSON.parse(raw); if(o && o.at && o.data) _rptAnswers = o; }
+  }catch(e){}
+  return _rptAnswers;
+}
+async function rptFetchAnswers(onProgress, online){
+  if(_rptBusy) return _rptAnswers;
+  _rptBusy = true;
+  try{
+    const list = (typeof _excludeSeeds === 'function' ? _excludeSeeds(DB.haatFarmers || []) : (DB.haatFarmers || []))
+      .filter(f => f && f.id && !f._archived);
+    const data = {};
+    let done = 0, fromDevice = 0, fetched = 0, missing = 0;
+    const pick = enrol => { const a = {}; (enrol.claims || []).forEach(c => { if(c && RPT_FIELDS.indexOf(c.id) >= 0) a[c.id] = c.answer; }); return a; };
+    const usable = e => e && Array.isArray(e.claims) && e.claims.length ? e : null;
+    const one = async f => {
+      let enrol = usable(f.enrollmentFormFull) || usable((FORMS_CACHE[f.id] || {}).enrol);
+      if(!enrol){ try{ const c = await idbGet('forms', f.id); enrol = usable(c && c.enrol); }catch(e){} }
+      if(enrol) fromDevice++;
+      else if(online){
+        try{
+          const g = await _fbWriteGuard(fbRef('forms/' + f.id + '/enrol').get(), 20000);
+          if(g && !g.timedOut && g.value && g.value.exists()){ enrol = usable(g.value.val()); if(enrol) fetched++; }
+        }catch(e){}
+      }
+      if(enrol) data[f.id] = pick(enrol); else missing++;
+      done++;
+      if(onProgress) onProgress(done, list.length);
+    };
+    for(let k = 0; k < list.length; k += 8) await Promise.all(list.slice(k, k + 8).map(one));
+    _rptAnswers = {at: Date.now(), data, n: Object.keys(data).length, fromDevice, fetched, missing};
+    try{ localStorage.setItem(RPT_STORE, JSON.stringify(_rptAnswers)); }catch(e){}
+    return _rptAnswers;
+  } finally { _rptBusy = false; }
+}
+
+function viewReports(){
+  const v = $('#view');
+  if(!isAdminUser()){ v.innerHTML = '<div class="card" style="padding:18px 20px">Reports are available to admins.</div>'; return; }
+  _rptLoadStored();
+  const today = todayISO();
+  const P = {
+    waitingVisit: f => f.stage === 'verification_pending',
+    waitingDecision: f => (typeof isAwaitingApproval === 'function' ? isAwaitingApproval(f) : f.stage === 'verified'),
+    onboarded: f => f.status === 'green'
+  };
+  const seeds = typeof _excludeSeeds === 'function' ? _excludeSeeds : (x => x);
+  const haatAll = seeds(DB.haatFarmers || []).filter(f => f && !f._archived);
+  const convAll = seeds(DB.convFarmers || []).filter(f => f && !f._archived && !f._mergedInto);
+  const districts = Array.from(new Set(haatAll.concat(convAll).map(f => String(f.district || '').trim()).filter(Boolean))).sort();
+  if(RPT.district !== 'all' && districts.indexOf(RPT.district) < 0) RPT.district = 'all';
+  const fcs = (DB.fcs || []).filter(x => x && x.id && !x.deleted);
+  const haat = rptFilter(haatAll, RPT, today, false), conv = rptFilter(convAll, RPT, today, true);
+  const opt = (val, label, cur) => '<option value="' + esc(val) + '"' + (val === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
+  const needsAnswers = RPT.tab === 'cert' || RPT.tab === 'profile';
+
+  let asof = 'Worked out from the farmer records on this device \u00b7 no extra download';
+  if(needsAnswers && _rptAnswers){
+    const old = Date.now() - _rptAnswers.at > RPT_MAX_AGE;
+    asof = 'Application answers from ' + esc(fmtDate(new Date(_rptAnswers.at).toISOString().slice(0, 10))) + (old ? ' (over a week old)' : '')
+         + ' \u00b7 ' + _rptN(_rptAnswers.n) + ' farmers<button type="button" id="rptRefresh">Refresh</button>';
+  }
+  let h = '<div class="rpt">'
+    + '<div class="rpt-tabs" role="tablist">'
+    + [['coverage','District coverage'],['cert','Certificates &amp; compliance'],['profile','Farm profile'],['conv','Conversion programme']]
+        .map(t => '<button type="button" class="rpt-tab" role="tab" aria-selected="' + (RPT.tab === t[0]) + '" data-rtab="' + t[0] + '">' + t[1] + '</button>').join('')
+    + '</div>'
+    + '<div class="rpt-bar">'
+    +   '<select data-rf="district" aria-label="District">' + opt('all', 'All districts', RPT.district) + districts.map(d => opt(d, d, RPT.district)).join('') + '</select>'
+    +   '<select data-rf="fc" aria-label="Coordinator">' + opt('all', 'All coordinators', RPT.fc) + fcs.map(x => opt(x.id, x.name || x.id, RPT.fc)).join('') + '</select>'
+    +   '<select data-rf="period" aria-label="Applied">' + opt('all', 'Applied: any time', RPT.period) + opt('30', 'Applied: last 30 days', RPT.period) + opt('90', 'Applied: last 90 days', RPT.period) + opt('year', 'Applied: this programme year', RPT.period) + '</select>'
+    +   '<button type="button" class="btn btn-ghost btn-sm" id="rptCsv">' + svg(I.download, 2.2) + 'Download Excel</button>'
+    +   '<span class="rpt-asof">' + asof + '</span>'
+    + '</div>';
+
+  _rptExport = {tab: RPT.tab, rows: []};
+  if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, conv, P));
+  else if(RPT.tab === 'conv') h += _rptConvHtml(rptConversion(conv, today));
+  else if(!_rptAnswers) h += _rptAnswersPanel(haatAll.length);
+  else {
+    const A = rptAnswers(haat, _rptAnswers.data, today);
+    h += RPT.tab === 'cert' ? _rptCertHtml(A) : _rptProfileHtml(A);
+  }
+  v.innerHTML = h + '</div>';
+
+  v.querySelectorAll('[data-rtab]').forEach(b => b.onclick = () => { RPT.tab = b.dataset.rtab; viewReports(); });
+  v.querySelectorAll('[data-rf]').forEach(s => s.onchange = () => { RPT[s.dataset.rf] = s.value; viewReports(); });
+  v.querySelectorAll('[data-rid]').forEach(b => b.onclick = () => openHaatRecord(b.dataset.rid));
+  const csv = document.getElementById('rptCsv');
+  if(csv) csv.onclick = () => {
+    if(!_rptExport.rows.length){ toast('Nothing to download for this selection'); return; }
+    const name = 'report-' + _rptExport.tab + '-' + today + '.csv';
+    download(name, toCSV(_rptExport.rows));
+    toast('Downloaded: ' + name);
+  };
+  const go = document.getElementById('rptFetch') || document.getElementById('rptRefresh');
+  if(go) go.onclick = async () => {
+    const online = !!(typeof FB !== 'undefined' && FB && FB.ready && navigator.onLine);
+    go.disabled = true;
+    const prog = document.getElementById('rptProg');
+    try{
+      await rptFetchAnswers((i, n) => { const p = document.getElementById('rptProg'); if(p) p.textContent = 'Reading application answers\u2026 ' + i + ' of ' + n; }, online);
+      if(!online) toast('No internet \u2014 only answers already on this computer were used');
+    }catch(e){ toast('Could not read the application answers \u2014 try again', 'error'); }
+    if(ROUTE === 'reports') viewReports();
+  };
+}
+
+function _rptCoverageHtml(cov){
+  const noV = cov.noVisit;
+  let h = '<p class="rpt-lede">Where farmers are applying, where coordinators have reached them, and where the queue is building. Use it to decide where to send coordinators and where the next haat should open.</p>';
+  h += _rptKpis([
+    ['Districts with haat applications', _rptN(cov.districtsApplied), 'in this selection'],
+    ['Applications with a field visit', _rptPct(cov.visited, cov.applied) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.applied) + ' farmers', 'var(--blue)'],
+    ['Waiting for a field visit', _rptN(cov.waitingVisit), 'coordinator has not visited yet', 'var(--orange)'],
+    ['Districts with no visit yet', _rptN(noV.length), 'with 10 or more applications', noV.length ? 'var(--red)' : 'var(--ink)']
+  ]);
+  if(noV.length) h += '<div class="rpt-call red"><b>No coordinator has visited ' + esc(noV.map(r => _rptOpt(r.district)).join(', ')) + '.</b> Together ' + _rptN(noV.reduce((n, r) => n + r.applied, 0)) + ' farmers there have applied and are still waiting for a first visit.</div>';
+  const rows = cov.rows.map(r => {
+    const share = _rptPct(r.visited, r.applied);
+    const flag = (r.applied >= 10 && r.visited === 0) ? '<span class="rpt-chip red">No visits</span>' : (r.applied && share >= 50 ? '<span class="rpt-chip green">Well covered</span>' : '');
+    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.applied + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.waitingVisit + '</td><td class="rpt-n">' + r.waitingDecision + '</td><td class="rpt-n">' + r.onboarded + '</td><td class="rpt-n">' + r.conversion + '</td><td>' + flag + '</td></tr>';
+  }).join('');
+  h += '<div class="rpt-g2">'
+    + _rptCard('Districts', 'haat applications and conversion farmers',
+        cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">APPLIED</th><th>VISITED</th><th class="rpt-n">WAITING VISIT</th><th class="rpt-n">WAITING DECISION</th><th class="rpt-n">ONBOARDED</th><th class="rpt-n">CONVERSION</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+                        : '<div class="rpt-empty">No farmers match this selection.</div>')
+    + _rptCard('Busiest talukas', 'by haat applications', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.applied]), 'var(--accent)'))
+    + '</div>';
+  _rptExport.rows = cov.rows.map(r => ({district:r.district, applied:r.applied, visited:r.visited, visited_percent:_rptPct(r.visited, r.applied), waiting_for_visit:r.waitingVisit, waiting_for_decision:r.waitingDecision, onboarded:r.onboarded, conversion_farmers:r.conversion}));
+  return h;
+}
+
+function _rptAnswersPanel(nFarmers){
+  const mb = Math.max(1, Math.round(nFarmers * 24 / 1024));
+  return '<div class="rpt-card"><div class="rpt-empty">'
+    + '<b style="color:var(--ink);font-size:15px">This report needs the farmers\u2019 application answers</b><br>'
+    + 'They are read once and kept on this computer for a week. Answers already on this computer are reused; the rest is at most about ' + mb + ' MB. Nothing is changed in the database.'
+    + '<div style="margin-top:14px"><button type="button" class="btn btn-primary" id="rptFetch">Load application answers</button></div>'
+    + '<div id="rptProg" style="margin-top:10px;font-size:12.5px;color:var(--ink-faint)"></div>'
+    + '</div></div>';
+}
+
+function _rptCertHtml(A){
+  const hc = A.hasCert, ex = A.expiry, soil = A.soil, fs = A.fssai;
+  const dated = (ex.expired || 0) + (ex['within 90 days'] || 0) + (ex.later || 0);
+  let h = '<p class="rpt-lede">What farmers told us about their organic certificate, soil test and FASSAI licence when they applied. Use it to chase renewals before a farmer loses eligibility, and to plan soil-test camps.</p>';
+  h += _rptKpis([
+    ['Say they hold an organic certificate', _rptN(hc.yes || 0), _rptPct(hc.yes || 0, A.sheets) + '% of ' + _rptN(A.sheets) + ' answer sheets', 'var(--green)'],
+    ['Certificates already expired', _rptN(ex.expired || 0), 'of ' + _rptN(dated) + ' who gave a date', 'var(--red)'],
+    ['Expire within 90 days', _rptN(ex['within 90 days'] || 0), 'call before they lapse', '#d97706'],
+    ['Have done a soil test', _rptN(soil.yes || 0), _rptPct(soil.yes || 0, A.sheets) + '% of answer sheets', 'var(--blue)']
+  ]);
+  const noDate = (hc.yes || 0) - dated;
+  if(noDate > 0) h += '<div class="rpt-call"><b>' + _rptN(noDate) + ' farmers say they are certified but gave no expiry date,</b> so nobody can tell whether their certificate is still valid. Ask coordinators to note the date on the certificate during the visit.</div>';
+  h += '<div class="rpt-g3">'
+    + _rptCard('Certificate expiry', 'of those who gave a date', _rptBars([['Expired', ex.expired || 0], ['Within 90 days', ex['within 90 days'] || 0], ['Later', ex.later || 0]].filter(r => r[1]), r => r[0] === 'Expired' ? '#dc2626' : r[0] === 'Later' ? 'var(--c-onboard)' : '#d97706', 'No expiry dates in this selection.'))
+    + _rptCard('Certifying body', 'names merged across spellings', _rptBars(A.agency, 'var(--accent)', 'No certifying body named in this selection.'))
+    + _rptCard('Soil test and FASSAI', 'of answer sheets', _rptBars([['Soil test: yes', soil.yes || 0], ['Soil test: no', soil.no || 0], ['FASSAI: yes', fs.yes || 0], ['FASSAI: no', fs.no || 0]].filter(r => r[1]), r => /yes/.test(r[0]) ? 'var(--c-onboard)' : '#d9ccd2'))
+    + '</div>';
+  const rows = A.renew.map(r => '<tr><td><button type="button" class="rpt-link" data-rid="' + esc(r.id) + '">' + esc(r.name || r.id) + '</button></td><td>' + esc(r.phone) + '</td><td>' + esc(_rptOpt(r.district)) + '</td><td>' + esc(r.agency || '\u2014') + '</td><td>' + esc(fmtDate(r.expiry)) + '</td><td>'
+    + (r.gap < 0 ? '<span class="rpt-chip red">Expired</span>' : r.gap <= 30 ? '<span class="rpt-chip amber">Call this week</span>' : '<span class="rpt-chip amber">Remind</span>') + '</td></tr>').join('');
+  h += _rptCard('Renewal call list', 'expiring within 90 days first, then already expired \u00b7 tap a name to open the farmer',
+    A.renew.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>FARMER</th><th>PHONE</th><th>DISTRICT</th><th>BODY</th><th>EXPIRES</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+                   : '<div class="rpt-empty">No certificates expired or expiring within 90 days in this selection.</div>');
+  _rptExport.rows = A.renew.map(r => ({farmer:r.name, phone:r.phone, district:r.district, certifying_body:r.agency, expires:r.expiry, status:r.gap < 0 ? 'Expired' : 'Expires within 90 days', farmer_id:r.id}));
+  return h;
+}
+
+function _rptProfileHtml(A){
+  const y = A.years, six = (y['6 to 10'] || 0) + (y['over 10'] || 0);
+  const jeev = (A.manure.filter(r => /jeevamrut/i.test(r[0]))[0] || [null, 0])[1];
+  const LIVE = {'\u0a97\u0ac0\u0ab0 \u0a97\u0abe\u0aaf':'Gir cow', '\u0aad\u0ac7\u0a82\u0ab8':'Buffalo', '\u0a95\u0abe\u0a82\u0a95\u0ab0\u0ac7\u0a9c \u0a97\u0abe\u0aaf':'Kankrej cow',
+                '\u0aac\u0a95\u0ab0\u0abe\u0a82':'Goats', '\u0ab6\u0a82\u0a95\u0ab0 \u0a97\u0abe\u0aaf':'Crossbred cow', '\u0a98\u0ac7\u0a9f\u0abe\u0a82':'Sheep'};
+  let h = '<p class="rpt-lede">The farms behind the programme, from applicants\u2019 answer sheets: land, experience, practices, crops, animals and where they sell. Ready-made figures for donors, reports and haat planning.</p>';
+  h += _rptKpis([
+    ['Acres under natural farming', _rptN(A.acresTotal), 'across ' + _rptN(A.farmersWithAcres) + ' farmers', 'var(--green)'],
+    ['Typical farm', A.acresMedian == null ? '\u2014' : A.acresMedian + ' acres', 'half the farms are smaller'],
+    ['Farming naturally 6+ years', _rptN(six), _rptPct(six, A.sheets) + '% of answer sheets'],
+    ['Use jeevamrut', _rptN(jeev), _rptPct(jeev, A.sheets) + '% of answer sheets', 'var(--accent)']
+  ]);
+  h += '<div class="rpt-g3">'
+    + _rptCard('Manure and soil practices', 'farmers using each', _rptBars(A.manure, 'var(--accent)'))
+    + _rptCard('Major crops', 'farmers growing each', _rptBars(A.crops, 'var(--c-onboard)'))
+    + _rptCard('Years of natural farming', 'farmers', _rptBars(['under 3','3 to 5','6 to 10','over 10','not answered'].map(k => [k.charAt(0).toUpperCase() + k.slice(1), y[k] || 0]).filter(r => r[1]), r => r[0] === 'Not answered' ? '#d9ccd2' : 'var(--accent)'))
+    + _rptCard('Animals', 'total head counted', _rptBars(A.livestock.map(r => [(LIVE[r[0]] ? LIVE[r[0]] + ' \u00b7 ' : '') + r[0], r[1]]), 'var(--accent)'))
+    + _rptCard('Where they sold last year', 'farmers using each channel', _rptBars(A.sale, r => /khedut haat/i.test(r[0]) ? 'var(--accent)' : '#b99bab'))
+    + _rptCard('Irrigation', 'farmers using each', _rptBars(A.irrigation, 'var(--c-visit)'))
+    + '</div>';
+  const sec = (name, list) => list.map(r => ({section:name, item:r[0], farmers_or_count:r[1]}));
+  _rptExport.rows = [{section:'Summary', item:'Acres under natural farming', farmers_or_count:A.acresTotal},
+                     {section:'Summary', item:'Farmers with acreage', farmers_or_count:A.farmersWithAcres},
+                     {section:'Summary', item:'Typical farm (acres)', farmers_or_count:A.acresMedian == null ? '' : A.acresMedian}]
+    .concat(sec('Manure and soil practices', A.manure), sec('Major crops', A.crops),
+            sec('Years of natural farming', Object.keys(y).map(k => [k, y[k]])), sec('Animals (head)', A.livestock),
+            sec('Sale channels', A.sale), sec('Irrigation', A.irrigation));
+  return h;
+}
+
+function _rptConvHtml(C){
+  const st = C.stage, total = C.total;
+  const steps = [
+    ['APPLIED, NOT YET ASSIGNED', (st.verification_pending || 0) + (st.enrolled || 0), 'waiting for a coordinator', 'var(--orange)'],
+    ['FC ASSIGNED', st.assigned || 0, 'coordinator named', 'var(--c-visit)'],
+    ['IN PROGRESS', st.inProgress || 0, 'partially adopting', '#d97706'],
+    ['ADOPTED', st.adopted || 0, 'fully adopting natural farming', 'var(--c-onboard)']
+  ];
+  const lv = C.last;
+  const NAMES = {chemicalFree:'Chemical-free', composting:'Composting', jeevamrut:'Jeevamrut', mulching:'Mulching', bioPesticide:'Bio-pesticide',
+                 seedTreatment:'Seed treatment', vermicompost:'Vermicompost', demarcation:'Boundary marking'};
+  const keys = Object.keys(C.practices).sort((a, b) => ((C.practices[b].adopted || 0) + (C.practices[b].in_progress || 0)) - ((C.practices[a].adopted || 0) + (C.practices[a].in_progress || 0)));
+  const unrecorded = keys.filter(k => k !== 'chemicalFree' && k !== 'composting' && !(C.practices[k].adopted || 0) && !(C.practices[k].in_progress || 0));
+  let h = '<p class="rpt-lede">How far conversion farmers have moved towards natural farming, and whether coordinators are visiting them. Use it to plan visits and to see who can move to the haat programme next.</p>';
+  h += _rptCard('Conversion funnel', 'current stage of every conversion farmer in this selection',
+    '<div class="rpt-funnel">' + steps.map(s => '<div class="rpt-fs"><small>' + s[0] + '</small><b>' + _rptN(s[1]) + '</b><span>' + s[2] + ' \u00b7 ' + _rptPct(s[1], total) + '%</span><div class="rpt-fbar"><i style="width:' + Math.max(1.5, _rptPct(s[1], total)) + '%;background:' + s[3] + '"></i></div></div>').join('') + '</div>');
+  h += '<div class="rpt-g2">'
+    + _rptCard('Last coordinator visit', 'conversion farmers', _rptBars([['Never visited', lv['never visited'] || 0], ['Within 30 days', lv['within 30 days'] || 0], ['31 to 90 days', lv['31 to 90 days'] || 0], ['Over 90 days', lv['over 90 days'] || 0]].filter(r => r[1]), r => r[0] === 'Never visited' ? '#dc2626' : 'var(--c-visit)', 'No conversion farmers in this selection.'))
+    + _rptCard('What farmers said when they applied', _rptN(C.intake.n) + ' farmers who used the newer application form', _rptBars([['Willing to go chemical-free', C.intake.willing], ['Not using chemicals now', C.intake.noChem], ['Already use cow-dung manure', C.intake.fym], ['Still using chemicals', C.intake.chem]].filter(r => r[1]), r => /Still/.test(r[0]) ? 'var(--orange)' : 'var(--c-onboard)', 'No newer-form applicants in this selection.'))
+    + '</div>';
+  if(unrecorded.length) h += '<div class="rpt-call red"><b>Practices are not being recorded.</b> ' + esc(unrecorded.map(k => NAMES[k] || k).join(', ')) + ' show \u201cnot started\u201d for every farmer here \u2014 not because nobody uses them, but because a practice only changes when a coordinator marks it on a visit. Chemical-free and composting come from what farmers declared at enrolment, not from a field check.</div>';
+  h += _rptCard('Practice tracker', 'as recorded in the app today',
+    keys.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>PRACTICE</th><th class="rpt-n">ADOPTED</th><th class="rpt-n">IN PROGRESS</th><th class="rpt-n">NOT STARTED</th><th>SOURCE</th></tr></thead><tbody>'
+      + keys.map(k => { const p = C.practices[k]; return '<tr><td><b>' + esc(NAMES[k] || k) + '</b></td><td class="rpt-n">' + _rptN(p.adopted || 0) + '</td><td class="rpt-n">' + _rptN(p.in_progress || 0) + '</td><td class="rpt-n">' + _rptN(p.not_started || 0) + '</td><td class="rpt-dim">' + (k === 'chemicalFree' ? 'declared at enrolment' : k === 'composting' ? 'set from \u201cuses cow-dung manure\u201d' : 'coordinator visit') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>' : '<div class="rpt-empty">No practice records in this selection.</div>');
+  _rptExport.rows = steps.map(s => ({section:'Funnel', item:s[0].toLowerCase(), farmers:s[1]}))
+    .concat(Object.keys(lv).map(k => ({section:'Last coordinator visit', item:k, farmers:lv[k]})))
+    .concat(keys.map(k => ({section:'Practice: ' + (NAMES[k] || k), item:'adopted / in progress / not started', farmers:(C.practices[k].adopted || 0) + ' / ' + (C.practices[k].in_progress || 0) + ' / ' + (C.practices[k].not_started || 0)})));
+  return h;
 }
 
 /* ============ QUICK ADD ============ */

@@ -2880,6 +2880,10 @@ body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;paddin
 body{background:linear-gradient(180deg,#faf4f7 0,var(--bg) 210px);padding-bottom:108px;font-size:15.5px}
 .head{position:sticky;top:0;z-index:45;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 12px;background:linear-gradient(135deg,#5c2e4a,#33182a);box-shadow:0 5px 18px rgba(51,24,42,.2);gap:9px}.head .back{min-width:38px;min-height:38px;border-radius:10px;background:rgba(255,255,255,.12);display:grid;place-items:center;padding:0}.head h1{font-size:17px}.head .sub{font-size:11.5px}.head .step{font-variant-numeric:tabular-nums;white-space:nowrap;padding:5px 9px;background:rgba(255,255,255,.15)}
 .progress{top:68px;height:5px;background:#ebe0e5}.progress .fill{background:linear-gradient(90deg,#b98aa6,#5c2e4a)}.dots{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:10px 14px 6px;gap:7px;scrollbar-width:none}.dots::-webkit-scrollbar{display:none}.dot{min-width:26px;width:26px;height:26px;border:1px solid var(--line);background:#fff;font-size:11px}.dot.current{box-shadow:0 3px 9px rgba(92,46,74,.26)}
+/* v283 - the same fix as the farmer's form (v279): the heading and the progress line stick as ONE block, so the line always sits on the heading's edge whatever its height (the fixed top:68px above left it off the edge); the shadow falls below the line; the step circles are centred with auto margins, never clipping the first. */
+.topstick{position:sticky;top:0;z-index:45;box-shadow:0 5px 18px rgba(51,24,42,.2)}
+.topstick .head,.topstick .progress{position:static;box-shadow:none}
+.dots{padding:12px 14px 4px}.dots>.dot:first-child{margin-left:auto}.dots>.dot:last-child{margin-right:auto}
 .wrap{padding:10px 12px;max-width:760px}.card{padding:15px 14px;margin-bottom:12px;border-radius:15px;box-shadow:0 7px 20px -18px rgba(51,24,42,.45)}.farmer-head{gap:10px;margin-bottom:11px}.avatar{width:48px;height:48px;font-size:19px;background:var(--leaf-light);color:var(--leaf)}.farmer-head .meta{min-width:0}.farmer-head h2{font-size:16px;line-height:1.3}.id-pill{font-size:10px;padding:2px 7px}.farmer-head .addr{font-size:12px;line-height:1.35}.detail-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px;padding-top:11px}.detail-cell{gap:5px;min-width:0}.detail-cell .ico{width:25px;height:25px;border-radius:7px;font-size:11px}.detail-cell .k{font-size:10px}.detail-cell .v{font-size:11.5px;overflow-wrap:anywhere}
 .section-title{gap:11px;margin-bottom:18px}.section-title .num{width:36px;height:36px;border-radius:11px;font-size:14px;box-shadow:0 4px 10px rgba(92,46,74,.22)}.section-title .h{font-size:16px}.section-title .s{font-size:12px;line-height:1.35}.q-block{margin-bottom:20px;padding-bottom:17px}.q-label{font-size:14px;line-height:1.5;margin-bottom:6px}.q-desc{font-size:12px;line-height:1.5;margin-bottom:9px}.farmer-claim-box{border-radius:11px;padding:11px 12px;margin-bottom:11px}.farmer-claim-box .v{font-size:13.5px}.radio-row{gap:10px}.radio-opt{min-height:38px;padding:5px 8px;border:1px solid var(--line);border-radius:10px}.radio-opt input{width:19px;height:19px}.chip{min-height:44px;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.25}.option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}.option-grid .chip{width:100%;justify-content:flex-start;text-align:left;border-radius:11px}.multi-count{display:grid;gap:8px}.mc-card{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;padding:8px;border:1px solid var(--line);border-radius:13px;background:#fbfdfb}.mc-card .chip{justify-content:flex-start;text-align:left;border:0;background:transparent;padding:8px}.mc-card .chip.fc-obs{background:var(--leaf-light);color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}.mc-card .mc-count{width:100%;min-height:44px;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:10px;font:inherit;font-size:14px;background:#fff}.mc-card>span{grid-column:1/-1;padding:0 8px 4px}.fc-note textarea{min-height:82px;padding:12px;border-radius:11px;font-size:16px}
 .actions{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:9px;box-shadow:0 -8px 24px rgba(51,24,42,.12)}.btn{min-height:52px;padding:13px 14px;border-radius:12px;font-size:15px}.btn-primary{box-shadow:0 7px 15px -9px rgba(92,46,74,.8)}
@@ -2903,6 +2907,7 @@ body.lang-hi .thi{display:inline}
 </head>
 <body>
 
+<div class="topstick">
 <div class="head">
   <button class="back" id="backBtn">←</button>
   <div>
@@ -2912,6 +2917,7 @@ body.lang-hi .thi{display:inline}
   <div class="step" id="stepLabel">1 / —</div>
 </div>
 <div class="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
+</div>
 <div class="dots" id="dotsWrap"></div>
 <!-- v219 - hidden until the first save, so it never disturbs the opening screen -->
 <div id="draftTick" style="display:none;text-align:center;font-size:11.5px;font-weight:600;padding:3px 10px 7px;transition:opacity .4s"></div>
@@ -4408,7 +4414,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v282';
+const APP_VERSION = 'v283';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

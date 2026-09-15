@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v287';
+const APP_VERSION = 'v288';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27818,12 +27818,14 @@ function enterPublicMode(targetRoute){
     body.public-mode .app { padding-bottom: 0 !important; }
     body.public-mode .content {
       padding: 0 !important; max-width: 100% !important; min-height: 100vh;
-      background: url('image-1781925519749.webp') center/cover no-repeat fixed;
+      /* v288 - Guru's market scene under a soft plum shade (was a dark photo, dark green tint) */
+      background: linear-gradient(180deg, rgba(51,24,42,.55) 0%, rgba(51,24,42,.30) 34%, rgba(51,24,42,.62) 100%),
+                  url('home-scene.webp') 62% center/cover no-repeat, #4a2239;
       position: relative;
     }
     body.public-mode .content::before {
       content: ''; position: fixed; inset: 0;
-      background: rgba(0,25,8,.62);
+      background: transparent;   /* v288 - the shade is part of the background now */
       z-index: 0;
     }
     .public-wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; position: relative; z-index: 1; }
@@ -27938,6 +27940,34 @@ function enterPublicMode(targetRoute){
     .pf-thanks p { font-size: 14.5px; color: #515f78; line-height: 1.6; margin: 8px 0; font-family: 'Hind Vadodara',sans-serif; }
     .pf-thanks .wa-btn { display: inline-flex; align-items: center; gap: 10px; background: #25D366; color: #fff; padding: 14px 28px; border-radius: 999px; text-decoration: none; font-weight: 700; font-size: 15px; margin: 18px 0 8px; }
     .pf-thanks .home-link { display: block; margin-top: 18px; color: #5c2e4a; font-weight: 600; font-size: 13px; text-decoration: none; }
+
+    /* v288 - the farmer home page on the market scene */
+    .public-wrap.home .public-foot p { color: rgba(255,255,255,.82) !important; }
+    .public-wrap.home .public-foot p a { color: rgba(255,255,255,.92) !important; border-bottom-color: rgba(255,255,255,.5) !important; }
+    .public-wrap.home .public-card { box-shadow: 0 10px 28px rgba(40,10,30,.22); border-color: rgba(255,255,255,.7); }
+    .public-wrap.home .public-card .text-col { flex: 1; min-width: 0; }
+    @media (max-width: 540px) {
+      .public-wrap.home .public-card { padding: 14px 16px; }
+      .public-wrap.home .public-card .desc { font-size: 11.5px; line-height: 1.45; margin: 0; }
+      .public-wrap.home .public-card .cta { display: none; }
+    }
+    @media (min-width: 900px) {
+      body.public-mode .content:has(.public-wrap.home) {
+        background: linear-gradient(90deg, rgba(51,24,42,0) 0%, rgba(51,24,42,.08) 38%, rgba(51,24,42,.50) 100%),
+                    url('home-scene.webp') left bottom/cover no-repeat, #4a2239;
+      }
+      .public-wrap.home { max-width: none; width: 520px; margin: 0 clamp(24px, 5vw, 96px) 0 auto; padding: 34px 0 30px; }
+      .public-wrap.home .public-hero { text-align: right; padding: 0 0 16px; }
+      .public-wrap.home .public-hero .logo { justify-content: flex-end !important; }
+      .public-wrap.home .public-hero h1 { font-size: 32px; }
+      .public-wrap.home .public-hero .sub { margin: 0 0 0 auto; }
+      .public-wrap.home .public-cards { grid-template-columns: 1fr; gap: 12px; }
+      .public-wrap.home .public-card { flex-direction: row; align-items: center; gap: 16px; padding: 16px 20px; }
+      .public-wrap.home .public-card h2 { font-size: 16.5px; }
+      .public-wrap.home .public-card .desc { font-size: 12.5px; line-height: 1.5; margin: 0; }
+      .public-wrap.home .public-card .cta { margin: 0 0 0 6px; white-space: nowrap; }
+      .public-wrap.home .public-foot { text-align: right; padding-top: 14px; }
+    }
   `;
   document.head.appendChild(css);
 })();
@@ -27984,7 +28014,7 @@ function renderPublicLanding(){
      the footer below is for: too small and too English for a farmer to take
      as an instruction, always there for someone who needs it. */
   v.innerHTML = `
-    <div class="public-wrap">
+    <div class="public-wrap home">
       <div class="public-hero">
         <div class="logo" style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:4px">
           <img src="sristi-logo.jpg" alt="Sristi" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#fff;border:2px solid rgba(255,255,255,0.5)">
@@ -27997,27 +28027,25 @@ function renderPublicLanding(){
       </div>
       <div class="public-cards">
         <button class="public-card" data-action="haat">
-          <div class="public-card-emoji">🛒</div>
           <div class="text-col">
             <h2>સૃષ્ટિ ખેડૂત હાટ સાથે જોડાવા માટેનું ફોર્મ</h2>
             <p class="desc">3 વર્ષ કે તેથી વધુ સમયથી ઝેરમુક્ત / રસાયણમુક્ત ખેતી કરતા ખેડૂતો માટે. ફાર્મ વેરિફિકેશન બાદ હાટમાં વેચાણ માટે જોડાઈ શકશો.</p>
           </div>
-          <span class="cta">Form ખોલો →</span>
+          <span class="cta">ફોર્મ ખોલો →</span>
         </button>
         <button class="public-card" data-action="conv">
-          <div class="public-card-emoji">🌱</div>
           <div class="text-col">
             <h2>પ્રાકૃતિક ખેતીમાં કન્વર્ટ થવા માટેનું ફોર્મ</h2>
             <p class="desc">પ્રાકૃતિક ખેતી શરૂ કરવા ઇચ્છુક ખેડૂતો માટે. સૃષ્ટિની ટીમ તરફથી માર્ગદર્શન અને સહયોગ મળશે. 3 વર્ષ પૂર્ણ થયા બાદ હાટમાં વેચાણ માટે જોડાઈ શકશો.</p>
           </div>
-          <span class="cta">Form ખોલો →</span>
+          <span class="cta">ફોર્મ ખોલો →</span>
         </button>
       </div>
       <div class="public-foot">
         <div style="margin-bottom:18px;padding:14px 18px;background:#fff;border:1.5px solid #e7e9f0;border-radius:12px;display:inline-flex;align-items:center;gap:12px;font-family:'Hind Vadodara',sans-serif">
           <span style="font-size:24px">📞</span>
           <div style="text-align:left">
-            <div style="font-size:11px;color:#929fb5;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:2px">SRISTI Office · સહાય માટે ફોન કરો</div>
+            <div style="font-size:11px;color:#929fb5;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:2px">સૃષ્ટિ ઓફિસ · સહાય માટે ફોન કરો</div>
             <a href="tel:+919510386635" style="font-size:18px;font-weight:800;color:#2a1a22;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">+91 95103 86635</a>
           </div>
         </div>

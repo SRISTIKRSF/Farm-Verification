@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v288';
+const APP_VERSION = 'v289';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27953,20 +27953,24 @@ function enterPublicMode(targetRoute){
     }
     @media (min-width: 900px) {
       body.public-mode .content:has(.public-wrap.home) {
-        background: linear-gradient(90deg, rgba(51,24,42,0) 0%, rgba(51,24,42,.08) 38%, rgba(51,24,42,.50) 100%),
+        /* v289 - a soft oval of shade behind the centred column, not a band down the right edge */
+        background: radial-gradient(ellipse 34% 52% at 62% 32%, rgba(51,24,42,.40) 0%, rgba(51,24,42,.18) 55%, rgba(51,24,42,0) 100%),
+                    linear-gradient(180deg, rgba(51,24,42,.10), rgba(51,24,42,0) 40%),
                     url('home-scene.webp') left bottom/cover no-repeat, #4a2239;
       }
-      .public-wrap.home { max-width: none; width: 520px; margin: 0 clamp(24px, 5vw, 96px) 0 auto; padding: 34px 0 30px; }
-      .public-wrap.home .public-hero { text-align: right; padding: 0 0 16px; }
-      .public-wrap.home .public-hero .logo { justify-content: flex-end !important; }
+      /* v289 - centred on the open sky; never over the lady, never past the right edge */
+      .public-wrap.home { max-width: none; width: 520px; margin: 0; padding: 34px 0 30px;
+        margin-left: min(max(calc(62vw - 260px), calc(max(44vw, 80vh) + 16px)), calc(100vw - 520px - clamp(24px, 5vw, 96px))); }
+      .public-wrap.home .public-hero { text-align: center; padding: 0 0 16px; }
+      .public-wrap.home .public-hero .logo { justify-content: center !important; }
       .public-wrap.home .public-hero h1 { font-size: 32px; }
-      .public-wrap.home .public-hero .sub { margin: 0 0 0 auto; }
+      .public-wrap.home .public-hero .sub { margin: 0 auto; }
       .public-wrap.home .public-cards { grid-template-columns: 1fr; gap: 12px; }
       .public-wrap.home .public-card { flex-direction: row; align-items: center; gap: 16px; padding: 16px 20px; }
       .public-wrap.home .public-card h2 { font-size: 16.5px; }
       .public-wrap.home .public-card .desc { font-size: 12.5px; line-height: 1.5; margin: 0; }
       .public-wrap.home .public-card .cta { margin: 0 0 0 6px; white-space: nowrap; }
-      .public-wrap.home .public-foot { text-align: right; padding-top: 14px; }
+      .public-wrap.home .public-foot { text-align: center; padding-top: 14px; }
     }
   `;
   document.head.appendChild(css);

@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v290';
+const APP_VERSION = 'v291';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13094,7 +13094,13 @@ function openFcRefModal(program, id){
   if(program!=='conv' && f.verificationFormSubmittedAt && _fcVerifActions){
     h += _fcVerifActions(f, _fcLatestRealVisit(f), {explain:true});   /* v212 */
   }
-  modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h, `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
+  /* v291 - the same farmer dialog the queue opens, reachable from this sheet too.
+     Without it a conversion farmer past the queue window could not be corrected at all. */
+  modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h,
+    (canEditData()?`<button class="btn btn-ghost" id="fcEditDetails">${svg(I.edit,2.2)}Edit details</button>`:'')
+    + `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
+  const _fcEd = document.getElementById('fcEditDetails');
+  if(_fcEd) _fcEd.onclick = () => openFarmerModal(program==='conv'?'conv':'haat', f.id);
   _wireVerifActions(document.getElementById('modal'));
   _wireVerifEditLog(document.getElementById('modal'));   /* v211 */
   /* v230 - switch between forms, and fetch the extra ones on request. */
@@ -13338,14 +13344,19 @@ function _fcActCards(rows,F,program){
         <p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(districtDisplayName(f.district)||f.district||'—')}</p></div>${right}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">${meta}</div>
       ${bar}
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span></div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<button class="fc-btn-edit" data-fcedit="${esc(f.id)}" style="margin-left:auto">${svg(I.edit,2)} Edit details</button>`:''}</div>
       ${program==='haat'?_fcEditNote(r.visit)+_fcVerifActions(f,r.visit):''}
     </div>`;
   }).join(''):`<div class="fc-empty">${F.q?'Nothing matches that search':'Nothing here yet'}</div>`}
   ${more>0?`<button class="btn btn-ghost" style="width:100%;padding:12px;border-radius:12px;margin-top:4px" id="fcAMore">Load ${Math.min(more,50)} more (${more} remaining)</button>`:''}`;
   const mb=document.getElementById('fcAMore');
   if(mb) mb.onclick=()=>{F.lim+=50;_fcActCards(rows,F,program);};
-  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=()=>{openFcRefModal(program==='conv'?'conv':'haat',c.dataset.id);};});
+  /* v291 - Edit details on a conversion card; the card itself still opens the sheet. */
+  el.querySelectorAll('[data-fcedit]').forEach(b=>{b.onclick=ev=>{ev.stopPropagation();openFarmerModal('conv',b.dataset.fcedit);};});
+  el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=ev=>{
+    if(ev.target.closest('[data-fcedit]')) return;
+    openFcRefModal(program==='conv'?'conv':'haat',c.dataset.id);
+  };});
   /* v211 - stopPropagation, or every button press also opens the card modal
      behind it. */
   el.querySelectorAll('[data-vact]').forEach(b=>{b.onclick=ev=>{

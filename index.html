@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v291';
+const APP_VERSION = 'v292';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13091,7 +13091,7 @@ function openFcRefModal(program, id){
   }
   /* v211 - the same three actions the card carries, for an FC who tapped the
      card open first. Only for a farmer they have actually verified. */
-  if(program!=='conv' && f.verificationFormSubmittedAt && _fcVerifActions){
+  if(program!=='conv' && _fcVerifActions && _fcLatestRealVisit(f)){   /* v292 - was gated on verificationFormSubmittedAt */
     h += _fcVerifActions(f, _fcLatestRealVisit(f), {explain:true});   /* v212 */
   }
   /* v291 - the same farmer dialog the queue opens, reachable from this sheet too.
@@ -13270,7 +13270,12 @@ function _fcLatestRealVisit(f){
    Everything that offers or refuses Edit goes through here, so the button, the
    card modal and the refusal message can never say different things. */
 function _fcEditBlockReason(f,visit){
-  if(!f || !visit || !f.verificationFormSubmittedAt) return 'no-verification';
+  /* v292 - the visit's own marks count as the verification being on file. A farmer added
+     inside the app can have a real verification whose row never carried
+     verificationFormSubmittedAt, and the button then vanished for its own author. The
+     stored answer sheet is still checked before the form opens. */
+  const _hasMarks = !!(visit && visit.claimVerifications && Object.keys(visit.claimVerifications).length);
+  if(!f || !visit || !(f.verificationFormSubmittedAt || _hasMarks)) return 'no-verification';
   const me=currentFcId();
   if(!me) return 'not-fc';
   if(visit.recordedById ? visit.recordedById!==me : visit.fc!==me){
@@ -13304,8 +13309,14 @@ function _fcVerifActions(f,visit,opts){
   /* v212 - on the card the missing button is enough; in the modal, where there
      is room, the coordinator is told which rule stopped them. 'no-verification'
      and 'not-fc' are structural, not decisions, so they say nothing. */
-  const note = (opts.explain && why && why !== 'no-verification' && why !== 'not-fc')
-    ? `<div class="fc-lockmsg">\ud83d\udd12 ${esc(why)}</div>` : '';
+  /* v292 - a button that simply disappears reads as random. Every refusal says why now,
+     on the card as well as in the sheet. 'not-fc' stays silent: that is an admin or a
+     viewer looking at the card, not a coordinator who lost an action. */
+  const _whyText = (why === 'no-verification')
+    ? 'No verification is on file for this farmer yet, so there is nothing to reopen.'
+    : why;
+  const note = (why && why !== 'not-fc')
+    ? `<div class="fc-lockmsg">\ud83d\udd12 ${esc(_whyText)}</div>` : '';
   return `<div class="fc-acts">
     <button type="button" class="fc-actbtn" data-vact="view" data-id="${esc(f.id)}">\ud83d\udcc4 Details</button>
     <button type="button" class="fc-actbtn" data-vact="pdf" data-id="${esc(f.id)}">\u2b07 PDF</button>

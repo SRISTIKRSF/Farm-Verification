@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v293';
+const APP_VERSION = 'v294';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13265,6 +13265,33 @@ function _fcLatestRealVisit(f){
   const all=_fcRealVisitsAll(f);
   return all.length?all[all.length-1]:null;
 }
+/* v294 - a verification submitted through the old path leaves a SUMMARY-ONLY row: a
+   date, a score, a name, and no answers. It cannot be reopened, it makes the farmer look
+   verified, and once they are verified properly it would sit beside the real one as a
+   second visit. So when the same coordinator verifies that farmer again, their empty rows
+   go - written to the activity log first, because a row that vanishes unrecorded is exactly
+   what the work-loss rules forbid. Only rows with no answers at all, never imported ones,
+   and never another coordinator's. */
+function _dropEmptyVisits(rec, byId){
+  if(!rec || !Array.isArray(rec.visits) || !byId) return 0;
+  const keep = [], dropped = [];
+  rec.visits.forEach(v => {
+    const empty = v && !(typeof isImportedVisit === 'function' && isImportedVisit(v))
+      && !(v.claimVerifications && Object.keys(v.claimVerifications).length);
+    const mine = String((v && (v.recordedById || v.fc)) || '') === String(byId);
+    (empty && mine) ? dropped.push(v) : keep.push(v);
+  });
+  if(!dropped.length) return 0;
+  rec.visits = keep;
+  dropped.forEach(v => {
+    try{
+      logActivity('visit', 'Replaced an empty verification row on <b>' + esc(rec.name || rec.id || '')
+        + '</b> \u2014 visit of ' + esc(fmtDate(v.date || '') || '\u2014')
+        + (v.score ? ', score ' + esc(String(v.score)) : '') + ', no answers were saved with it');
+    }catch(e){}
+  });
+  return dropped.length;
+}
 /* v212 - the single rule for whether a coordinator may still change a
    verification, and the sentence explaining why not. Returns '' when they may.
    Everything that offers or refuses Edit goes through here, so the button, the
@@ -13312,8 +13339,14 @@ function _fcVerifActions(f,visit,opts){
   /* v292 - a button that simply disappears reads as random. Every refusal says why now,
      on the card as well as in the sheet. 'not-fc' stays silent: that is an admin or a
      viewer looking at the card, not a coordinator who lost an action. */
+  /* v294 - a visit whose answers never arrived cannot be reopened; it has to be done
+     again. Say which of the two it is, and offer the button for the one that is fixable. */
+  const _emptyVisit = !!(visit && !(visit.claimVerifications && Object.keys(visit.claimVerifications).length));
+  const _reverify = (why === 'no-verification') && _emptyVisit && canEditData();
   const _whyText = (why === 'no-verification')
-    ? 'No verification is on file for this farmer yet, so there is nothing to reopen.'
+    ? (_emptyVisit
+        ? 'The answers from this visit were not saved, so there is nothing to reopen. Please verify this farmer again.'
+        : 'No verification is on file for this farmer yet, so there is nothing to reopen.')
     : why;
   const note = (why && why !== 'not-fc')
     ? `<div class="fc-lockmsg">\ud83d\udd12 ${esc(_whyText)}</div>` : '';
@@ -13321,6 +13354,7 @@ function _fcVerifActions(f,visit,opts){
     <button type="button" class="fc-actbtn" data-vact="view" data-id="${esc(f.id)}">\ud83d\udcc4 Details</button>
     <button type="button" class="fc-actbtn" data-vact="pdf" data-id="${esc(f.id)}">\u2b07 PDF</button>
     ${!why?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit verification</button>`:''}
+    ${_reverify?`<button type="button" class="fc-actbtn pri" data-vact="reverify" data-id="${esc(f.id)}">\ud83d\udd04 Verify again</button>`:''}
   </div>${note}`;
 }
 function _fcActMatch(f,q){
@@ -13376,6 +13410,7 @@ function _fcActCards(rows,F,program){
     if(act==='view') openCompareFormsModal(fid);
     else if(act==='pdf') openCompareFormsModal(fid,{pdf:true});
     else if(act==='edit') openFcEditVerification(fid);
+    else if(act==='reverify') openVerificationForm(fid);   /* v294 */
   };});
 }
 function viewFcActivity(){
@@ -20853,6 +20888,7 @@ function _wireVerifActions(root){
     if(act==='view') openCompareFormsModal(fid);
     else if(act==='pdf') openCompareFormsModal(fid,{pdf:true});
     else if(act==='edit') openFcEditVerification(fid);
+    else if(act==='reverify') openVerificationForm(fid);   /* v294 */
   };});
 }
 /* v211 - the before and after of everything an edit touched.
@@ -26163,6 +26199,7 @@ window.addEventListener('message',async ev=>{
       markLocalTouch('haatFarmers', f.id);
       _tgt.verificationFormSubmittedAt = d.data._submittedAt || todayISO();
       _tgt.visits = _tgt.visits || [];
+      _dropEmptyVisits(_tgt, currentFcId() || _tgt.fcId || f.fcId || '');   /* v294 */
       _tgt.visits.push(stamp({
         date: (d.data.summary && d.data.summary.date) || todayISO(),
         fc: _tgt.fcId || f.fcId || '',
@@ -27004,6 +27041,7 @@ window.addEventListener('message',async ev=>{
         const markedCount = (d.claims||[]).filter(c => c.fcVerification && c.fcVerification!=='na' && c.fcVerification!=='not_specified').length;
         // v9 — threshold removed per user instruction. Any submit transitions.
         const enoughEvidence = true;
+        _dropEmptyVisits(f, String((actor() || {}).id || '') || currentFcId() || '');   /* v294 */
         /* v211 - see the note on this version: __src is for the screen only. */
         Object.keys(d.photos||{}).forEach(qid=>{
           const arr = d.photos[qid];

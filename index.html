@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v292';
+const APP_VERSION = 'v293';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -13097,7 +13097,7 @@ function openFcRefModal(program, id){
   /* v291 - the same farmer dialog the queue opens, reachable from this sheet too.
      Without it a conversion farmer past the queue window could not be corrected at all. */
   modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h,
-    (canEditData()?`<button class="btn btn-ghost" id="fcEditDetails">${svg(I.edit,2.2)}Edit details</button>`:'')
+    (canEditData()?`<button class="btn btn-ghost" id="fcEditDetails">${svg(I.edit,2.2)}Edit farmer details</button>`:'')
     + `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
   const _fcEd = document.getElementById('fcEditDetails');
   if(_fcEd) _fcEd.onclick = () => openFarmerModal(program==='conv'?'conv':'haat', f.id);
@@ -13320,7 +13320,7 @@ function _fcVerifActions(f,visit,opts){
   return `<div class="fc-acts">
     <button type="button" class="fc-actbtn" data-vact="view" data-id="${esc(f.id)}">\ud83d\udcc4 Details</button>
     <button type="button" class="fc-actbtn" data-vact="pdf" data-id="${esc(f.id)}">\u2b07 PDF</button>
-    ${!why?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit</button>`:''}
+    ${!why?`<button type="button" class="fc-actbtn pri" data-vact="edit" data-id="${esc(f.id)}">\u270f\ufe0f Edit verification</button>`:''}
   </div>${note}`;
 }
 function _fcActMatch(f,q){
@@ -13355,7 +13355,7 @@ function _fcActCards(rows,F,program){
         <p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(districtDisplayName(f.district)||f.district||'—')}</p></div>${right}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">${meta}</div>
       ${bar}
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<button class="fc-btn-edit" data-fcedit="${esc(f.id)}" style="margin-left:auto">${svg(I.edit,2)} Edit details</button>`:''}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<button class="fc-btn-edit" data-fcedit="${esc(f.id)}" style="margin-left:auto">${svg(I.edit,2)} Edit farmer details</button>`:''}</div>
       ${program==='haat'?_fcEditNote(r.visit)+_fcVerifActions(f,r.visit):''}
     </div>`;
   }).join(''):`<div class="fc-empty">${F.q?'Nothing matches that search':'Nothing here yet'}</div>`}

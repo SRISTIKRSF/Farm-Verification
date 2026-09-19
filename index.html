@@ -406,9 +406,11 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .cbar-delta{font-size:9.5px;color:var(--green);font-weight:700;margin-top:2px}
 
 /* mini summary tables (haat-wise, FC-wise) */
-.mini-tbl-head{padding:15px 18px 12px;border-bottom:1px solid var(--line)}
-.mini-tbl-head h3{font-size:13.5px;font-weight:700;display:inline}
-.mini-tbl-sub{font-size:11px;color:var(--ink-faint);font-weight:400;margin-left:8px}
+/* v297 - one line, always: a note that wrapped made one card's header taller than the
+   other's and the two tables beside each other no longer lined up. */
+.mini-tbl-head{padding:15px 18px 12px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:8px;white-space:nowrap;min-height:46px;box-sizing:border-box}
+.mini-tbl-head h3{font-size:13.5px;font-weight:700;display:inline;flex:0 0 auto}
+.mini-tbl-sub{font-size:11px;color:var(--ink-faint);font-weight:400;margin-left:0;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .mini-tbl-wrap{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
 .mini-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:380px}
 .mini-tbl thead th{
@@ -4486,7 +4488,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v296';
+const APP_VERSION = 'v297';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12642,12 +12644,20 @@ function visitCoordinatorId(v){
   if(known(v.fc)) return v.fc;
   return '';
 }
+/* v297 - visits dated after today, found by the last run of countedHaatVisits. They are
+   not counted anywhere; this is only so the dashboard can ask for the date to be fixed. */
+let _FUTURE_VISITS = [];
 function countedHaatVisits(){
   const out = [];
+  const _today = todayISO();
+  _FUTURE_VISITS = [];
   _excludeSeeds(DB.haatFarmers||[]).forEach(f => {
     if(!f || f._archived) return;
     (Array.isArray(f.visits) ? f.visits : []).forEach(v => {
       if(!v || !v.date || isImportedVisit(v)) return;
+      /* v297 - Guru: only completed visits count. A date after today is a mistyped date
+         or a phone with the wrong clock, not work that has happened. */
+      if(String(v.date).slice(0,10) > _today){ _FUTURE_VISITS.push({f:f, v:v}); return; }
       /* v246 - an earlier entry the same coordinator replaced on the same day.
          It stays on the record and stays visible; it just is not a second
          field visit. Three farmers were counted twice before this. */
@@ -12696,7 +12706,10 @@ function farmerOnboardYM(f){
   if(f.associationYear) return f.associationYear+'-06';
   if(f.decisionAt) return f.decisionAt.slice(0,7);
   if(f.visits && f.visits.length){
-    const first=f.visits.map(v=>v.date).filter(Boolean).sort()[0];
+    /* v297 - a visit dated in the future is not a visit yet, so it cannot be the month
+       this farmer came on board either. */
+    const _t=todayISO();
+    const first=f.visits.map(v=>v.date).filter(d=>d && String(d).slice(0,10)<=_t).sort()[0];
     if(first) return first.slice(0,7);
   }
   if(f.enrolledMonth) return f.enrolledMonth;
@@ -12724,6 +12737,8 @@ function _ymRangeInclusive(minYM,maxYM){
   while(y<ey || (y===ey && m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} }
   return out;
 }
+/* v297 - what the last run found dated after today, for the note under the charts. */
+let _CUM_FUTURE = {visits:0, onboarded:0, latest:''};
 /* cumulative running totals, month by month, from real inception to today.
    onboarded = a green farmer counts in the month from farmerOnboardYM()
    visited   = every farm visit recorded, in the month it happened
@@ -12747,12 +12762,22 @@ function cumulativeData(){
      before (the rule applies the identical archived/seed filter); what is new
      is that migration placeholders are excluded here too, as they always were
      in the coordinator counts. */
+  /* v297 - only completed visits are in countedHaatVisits now, so nothing here can be
+     dated in the future. What was left out is reported under the charts. */
+  const _tYM = todayISO().slice(0,7);
   countedHaatVisits().forEach(x => bump(newVisits, x.v.date.slice(0,7)));
+  _CUM_FUTURE = {visits: _FUTURE_VISITS.length, latest: '', names: []};
+  _FUTURE_VISITS.forEach(x => {
+    const ym = String(x.v.date).slice(0,7);
+    if(ym > _CUM_FUTURE.latest) _CUM_FUTURE.latest = ym;
+    if(_CUM_FUTURE.names.length < 4) _CUM_FUTURE.names.push((x.f && x.f.name) || (x.f && x.f.id) || '');
+  });
   farmers.forEach(f=>{
     if(f.status==='green') bump(newOnboarded, farmerOnboardYM(f));
   });
-  const todayYM=todayISO().slice(0,7);
+  const todayYM=_tYM;
   if(!maxYM||todayYM>maxYM) maxYM=todayYM;
+  if(maxYM>todayYM) maxYM=todayYM;   /* v297 - the axis stops at this month */
   if(!minYM) minYM=todayYM;
   let oRun=0,vRun=0;
   return _ymRangeInclusive(minYM,maxYM).map(m=>{
@@ -14375,6 +14400,15 @@ function viewDashboard(){
     ${_cumChartCard('onboard','Farmers Onboarded','var(--c-onboard)',cum,r=>r.onboardedTotal,r=>r.onboardedNew)}
     ${_cumChartCard('visits','Field Visits Done','var(--c-visit)',cum,r=>r.visitsTotal,r=>r.visitsNew)}
   </div>`;
+  /* v297 - say it plainly rather than drawing a month that has not happened. */
+  if(_CUM_FUTURE.visits){
+    const _n = _CUM_FUTURE.visits, _one = _n === 1;
+    h+=`<div class="hint" style="margin-top:10px;padding:10px 13px;background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:9px;font-size:12.5px;line-height:1.55">
+      <b>${_n} field visit${_one?'':'s'} ${_one?'is':'are'} dated in the future</b>
+      (up to ${esc(monthLabel(_CUM_FUTURE.latest))}) — ${esc(_CUM_FUTURE.names.filter(Boolean).join(', '))}${_n>_CUM_FUTURE.names.length?' and more':''}.
+      ${_one?'It is':'They are'} not counted as done anywhere. Open the farmer and correct the visit date.
+    </div>`;
+  }
 
   // v139 — "Farmers Joined — by year" removed. Every farmer on the books
   // joined inside a two-year window, so the chart was one or two bars that
@@ -14435,7 +14469,6 @@ function viewDashboard(){
     <div class="card mini-card">
       <div class="mini-tbl-head">
         <h3>Haat-wise Active Farmers</h3>
-        <span class="mini-tbl-sub">monthly active = farmers who came to the haat that month \u00b7 a farmer selling at several haats is counted under each, so the total counts people</span>
       </div>
       <div class="mini-tbl-wrap"><table class="mini-tbl"><thead><tr>
         <th class="rk">#</th><th>Haat</th><th class="num">Onboarded</th>
@@ -24843,7 +24876,14 @@ function _rptReal(a){
 }
 function _rptOpt(x){ return String(x == null ? '' : x).replace(/\s*\(.*?\)\s*/g, '').trim(); }
 function _rptList(v){ return Array.isArray(v) ? v : []; }
-function _rptVisits(f){ const v = f && f.visits; return Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []); }
+/* v297 - `today` optional: given one, a visit dated after it is not a completed visit and
+   does not count (same rule as the dashboard). Without one, exactly the old behaviour. */
+function _rptVisits(f, today){
+  const v = f && f.visits;
+  const all = Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+  if(!today) return all;
+  return all.filter(x => !(x && x.date) || String(x.date).slice(0, 10) <= today);
+}
 function _rptYes(v){ return _rptReal(v) ? String(v).trim().toLowerCase() : 'not answered'; }
 function _rptInc(o, k, n){ o[k] = (o[k] || 0) + (n === undefined ? 1 : n); }
 function _rptTop(o, n){ return Object.keys(o || {}).map(k => [k, o[k]]).sort((a, b) => b[1] - a[1]).slice(0, n || 999); }
@@ -24873,10 +24913,10 @@ function _rptInPeriod(f, period, today){
 function rptFilter(list, F, today, isConv){
   return (list || []).filter(f => f && !f._archived && !(isConv && f._mergedInto)
     && (F.district === 'all' || String(f.district || '').trim() === F.district)
-    && (F.fc === 'all' || f.fcId === F.fc || _rptVisits(f).some(v => v && v.fc === F.fc))
+    && (F.fc === 'all' || f.fcId === F.fc || _rptVisits(f, today).some(v => v && v.fc === F.fc))
     && _rptInPeriod(f, F.period, today));
 }
-function rptCoverage(haat, conv, P){
+function rptCoverage(haat, conv, P, today){
   const by = {}, tal = {};
   const row = d => by[d] || (by[d] = {district:d, applied:0, visited:0, waitingVisit:0, waitingDecision:0, onboarded:0, conversion:0});
   haat.forEach(f => {
@@ -24885,7 +24925,7 @@ function rptCoverage(haat, conv, P){
     if(P.waitingVisit(f)) r.waitingVisit++;
     if(P.waitingDecision(f)) r.waitingDecision++;
     if(P.onboarded(f)) r.onboarded++;
-    if(_rptVisits(f).some(v => v && v.claimVerifications)) r.visited++;
+    if(_rptVisits(f, today).some(v => v && v.claimVerifications)) r.visited++;
     _rptInc(tal, d + '\u0001' + String(f.taluka || '?').trim());
   });
   conv.forEach(f => { row(String(f.district || 'Unknown').trim()).conversion++; });
@@ -24968,13 +25008,16 @@ function rptConversion(conv, today){
 }
 /* v285 - district coverage for conversion farmers. Visited = a last-visit date
    or any visit row; stages as the app names them (CONV_STATUS). */
-function rptConvCoverage(conv){
+function rptConvCoverage(conv, today){
   const by = {}, tal = {};
   const row = d => by[d] || (by[d] = {district:d, farmers:0, visited:0, notAssigned:0, assigned:0, inProgress:0, adopted:0});
   conv.forEach(f => {
     const d = String(f.district || 'Unknown').trim(), r = row(d);
     r.farmers++;
-    if(f.lastVisitAt || _rptVisits(f).length) r.visited++;
+    /* v297 - a last-visit date in the future is not a visit either. Without `today`
+       (the node tests) this is the old test, unchanged. */
+    const _lv = f.lastVisitAt && (!today || String(f.lastVisitAt).slice(0, 10) <= today);
+    if(_lv || _rptVisits(f, today).length) r.visited++;
     const st = f.stage || '';
     if(st === 'verification_pending' || st === 'enrolled') r.notAssigned++;
     else if(st === 'assigned') r.assigned++;
@@ -25117,8 +25160,8 @@ function viewReports(){
     + '</div>';
 
   _rptExport = {tab: RPT.tab, rows: []};
-  if(RPT.prog === 'conv') h += RPT.tab === 'conv' ? _rptConvHtml(rptConversion(conv, today)) : _rptConvCoverageHtml(rptConvCoverage(conv));
-  else if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, [], P));
+  if(RPT.prog === 'conv') h += RPT.tab === 'conv' ? _rptConvHtml(rptConversion(conv, today)) : _rptConvCoverageHtml(rptConvCoverage(conv, today));
+  else if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, [], P, today));
   else if(!_rptAnswers) h += _rptAnswersPanel(haatAll.length);
   else {
     const A = rptAnswers(haat, _rptAnswers.data, today);

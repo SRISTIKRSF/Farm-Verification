@@ -4486,7 +4486,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v294';
+const APP_VERSION = 'v296';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4675,6 +4675,8 @@ async function updateFcSync(){
       + '<span class="en">'+esc(en)+'</span>';
   } finally {
     _fcSyncBusy=false;
+    /* v295 - the strip just changed height; an open dialog has to move with it. */
+    try{ const _m = document.getElementById('modal'); if(_m && _m.classList.contains('show')) _sheetify(_m); }catch(e){}
     if(_fcSyncAgain){ _fcSyncAgain=false; setTimeout(updateFcSync, 400); }
   }
 }
@@ -13097,8 +13099,12 @@ function openFcRefModal(program, id){
   /* v291 - the same farmer dialog the queue opens, reachable from this sheet too.
      Without it a conversion farmer past the queue window could not be corrected at all. */
   modalShell((program==='conv'?'🌱 ':'🛒 ')+esc(f.name||'Farmer'), h,
-    (canEditData()?`<button class="btn btn-ghost" id="fcEditDetails">${svg(I.edit,2.2)}Edit farmer details</button>`:'')
+    ((canEditData() && program==='conv' && f.conversionScoring)
+      ? `<button class="btn btn-ghost" id="fcEditConvScore">${svg(I.edit,2.2)}Edit verification</button>` : '')   /* v296 */
+    + (canEditData()?`<button class="btn btn-ghost" id="fcEditDetails">${svg(I.edit,2.2)}Edit farmer details</button>`:'')
     + `<button class="btn btn-primary" onclick="closeModal()">Close</button>`);
+  const _fcCv = document.getElementById('fcEditConvScore');   /* v296 */
+  if(_fcCv) _fcCv.onclick = () => openConvScoreModal(f.id);
   const _fcEd = document.getElementById('fcEditDetails');
   if(_fcEd) _fcEd.onclick = () => openFarmerModal(program==='conv'?'conv':'haat', f.id);
   _wireVerifActions(document.getElementById('modal'));
@@ -13389,7 +13395,7 @@ function _fcActCards(rows,F,program){
         <p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(districtDisplayName(f.district)||f.district||'—')}</p></div>${right}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">${meta}</div>
       ${bar}
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<button class="fc-btn-edit" data-fcedit="${esc(f.id)}" style="margin-left:auto">${svg(I.edit,2)} Edit farmer details</button>`:''}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${r.pct!=null?`<button class="fc-btn-edit" data-convscore="${esc(f.id)}">${svg(I.edit,2)} Edit verification</button>`:''}<button class="fc-btn-edit" data-fcedit="${esc(f.id)}">${svg(I.edit,2)} Edit farmer details</button></span>`:''}</div>
       ${program==='haat'?_fcEditNote(r.visit)+_fcVerifActions(f,r.visit):''}
     </div>`;
   }).join(''):`<div class="fc-empty">${F.q?'Nothing matches that search':'Nothing here yet'}</div>`}
@@ -13398,8 +13404,10 @@ function _fcActCards(rows,F,program){
   if(mb) mb.onclick=()=>{F.lim+=50;_fcActCards(rows,F,program);};
   /* v291 - Edit details on a conversion card; the card itself still opens the sheet. */
   el.querySelectorAll('[data-fcedit]').forEach(b=>{b.onclick=ev=>{ev.stopPropagation();openFarmerModal('conv',b.dataset.fcedit);};});
+  /* v296 - reopen the conversion assessment; it fills itself from what was saved. */
+  el.querySelectorAll('[data-convscore]').forEach(b=>{b.onclick=ev=>{ev.stopPropagation();openConvScoreModal(b.dataset.convscore);};});
   el.querySelectorAll('[data-act="open"]').forEach(c=>{c.onclick=ev=>{
-    if(ev.target.closest('[data-fcedit]')) return;
+    if(ev.target.closest('[data-fcedit],[data-convscore]')) return;
     openFcRefModal(program==='conv'?'conv':'haat',c.dataset.id);
   };});
   /* v211 - stopPropagation, or every button press also opens the card modal
@@ -19413,14 +19421,39 @@ ${/* v265 - a view-only account gets the record and the PDF, nothing else. */''}
    parsed and lost, and an inline important declaration was verifiably on the
    element and lost. Switching the animation off is what releases it. Measured
    after: top 8 / bottom 845. Phones in FC mode only; admin is untouched. */
+/* v295 - how much of the bottom of the screen the coordinator's own furniture owns:
+   the bottom nav, and the sync strip that sits on top of it. Measured rather than
+   assumed, because the strip is 40-50px tall depending on what it is saying, and it
+   appears and disappears while a dialog is open. 70px stays the fallback. */
+function _fcBottomInset(){
+  if(!document.body.classList.contains('fc-mode')) return 70;
+  const vh = window.innerHeight || 0;
+  let topMost = vh;
+  ['fc-bnav','fcSync'].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    const cs = getComputedStyle(el);
+    if(cs.display === 'none' || cs.visibility === 'hidden') return;
+    const r = el.getBoundingClientRect();
+    if(r.height > 0 && r.top < topMost) topMost = r.top;
+  });
+  const inset = Math.round(vh - topMost) + 8;   /* a little air above the strip */
+  return (inset > 8 && inset < vh * 0.6) ? inset : 70;
+}
 function _sheetify(m){
   const on = document.body.classList.contains('fc-mode') && window.innerWidth <= 680;
   const P = (k,v) => on ? m.style.setProperty(k, v, 'important') : m.style.removeProperty(k);
-  P('top','8px'); P('left','8px'); P('right','8px'); P('bottom','70px');
+  P('top','8px'); P('left','8px'); P('right','8px'); P('bottom', _fcBottomInset() + 'px');
   P('width','auto'); P('height','auto'); P('max-height','none');
   P('transform','none'); P('transition','none');
 }
 function openModal(){$('#overlay').classList.add('show');const _m=$('#modal');_m.classList.add('show');_sheetify(_m);}
+/* v295 - rotation, and the keyboard opening on Android, both resize the window under
+   an open dialog. Re-measure, or the footer ends up behind the bottom furniture again. */
+window.addEventListener('resize', () => {
+  const m = document.getElementById('modal');
+  if(m && m.classList.contains('show')) _sheetify(m);
+});
 function closeModal(){
   $('#overlay').classList.remove('show');
   $('#modal').classList.remove('show');

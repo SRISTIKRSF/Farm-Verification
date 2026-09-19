@@ -4493,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v298';
+const APP_VERSION = 'v299';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24922,22 +24922,23 @@ function rptFilter(list, F, today, isConv){
     && _rptInPeriod(f, F.period, today));
 }
 function rptCoverage(haat, conv, P, today){
-  const by = {}, tal = {};
+  const by = {}, tal = {}, ids = {};   /* v299 - who is behind every figure */
   const row = d => by[d] || (by[d] = {district:d, applied:0, visited:0, waitingVisit:0, waitingDecision:0, onboarded:0, conversion:0});
   haat.forEach(f => {
     const d = String(f.district || 'Unknown').trim(), r = row(d);
-    r.applied++;
-    if(P.waitingVisit(f)) r.waitingVisit++;
-    if(P.waitingDecision(f)) r.waitingDecision++;
-    if(P.onboarded(f)) r.onboarded++;
-    if(_rptVisits(f, today).some(v => v && v.claimVerifications)) r.visited++;
+    r.applied++;                                  _rptPush(ids, 'applied', d, f.id);
+    if(P.waitingVisit(f)){ r.waitingVisit++;      _rptPush(ids, 'waitingVisit', d, f.id); }
+    if(P.waitingDecision(f)){ r.waitingDecision++; _rptPush(ids, 'waitingDecision', d, f.id); }
+    if(P.onboarded(f)){ r.onboarded++;            _rptPush(ids, 'onboarded', d, f.id); }
+    if(_rptVisits(f, today).some(v => v && v.claimVerifications)){ r.visited++; _rptPush(ids, 'visited', d, f.id); }
     _rptInc(tal, d + '\u0001' + String(f.taluka || '?').trim());
+    _rptPush(ids, 'taluka', d + '\u0001' + String(f.taluka || '?').trim(), f.id);
   });
   conv.forEach(f => { row(String(f.district || 'Unknown').trim()).conversion++; });
   const rows = Object.keys(by).map(k => by[k]).sort((a, b) => (b.applied - a.applied) || (b.conversion - a.conversion));
   const talukas = _rptTop(tal, 8).map(e => ({district:e[0].split('\u0001')[0], taluka:e[0].split('\u0001')[1], applied:e[1]}));
   const sum = key => rows.reduce((n, r) => n + r[key], 0);
-  return {rows, talukas, noVisit: rows.filter(r => r.applied >= 10 && r.visited === 0),
+  return {rows, talukas, ids, noVisit: rows.filter(r => r.applied >= 10 && r.visited === 0),
           applied: sum('applied'), visited: sum('visited'), waitingVisit: sum('waitingVisit'),
           districtsApplied: rows.filter(r => r.applied > 0).length};
 }
@@ -24993,58 +24994,61 @@ function rptAnswers(haat, data, today){
           sale:_rptTop(sale, 6), irrigation:_rptTop(irr, 5)};
 }
 function rptConversion(conv, today){
-  const stage = {}, last = {}, practices = {}, intake = {n:0, noChem:0, chem:0, fym:0, willing:0};
+  const stage = {}, last = {}, practices = {}, intake = {n:0, noChem:0, chem:0, fym:0, willing:0}, ids = {};   /* v299 */
   conv.forEach(f => {
-    _rptInc(stage, f.stage || 'none');
+    _rptInc(stage, f.stage || 'none');   _rptPush(ids, 'stage', f.stage || 'none', f.id);
     if(f.lastVisitAt){
       const d = String(f.lastVisitAt).slice(0, 10);
       if(/^\d{4}-\d{2}-\d{2}$/.test(d)){
         const gap = (Date.parse(today) - Date.parse(d)) / 864e5;
-        _rptInc(last, gap <= 30 ? 'within 30 days' : gap <= 90 ? '31 to 90 days' : 'over 90 days');
-      } else _rptInc(last, 'unreadable');
-    } else _rptInc(last, 'never visited');
+        const _b = gap <= 30 ? 'within 30 days' : gap <= 90 ? '31 to 90 days' : 'over 90 days';
+        _rptInc(last, _b); _rptPush(ids, 'last', _b, f.id);
+      } else { _rptInc(last, 'unreadable'); _rptPush(ids, 'last', 'unreadable', f.id); }
+    } else { _rptInc(last, 'never visited'); _rptPush(ids, 'last', 'never visited', f.id); }
     const p = f.practices;
     if(p && typeof p === 'object' && !Array.isArray(p)){
       Object.keys(p).forEach(k => {
         const v = p[k], st = (v && typeof v === 'object' ? v.status : v) || 'not_started';
         practices[k] = practices[k] || {};
         _rptInc(practices[k], String(st));
+        _rptPush(ids, 'practice', k + ':' + String(st), f.id);
       });
     }
     const it = f.intake;
     if(it && it.submittedAt){
-      intake.n++;
-      if(it.usesChemicals === false) intake.noChem++;
-      if(it.usesChemicals === true) intake.chem++;
-      if(it.usesFYM === true) intake.fym++;
-      if(it.willingChemFree === 'yes') intake.willing++;
+      intake.n++;   _rptPush(ids, 'intake', 'n', f.id);
+      if(it.usesChemicals === false){ intake.noChem++; _rptPush(ids, 'intake', 'noChem', f.id); }
+      if(it.usesChemicals === true){ intake.chem++; _rptPush(ids, 'intake', 'chem', f.id); }
+      if(it.usesFYM === true){ intake.fym++; _rptPush(ids, 'intake', 'fym', f.id); }
+      if(it.willingChemFree === 'yes'){ intake.willing++; _rptPush(ids, 'intake', 'willing', f.id); }
     }
   });
-  return {total: conv.length, stage, last, practices, intake};
+  return {total: conv.length, stage, last, practices, intake, ids};
 }
 /* v285 - district coverage for conversion farmers. Visited = a last-visit date
    or any visit row; stages as the app names them (CONV_STATUS). */
 function rptConvCoverage(conv, today){
-  const by = {}, tal = {};
+  const by = {}, tal = {}, ids = {};   /* v299 */
   const row = d => by[d] || (by[d] = {district:d, farmers:0, visited:0, notAssigned:0, assigned:0, inProgress:0, adopted:0});
   conv.forEach(f => {
     const d = String(f.district || 'Unknown').trim(), r = row(d);
-    r.farmers++;
+    r.farmers++;   _rptPush(ids, 'farmers', d, f.id);
     /* v297 - a last-visit date in the future is not a visit either. Without `today`
        (the node tests) this is the old test, unchanged. */
     const _lv = f.lastVisitAt && (!today || String(f.lastVisitAt).slice(0, 10) <= today);
-    if(_lv || _rptVisits(f, today).length) r.visited++;
+    if(_lv || _rptVisits(f, today).length){ r.visited++; _rptPush(ids, 'visited', d, f.id); }
+    else _rptPush(ids, 'notVisited', d, f.id);   /* v299 - the "never visited" figure */
     const st = f.stage || '';
-    if(st === 'verification_pending' || st === 'enrolled') r.notAssigned++;
-    else if(st === 'assigned') r.assigned++;
-    else if(st === 'inProgress') r.inProgress++;
-    else if(st === 'adopted') r.adopted++;
-    if(String(f.taluka || '').trim()) _rptInc(tal, d +'\u0001' + String(f.taluka || '?').trim());
+    if(st === 'verification_pending' || st === 'enrolled'){ r.notAssigned++; _rptPush(ids, 'notAssigned', d, f.id); }
+    else if(st === 'assigned'){ r.assigned++; _rptPush(ids, 'assigned', d, f.id); }
+    else if(st === 'inProgress'){ r.inProgress++; _rptPush(ids, 'inProgress', d, f.id); }
+    else if(st === 'adopted'){ r.adopted++; _rptPush(ids, 'adopted', d, f.id); }
+    if(String(f.taluka || '').trim()){ _rptInc(tal, d +'\u0001' + String(f.taluka || '?').trim()); _rptPush(ids, 'taluka', d + '\u0001' + String(f.taluka || '?').trim(), f.id); }
   });
   const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.farmers - a.farmers);
   const talukas = _rptTop(tal, 8).map(e => ({district:e[0].split('\u0001')[0], taluka:e[0].split('\u0001')[1], farmers:e[1]}));
   const sum = key => rows.reduce((n, r) => n + r[key], 0);
-  return {rows, talukas, noVisit: rows.filter(r => r.farmers >= 10 && r.visited === 0),
+  return {rows, talukas, ids, noVisit: rows.filter(r => r.farmers >= 10 && r.visited === 0),
           farmers: sum('farmers'), visited: sum('visited'), districts: rows.length};
 }
 /* REPORTS-PURE-END */
@@ -25141,27 +25145,65 @@ async function rptFetchAnswers(onProgress, online, readAll){
 const _RPT_DRILL_LABEL = {
   hasCert: 'Hold an organic certificate', noDate: 'Certified but gave no expiry date',
   expiry: 'Certificate', soil: 'Soil test', fssai: 'FASSAI licence', agency: 'Certifying body',
+  applied: 'Applied', visited: 'Visited by a coordinator', notVisited: 'Not visited yet',
+  waitingVisit: 'Waiting for a field visit', waitingDecision: 'Waiting for a decision',
+  onboarded: 'Onboarded', farmers: 'Conversion farmers', notAssigned: 'Applied, not yet assigned',
+  assigned: 'Coordinator assigned', inProgress: 'In progress', adopted: 'Adopted',
+  taluka: 'Taluka', stage: 'Stage', last: 'Last coordinator visit', intake: 'Said when applying',
+  practice: 'Practice',
   manure: 'Manure and soil practice', crops: 'Crop', years: 'Years of natural farming',
   livestock: 'Farmers keeping', sale: 'Sale channel', irrigation: 'Irrigation',
   acres: 'Farmers with land under natural farming',
 };
+/* v299 - stored values written the way the page says them. */
+const _RPT_DRILL_VALUE = {
+  verification_pending: 'applied, not yet assigned', enrolled: 'enrolled', assigned: 'coordinator assigned',
+  inProgress: 'in progress', adopted: 'adopted', none: 'no stage recorded',
+  not_started: 'not started', in_progress: 'in progress',
+  noChem: 'not using chemicals now', chem: 'still using chemicals', fym: 'already use cow-dung manure',
+  willing: 'willing to go chemical-free', n: 'used the newer application form',
+  chemicalFree: 'Chemical-free', composting: 'Composting', jeevamrut: 'Jeevamrut', mulching: 'Mulching',
+  bioPesticide: 'Bio-pesticide', seedTreatment: 'Seed treatment', vermicompost: 'Vermicompost', demarcation: 'Boundary marking',
+};
+function _rptDrillValue(v){
+  if(v.indexOf('\u0001') >= 0) return v.split('\u0001').reverse().map(x => _rptOpt(x)).join(' \u00b7 ');
+  if(v.indexOf(':') > 0) return v.split(':').map(_rptDrillValue).join(' \u00b7 ');
+  return _RPT_DRILL_VALUE[v] || v;
+}
 /* groups whose figure is a plain yes/no: the value adds nothing to the title. */
 const _RPT_DRILL_PLAIN = {hasCert:1, soil:1, fssai:1, noDate:1, acres:1};
+/* v299 - the haat predicates in one place: the coverage table and the drill behind it must
+   answer the same question. */
+function _rptP(){
+  return {
+    waitingVisit: f => f.stage === 'verification_pending',
+    waitingDecision: f => (typeof isAwaitingApproval === 'function' ? isAwaitingApproval(f) : f.stage === 'verified'),
+    onboarded: f => f.status === 'green'
+  };
+}
 function _rptDrill(key){
-  const bits = String(key || '').split('|');
+  /* v299 - a key may name its source: cov: (haat coverage), ccov: (conversion coverage),
+     conv: (progress & practices). No prefix means the application answers. '*' is every
+     value in that group, i.e. the total. */
+  const raw = String(key || ''), ci = raw.indexOf(':');
+  const src = ci > 0 ? raw.slice(0, ci) : 'ans';
+  const bits = (ci > 0 ? raw.slice(ci + 1) : raw).split('|');
   const group = bits[0], values = (bits[1] || '').split(',').filter(Boolean);
   const today = todayISO();
   const seeds = typeof _excludeSeeds === 'function' ? _excludeSeeds : (x => x);
-  const haatAll = seeds(DB.haatFarmers || []).filter(f => f && !f._archived);
-  const haat = rptFilter(haatAll, RPT, today, false);
-  const A = rptAnswers(haat, (_rptAnswers && _rptAnswers.data) || {}, today);
-  const bag = (A.ids && A.ids[group]) || {};
-  const wanted = values.length ? values : Object.keys(bag);
+  const haat = rptFilter(seeds(DB.haatFarmers || []).filter(f => f && !f._archived), RPT, today, false);
+  const conv = rptFilter(seeds(DB.convFarmers || []).filter(f => f && !f._archived && !f._mergedInto), RPT, today, true);
+  let bag = {}, pool = haat, isConv = false;
+  if(src === 'cov') bag = (rptCoverage(haat, conv, _rptP(), today).ids || {})[group] || {};
+  else if(src === 'ccov'){ bag = (rptConvCoverage(conv, today).ids || {})[group] || {}; pool = conv; isConv = true; }
+  else if(src === 'conv'){ bag = (rptConversion(conv, today).ids || {})[group] || {}; pool = conv; isConv = true; }
+  else bag = ((rptAnswers(haat, (_rptAnswers && _rptAnswers.data) || {}, today).ids) || {})[group] || {};
+  const wanted = (values.length && values[0] !== '*') ? values : Object.keys(bag);
   const seen = {}, rows = [];
   wanted.forEach(v => (bag[v] || []).forEach(id => {
     if(seen[id]) return;
     seen[id] = 1;
-    const f = haat.find(x => x.id === id);
+    const f = pool.find(x => x.id === id);
     if(!f) return;
     const fc = (DB.fcs || []).find(x => x && x.id === f.fcId);
     rows.push({id: f.id, name: f.name || f.id, phone: f.phone || '', village: f.village || '',
@@ -25169,12 +25211,13 @@ function _rptDrill(key){
   }));
   rows.sort((a, b) => String(a.district).localeCompare(String(b.district)) || String(a.name).localeCompare(String(b.name)));
   const _plain = _RPT_DRILL_PLAIN[group] && values.length === 1 && values[0] === 'yes';
-  const what = (_RPT_DRILL_LABEL[group] || group) + ((values.length && !_plain) ? ' \u00b7 ' + values.join(', ') : '');
+  const _shown = values.map(_rptDrillValue);
+  const what = (_RPT_DRILL_LABEL[group] || group) + ((values.length && values[0] !== '*' && !_plain) ? ' \u00b7 ' + _shown.join(', ') : '');
   const many = values.length > 1;
   const body = rows.length
     ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>FARMER</th><th>PHONE</th><th>VILLAGE</th><th>DISTRICT</th><th>COORDINATOR</th>'
       + (many ? '<th>ANSWER</th>' : '') + '</tr></thead><tbody>'
-      + rows.map(r => '<tr><td><button type="button" class="rpt-link" data-rid="' + esc(r.id) + '">' + esc(r.name) + '</button></td><td>'
+      + rows.map(r => '<tr><td><button type="button" class="rpt-link" ' + (isConv ? 'data-cid' : 'data-rid') + '="' + esc(r.id) + '">' + esc(r.name) + '</button></td><td>'
           + esc(r.phone) + '</td><td>' + esc(r.village) + '</td><td>' + esc(r.district) + '</td><td>' + esc(r.fc || '\u2014') + '</td>'
           + (many ? '<td>' + esc(r.answer) + '</td>' : '') + '</tr>').join('')
       + '</tbody></table></div>'
@@ -25185,6 +25228,7 @@ function _rptDrill(key){
     + '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
   const m = document.getElementById('modal');
   m.querySelectorAll('[data-rid]').forEach(b => b.onclick = () => { closeModal(); openHaatRecord(b.dataset.rid); });
+  m.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => { closeModal(); openConvDrawer(b.dataset.cid); });   /* v299 */
   const dl = document.getElementById('rptDrillCsv');
   if(dl) dl.onclick = () => {
     const name = 'farmers-' + group + (values.length ? '-' + values.join('-') : '') + '-' + today + '.csv';
@@ -25197,11 +25241,7 @@ function viewReports(){
   if(!isAdminUser()){ v.innerHTML = '<div class="card" style="padding:18px 20px">Reports are available to admins.</div>'; return; }
   _rptLoadStored();
   const today = todayISO();
-  const P = {
-    waitingVisit: f => f.stage === 'verification_pending',
-    waitingDecision: f => (typeof isAwaitingApproval === 'function' ? isAwaitingApproval(f) : f.stage === 'verified'),
-    onboarded: f => f.status === 'green'
-  };
+  const P = _rptP();   /* v299 - shared with the drill */
   const seeds = typeof _excludeSeeds === 'function' ? _excludeSeeds : (x => x);
   const haatAll = seeds(DB.haatFarmers || []).filter(f => f && !f._archived);
   const convAll = seeds(DB.convFarmers || []).filter(f => f && !f._archived && !f._mergedInto);
@@ -25288,21 +25328,26 @@ function _rptCoverageHtml(cov){
   let h = '<p class="rpt-lede">Where farmers are applying, where coordinators have reached them, and where the queue is building. Use it to decide where to send coordinators and where the next haat should open.</p>';
   h += _rptKpis([
     ['Districts with haat applications', _rptN(cov.districtsApplied), 'in this selection'],
-    ['Applications with a field visit', _rptPct(cov.visited, cov.applied) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.applied) + ' farmers', 'var(--blue)'],
-    ['Waiting for a field visit', _rptN(cov.waitingVisit), 'coordinator has not visited yet', 'var(--orange)'],
+    ['Applications with a field visit', _rptPct(cov.visited, cov.applied) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.applied) + ' farmers', 'var(--blue)', 'cov:visited|*'],
+    ['Waiting for a field visit', _rptN(cov.waitingVisit), 'coordinator has not visited yet', 'var(--orange)', 'cov:waitingVisit|*'],
     ['Districts with no visit yet', _rptN(noV.length), 'with 10 or more applications', noV.length ? 'var(--red)' : 'var(--ink)']
   ]);
-  if(noV.length) h += '<div class="rpt-call red"><b>No coordinator has visited ' + esc(noV.map(r => _rptOpt(r.district)).join(', ')) + '.</b> Together ' + _rptN(noV.reduce((n, r) => n + r.applied, 0)) + ' farmers there have applied and are still waiting for a first visit.</div>';
+  if(noV.length) h += '<div class="rpt-call red"><b>No coordinator has visited ' + esc(noV.map(r => _rptOpt(r.district)).join(', ')) + '.</b> Together ' + _rptN(noV.reduce((n, r) => n + r.applied, 0)) + ' farmers there have applied and are still waiting for a first visit. <button type="button" class="rpt-link" data-drill="cov:applied|' + esc(noV.map(r => r.district).join(',')) + '">see farmers</button></div>';
   const rows = cov.rows.map(r => {
     const share = _rptPct(r.visited, r.applied);
     const flag = (r.applied >= 10 && r.visited === 0) ? '<span class="rpt-chip red">No visits</span>' : (r.applied && share >= 50 ? '<span class="rpt-chip green">Well covered</span>' : '');
-    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.applied + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.waitingVisit + '</td><td class="rpt-n">' + r.waitingDecision + '</td><td class="rpt-n">' + r.onboarded + '</td><td>' + flag + '</td></tr>';
+    const cell = (metric, n) => '<td class="rpt-n">' + (n ? '<button type="button" class="rpt-link" data-drill="cov:' + metric + '|' + esc(r.district) + '">' + n + '</button>' : '0') + '</td>';
+    return '<tr><td>' + esc(r.district) + '</td>' + cell('applied', r.applied)
+      + '<td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span>'
+      + (r.visited ? '<button type="button" class="rpt-link rpt-dim" data-drill="cov:visited|' + esc(r.district) + '">' + share + '%</button>' : '<span class="rpt-dim">' + share + '%</span>') + '</span></td>'
+      + cell('waitingVisit', r.waitingVisit) + cell('waitingDecision', r.waitingDecision) + cell('onboarded', r.onboarded)
+      + '<td>' + flag + '</td></tr>';
   }).join('');
   h += '<div class="rpt-g2">'
     + _rptCard('Districts', 'haat applications',
         cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">APPLIED</th><th>VISITED</th><th class="rpt-n">WAITING VISIT</th><th class="rpt-n">WAITING DECISION</th><th class="rpt-n">ONBOARDED</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
                         : '<div class="rpt-empty">No farmers match this selection.</div>')
-    + _rptCard('Busiest talukas', 'by haat applications', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.applied]), 'var(--accent)'))
+    + _rptCard('Busiest talukas', 'by haat applications \u00b7 tap for the farmers', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.applied, 'cov:taluka|' + t.district + '\u0001' + t.taluka]), 'var(--accent)'))
     + '</div>';
   _rptExport.rows = cov.rows.map(r => ({district:r.district, applied:r.applied, visited:r.visited, visited_percent:_rptPct(r.visited, r.applied), waiting_for_visit:r.waitingVisit, waiting_for_decision:r.waitingDecision, onboarded:r.onboarded}));
   return h;
@@ -25315,21 +25360,26 @@ function _rptConvCoverageHtml(cov){
   let h = '<p class="rpt-lede">Where conversion farmers are, how far each district has moved, and where no coordinator has visited anyone yet. Use it to plan visits district by district.</p>';
   h += _rptKpis([
     ['Districts with conversion farmers', _rptN(cov.districts), 'in this selection'],
-    ['Farmers with a coordinator visit', _rptPct(cov.visited, cov.farmers) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.farmers) + ' farmers', 'var(--blue)'],
-    ['Never visited', _rptN(never), 'no visit recorded yet', never ? 'var(--red)' : 'var(--ink)'],
+    ['Farmers with a coordinator visit', _rptPct(cov.visited, cov.farmers) + '%', _rptN(cov.visited) + ' of ' + _rptN(cov.farmers) + ' farmers', 'var(--blue)', 'ccov:visited|*'],
+    ['Never visited', _rptN(never), 'no visit recorded yet', never ? 'var(--red)' : 'var(--ink)', 'ccov:notVisited|*'],
     ['Districts with no visit yet', _rptN(noV.length), 'with 10 or more farmers', noV.length ? 'var(--red)' : 'var(--ink)']
   ]);
   if(noV.length) h += '<div class="rpt-call red"><b>No coordinator has visited a conversion farmer in ' + esc(names.slice(0, 8).join(', ')) + (names.length > 8 ? ' and ' + (names.length - 8) + ' more districts' : '') + '.</b> Together ' + _rptN(noV.reduce((n, r) => n + r.farmers, 0)) + ' farmers there are waiting for a first visit.</div>';
   const rows = cov.rows.map(r => {
     const share = _rptPct(r.visited, r.farmers);
     const flag = (r.farmers >= 10 && r.visited === 0) ? '<span class="rpt-chip red">No visits</span>' : (r.farmers && share >= 50 ? '<span class="rpt-chip green">Well covered</span>' : '');
-    return '<tr><td>' + esc(r.district) + '</td><td class="rpt-n">' + r.farmers + '</td><td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span><span class="rpt-dim">' + share + '%</span></span></td><td class="rpt-n">' + r.notAssigned + '</td><td class="rpt-n">' + r.assigned + '</td><td class="rpt-n">' + r.inProgress + '</td><td class="rpt-n">' + r.adopted + '</td><td>' + flag + '</td></tr>';
+    const cell = (metric, n) => '<td class="rpt-n">' + (n ? '<button type="button" class="rpt-link" data-drill="ccov:' + metric + '|' + esc(r.district) + '">' + n + '</button>' : '0') + '</td>';
+    return '<tr><td>' + esc(r.district) + '</td>' + cell('farmers', r.farmers)
+      + '<td><span class="rpt-meter"><span class="rail"><i style="width:' + share + '%"></i></span>'
+      + (r.visited ? '<button type="button" class="rpt-link rpt-dim" data-drill="ccov:visited|' + esc(r.district) + '">' + share + '%</button>' : '<span class="rpt-dim">' + share + '%</span>') + '</span></td>'
+      + cell('notAssigned', r.notAssigned) + cell('assigned', r.assigned) + cell('inProgress', r.inProgress) + cell('adopted', r.adopted)
+      + '<td>' + flag + '</td></tr>';
   }).join('');
   h += '<div class="rpt-g2">'
     + _rptCard('Districts', 'conversion farmers',
         cov.rows.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>DISTRICT</th><th class="rpt-n">FARMERS</th><th>VISITED</th><th class="rpt-n">NOT ASSIGNED</th><th class="rpt-n">FC ASSIGNED</th><th class="rpt-n">IN PROGRESS</th><th class="rpt-n">ADOPTED</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
                         : '<div class="rpt-empty">No conversion farmers match this selection.</div>')
-    + _rptCard('Busiest talukas', 'by conversion farmers', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.farmers]), 'var(--accent)'))
+    + _rptCard('Busiest talukas', 'by conversion farmers \u00b7 tap for the farmers', _rptBars(cov.talukas.map(t => [_rptOpt(t.taluka) + ' \u00b7 ' + _rptOpt(t.district), t.farmers, 'ccov:taluka|' + t.district + '\u0001' + t.taluka]), 'var(--accent)'))
     + '</div>';
   _rptExport.rows = cov.rows.map(r => ({district:r.district, conversion_farmers:r.farmers, visited:r.visited, visited_percent:_rptPct(r.visited, r.farmers), not_assigned:r.notAssigned, fc_assigned:r.assigned, in_progress:r.inProgress, adopted:r.adopted}));
   return h;
@@ -25405,10 +25455,10 @@ function _rptProfileHtml(A){
 function _rptConvHtml(C){
   const st = C.stage, total = C.total;
   const steps = [
-    ['APPLIED, NOT YET ASSIGNED', (st.verification_pending || 0) + (st.enrolled || 0), 'waiting for a coordinator', 'var(--orange)'],
-    ['FC ASSIGNED', st.assigned || 0, 'coordinator named', 'var(--c-visit)'],
-    ['IN PROGRESS', st.inProgress || 0, 'partially adopting', '#d97706'],
-    ['ADOPTED', st.adopted || 0, 'fully adopting natural farming', 'var(--c-onboard)']
+    ['APPLIED, NOT YET ASSIGNED', (st.verification_pending || 0) + (st.enrolled || 0), 'waiting for a coordinator', 'var(--orange)', 'conv:stage|verification_pending,enrolled'],
+    ['FC ASSIGNED', st.assigned || 0, 'coordinator named', 'var(--c-visit)', 'conv:stage|assigned'],
+    ['IN PROGRESS', st.inProgress || 0, 'partially adopting', '#d97706', 'conv:stage|inProgress'],
+    ['ADOPTED', st.adopted || 0, 'fully adopting natural farming', 'var(--c-onboard)', 'conv:stage|adopted']
   ];
   const lv = C.last;
   const NAMES = {chemicalFree:'Chemical-free', composting:'Composting', jeevamrut:'Jeevamrut', mulching:'Mulching', bioPesticide:'Bio-pesticide',
@@ -25417,15 +25467,17 @@ function _rptConvHtml(C){
   const unrecorded = keys.filter(k => k !== 'chemicalFree' && k !== 'composting' && !(C.practices[k].adopted || 0) && !(C.practices[k].in_progress || 0));
   let h = '<p class="rpt-lede">How far conversion farmers have moved towards natural farming, and whether coordinators are visiting them. Use it to plan visits and to see who can move to the haat programme next.</p>';
   h += _rptCard('Conversion funnel', 'current stage of every conversion farmer in this selection',
-    '<div class="rpt-funnel">' + steps.map(s => '<div class="rpt-fs"><small>' + s[0] + '</small><b>' + _rptN(s[1]) + '</b><span>' + s[2] + ' \u00b7 ' + _rptPct(s[1], total) + '%</span><div class="rpt-fbar"><i style="width:' + Math.max(1.5, _rptPct(s[1], total)) + '%;background:' + s[3] + '"></i></div></div>').join('') + '</div>');
+    '<div class="rpt-funnel">' + steps.map(s => '<div class="rpt-fs' + (s[4] && s[1] ? ' rpt-click" data-drill="' + esc(s[4]) + '" role="button" tabindex="0' : '') + '"><small>' + s[0] + '</small><b>' + _rptN(s[1]) + '</b><span>' + s[2] + ' \u00b7 ' + _rptPct(s[1], total) + '%</span><div class="rpt-fbar"><i style="width:' + Math.max(1.5, _rptPct(s[1], total)) + '%;background:' + s[3] + '"></i></div></div>').join('') + '</div>');
   h += '<div class="rpt-g2">'
-    + _rptCard('Last coordinator visit', 'conversion farmers', _rptBars([['Never visited', lv['never visited'] || 0], ['Within 30 days', lv['within 30 days'] || 0], ['31 to 90 days', lv['31 to 90 days'] || 0], ['Over 90 days', lv['over 90 days'] || 0]].filter(r => r[1]), r => r[0] === 'Never visited' ? '#dc2626' : 'var(--c-visit)', 'No conversion farmers in this selection.'))
-    + _rptCard('What farmers said when they applied', _rptN(C.intake.n) + ' farmers who used the newer application form', _rptBars([['Willing to go chemical-free', C.intake.willing], ['Not using chemicals now', C.intake.noChem], ['Already use cow-dung manure', C.intake.fym], ['Still using chemicals', C.intake.chem]].filter(r => r[1]), r => /Still/.test(r[0]) ? 'var(--orange)' : 'var(--c-onboard)', 'No newer-form applicants in this selection.'))
+    + _rptCard('Last coordinator visit', 'conversion farmers \u00b7 tap for the farmers', _rptBars([['Never visited', lv['never visited'] || 0, 'conv:last|never visited'], ['Within 30 days', lv['within 30 days'] || 0, 'conv:last|within 30 days'], ['31 to 90 days', lv['31 to 90 days'] || 0, 'conv:last|31 to 90 days'], ['Over 90 days', lv['over 90 days'] || 0, 'conv:last|over 90 days']].filter(r => r[1]), r => r[0] === 'Never visited' ? '#dc2626' : 'var(--c-visit)', 'No conversion farmers in this selection.'))
+    + _rptCard('What farmers said when they applied', _rptN(C.intake.n) + ' farmers who used the newer application form \u00b7 tap for the farmers', _rptBars([['Willing to go chemical-free', C.intake.willing, 'conv:intake|willing'], ['Not using chemicals now', C.intake.noChem, 'conv:intake|noChem'], ['Already use cow-dung manure', C.intake.fym, 'conv:intake|fym'], ['Still using chemicals', C.intake.chem, 'conv:intake|chem']].filter(r => r[1]), r => /Still/.test(r[0]) ? 'var(--orange)' : 'var(--c-onboard)', 'No newer-form applicants in this selection.'))
     + '</div>';
   if(unrecorded.length) h += '<div class="rpt-call red"><b>Practices are not being recorded.</b> ' + esc(unrecorded.map(k => NAMES[k] || k).join(', ')) + ' show \u201cnot started\u201d for every farmer here \u2014 not because nobody uses them, but because a practice only changes when a coordinator marks it on a visit. Chemical-free and composting come from what farmers declared at enrolment, not from a field check.</div>';
   h += _rptCard('Practice tracker', 'as recorded in the app today',
     keys.length ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>PRACTICE</th><th class="rpt-n">ADOPTED</th><th class="rpt-n">IN PROGRESS</th><th class="rpt-n">NOT STARTED</th><th>SOURCE</th></tr></thead><tbody>'
-      + keys.map(k => { const p = C.practices[k]; return '<tr><td><b>' + esc(NAMES[k] || k) + '</b></td><td class="rpt-n">' + _rptN(p.adopted || 0) + '</td><td class="rpt-n">' + _rptN(p.in_progress || 0) + '</td><td class="rpt-n">' + _rptN(p.not_started || 0) + '</td><td class="rpt-dim">' + (k === 'chemicalFree' ? 'declared at enrolment' : k === 'composting' ? 'set from \u201cuses cow-dung manure\u201d' : 'coordinator visit') + '</td></tr>'; }).join('')
+      + keys.map(k => { const p = C.practices[k];
+          const pc = (status, n) => '<td class="rpt-n">' + (n ? '<button type="button" class="rpt-link" data-drill="conv:practice|' + esc(k + ':' + status) + '">' + _rptN(n) + '</button>' : '0') + '</td>';
+          return '<tr><td><b>' + esc(NAMES[k] || k) + '</b></td>' + pc('adopted', p.adopted || 0) + pc('in_progress', p.in_progress || 0) + pc('not_started', p.not_started || 0) + '<td class="rpt-dim">' + (k === 'chemicalFree' ? 'declared at enrolment' : k === 'composting' ? 'set from \u201cuses cow-dung manure\u201d' : 'coordinator visit') + '</td></tr>'; }).join('')
       + '</tbody></table></div>' : '<div class="rpt-empty">No practice records in this selection.</div>');
   _rptExport.rows = steps.map(s => ({section:'Funnel', item:s[0].toLowerCase(), farmers:s[1]}))
     .concat(Object.keys(lv).map(k => ({section:'Last coordinator visit', item:k, farmers:lv[k]})))

@@ -4493,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v299';
+const APP_VERSION = 'v300';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12742,8 +12742,6 @@ function _ymRangeInclusive(minYM,maxYM){
   while(y<ey || (y===ey && m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} }
   return out;
 }
-/* v297 - what the last run found dated after today, for the note under the charts. */
-let _CUM_FUTURE = {visits:0, onboarded:0, latest:''};
 /* cumulative running totals, month by month, from real inception to today.
    onboarded = a green farmer counts in the month from farmerOnboardYM()
    visited   = every farm visit recorded, in the month it happened
@@ -12771,12 +12769,6 @@ function cumulativeData(){
      dated in the future. What was left out is reported under the charts. */
   const _tYM = todayISO().slice(0,7);
   countedHaatVisits().forEach(x => bump(newVisits, x.v.date.slice(0,7)));
-  _CUM_FUTURE = {visits: _FUTURE_VISITS.length, latest: '', names: []};
-  _FUTURE_VISITS.forEach(x => {
-    const ym = String(x.v.date).slice(0,7);
-    if(ym > _CUM_FUTURE.latest) _CUM_FUTURE.latest = ym;
-    if(_CUM_FUTURE.names.length < 4) _CUM_FUTURE.names.push((x.f && x.f.name) || (x.f && x.f.id) || '');
-  });
   farmers.forEach(f=>{
     if(f.status==='green') bump(newOnboarded, farmerOnboardYM(f));
   });
@@ -14405,15 +14397,6 @@ function viewDashboard(){
     ${_cumChartCard('onboard','Farmers Onboarded','var(--c-onboard)',cum,r=>r.onboardedTotal,r=>r.onboardedNew)}
     ${_cumChartCard('visits','Field Visits Done','var(--c-visit)',cum,r=>r.visitsTotal,r=>r.visitsNew)}
   </div>`;
-  /* v297 - say it plainly rather than drawing a month that has not happened. */
-  if(_CUM_FUTURE.visits){
-    const _n = _CUM_FUTURE.visits, _one = _n === 1;
-    h+=`<div class="hint" style="margin-top:10px;padding:10px 13px;background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:9px;font-size:12.5px;line-height:1.55">
-      <b>${_n} field visit${_one?'':'s'} ${_one?'is':'are'} dated in the future</b>
-      (up to ${esc(monthLabel(_CUM_FUTURE.latest))}) — ${esc(_CUM_FUTURE.names.filter(Boolean).join(', '))}${_n>_CUM_FUTURE.names.length?' and more':''}.
-      ${_one?'It is':'They are'} not counted as done anywhere. Open the farmer and correct the visit date.
-    </div>`;
-  }
 
   // v139 — "Farmers Joined — by year" removed. Every farmer on the books
   // joined inside a two-year window, so the chart was one or two bars that

@@ -976,6 +976,11 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 .rpt-asof{margin-left:auto;font-size:12px;color:var(--ink-faint)}
 .rpt-asof button{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0 0 0 6px;cursor:pointer;text-decoration:underline}
 .rpt-lede{margin:0;font-size:13.5px;color:var(--ink-soft);max-width:880px;line-height:1.55}
+/* v298 - a figure you can open. */
+.rpt-click{cursor:pointer}
+.rpt-click:hover{border-color:var(--accent)}
+.rpt-b.rpt-click:hover .lab{color:var(--accent);text-decoration:underline}
+.rpt-see{color:var(--accent);font-weight:700}
 .rpt-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .rpt-kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 17px;min-width:0}
 .rpt-kpi small{display:block;font-size:11.5px;color:var(--ink-faint);font-weight:600}
@@ -4488,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v297';
+const APP_VERSION = 'v298';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -24936,42 +24941,53 @@ function rptCoverage(haat, conv, P, today){
           applied: sum('applied'), visited: sum('visited'), waitingVisit: sum('waitingVisit'),
           districtsApplied: rows.filter(r => r.applied > 0).length};
 }
+/* v298 - who is in each tally, recorded by the same loop that counts, so a drill-down
+   list can never disagree with the figure it came from. */
+function _rptPush(bag, group, key, id){
+  if(!bag[group]) bag[group] = {};
+  (bag[group][key] || (bag[group][key] = [])).push(id);
+}
 function rptAnswers(haat, data, today){
   const hasCert = {}, soil = {}, fssai = {}, agency = {}, expiry = {}, manure = {}, crops = {}, years = {}, livestock = {}, sale = {}, irr = {};
-  const acres = [], renew = [];
+  const acres = [], renew = [], ids = {};
   let sheets = 0;
   haat.forEach(f => {
     const a = data && data[f.id];
     if(!a) return;
     sheets++;
-    _rptInc(hasCert, _rptYes(a.has_cert));
-    _rptInc(soil, _rptYes(a.have_you_done_soil_testing));
-    _rptInc(fssai, _rptYes(a.do_you_have_fassai_certificate));
+    _rptInc(hasCert, _rptYes(a.has_cert));        _rptPush(ids, 'hasCert', _rptYes(a.has_cert), f.id);
+    _rptInc(soil, _rptYes(a.have_you_done_soil_testing));   _rptPush(ids, 'soil', _rptYes(a.have_you_done_soil_testing), f.id);
+    _rptInc(fssai, _rptYes(a.do_you_have_fassai_certificate)); _rptPush(ids, 'fssai', _rptYes(a.do_you_have_fassai_certificate), f.id);
     const ag = _rptAgency(a.cert_agency);
-    if(ag) _rptInc(agency, ag);
+    if(ag){ _rptInc(agency, ag); _rptPush(ids, 'agency', ag, f.id); }
+    let _dated = false;
     if(_rptReal(a.cert_expiry)){
       const day = String(a.cert_expiry).slice(0, 10);
       if(/^\d{4}-\d{2}-\d{2}$/.test(day) && !isNaN(Date.parse(day))){
         const gap = Math.round((Date.parse(day) - Date.parse(today)) / 864e5);
-        _rptInc(expiry, gap < 0 ? 'expired' : gap <= 90 ? 'within 90 days' : 'later');
+        const _b = gap < 0 ? 'expired' : gap <= 90 ? 'within 90 days' : 'later';
+        _rptInc(expiry, _b); _rptPush(ids, 'expiry', _b, f.id); _dated = true;
         if(gap <= 90) renew.push({id:f.id, name:f.name || '', phone:f.phone || '', district:f.district || '', agency:ag || '', expiry:day, gap});
-      } else _rptInc(expiry, 'unreadable date');
+      } else { _rptInc(expiry, 'unreadable date'); _rptPush(ids, 'expiry', 'unreadable date', f.id); }
     }
-    _rptList(a.manure_methods).forEach(x => _rptInc(manure, _rptOpt(x)));
-    _rptList(a.major_crops_table).forEach(r => { if(r && _rptReal(r.item)) _rptInc(crops, _rptOpt(r.item)); });
+    /* certified but no usable date - the figure in the yellow callout */
+    if(_rptYes(a.has_cert) === 'yes' && !_dated) _rptPush(ids, 'noDate', 'yes', f.id);
+    _rptList(a.manure_methods).forEach(x => { _rptInc(manure, _rptOpt(x)); _rptPush(ids, 'manure', _rptOpt(x), f.id); });
+    _rptList(a.major_crops_table).forEach(r => { if(r && _rptReal(r.item)){ _rptInc(crops, _rptOpt(r.item)); _rptPush(ids, 'crops', _rptOpt(r.item), f.id); } });
     const yv = _rptNum(a.years_organic);
-    _rptInc(years, isNaN(yv) ? 'not answered' : yv < 3 ? 'under 3' : yv <= 5 ? '3 to 5' : yv <= 10 ? '6 to 10' : 'over 10');
+    const _yb = isNaN(yv) ? 'not answered' : yv < 3 ? 'under 3' : yv <= 5 ? '3 to 5' : yv <= 10 ? '6 to 10' : 'over 10';
+    _rptInc(years, _yb); _rptPush(ids, 'years', _yb, f.id);
     const av = _rptNum(a.organic_acres);
-    if(!isNaN(av) && av > 0 && av < 500) acres.push(av);
+    if(!isNaN(av) && av > 0 && av < 500){ acres.push(av); _rptPush(ids, 'acres', 'yes', f.id); }
     _rptList(a.livestock_counts).forEach(r => {
-      if(r && _rptReal(r.item)){ const c = Number(r.count || 0); if(!isNaN(c)) _rptInc(livestock, _rptOpt(r.item), Math.trunc(c)); }
+      if(r && _rptReal(r.item)){ const c = Number(r.count || 0); if(!isNaN(c)){ _rptInc(livestock, _rptOpt(r.item), Math.trunc(c)); if(Math.trunc(c) > 0) _rptPush(ids, 'livestock', _rptOpt(r.item), f.id); } }
     });
-    _rptList(a.sale_channels).forEach(x => _rptInc(sale, _rptOpt(x)));
-    _rptList(a.irrigation_methods).forEach(x => _rptInc(irr, _rptOpt(x)));
+    _rptList(a.sale_channels).forEach(x => { _rptInc(sale, _rptOpt(x)); _rptPush(ids, 'sale', _rptOpt(x), f.id); });
+    _rptList(a.irrigation_methods).forEach(x => { _rptInc(irr, _rptOpt(x)); _rptPush(ids, 'irrigation', _rptOpt(x), f.id); });
   });
   acres.sort((a, b) => a - b);
   renew.sort((a, b) => ((a.gap < 0) - (b.gap < 0)) || (a.gap < 0 ? b.gap - a.gap : a.gap - b.gap));
-  return {sheets, hasCert, soil, fssai, agency:_rptTop(agency), expiry, renew,
+  return {sheets, ids, hasCert, soil, fssai, agency:_rptTop(agency), expiry, renew,
           acresTotal: Math.round(acres.reduce((n, x) => n + x, 0)), acresMedian: acres.length ? acres[Math.floor(acres.length / 2)] : null,
           farmersWithAcres: acres.length, years, manure:_rptTop(manure, 8), crops:_rptTop(crops, 10), livestock:_rptTop(livestock, 6),
           sale:_rptTop(sale, 6), irrigation:_rptTop(irr, 5)};
@@ -25035,15 +25051,24 @@ function rptConvCoverage(conv, today){
 
 function _rptN(n){ return Number(n || 0).toLocaleString('en-IN'); }
 function _rptPct(a, b){ return b ? Math.round(a * 100 / b) : 0; }
+/* v298 - k[4], when given, is the drill key 'group|value': the card becomes a button that
+   opens the farmers behind the figure. */
 function _rptKpis(items){
-  return '<div class="rpt-kpis">' + items.map(k => '<div class="rpt-kpi"><small>' + k[0] + '</small><b style="color:' + (k[3] || 'var(--ink)') + '">' + k[1] + '</b><span>' + k[2] + '</span></div>').join('') + '</div>';
+  return '<div class="rpt-kpis">' + items.map(k => {
+    const d = k[4] ? ' data-drill="' + esc(k[4]) + '" class="rpt-kpi rpt-click" role="button" tabindex="0"' : ' class="rpt-kpi"';
+    return '<div' + d + '><small>' + k[0] + '</small><b style="color:' + (k[3] || 'var(--ink)') + '">' + k[1] + '</b><span>' + k[2] + (k[4] ? ' \u00b7 <span class="rpt-see">see farmers</span>' : '') + '</span></div>';
+  }).join('') + '</div>';
 }
-function _rptBars(rows, color, empty){
+/* v298 - `group` makes every bar clickable: the drill key is r[2] when the row carries
+   one (the label shown is not always the stored value), otherwise group|label. */
+function _rptBars(rows, color, empty, group){
   if(!rows.length) return '<div class="rpt-empty">' + (empty || 'Nothing to show for this selection.') + '</div>';
   const max = Math.max.apply(null, rows.map(r => r[1])) || 1;
   return '<div class="rpt-bars">' + rows.map(r => {
     const c = typeof color === 'function' ? color(r) : color;
-    return '<div class="rpt-b"><span class="lab" title="' + esc(r[0]) + '">' + esc(r[0]) + '</span><span class="rail"><i style="width:' + Math.max(2, Math.round(r[1] * 100 / max)) + '%;background:' + c + '"></i></span><span class="val">' + _rptN(r[1]) + '</span></div>';
+    const key = r[2] || (group ? group + '|' + r[0] : '');
+    const tag = key ? '<div class="rpt-b rpt-click" data-drill="' + esc(key) + '" role="button" tabindex="0">' : '<div class="rpt-b">';
+    return tag + '<span class="lab" title="' + esc(r[0]) + '">' + esc(r[0]) + '</span><span class="rail"><i style="width:' + Math.max(2, Math.round(r[1] * 100 / max)) + '%;background:' + c + '"></i></span><span class="val">' + _rptN(r[1]) + '</span></div>';
   }).join('') + '</div>';
 }
 function _rptCard(title, sub, body){ return '<div class="rpt-card"><div class="rpt-ch"><h3>' + title + '</h3>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + body + '</div>'; }
@@ -25110,6 +25135,63 @@ async function rptFetchAnswers(onProgress, online, readAll){
   } finally { _rptBusy = false; }
 }
 
+/* v298 - the farmers behind a figure. The ids come from the counting loop itself
+   (rptAnswers records them beside every tally), so this list is exactly the people who
+   made that number. Nothing is fetched: it reads the answers already loaded. */
+const _RPT_DRILL_LABEL = {
+  hasCert: 'Hold an organic certificate', noDate: 'Certified but gave no expiry date',
+  expiry: 'Certificate', soil: 'Soil test', fssai: 'FASSAI licence', agency: 'Certifying body',
+  manure: 'Manure and soil practice', crops: 'Crop', years: 'Years of natural farming',
+  livestock: 'Farmers keeping', sale: 'Sale channel', irrigation: 'Irrigation',
+  acres: 'Farmers with land under natural farming',
+};
+/* groups whose figure is a plain yes/no: the value adds nothing to the title. */
+const _RPT_DRILL_PLAIN = {hasCert:1, soil:1, fssai:1, noDate:1, acres:1};
+function _rptDrill(key){
+  const bits = String(key || '').split('|');
+  const group = bits[0], values = (bits[1] || '').split(',').filter(Boolean);
+  const today = todayISO();
+  const seeds = typeof _excludeSeeds === 'function' ? _excludeSeeds : (x => x);
+  const haatAll = seeds(DB.haatFarmers || []).filter(f => f && !f._archived);
+  const haat = rptFilter(haatAll, RPT, today, false);
+  const A = rptAnswers(haat, (_rptAnswers && _rptAnswers.data) || {}, today);
+  const bag = (A.ids && A.ids[group]) || {};
+  const wanted = values.length ? values : Object.keys(bag);
+  const seen = {}, rows = [];
+  wanted.forEach(v => (bag[v] || []).forEach(id => {
+    if(seen[id]) return;
+    seen[id] = 1;
+    const f = haat.find(x => x.id === id);
+    if(!f) return;
+    const fc = (DB.fcs || []).find(x => x && x.id === f.fcId);
+    rows.push({id: f.id, name: f.name || f.id, phone: f.phone || '', village: f.village || '',
+               district: districtDisplayName(f.district) || f.district || '', fc: fc ? fc.name : '', answer: v});
+  }));
+  rows.sort((a, b) => String(a.district).localeCompare(String(b.district)) || String(a.name).localeCompare(String(b.name)));
+  const _plain = _RPT_DRILL_PLAIN[group] && values.length === 1 && values[0] === 'yes';
+  const what = (_RPT_DRILL_LABEL[group] || group) + ((values.length && !_plain) ? ' \u00b7 ' + values.join(', ') : '');
+  const many = values.length > 1;
+  const body = rows.length
+    ? '<div class="rpt-scroll"><table class="rpt-t"><thead><tr><th>FARMER</th><th>PHONE</th><th>VILLAGE</th><th>DISTRICT</th><th>COORDINATOR</th>'
+      + (many ? '<th>ANSWER</th>' : '') + '</tr></thead><tbody>'
+      + rows.map(r => '<tr><td><button type="button" class="rpt-link" data-rid="' + esc(r.id) + '">' + esc(r.name) + '</button></td><td>'
+          + esc(r.phone) + '</td><td>' + esc(r.village) + '</td><td>' + esc(r.district) + '</td><td>' + esc(r.fc || '\u2014') + '</td>'
+          + (many ? '<td>' + esc(r.answer) + '</td>' : '') + '</tr>').join('')
+      + '</tbody></table></div>'
+    : '<div class="rpt-empty">No farmers in this selection. The report only knows the farmers whose application answers are on this computer.</div>';
+  modalShell(esc(what) + ' \u00b7 ' + _rptN(rows.length) + ' farmer' + (rows.length === 1 ? '' : 's'),
+    '<p class="rpt-lede" style="margin-bottom:12px">Tap a name to open the farmer. The list follows the filters above.</p>' + body,
+    (rows.length ? '<button class="btn btn-ghost" id="rptDrillCsv">' + svg(I.download, 2.2) + 'Download Excel</button>' : '')
+    + '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
+  const m = document.getElementById('modal');
+  m.querySelectorAll('[data-rid]').forEach(b => b.onclick = () => { closeModal(); openHaatRecord(b.dataset.rid); });
+  const dl = document.getElementById('rptDrillCsv');
+  if(dl) dl.onclick = () => {
+    const name = 'farmers-' + group + (values.length ? '-' + values.join('-') : '') + '-' + today + '.csv';
+    download(name, toCSV(rows.map(r => ({farmer: r.name, phone: r.phone, village: r.village, district: r.district, coordinator: r.fc, answer: r.answer, farmer_id: r.id}))));
+    toast('Downloaded: ' + name);
+  };
+}
 function viewReports(){
   const v = $('#view');
   if(!isAdminUser()){ v.innerHTML = '<div class="card" style="padding:18px 20px">Reports are available to admins.</div>'; return; }
@@ -25173,6 +25255,11 @@ function viewReports(){
   v.querySelectorAll('[data-rprog]').forEach(b => b.onclick = () => { if(RPT.prog !== b.dataset.rprog){ RPT.prog = b.dataset.rprog; RPT.tab = 'coverage'; viewReports(); } });
   v.querySelectorAll('[data-rf]').forEach(s => s.onchange = () => { RPT[s.dataset.rf] = s.value; viewReports(); });
   v.querySelectorAll('[data-rid]').forEach(b => b.onclick = () => openHaatRecord(b.dataset.rid));
+  /* v298 - every figure that carries a drill key opens the farmers behind it. */
+  v.querySelectorAll('[data-drill]').forEach(el => {
+    el.onclick = () => _rptDrill(el.dataset.drill);
+    el.onkeydown = ev => { if(ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); _rptDrill(el.dataset.drill); } };
+  });
   const csv = document.getElementById('rptCsv');
   if(csv) csv.onclick = () => {
     if(!_rptExport.rows.length){ toast('Nothing to download for this selection'); return; }
@@ -25264,17 +25351,17 @@ function _rptCertHtml(A){
   const dated = (ex.expired || 0) + (ex['within 90 days'] || 0) + (ex.later || 0);
   let h = '<p class="rpt-lede">What farmers told us about their organic certificate, soil test and FASSAI licence when they applied. Use it to chase renewals before a farmer loses eligibility, and to plan soil-test camps.</p>';
   h += _rptKpis([
-    ['Say they hold an organic certificate', _rptN(hc.yes || 0), _rptPct(hc.yes || 0, A.sheets) + '% of ' + _rptN(A.sheets) + ' answer sheets', 'var(--green)'],
-    ['Certificates already expired', _rptN(ex.expired || 0), 'of ' + _rptN(dated) + ' who gave a date', 'var(--red)'],
-    ['Expire within 90 days', _rptN(ex['within 90 days'] || 0), 'call before they lapse', '#d97706'],
-    ['Have done a soil test', _rptN(soil.yes || 0), _rptPct(soil.yes || 0, A.sheets) + '% of answer sheets', 'var(--blue)']
+    ['Say they hold an organic certificate', _rptN(hc.yes || 0), _rptPct(hc.yes || 0, A.sheets) + '% of ' + _rptN(A.sheets) + ' answer sheets', 'var(--green)', 'hasCert|yes'],
+    ['Certificates already expired', _rptN(ex.expired || 0), 'of ' + _rptN(dated) + ' who gave a date', 'var(--red)', 'expiry|expired'],
+    ['Expire within 90 days', _rptN(ex['within 90 days'] || 0), 'call before they lapse', '#d97706', 'expiry|within 90 days'],
+    ['Have done a soil test', _rptN(soil.yes || 0), _rptPct(soil.yes || 0, A.sheets) + '% of answer sheets', 'var(--blue)', 'soil|yes']
   ]);
   const noDate = (hc.yes || 0) - dated;
-  if(noDate > 0) h += '<div class="rpt-call"><b>' + _rptN(noDate) + ' farmers say they are certified but gave no expiry date,</b> so nobody can tell whether their certificate is still valid. Ask coordinators to note the date on the certificate during the visit.</div>';
+  if(noDate > 0) h += '<div class="rpt-call"><b>' + _rptN(noDate) + ' farmers say they are certified but gave no expiry date,</b> <button type="button" class="rpt-link" data-drill="noDate|yes">see farmers</button> so nobody can tell whether their certificate is still valid. Ask coordinators to note the date on the certificate during the visit.</div>';
   h += '<div class="rpt-g3">'
-    + _rptCard('Certificate expiry', 'of those who gave a date', _rptBars([['Expired', ex.expired || 0], ['Within 90 days', ex['within 90 days'] || 0], ['Later', ex.later || 0]].filter(r => r[1]), r => r[0] === 'Expired' ? '#dc2626' : r[0] === 'Later' ? 'var(--c-onboard)' : '#d97706', 'No expiry dates in this selection.'))
-    + _rptCard('Certifying body', 'names merged across spellings', _rptBars(A.agency, 'var(--accent)', 'No certifying body named in this selection.'))
-    + _rptCard('Soil test and FASSAI', 'of answer sheets', _rptBars([['Soil test: yes', soil.yes || 0], ['Soil test: no', soil.no || 0], ['FASSAI: yes', fs.yes || 0], ['FASSAI: no', fs.no || 0]].filter(r => r[1]), r => /yes/.test(r[0]) ? 'var(--c-onboard)' : '#d9ccd2'))
+    + _rptCard('Certificate expiry', 'of those who gave a date \u00b7 tap a bar for the farmers', _rptBars([['Expired', ex.expired || 0, 'expiry|expired'], ['Within 90 days', ex['within 90 days'] || 0, 'expiry|within 90 days'], ['Later', ex.later || 0, 'expiry|later']].filter(r => r[1]), r => r[0] === 'Expired' ? '#dc2626' : r[0] === 'Later' ? 'var(--c-onboard)' : '#d97706', 'No expiry dates in this selection.'))
+    + _rptCard('Certifying body', 'names merged across spellings \u00b7 tap a bar for the farmers', _rptBars(A.agency, 'var(--accent)', 'No certifying body named in this selection.', 'agency'))
+    + _rptCard('Soil test and FASSAI', 'of answer sheets \u00b7 tap a bar for the farmers', _rptBars([['Soil test: yes', soil.yes || 0, 'soil|yes'], ['Soil test: no', soil.no || 0, 'soil|no'], ['FASSAI: yes', fs.yes || 0, 'fssai|yes'], ['FASSAI: no', fs.no || 0, 'fssai|no']].filter(r => r[1]), r => /yes/.test(r[0]) ? 'var(--c-onboard)' : '#d9ccd2'))
     + '</div>';
   const rows = A.renew.map(r => '<tr><td><button type="button" class="rpt-link" data-rid="' + esc(r.id) + '">' + esc(r.name || r.id) + '</button></td><td>' + esc(r.phone) + '</td><td>' + esc(_rptOpt(r.district)) + '</td><td>' + esc(r.agency || '\u2014') + '</td><td>' + esc(fmtDate(r.expiry)) + '</td><td>'
     + (r.gap < 0 ? '<span class="rpt-chip red">Expired</span>' : r.gap <= 30 ? '<span class="rpt-chip amber">Call this week</span>' : '<span class="rpt-chip amber">Remind</span>') + '</td></tr>').join('');
@@ -25292,18 +25379,18 @@ function _rptProfileHtml(A){
                 '\u0aac\u0a95\u0ab0\u0abe\u0a82':'Goats', '\u0ab6\u0a82\u0a95\u0ab0 \u0a97\u0abe\u0aaf':'Crossbred cow', '\u0a98\u0ac7\u0a9f\u0abe\u0a82':'Sheep'};
   let h = '<p class="rpt-lede">The farms behind the programme, from applicants\u2019 answer sheets: land, experience, practices, crops, animals and where they sell. Ready-made figures for donors, reports and haat planning.</p>';
   h += _rptKpis([
-    ['Acres under natural farming', _rptN(A.acresTotal), 'across ' + _rptN(A.farmersWithAcres) + ' farmers', 'var(--green)'],
+    ['Acres under natural farming', _rptN(A.acresTotal), 'across ' + _rptN(A.farmersWithAcres) + ' farmers', 'var(--green)', 'acres|yes'],
     ['Typical farm', A.acresMedian == null ? '\u2014' : A.acresMedian + ' acres', 'half the farms are smaller'],
-    ['Farming naturally 6+ years', _rptN(six), _rptPct(six, A.sheets) + '% of answer sheets'],
-    ['Use jeevamrut', _rptN(jeev), _rptPct(jeev, A.sheets) + '% of answer sheets', 'var(--accent)']
+    ['Farming naturally 6+ years', _rptN(six), _rptPct(six, A.sheets) + '% of answer sheets', null, 'years|6 to 10,over 10'],
+    ['Use jeevamrut', _rptN(jeev), _rptPct(jeev, A.sheets) + '% of answer sheets', 'var(--accent)', (A.manure.filter(r => /jeevamrut/i.test(r[0]))[0] ? 'manure|' + A.manure.filter(r => /jeevamrut/i.test(r[0]))[0][0] : '')]
   ]);
   h += '<div class="rpt-g3">'
-    + _rptCard('Manure and soil practices', 'farmers using each', _rptBars(A.manure, 'var(--accent)'))
-    + _rptCard('Major crops', 'farmers growing each', _rptBars(A.crops, 'var(--c-onboard)'))
-    + _rptCard('Years of natural farming', 'farmers', _rptBars(['under 3','3 to 5','6 to 10','over 10','not answered'].map(k => [k.charAt(0).toUpperCase() + k.slice(1), y[k] || 0]).filter(r => r[1]), r => r[0] === 'Not answered' ? '#d9ccd2' : 'var(--accent)'))
-    + _rptCard('Animals', 'total head counted', _rptBars(A.livestock.map(r => [(LIVE[r[0]] ? LIVE[r[0]] + ' \u00b7 ' : '') + r[0], r[1]]), 'var(--accent)'))
-    + _rptCard('Where they sold last year', 'farmers using each channel', _rptBars(A.sale, r => /khedut haat/i.test(r[0]) ? 'var(--accent)' : '#b99bab'))
-    + _rptCard('Irrigation', 'farmers using each', _rptBars(A.irrigation, 'var(--c-visit)'))
+    + _rptCard('Manure and soil practices', 'farmers using each \u00b7 tap for the farmers', _rptBars(A.manure, 'var(--accent)', null, 'manure'))
+    + _rptCard('Major crops', 'farmers growing each \u00b7 tap for the farmers', _rptBars(A.crops, 'var(--c-onboard)', null, 'crops'))
+    + _rptCard('Years of natural farming', 'farmers \u00b7 tap for the farmers', _rptBars(['under 3','3 to 5','6 to 10','over 10','not answered'].map(k => [k.charAt(0).toUpperCase() + k.slice(1), y[k] || 0, 'years|' + k]).filter(r => r[1]), r => r[0] === 'Not answered' ? '#d9ccd2' : 'var(--accent)'))
+    + _rptCard('Animals', 'total head counted \u00b7 tap for the farmers who keep them', _rptBars(A.livestock.map(r => [(LIVE[r[0]] ? LIVE[r[0]] + ' \u00b7 ' : '') + r[0], r[1], 'livestock|' + r[0]]), 'var(--accent)'))
+    + _rptCard('Where they sold last year', 'farmers using each channel \u00b7 tap for the farmers', _rptBars(A.sale, r => /khedut haat/i.test(r[0]) ? 'var(--accent)' : '#b99bab', null, 'sale'))
+    + _rptCard('Irrigation', 'farmers using each \u00b7 tap for the farmers', _rptBars(A.irrigation, 'var(--c-visit)', null, 'irrigation'))
     + '</div>';
   const sec = (name, list) => list.map(r => ({section:name, item:r[0], farmers_or_count:r[1]}));
   _rptExport.rows = [{section:'Summary', item:'Acres under natural farming', farmers_or_count:A.acresTotal},

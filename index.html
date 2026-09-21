@@ -4493,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v300';
+const APP_VERSION = 'v301';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12766,7 +12766,8 @@ function cumulativeData(){
      is that migration placeholders are excluded here too, as they always were
      in the coordinator counts. */
   /* v297 - only completed visits are in countedHaatVisits now, so nothing here can be
-     dated in the future. What was left out is reported under the charts. */
+     dated in the future. Visits dated after today are simply not counted (v300 removed
+     the line that used to name them under the charts). */
   const _tYM = todayISO().slice(0,7);
   countedHaatVisits().forEach(x => bump(newVisits, x.v.date.slice(0,7)));
   farmers.forEach(f=>{
@@ -13208,7 +13209,10 @@ function _fcOwnVisits(f){
   const me=currentFcId();
   if(!me) return [];
   const arr=(f&&Array.isArray(f.visits))?f.visits:[];
-  return arr.filter(v=>v && !isImportedVisit(v)
+  /* v301 - an entry replaced later the same day (v246 `_superseded`) is not a second piece
+     of work: every count skips it, and so must this list, or one farmer shows as two cards.
+     It stays on the record and in the farmer's visit history. */
+  return arr.filter(v=>v && !isImportedVisit(v) && !v._superseded
     && (v.recordedById ? v.recordedById===me : v.fc===me))
     .slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
 }

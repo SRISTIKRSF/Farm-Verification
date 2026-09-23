@@ -3,14 +3,18 @@
     ".read": "auth != null",
     ".write": "auth != null",
     "prakrutik_kheti": {
-      "haatFarmers": { ".indexOn": ["district", "fcId"] },
-      "convFarmers": { ".indexOn": ["district", "fcId"] },
+      "haatFarmers": { ".indexOn": ["district", "fcId", "_u"] },
+      "convFarmers": { ".indexOn": ["district", "fcId", "_u"] },
 
       "phoneIndex": {
         "$phone": {
           ".validate": "!data.exists() && newData.isString() && newData.val().length <= 64"
         }
       }
+    },
+    "prakrutik_kheti_staging": {
+      "haatFarmers": { ".indexOn": ["district", "fcId", "_u"] },
+      "convFarmers": { ".indexOn": ["district", "fcId", "_u"] }
     }
   }
 }

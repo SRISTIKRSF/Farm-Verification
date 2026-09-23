@@ -1270,6 +1270,139 @@ body.fc-mode .modal{max-height:calc(90vh - 62px)}
 .crop-del-btn:hover{background:#fee2e2;border-color:#fca5a5}
 .crop-del-btn svg{width:13px;height:13px;flex-shrink:0}
 </style>
+<!-- v304 - DOWNLOAD METER. Counts what the Firebase connection receives on this device.
+     Makes no request of its own and changes nothing the app sends or receives. Must stay ABOVE
+     the Firebase SDK: the SDK captures window.WebSocket when it loads. -->
+<script>
+(function(){
+  var M = window.__fvMeter = { t0: Date.now(), total: 0, boot: 0, frames: 0, byKey: {}, byRoute: {}, big: [], rest: 0, dayKey: 'fv_bytes_v1' };
+  var BOOT_MS = 60000, enc = null;
+  try{ enc = new TextEncoder(); }catch(e){}
+  function bytesOf(d){
+    try{
+      if(typeof d === 'string') return enc ? enc.encode(d).length : d.length;
+      if(d && typeof d.byteLength === 'number') return d.byteLength;
+      if(d && typeof d.size === 'number') return d.size;
+    }catch(e){}
+    return 0;
+  }
+  function bucketOf(path){
+    if(!path) return 'other';
+    var p = String(path).replace(/^\/+/, '').split('/');
+    if(/^prakrutik_kheti/.test(p[0])) p.shift();       /* live or staging namespace */
+    return p[0] || '(root)';
+  }
+  function detailOf(path){
+    var p = String(path || '').replace(/^\/+/, '').split('/');
+    if(/^prakrutik_kheti/.test(p[0])) p.shift();
+    return p.slice(0, 2).join('/') || '(root)';
+  }
+  function routeNow(){ try{ return (typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) ? 'public page' : (typeof ROUTE !== 'undefined' && ROUTE ? String(ROUTE) : 'starting'); }catch(e){ return 'starting'; } }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  var _day = null, _dirty = false;
+  function day(){
+    if(!_day){
+      try{ _day = JSON.parse(localStorage.getItem(M.dayKey) || '{}') || {}; }catch(e){ _day = {}; }
+      var k = today(); _day[k] = _day[k] || { total: 0, opens: 0, byKey: {} }; _day[k].opens++; _dirty = true;
+    }
+    return _day;
+  }
+  function saveDay(){
+    if(!_dirty || !_day) return; _dirty = false;
+    try{
+      var keys = Object.keys(_day).sort(); while(keys.length > 14) delete _day[keys.shift()];
+      localStorage.setItem(M.dayKey, JSON.stringify(_day));
+    }catch(e){}
+  }
+  setInterval(saveDay, 15000);
+  try{ addEventListener('pagehide', saveDay); addEventListener('visibilitychange', function(){ if(document.hidden) saveDay(); }); }catch(e){}
+  function add(n, path){
+    if(!n) return;
+    var key = bucketOf(path), r = routeNow();
+    M.total += n;
+    if(Date.now() - M.t0 < BOOT_MS) M.boot += n;
+    M.byKey[key] = (M.byKey[key] || 0) + n;
+    M.byRoute[r] = (M.byRoute[r] || 0) + n;
+    var D = day(), k = today(); if(!D[k]) D[k] = { total: 0, opens: 0, byKey: {} };
+    D[k].total += n; D[k].byKey[key] = (D[k].byKey[key] || 0) + n; _dirty = true;
+  }
+  function noteBig(n, path){
+    if(n < 50000) return;
+    M.big.push({ bytes: n, what: detailOf(path), at: Date.now() - M.t0, route: routeNow() });
+    M.big.sort(function(a, b){ return b.bytes - a.bytes; }); if(M.big.length > 12) M.big.length = 12;
+  }
+  /* ---- the WebSocket the Firebase SDK uses ---- */
+  function attach(ws){
+    var reqPath = {}, left = 0, msgPath = null, msgBytes = 0;
+    var _send = ws.send;
+    ws.send = function(d){
+      try{
+        if(typeof d === 'string' && d.length < 4000){
+          var r = /"r":(\d+)/.exec(d), p = /"p":"([^"]*)"/.exec(d);
+          if(r && p) reqPath[r[1]] = p[1];
+        }
+      }catch(e){}
+      return _send.apply(this, arguments);
+    };
+    ws.addEventListener('message', function(ev){
+      try{
+        var d = ev.data, n = bytesOf(d);
+        M.frames++;
+        if(left === 0 && typeof d === 'string' && d.length <= 6 && /^\d+$/.test(d)){
+          left = parseInt(d, 10); msgPath = null; msgBytes = 0; add(n, null); return;   /* "N frames follow" */
+        }
+        var head = typeof d === 'string' ? d.slice(0, 600) : '';
+        if(left > 0 && msgPath === null){
+          var pm = /"p":"([^"]*)"/.exec(head), rm = /"r":(\d+)/.exec(head);
+          msgPath = pm ? pm[1] : (rm && reqPath[rm[1]]) || '';
+        }
+        if(left > 0){
+          add(n, msgPath); msgBytes += n;
+          if(--left === 0){ noteBig(msgBytes, msgPath); msgPath = null; msgBytes = 0; }
+          return;
+        }
+        var pm2 = /"p":"([^"]*)"/.exec(head), rm2 = /"r":(\d+)/.exec(head);
+        var path = pm2 ? pm2[1] : (rm2 && reqPath[rm2[1]]) || null;
+        add(n, path); noteBig(n, path);
+        if(rm2 && reqPath[rm2[1]] && !pm2) delete reqPath[rm2[1]];
+      }catch(e){}
+    });
+  }
+  try{
+    var Native = window.WebSocket;
+    if(Native){
+      var Wrapped = function(url, protocols){
+        var ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+        try{ if(/firebasedatabase\.app|firebaseio\.com/.test(String(url))) attach(ws); }catch(e){}
+        return ws;
+      };
+      Wrapped.prototype = Native.prototype;
+      ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function(k){ try{ Wrapped[k] = Native[k]; }catch(e){} });
+      window.WebSocket = Wrapped;
+    }
+  }catch(e){}
+  /* ---- the app's few direct REST reads (fetch) to the database ---- */
+  try{
+    var _fetch = window.fetch;
+    if(_fetch){
+      window.fetch = function(input){
+        var p = _fetch.apply(window, arguments);
+        try{
+          var url = typeof input === 'string' ? input : ((input && input.url) || String(input || ''));
+          if(/firebasedatabase\.app|firebaseio\.com/.test(url)){
+            var path = url.replace(/^https?:\/\/[^\/]+/, '').replace(/\.json.*$/, '');
+            p.then(function(res){
+              try{ res.clone().text().then(function(t){ var n = bytesOf(t); M.rest += n; add(n, path); noteBig(n, path); }).catch(function(){}); }catch(e){}
+            }).catch(function(){});
+          }
+        }catch(e){}
+        return p;
+      };
+    }
+  }catch(e){}
+  M.days = function(){ try{ saveDay(); return JSON.parse(localStorage.getItem(M.dayKey) || '{}'); }catch(e){ return {}; } };
+})();
+</script>
 <!-- Firebase SDK (Realtime Database) — loaded before the app script -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -4493,7 +4626,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v303';
+const APP_VERSION = 'v305';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4555,9 +4688,173 @@ function _readOnlyRef(ref, path){
   shadow.child = function(p){ return _readOnlyRef(ref.child(p), (path || '') + '/' + p); };
   return shadow;
 }
+/* ===================== v305 - THE CHANGE-MARKER =====================
+   Every write that touches a farmer record also stamps `_u` with the SERVER's time, so a
+   device can later ask "which farmers changed since I last looked?" instead of downloading
+   them all. Done here because every write in the file comes through fbRef(). Reads are the
+   real reference, untouched (the same Object.create shadow the viewer guard has used since
+   v265). A write that removes a whole farmer leaves a tombstone instead, so other devices
+   learn about the deletion without a full download. */
+const _DELTA_COLS = ['haatFarmers','convFarmers'];
+const _TOMB_NODE = 'syncTombstones';
+function _svTime(){ return firebase.database.ServerValue.TIMESTAMP; }
+/* v305d - is this farmer known to exist? (the saved server copy or the live snapshot) */
+function _recKnown(col, id){
+  try{
+    const st = (typeof _baseState !== 'undefined' && _baseState) ? _baseState[col] : null;
+    if(st && st.recs && st.recs[id] !== undefined) return true;
+    const m = (typeof _liveSnapshot !== 'undefined' && _liveSnapshot) ? _liveSnapshot[col] : null;
+    if(m && m[id]) return true;
+    /* v305e - and the farmers this device holds (a start-up write comes before any snapshot) */
+    return !!(typeof DB !== 'undefined' && DB && Array.isArray(DB[col]) && DB[col].some(r => r && r.id === id));
+  }catch(e){ return true; }
+}
+/* v305g - Firebase stores null, [] and {} all as "nothing" */
+function _isEmptyVal(v){
+  return v === null || v === undefined || (Array.isArray(v) && v.length === 0) ||
+         (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+}
+/* v305g - does this path hold something in the known copy of the farmer? */
+function _pathHasContent(col, id, rest){
+  /* v305h - ONLY frozen JSON text: the saved server copy, then the saveDB baseline. In-memory
+     records are useless here - for a farmer not yet stamped, DB and the live snapshot are the
+     SAME object, so an in-place `delete f._archived` erases the evidence before this runs.
+     Not known at all -> say yes: an extra stamp costs a few bytes, a missing one hides a change. */
+  try{
+    let rec = null;
+    const st = (typeof _baseState !== 'undefined' && _baseState) ? _baseState[col] : null;
+    if(st && st.recs && st.recs[id] !== undefined) rec = JSON.parse(st.recs[id]);
+    if(!rec && typeof _lastSnap !== 'undefined' && _lastSnap && _lastSnap[col] && _lastSnap[col][id] !== undefined) rec = JSON.parse(_lastSnap[col][id]);
+    if(!rec){
+      /* v305n - no frozen copy: stamp only if the server is known to HAVE this farmer (the live
+         snapshot's existence, which in-place edits cannot erase). A farmer the server does not
+         have - the app's local demo records - must not get a `{_u}` record from a removal. */
+      const m = (typeof _liveSnapshot !== 'undefined' && _liveSnapshot) ? _liveSnapshot[col] : null;
+      return !!(m && m[id]);
+    }
+    let v = rec;
+    for(let i = 0; i < rest.length; i++){ if(v === null || typeof v !== 'object') return false; v = v[rest[i]]; }
+    return !_isEmptyVal(v);
+  }catch(e){ return true; }
+}
+function _stampUpdates(u){
+  const out = Object.assign({}, u);
+  const has = k => Object.prototype.hasOwnProperty.call(out, k);
+  /* v305d/g - which records does this write really change? Content put in, or content that
+     is actually there taken out. A write that removes what is not there changes nothing. */
+  const puts = {};
+  Object.keys(u).forEach(function(k){
+    const sg = String(k).split('/').filter(Boolean);
+    if(sg.length < 3 || _DELTA_COLS.indexOf(sg[0]) < 0) return;
+    const rk = sg[0] + '/' + sg[1];
+    if(puts[rk]) return;
+    if(!_isEmptyVal(u[k]) || _pathHasContent(sg[0], sg[1], sg.slice(2))) puts[rk] = 1;
+  });
+  Object.keys(u).forEach(function(k){
+    const segs = String(k).split('/').filter(Boolean);
+    if(!segs.length || _DELTA_COLS.indexOf(segs[0]) < 0) return;
+    const col = segs[0];
+    if(segs.length === 1){
+      /* a whole collection (a restore): stamp every record in it */
+      const v = u[k];
+      if(v && typeof v === 'object'){
+        const c = {};
+        Object.keys(v).forEach(function(id){ const r = v[id]; c[id] = (r && typeof r === 'object') ? Object.assign({}, r, {_u: _svTime()}) : r; });
+        out[k] = c;
+      }
+      return;
+    }
+    if(has(col)) return;                                   /* an ancestor key covers it */
+    const id = segs[1], rk = col + '/' + id;
+    if(segs.length === 2){
+      const v = u[k];
+      if(v === null) out[_TOMB_NODE + '/' + col + '/' + id] = _svTime();
+      else if(v && typeof v === 'object') out[k] = Object.assign({}, v, {_u: _svTime()});
+      return;
+    }
+    if(has(rk)) return;                                    /* the record itself is in this write */
+    /* v305d/g - nothing really changes (only removing what is not there, or re-sending an
+       empty list): no stamp - and no `{_u}` record for a farmer that does not exist */
+    if(!puts[rk]) return;
+    out[rk + '/_u'] = _svTime();                           /* also overrides any `_u` in the write */
+  });
+  return out;
+}
+/* v305i - the visit guard, where EVERY write passes. A write that sends a farmer's visit list,
+   on a computer in changes-only mode for that list, first reads the farmer from the server and
+   adds any visit this computer never knew (an older app's visit carries no change-marker, so a
+   changes-only computer may not have been sent it). saveDB marks its own write as checked. */
+const _deltaGuardedWrites = new WeakSet();
+function _visitTargets(o){
+  const t = {};
+  Object.keys(o).forEach(function(k){
+    const m = /^(haatFarmers|convFarmers)\/([^\/]+)(\/visits)?$/.exec(String(k).replace(/^\/+/, ''));
+    if(!m) return;
+    const v = o[k];
+    if(m[3] ? !_isEmptyVal(v) : !!(v && typeof v === 'object' && !_isEmptyVal(v.visits))) t[m[1] + '/' + m[2]] = [m[1], m[2], k, !!m[3]];
+  });
+  return Object.keys(t).map(function(k){ return t[k]; }).filter(function(x){
+    const st = (typeof _baseState !== 'undefined' && _baseState) ? _baseState[x[0]] : null;
+    return !!(st && st.mode === 'delta' && st.ready && st.recs[x[1]] !== undefined);   /* v305j - farmers it knows */
+  }).slice(0, 25);
+}
+function _guardDirectVisits(o, targets){
+  return Promise.all(targets.map(function(x){
+    const c = x[0], i = x[1], k = x[2], isList = x[3];
+    let late = false;
+    return Promise.race([
+      FB.db.ref(FB_NAMESPACE + '/' + c + '/' + i).get().then(function(s1){
+        if(late || !s1.exists()) return;
+        const st = _baseState[c], srv = s1.val();
+        /* v305k - not being written and never on this screen */
+        const unseen = _unseenVisits(c, i, srv.visits, isList ? o[k] : (o[k] && o[k].visits));
+        if(st){ _baseNoteRecord(st, i, srv); st.dirty = true; }
+        if(!unseen.length) return;
+        const put = function(list){ return _mergeUnseenVisits(list, unseen, _seenVisitFull[c + '/' + i]); };   /* v305j/l/m */
+        if(isList) o[k] = put(_deltaVisitsOf(o[k]));
+        else o[k] = Object.assign({}, o[k], {visits: put(_deltaVisitsOf(o[k].visits))});
+        try{ const rec = (DB[c] || []).find(function(r){ return r && r.id === i; }); if(rec) rec.visits = put(_deltaVisitsOf(rec.visits)); }catch(e){}
+        console.warn('[Sristi] ' + c + '/' + i + ': ' + unseen.length + ' farm visit version(s) this computer had not been sent were merged into the write');
+      }),
+      new Promise(function(r){ setTimeout(function(){ late = true; r(); }, 3000); })
+    ]).catch(function(){});
+  }));
+}
+/* write o (namespace-relative paths) through the guard, then stamped */
+function _guardedRootUpdate(rootRef, o){
+  const t = _deltaGuardedWrites.has(o) ? [] : _visitTargets(o);
+  if(!t.length) return rootRef.update(_stampUpdates(o));
+  return _guardDirectVisits(o, t).then(function(){ return rootRef.update(_stampUpdates(o)); });
+}
+function _stampingRef(ref, path){
+  const P = String(path || '').replace(/^\/+/, '');
+  const segs = P.split('/').filter(Boolean);
+  const inDelta = segs.length > 0 && _DELTA_COLS.indexOf(segs[0]) >= 0;
+  const root = () => FB.db.ref(FB_NAMESPACE);
+  const shadow = Object.create(ref);
+  shadow.set = function(v){
+    if(!inDelta || v === undefined) return ref.set.apply(ref, arguments);
+    const o = {}; o[P] = v; return _guardedRootUpdate(root(), o);   /* v305i */
+  };
+  shadow.update = function(obj){
+    if(!obj || typeof obj !== 'object' || !Object.keys(obj).length) return ref.update.apply(ref, arguments);
+    if(!P) return _guardedRootUpdate(ref, obj);                     /* v305i */
+    if(!inDelta) return ref.update.apply(ref, arguments);
+    const o = {}; Object.keys(obj).forEach(function(k){ o[P + '/' + String(k).replace(/^\/+/, '')] = obj[k]; });
+    return _guardedRootUpdate(root(), o);                            /* v305i */
+  };
+  shadow.remove = function(){
+    if(!inDelta || segs.length < 2) return ref.remove.apply(ref, arguments);
+    const o = {}; o[P] = null; return root().update(_stampUpdates(o));
+  };
+  shadow.child = function(p){ return _stampingRef(ref.child(p), P ? P + '/' + p : p); };
+  return shadow;
+}
 function fbRef(path){
   const ref = FB.db.ref(FB_NAMESPACE+(path?'/'+path:''));
   if(typeof isViewerUser === 'function' && isViewerUser()) return _readOnlyRef(ref, path);
+  /* v305 - only refs that can reach a farmer record get the stamping shadow */
+  if(!path || /^\/?(haatFarmers|convFarmers)(\/|$)/.test(path)) return _stampingRef(ref, path || '');
   return ref;
 }
 
@@ -4754,6 +5051,8 @@ async function loadDB(){
         console.warn('[AppCheck] not activated:', (e && e.message) || e);
       }
 
+      /* v305 - start reading the saved server copy now, alongside the sign-in */
+      try{ _basePreloadStart(); }catch(e){}
       // Anonymous auth gates RTDB. SDK caches token in localStorage so
       // offline visits after first load continue to work.
       try{ await firebase.auth().signInAnonymously(); }
@@ -5893,9 +6192,11 @@ function mapToArr(m){
 const FORM_FIELDS = ['enrollmentFormFull','verificationFormFull'];
 function _stripEphemeral(r){
   if(!r || typeof r !== 'object') return r;
-  if('_localTouchAt' in r || FORM_FIELDS.some(k => k in r)){
+  /* v305c - `_u` (the server's change-marker) too: it is the server's, it lives in the saved
+     server copy, and in a comparison it made every edited record look changed for ever */
+  if('_localTouchAt' in r || '_u' in r || FORM_FIELDS.some(k => k in r)){
     const c = Object.assign({}, r);
-    delete c._localTouchAt;
+    delete c._localTouchAt; delete c._u;
     FORM_FIELDS.forEach(k => { delete c[k]; });
     return c;
   }
@@ -5903,7 +6204,7 @@ function _stripEphemeral(r){
 }
 // JSON.stringify replacer matching _stripEphemeral — used wherever whole
 // collections are stringified (local cache, listener diff).
-function _stripReplacer(k, v){ return FORM_FIELDS.includes(k) ? undefined : v; }
+function _stripReplacer(k, v){ return (FORM_FIELDS.includes(k) || k === '_u') ? undefined : v; }   /* v305c - _u */
 function arrToMap(a){const m={};(a||[]).forEach(r=>{if(r&&r.id)m[r.id]=_stripEphemeral(r);});return m;}
 let _blobCleanupDone=false;
 /* v220 - the reference lists as the SERVER last reported them, so saveDB can
@@ -5977,6 +6278,7 @@ function _activityNoteFromServer(map){
     if(j !== undefined) _activitySeenFromServer[id] = j;
   });
 }
+function _notMarkerOnly(r){ return !(r && typeof r === 'object' && Object.keys(r).every(k => k === '_u' || k === 'id')); }
 function cloudToDB(c){
   _metaNoteFromServer(c && c.meta);
   _activityNoteFromServer(c && c.activity);   /* v222 */
@@ -6005,8 +6307,10 @@ function cloudToDB(c){
     }
   }
   return normaliseDB({
-    haatFarmers:mapToArr(c.haatFarmers).map(_stripEphemeral),
-    convFarmers:mapToArr(c.convFarmers).map(_stripEphemeral),
+    /* v305c - a record holding nothing but the change-marker (a field removed from a farmer
+       that had just been deleted elsewhere) would not have existed before v305: ignore it */
+    haatFarmers:mapToArr(c.haatFarmers).filter(_notMarkerOnly).map(_stripEphemeral),
+    convFarmers:mapToArr(c.convFarmers).filter(_notMarkerOnly).map(_stripEphemeral),
     fcs:mapToArr(c.fcs),
     fieldCoordinators:mapToArr(c.fieldCoordinators),
     haats:c.meta&&c.meta.haats, crops:c.meta&&c.meta.crops,
@@ -6481,6 +6785,550 @@ function _activeSyncKeys(){
    attached lets enterAdminMode() call this again to pick up only the
    collections it still needs, without double-subscribing the ones it has. */
 const _attachedKeys = new Set();
+
+/* ===================== v305 - DOWNLOAD ONLY WHAT CHANGED =====================
+   The saved server copy lives in its own IndexedDB database. It holds each farmer record
+   exactly as the server sent it, as JSON TEXT - never anything from DB (DB carries this
+   device's unsent edits; a baseline holding unsent work is the v272 work-loss bug). */
+const _BASE_FULL_EVERY_MS = 24 * 60 * 60 * 1000;   /* a full download at least once a day */
+const _BASE_MARGIN_MS     = 10 * 60 * 1000;        /* re-ask for the last 10 minutes */
+let _baseIdb = null, _baseIdbDead = false, _basePreload = null;
+const _baseState = {};   /* col -> {mode, recs:{id:json}, u:{id:time}, hw, at, ...} */
+function _baseOpen(){
+  return new Promise((resolve, reject) => {
+    if(_baseIdbDead){ reject(new Error('base idb unavailable')); return; }
+    if(_baseIdb){ resolve(_baseIdb); return; }
+    if(!window.indexedDB){ _baseIdbDead = true; reject(new Error('no idb')); return; }
+    let req, settled = false;
+    try{ req = indexedDB.open('sristi_fv_base_v1', 1); }catch(e){ _baseIdbDead = true; reject(e); return; }
+    req.onupgradeneeded = () => { const db = req.result; if(!db.objectStoreNames.contains('base')) db.createObjectStore('base', {keyPath:'key'}); };
+    req.onsuccess = () => { if(settled) return; settled = true; _baseIdb = req.result; resolve(_baseIdb); };
+    req.onerror   = () => { if(settled) return; settled = true; _baseIdbDead = true; reject(req.error); };
+    setTimeout(() => { if(settled) return; settled = true; _baseIdbDead = true; reject(new Error('base idb timeout')); }, 8000);
+  });
+}
+function _baseTx(mode, fn){
+  return _baseOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('base', mode);
+    const out = fn(tx.objectStore('base'));
+    tx.oncomplete = () => res(out && 'result' in out ? out.result : true);
+    tx.onerror    = () => rej(tx.error);
+    tx.onabort    = () => rej(tx.error || new Error('aborted'));
+  }));
+}
+function _baseKey(col){ return FB_NAMESPACE + '/' + col; }
+function _basePreloadStart(){
+  if(_basePreload) return _basePreload;
+  const one = col => Promise.race([
+    _baseTx('readonly', st => st.get(_baseKey(col))).then(r => r || null),
+    new Promise(r => setTimeout(() => r({__timedOut: true}), 1500))   /* v305c/e - then a full download that saves nothing */
+  ]).catch(() => null);
+  _basePreload = Promise.all(_DELTA_COLS.map(one)).then(a => { const o = {}; _DELTA_COLS.forEach((c, i) => { o[c] = a[i]; }); return o; });
+  return _basePreload;
+}
+function _baseClear(){
+  try{ return _baseTx('readwrite', st => { _DELTA_COLS.forEach(c => st.delete(_baseKey(c))); }).catch(() => {}); }catch(e){ return Promise.resolve(); }
+}
+function _baseSame(b){ return !!(b && b.v === 1 && b.ns === FB_NAMESPACE && b.recs && typeof b.recs === 'object'); }
+function _baseValid(b){
+  if(!_baseSame(b)) return false;
+  const age = Date.now() - (b.at || 0);
+  return age >= -60000 && age < _BASE_FULL_EVERY_MS && typeof b.hw === 'number';
+}
+/* v305b - changes-only mode opens only after this long without a single unstamped change */
+const _BASE_CLEAN_MS = 3 * 24 * 60 * 60 * 1000;
+function _baseGateMs(){
+  try{ const v = localStorage.getItem('fv_delta_gate_ms'); if(v !== null && v !== '' && !isNaN(+v)) return Math.max(0, +v); }catch(e){}
+  return _BASE_CLEAN_MS;
+}
+function _baseGateOpen(b){
+  return !!(b && typeof b.cleanSince === 'number' && (Date.now() - b.cleanSince) >= _baseGateMs());
+}
+function _deltaEligible(key){
+  if(_DELTA_COLS.indexOf(key) < 0) return false;
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) return false;
+  if(typeof isViewerUser === 'function' && isViewerUser()) return false;
+  if(!window.indexedDB) return false;
+  try{ if(localStorage.getItem('fv_delta_off') === '1') return false; }catch(e){}
+  return true;
+}
+let _basePersistTimer = null, _basePersistOff = false;
+/* v305e - the server's clock, so a wrong device clock cannot push the saved high-water mark
+   into the future (.info is local to the connection: nothing is downloaded) */
+let _svOffset = null;
+function _svOffsetWatch(){
+  try{ if(_svOffsetWatch.on || !FB || !FB.db) return; _svOffsetWatch.on = true;
+       FB.db.ref('.info/serverTimeOffset').on('value', s0 => { const v = s0.val(); if(typeof v === 'number') _svOffset = v; }); }catch(e){}
+}
+function _baseSafeHw(st){
+  const lim = (_svOffset !== null) ? Date.now() + _svOffset + 5 * 60 * 1000 : Infinity;
+  let hw = 0;
+  Object.keys(st.u || {}).forEach(id => { const u = st.u[id]; if(u > hw && u <= lim) hw = u; });
+  return hw;
+}
+function _basePersistSoon(){
+  if(_basePersistOff) return;
+  clearTimeout(_basePersistTimer);
+  _basePersistTimer = setTimeout(_basePersistNow, 4000);
+}
+/* v305c - merged with what is already stored: another tab on this computer may have found an
+   unstamped change since this one last looked, and that finding must never be overwritten. */
+function _baseMergeGate(st, ex){
+  if(!_baseSame(ex)) return;
+  const d = Math.max(st.dirtyAt || 0, ex.dirtyAt || 0) || null;
+  st.dirtyAt = d;
+  if(typeof st.cleanSince === 'number' && typeof ex.cleanSince === 'number') st.cleanSince = Math.max(st.cleanSince, ex.cleanSince);
+  if(d && typeof st.cleanSince === 'number' && d > st.cleanSince) st.cleanSince = null;
+}
+function _basePersistNow(){
+  _basePersistTimer = null;
+  if(_basePersistOff) return;
+  _DELTA_COLS.forEach(col => {
+    const st = _baseState[col];
+    if(!st || !st.ready || !st.dirty) return;
+    if(st.mode === 'full' && !st.compared) return;   /* v305c - not until it has been checked */
+    if(st.noPersist) return;                          /* v305e - the stored copy was never read */
+    st.dirty = false;
+    _baseOpen().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('base', 'readwrite');
+      const store = tx.objectStore('base');
+      const g = store.get(_baseKey(col));
+      g.onsuccess = () => {
+        try{ _baseMergeGate(st, g.result); }catch(e){}
+        store.put({key: _baseKey(col), v: 1, ns: FB_NAMESPACE, col: col, hw: _baseSafeHw(st), at: st.at, savedAt: Date.now(), recs: st.recs,
+                   cleanSince: (typeof st.cleanSince === 'number' ? st.cleanSince : null), dirtyAt: st.dirtyAt || null,
+                   vi: st.vi || null});   /* v305f */
+      };
+      tx.oncomplete = () => res(true);
+      tx.onerror    = () => rej(tx.error);
+      tx.onabort    = () => rej(tx.error || new Error('aborted'));
+    })).catch(e => { st.dirty = true; console.warn('[Sristi] saved server copy not written:', e); });
+  });
+}
+try{ addEventListener('pagehide', () => { if(_basePersistTimer) _basePersistNow(); }); }catch(e){}
+function _baseParseAll(recs){
+  /* v305d - in key order, as Firebase returns these ids, so ties sort the same as before */
+  const o = {};
+  Object.keys(recs).sort().forEach(id => { try{ o[id] = JSON.parse(recs[id]); }catch(e){} });
+  return o;
+}
+function _baseNoteRecord(st, id, rec){
+  st.recs[id] = JSON.stringify(rec);
+  const u = rec && typeof rec._u === 'number' ? rec._u : 0;
+  st.u[id] = u;
+  if(u > st.hw) st.hw = u;
+}
+function _baseApplyTombs(st){
+  const t = st.tomb || {};
+  Object.keys(t).forEach(id => {
+    if(st.recs[id] !== undefined && typeof t[id] === 'number' && t[id] > (st.u[id] || 0)){ delete st.recs[id]; delete st.u[id]; }
+  });
+}
+/* hand the pipeline the full map, exactly as the whole-list listener would */
+function _basePublish(key, st){
+  if(!st || _baseState[key] !== st) return;
+  if(!st.mainSeen || (st.mode === 'delta' && !st.tombSeen)) return;
+  st.ready = true; st.dirty = true; _basePersistSoon();
+  try{ _noteSeenVisits(); }catch(e){}   /* v305k - what is on screen before this refresh */
+  _liveSnapshot[key] = _baseParseAll(st.recs);
+  _liveSnapshotSeen.add(key);
+  if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
+  _processLiveSnapshot();
+}
+/* v305b/c - did anything change a farmer WITHOUT the marker? (an older app version, a hand
+   edit in the console). Checked on every full download; any such change keeps this computer
+   on full downloads until 3 clean days have passed. */
+function _baseMarkDirty(key, st, list){
+  st.cleanSince = null; st.dirtyAt = Date.now();
+  console.warn('[Sristi] ' + key + ': ' + list.length + ' farmer(s) changed without the change-marker (an older app version, or a hand edit) - staying on full downloads:', list.slice(0, 10));
+  st.dirty = true; _basePersistSoon();
+  /* v305d - a changes-only session goes back to full downloads at once, not at the next tick */
+  if(_baseState[key] === st && st.mode === 'delta') setTimeout(_baseTick, 0);
+}
+function _baseCheckUnstamped(key, st){
+  if(_baseState[key] !== st) return;
+  if(!st.mainSeen || !st.tombSeen || !st.cmp) return;
+  const old = st.cmp, tomb = st.tomb || {};
+  const bad = [], gone = [];
+  Object.keys(old.recs).forEach(id => {
+    const was = old.recs[id], now = st.recs[id], wasU = old.u[id] || 0;
+    if(now === undefined){
+      if(!(typeof tomb[id] === 'number' && tomb[id] > wasU)) gone.push([id, wasU]);
+    } else if(now !== was && (st.u[id] || 0) === wasU){
+      bad.push(id);
+    }
+  });
+  /* v305c - a farmer that APPEARED without the marker was created by something that does not stamp */
+  Object.keys(st.recs).forEach(id => { if(old.recs[id] === undefined && !((st.u[id] || 0) > 0)) bad.push(id + ' (new)'); });
+  if(bad.length) _baseMarkDirty(key, st, bad);
+  else if(!st.compared){
+    /* the clean window starts after the last unstamped change seen, never before it */
+    st.cleanSince = (typeof old.cleanSince === 'number') ? old.cleanSince : (Math.max(old.at || 0, old.dirtyAt || 0) || null);
+  }
+  /* v305c - a deletion writes the record and its tombstone in one update, but the two
+     listeners can report in either order: look again once the tombstones have caught up. */
+  if(gone.length){
+    setTimeout(() => {
+      if(_baseState[key] !== st) return;
+      const t = st.tomb || {};
+      const still = gone.filter(([id, wasU]) => st.recs[id] === undefined && !(typeof t[id] === 'number' && t[id] > wasU));
+      if(still.length) _baseMarkDirty(key, st, still.map(x => x[0] + ' (removed)'));
+    }, 5000);
+  }
+  st.cmp = {recs: st.recs, u: st.u, cleanSince: st.cleanSince, at: st.at, dirtyAt: st.dirtyAt};
+  st.compared = true;
+  st.dirty = true; _basePersistSoon();
+  if(!bad.length && !gone.length) setTimeout(() => _baseMaybeDelta(key, st), 0);
+}
+/* v305f - verifIndex/<id> is written by EVERY app version when a verification is submitted */
+function _baseViNote(st, snap){
+  const vi = (snap && snap.exists()) ? (snap.val() || {}) : {};
+  const out = {};
+  Object.keys(vi).forEach(id => { out[id] = JSON.stringify(vi[id]); });
+  return out;
+}
+function _attachFullKey(key, prev){
+  /* the whole list, exactly as before v305 - and it refreshes the saved copy */
+  _svOffsetWatch();
+  const st = _baseState[key] = {mode:'full', recs:{}, u:{}, hw:0, at:Date.now(), mainSeen:false, tombSeen:false, tomb:{}, ready:false, dirty:false,
+                                cleanSince: null, dirtyAt: null, cmp: null, compared: false, off: null};
+  if(_baseSame(prev)){
+    const pu = {};
+    Object.keys(prev.recs).forEach(id => { try{ const r = JSON.parse(prev.recs[id]); pu[id] = r && typeof r._u === 'number' ? r._u : 0; }catch(e){ pu[id] = 0; } });
+    st.cmp = {recs: prev.recs, u: pu, cleanSince: (typeof prev.cleanSince === 'number' ? prev.cleanSince : null), at: prev.at || null, dirtyAt: prev.dirtyAt || null};
+  }
+  const tombRef = fbRef(_TOMB_NODE + '/' + key), mainRef = fbRef(key);
+  const onTomb = snap => {
+    if(_baseState[key] !== st) return;
+    st.tomb = snap.exists() ? (snap.val() || {}) : {};
+    st.tombSeen = true;
+    _baseTombPrune(key, st.tomb);
+    _baseCheckUnstamped(key, st);
+  };
+  const onTombErr = () => { if(_baseState[key] !== st) return; st.tomb = {}; st.tombSeen = true; _baseCheckUnstamped(key, st); };
+  const onMain = snap => {
+    if(_baseState[key] !== st) return;
+    const val = snap.exists() ? snap.val() : null;
+    try{
+      const recs = {}, u = {}; let hw = 0;
+      Object.keys(val || {}).forEach(id => {
+        const r = val[id]; recs[id] = JSON.stringify(r);
+        const t = r && typeof r._u === 'number' ? r._u : 0; u[id] = t; if(t > hw) hw = t;
+      });
+      st.recs = recs; st.u = u; st.hw = hw; st.mainSeen = true; st.ready = true; st.dirty = true;
+      if(!st.cmp){
+        /* nothing to compare with: the clean window starts with this copy */
+        st.cmp = {recs: recs, u: u, cleanSince: null, at: st.at, dirtyAt: null};
+        st.compared = true; _basePersistSoon();
+      } else _baseCheckUnstamped(key, st);
+    }catch(e){ console.warn('[Sristi] saved server copy:', e); }
+    _liveSnapshot[key] = val;
+    _liveSnapshotSeen.add(key);
+    if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
+    _processLiveSnapshot();
+  };
+  tombRef.on('value', onTomb, onTombErr);
+  mainRef.on('value', onMain);
+  /* v305f - remember the verification list, for the next changes-only start to compare with */
+  let viRef = null;
+  const onVi = snap => { if(_baseState[key] !== st) return; st.vi = _baseViNote(st, snap); st.dirty = true; _basePersistSoon(); };
+  if(key === 'haatFarmers'){ viRef = fbRef('verifIndex'); viRef.on('value', onVi, () => {}); }
+  st.off = () => { try{ mainRef.off('value', onMain); }catch(e){} try{ tombRef.off('value', onTomb); }catch(e){} try{ viRef && viRef.off('value', onVi); }catch(e){} };
+  return st;
+}
+function _startDelta(key, b){
+  const st = _baseState[key] = {mode:'delta', recs:Object.assign({}, b.recs), u:{}, hw:(b.hw || 0), at:b.at,
+                                mainSeen:false, tombSeen:false, tomb:null, lastIds:null, ready:false, dirty:false,
+                                cleanSince: b.cleanSince, dirtyAt: b.dirtyAt || null, compared: true, off: null, vi: b.vi || null};
+  Object.keys(st.recs).forEach(id => { try{ const r = JSON.parse(st.recs[id]); st.u[id] = r && typeof r._u === 'number' ? r._u : 0; }catch(e){ st.u[id] = 0; } });
+  const from = Math.max(0, st.hw - _BASE_MARGIN_MS);
+  console.info('[Sristi] ' + key + ': ' + Object.keys(st.recs).length + ' farmers from the saved copy; asking only for changes since ' + new Date(from).toISOString());
+  const q = fbRef(key).orderByChild('_u').startAt(from), tombRef = fbRef(_TOMB_NODE + '/' + key);
+  let fellBack = false;
+  const onQ = snap => {
+    if(fellBack || _baseState[key] !== st) return;
+    const val = snap.exists() ? (snap.val() || {}) : {};
+    const ids = Object.keys(val);
+    ids.forEach(id => _baseNoteRecord(st, id, val[id]));
+    /* A record that LEFT the answer was deleted - or lost its marker to an older app
+       version. Ask the server about that one record rather than guess. */
+    const gone = st.lastIds ? Array.from(st.lastIds).filter(id => !(id in val)) : [];
+    st.lastIds = new Set(ids);
+    st.mainSeen = true;
+    if(gone.length){
+      Promise.all(gone.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
+        if(s1.exists()) _baseNoteRecord(st, id, s1.val());
+        else { delete st.recs[id]; delete st.u[id]; }
+      }).catch(() => {}))).then(() => { _baseApplyTombs(st); _basePublish(key, st); });
+      return;
+    }
+    _baseApplyTombs(st);
+    _basePublish(key, st);
+  };
+  const onT = snap => {
+    if(fellBack || _baseState[key] !== st) return;
+    st.tomb = snap.exists() ? (snap.val() || {}) : {};
+    st.tombSeen = true;
+    _baseTombPrune(key, st.tomb);
+    _baseApplyTombs(st);
+    _basePublish(key, st);
+  };
+  const onTErr = () => { if(fellBack || _baseState[key] !== st) return; st.tomb = {}; st.tombSeen = true; _basePublish(key, st); };
+  /* v305f - a verification from ANY app version changes verifIndex/<id>: re-read that farmer */
+  let viRef = null, viPrev = (b && b.vi && typeof b.vi === 'object') ? b.vi : null;
+  const onVi = snap => {
+    if(fellBack || _baseState[key] !== st) return;
+    const cur = _baseViNote(st, snap);
+    const was = viPrev; viPrev = cur; st.vi = cur; st.dirty = true;
+    if(!was) return;   /* nothing to compare with: the next full download covers it */
+    const changed = Object.keys(cur).filter(id => cur[id] !== was[id]);
+    if(!changed.length) return;
+    if(changed.length > 25){
+      _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+      try{ st.off && st.off(); }catch(e){}
+      return;
+    }
+    const reread = () => Promise.all(changed.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
+      if(_baseState[key] !== st || !s1.exists()) return;
+      _baseNoteRecord(st, id, s1.val());
+    }).catch(() => {}))).then(() => { if(_baseState[key] !== st) return; _baseApplyTombs(st); _basePublish(key, st); });
+    reread();
+    /* v305h - an older phone writes verifIndex a moment BEFORE the farmer record: look again */
+    setTimeout(reread, 15000);
+  };
+  if(key === 'haatFarmers'){ viRef = fbRef('verifIndex'); viRef.on('value', onVi, () => {}); }
+  st.off = () => { try{ q.off('value', onQ); }catch(e){} try{ tombRef.off('value', onT); }catch(e){} try{ viRef && viRef.off('value', onVi); }catch(e){} };
+  const fallBack = err => {
+    if(fellBack) return; fellBack = true;
+    console.warn('[Sristi] ' + key + ': changes-only listen failed, downloading the whole list:', err);
+    try{ st.off(); }catch(e){}
+    _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+  };
+  q.on('value', onQ, fallBack);
+  tombRef.on('value', onT, onTErr);
+  /* v305d - the roll-call, a few seconds in, so it never delays what is on screen */
+  setTimeout(() => { _baseCensus(key, st); }, 3000);
+  return st;
+}
+/* v305d - ROLL-CALL. The changes-only answer cannot see a farmer created, or removed, by
+   something that does not stamp `_u`. A shallow REST read lists every id (ids only, ~90 KB
+   at 5,000 farmers) so the saved copy can be checked against the server's list. */
+let _baseCensusBroken = false;
+const _tombPruned = {};
+/* v305e - tombstones older than 30 days (SERVER time) are no use to anyone - a saved copy is
+   never older than a day - and every admin start downloads them: prune once per session */
+function _baseTombPrune(key, t){
+  if(_tombPruned[key] || _svOffset === null) return;
+  _tombPruned[key] = true;
+  try{
+    const cut = Date.now() + _svOffset - 30 * 24 * 60 * 60 * 1000;
+    const old = Object.keys(t || {}).filter(id => typeof t[id] === 'number' && t[id] < cut).slice(0, 500);
+    if(!old.length) return;
+    const u = {}; old.forEach(id => { u[id] = null; });
+    FB.db.ref(FB_NAMESPACE + '/' + _TOMB_NODE + '/' + key).update(u).catch(() => {});
+  }catch(e){}
+}
+async function _baseCensus(key, st){
+  try{
+    if(_baseState[key] !== st || st.mode !== 'delta' || !navigator.onLine) return;
+    if(!FB_CONFIG || !FB_CONFIG.databaseURL || typeof firebase === 'undefined') return;
+    const usr = firebase.auth().currentUser;
+    if(!usr) return;
+    const tok = await Promise.race([usr.getIdToken(), new Promise((_, j) => setTimeout(() => j(new Error('token timeout')), 5000))]);
+    const ac = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = setTimeout(() => { try{ ac && ac.abort(); }catch(e){} }, 10000);
+    let keys = null;
+    try{
+      const r = await fetch(FB_CONFIG.databaseURL.replace(/\/$/, '') + '/' + FB_NAMESPACE + '/' + key + '.json?shallow=true&auth=' + encodeURIComponent(tok), ac ? {signal: ac.signal} : undefined);
+      if(!r.ok){
+        /* v305e - refused (not merely offline): do not go on without the roll-call */
+        console.warn('[Sristi] ' + key + ' roll-call refused (' + r.status + ') - full downloads for this session');
+        _baseCensusBroken = true;
+        if(_baseState[key] === st){
+          _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+          try{ st.off && st.off(); }catch(e){}
+        }
+        return;
+      }
+      keys = await r.json();
+    } finally { clearTimeout(timer); }
+    if(_baseState[key] !== st || !keys || typeof keys !== 'object') return;
+    st.censusAt = Date.now();
+    const server = new Set(Object.keys(keys));
+    const missing = Array.from(server).filter(id => st.recs[id] === undefined);
+    const extra = Object.keys(st.recs).filter(id => !server.has(id));
+    if(!missing.length && !extra.length) return;
+    if(missing.length > 200){
+      _baseMarkDirty(key, st, [missing.length + ' farmers the saved copy does not have']);
+      _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+      try{ st.off && st.off(); }catch(e){}
+      return;
+    }
+    const unstamped = [];
+    await Promise.all(missing.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
+      if(!s1.exists()) return;
+      const v = s1.val();
+      if(!(v && typeof v._u === 'number' && v._u > 0)) unstamped.push(id + ' (new)');
+      if(_baseState[key] === st) _baseNoteRecord(st, id, v);
+    }).catch(() => {})));
+    await Promise.all(extra.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
+      if(_baseState[key] !== st) return;
+      if(s1.exists()){ _baseNoteRecord(st, id, s1.val()); return; }   /* it is there after all */
+      const t = st.tomb || {};
+      if(!(typeof t[id] === 'number' && t[id] > (st.u[id] || 0))) unstamped.push(id + ' (removed)');
+      delete st.recs[id]; delete st.u[id];
+    }).catch(() => {})));
+    if(_baseState[key] !== st) return;
+    if(unstamped.length) _baseMarkDirty(key, st, unstamped);
+    console.info('[Sristi] ' + key + ' roll-call: ' + missing.length + ' fetched, ' + extra.length + ' checked');
+    _basePublish(key, st);
+  }catch(e){ console.warn('[Sristi] ' + key + ' roll-call:', e); }
+}
+/* v305c - a full download that has been checked clean hands over to changes-only, so a tab
+   left open all day gets the saving on every reconnect too */
+function _baseMaybeDelta(key, st){
+  if(_baseState[key] !== st || st.mode !== 'full' || !st.compared || !st.ready) return;
+  if(!_deltaEligible(key) || !_baseGateOpen(st) || _baseCensusBroken || st.noPersist) return;
+  if(Date.now() - st.at >= _BASE_FULL_EVERY_MS) return;
+  _startDelta(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:_baseSafeHw(st), at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt, vi:st.vi || null});
+  try{ st.off && st.off(); }catch(e){}
+}
+/* v305c - a changes-only tab left open still gets its daily full download, and goes back to
+   full at once if another tab on this computer has found an unstamped change */
+function _baseTick(){
+  _DELTA_COLS.forEach(key => {
+    const st = _baseState[key];
+    if(!st || !st.ready) return;
+    try{
+      if(st.mode === 'delta' && (Date.now() - st.at >= _BASE_FULL_EVERY_MS || !_baseGateOpen(st))){
+        _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+        try{ st.off && st.off(); }catch(e){}
+      } else if(st.mode === 'full'){
+        _baseMaybeDelta(key, st);
+      } else if(st.mode === 'delta' && Date.now() - (st.censusAt || 0) >= 60 * 60 * 1000){
+        _baseCensus(key, st);   /* v305d - hourly roll-call for a tab left open */
+      }
+    }catch(e){ console.warn('[Sristi] saved copy check:', e); }
+  });
+}
+setInterval(_baseTick, 15 * 60 * 1000);
+function _attachDeltaKey(key){
+  _basePreloadStart().then(pre => {
+    const b = pre && pre[key];
+    _svOffsetWatch();
+    /* v305e - the stored copy could not be read in time: download in full and leave the stored
+       copy (and its clean window) exactly as it is */
+    if(b && b.__timedOut){ const st0 = _attachFullKey(key, null); st0.noPersist = true; return; }
+    if(!_baseValid(b) || !_baseGateOpen(b)){ _attachFullKey(key, b); return; }
+    _startDelta(key, b);
+  }).catch(e => { console.warn('[Sristi] saved server copy unavailable:', e); _attachFullKey(key, null); });
+}
+/* v305e - changes-only mode must never let a save overwrite a farm-visit list with one that
+   lacks a visit this computer was never sent (from an older app version, which carries no
+   change-marker). saveDB works out WHAT to send exactly as before - synchronously, nothing in
+   front of it. Only then, and only for a visit list about to go out, the server's own record
+   is read and any visit missing from what this computer knew is added (_deltaVisitGuard). */
+function _deltaActive(){ return _DELTA_COLS.some(c => _baseState[c] && _baseState[c].mode === 'delta' && _baseState[c].ready); }
+function _deltaVisitsOf(v){ return Array.isArray(v) ? v : ((v && typeof v === 'object') ? Object.values(v) : []); }
+function _deltaVisitSig(v){ return [v && v.date, v && v.fc, v && v.score, v && v.notes].join('|'); }
+/* v305k - every visit this computer's SCREEN has held, per farmer ('col/id' -> Set of signatures).
+   Filled each time DB is refreshed from the server, before anyone can edit that version. A visit
+   in here that a write leaves out was removed or edited on purpose; a server visit NOT in here was
+   never shown, so leaving it out cannot have been anyone's choice. */
+const _seenVisitSigs = {};
+/* v305m - the FULL version of each visit most recently on this screen ('col/id' -> recordedAt -> json) */
+const _seenVisitFull = {};
+function _visitJson(v){ try{ const j = _stableJson(v); return j === undefined ? JSON.stringify(v) : j; }catch(e){ return null; } }
+function _noteSeenVisits(){
+  try{
+    if(typeof _baseState === 'undefined' || !_baseState || !Object.keys(_baseState).length) return;   /* admin computers only */
+    _DELTA_COLS.forEach(col => (DB && DB[col] || []).forEach(r => {
+      if(!r || !r.id) return;
+      const vs = _deltaVisitsOf(r.visits);
+      if(!vs.length) return;
+      const k = col + '/' + r.id;
+      const set = _seenVisitSigs[k] || (_seenVisitSigs[k] = new Set());
+      const full = _seenVisitFull[k] || (_seenVisitFull[k] = {});
+      vs.forEach(v => { set.add(_deltaVisitSig(v)); if(v && v.recordedAt) full[v.recordedAt] = _visitJson(v); });
+    }));
+  }catch(e){}
+}
+/* v305k - the server's visits a write would silently drop: not being written, never on screen */
+function _unseenVisits(col, id, srvVisits, outgoing){
+  const seen = _seenVisitSigs[col + '/' + id] || new Set();
+  const out = new Set(_deltaVisitsOf(outgoing).map(_deltaVisitSig));
+  return _deltaVisitsOf(srvVisits).filter(v => v && !out.has(_deltaVisitSig(v)) && !seen.has(_deltaVisitSig(v)));
+}
+/* v305j - add the visits this computer never knew to an outgoing list. An unseen CORRECTION
+   (editedFromVisitAt) replaces the visit it corrects; an outgoing correction is not joined by
+   the unseen original. The same rule flushOfflineWrites uses. */
+function _mergeUnseenVisits(list, unseen, seenFull){
+  let out = (list || []).filter(Boolean);
+  /* v305l/m - the SAME visit edited in place elsewhere (same recordedAt). The server's version
+     replaces this computer's copy ONLY if that copy is exactly, in full, what was last on this
+     screen (so nobody here changed it). Otherwise both are kept - a possible duplicate row,
+     never a lost edit. */
+  const _sameRec = [];
+  unseen = unseen.filter(u => {
+    if(!u || !u.recordedAt) return true;
+    const i = out.findIndex(v => v && v.recordedAt === u.recordedAt);
+    if(i < 0) return true;
+    const last = seenFull ? seenFull[u.recordedAt] : undefined;
+    if(last !== undefined && last !== null && _visitJson(out[i]) === last){
+      out[i] = JSON.parse(JSON.stringify(u)); _sameRec.push(u.recordedAt);
+      return false;
+    }
+    return true;   /* changed here too, or unknown: keep both */
+  });
+  unseen.forEach(u => { if(u && u.editedFromVisitAt) out = out.filter(v => !(v && v.recordedAt && v.recordedAt === u.editedFromVisitAt)); });
+  const corrected = new Set(out.map(v => v && v.editedFromVisitAt).filter(Boolean));
+  const have = new Set(out.map(_deltaVisitSig));
+  const add = unseen.filter(u => u && !have.has(_deltaVisitSig(u)) && !(u.recordedAt && corrected.has(u.recordedAt)));
+  if(!add.length && !_sameRec.length && out.length === (list || []).length) return list;
+  return out.concat(JSON.parse(JSON.stringify(add))).sort((x, y) => String((x && x.date) || '').localeCompare(String((y && y.date) || '')));
+}
+function _deltaDropGhost(col, id, snap){
+  const st = _baseState[col];
+  if(st){ delete st.recs[id]; delete st.u[id]; st.dirty = true; }
+  try{ if(_liveSnapshot && _liveSnapshot[col]) delete _liveSnapshot[col][id]; }catch(e){}
+  DB[col] = (DB[col] || []).filter(r => !(r && r.id === id));
+  try{ if(_lastSnap && _lastSnap[col]) delete _lastSnap[col][id]; }catch(e){}
+  try{ if(snap && snap[col]) delete snap[col][id]; }catch(e){}
+  try{ clearPendingSync(col, id); }catch(e){}
+  console.warn('[Sristi] ' + col + '/' + id + ' is no longer on the server (deleted elsewhere) - dropped here instead of re-creating it');
+}
+function _deltaVisitGuard(updates, snap, col, id, s1, prePending){
+  const st = _baseState[col], rk = col + '/' + id;
+  if(!s1.exists()){
+    /* v305h - dropped ONLY with proof it was deleted: a tombstone newer than what this
+       computer holds, and nothing of it waiting to be sent from before this save. A farmer
+       this computer created but never managed to send can sit in the saved copy (the SDK's
+       optimistic event) - that one must be SENT, exactly as v303 would. */
+    const t = st && st.tomb ? st.tomb[id] : null;
+    const proof = st && st.recs[id] !== undefined && typeof t === 'number' && t > (st.u[id] || 0) && !(prePending && prePending.has(rk));
+    if(proof){
+      Object.keys(updates).forEach(k => { if(k === rk || k.indexOf(rk + '/') === 0) delete updates[k]; });
+      _deltaDropGhost(col, id, snap);
+      return 'dropped';
+    }
+    return;
+  }
+  const srv = s1.val();
+  /* v305k - server visits that this write leaves out AND that were never on this screen
+     (a visit deliberately removed or edited was on screen, so it is not brought back) */
+  const _outNow = updates[rk + '/visits'] !== undefined ? updates[rk + '/visits'] : (updates[rk] && updates[rk].visits);
+  const unseen = _unseenVisits(col, id, srv.visits, _outNow);
+  if(st){ _baseNoteRecord(st, id, srv); st.dirty = true; }
+  try{ if(_liveSnapshot && _liveSnapshot[col]) _liveSnapshot[col][id] = JSON.parse(JSON.stringify(srv)); }catch(e){}
+  if(!unseen.length) return;
+  const put = list => _mergeUnseenVisits(list, unseen, _seenVisitFull[col + '/' + id]);   /* v305j/l/m */
+  if(updates[rk + '/visits']) updates[rk + '/visits'] = put(_deltaVisitsOf(updates[rk + '/visits']));
+  if(updates[rk] && typeof updates[rk] === 'object' && updates[rk].visits) updates[rk] = Object.assign({}, updates[rk], {visits: put(_deltaVisitsOf(updates[rk].visits))});
+  const rec = (DB[col] || []).find(r => r && r.id === id);
+  if(rec) rec.visits = put(_deltaVisitsOf(rec.visits));
+  console.warn('[Sristi] ' + rk + ': ' + unseen.length + ' farm visit version(s) this computer had not been sent were merged into the write');
+}
+
 function attachLiveListener(){
   if(!FB.ready)return;
   const activeKeys = _activeSyncKeys().filter(k => !_attachedKeys.has(k));
@@ -6488,6 +7336,8 @@ function attachLiveListener(){
   activeKeys.forEach(key => {
     _attachedKeys.add(key);
     const queries=_scopedFcQueries(key);
+    /* v305 - the whole-list farmer listeners (admin) ask only for what changed */
+    if(!queries && _deltaEligible(key)){ _attachDeltaKey(key); return; }
     if(!queries){
       fbRef(key).on('value', snap => {
         _liveSnapshot[key] = snap.exists() ? snap.val() : null;
@@ -6582,6 +7432,7 @@ function _processLiveSnapshot(){
         });
       });
       DB=cloud;
+      try{ if(typeof _noteSeenVisits === 'function') _noteSeenVisits(); }catch(e){}   /* v305k */
       // v105 — CRITICAL FIX: _lastSnap used to be set ONLY at boot and after
       // this device's OWN saveDB() calls, never when the live listener (here)
       // brought in records created by OTHER devices/public submissions. That
@@ -7037,7 +7888,8 @@ async function saveDB(silent){
       if(!rec || !rec.id) return;
       const srv = serverMap[rec.id];
       if(!srv) return;
-      const srvVisits = Array.isArray(srv.visits) ? srv.visits : [];
+      /* v305e - either shape: a sparse list comes back from Firebase as an object */
+      const srvVisits = Array.isArray(srv.visits) ? srv.visits : ((srv.visits && typeof srv.visits === 'object') ? Object.values(srv.visits) : []);
       if(!srvVisits.length) return;
       const mine = Array.isArray(rec.visits) ? rec.visits : [];
       const sig = v => [v&&v.date, v&&v.fc, v&&v.score, v&&v.notes].join('|');
@@ -7087,6 +7939,7 @@ async function saveDB(silent){
            as the no-baseline case below; everything else goes straight out. */
         const _off = {};
         Object.keys(curObj).forEach(k=>{
+          if(k === '_u') return;   /* v305 - the server owns the change-marker; fbRef stamps it */
           if(JSON.stringify(curObj[k]) === JSON.stringify(prevObj[k])) return;
           if(_isFarmerCol && OFFICE_OWNED_FIELDS.indexOf(k) >= 0) _off[k]=curObj[k];
           else updates[col+'/'+id+'/'+k]=curObj[k];
@@ -7100,7 +7953,7 @@ async function saveDB(silent){
            "the UI removed a field" case it was written for. */
         if(!_baselineSubstituted.has(col + '/' + id)){
           Object.keys(prevObj).forEach(k=>{
-            if(!(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
+            if(k !== '_u' && !(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
           });
         }
         if(Object.keys(_off).length) _officeCheck.push({col:col, id:id, obj:_off, mine:curObj.decisionAt||null});
@@ -7272,6 +8125,41 @@ async function saveDB(silent){
       updates[_it.col+'/'+_it.id+'/'+k]=_it.obj[k];
     });
   }
+  /* v305e/j - changes-only mode: a farm-visit list about to be sent is checked against the
+     server's own record first (_deltaVisitGuard), so a visit this computer was never sent (from
+     an older app) is kept. WHAT to send was settled above, with no wait in front of it. Only
+     non-empty lists of farmers in the saved copy; at most 25; a late answer is ignored and the
+     list then goes out exactly as v303 sends it - this check never holds anything back. */
+  if(typeof _deltaActive === 'function' && _deltaActive() && navigator.onLine){
+    const _vk = {};
+    Object.keys(updates).forEach(k => {
+      const m = /^(haatFarmers|convFarmers)\/([^\/]+)(\/visits)?$/.exec(k);
+      if(!m) return;
+      const v = updates[k];
+      if(m[3] ? !_isEmptyVal(v) : !!(v && typeof v === 'object' && !_isEmptyVal(v.visits))) _vk[m[1] + '/' + m[2]] = [m[1], m[2]];
+    });
+    const _vl = Object.keys(_vk).map(k => _vk[k])
+      .filter(([c, i]) => _baseState[c] && _baseState[c].mode === 'delta' && _baseState[c].ready && _baseState[c].recs[i] !== undefined)
+      .slice(0, 25);
+    if(_vl.length){
+      let _prePending = null; try{ _prePending = _readPendingSync(); }catch(e){ _prePending = null; }
+      dirty.forEach(([col,id]) => { markLocalTouch(col, id, 20000); markPendingSync(col, id); });
+      const _dropped = [];
+      await Promise.all(_vl.map(([c, i]) => {
+        let late = false;
+        return Promise.race([
+          fbRef(c + '/' + i).get().then(s1 => { if(late) return; if(_deltaVisitGuard(updates, snap, c, i, s1, _prePending) === 'dropped') _dropped.push(c + '/' + i); }),
+          new Promise(r => setTimeout(() => { late = true; r(); }, 4000))
+        ]).catch(() => {});
+      }));
+      const _gone = new Set(_dropped);
+      if(_gone.size){
+        for(let j = dirty.length - 1; j >= 0; j--){ if(_gone.has(dirty[j][0] + '/' + dirty[j][1])) dirty.splice(j, 1); }
+        for(let j = _officeRetry.length - 1; j >= 0; j--){ if(_gone.has(_officeRetry[j][0] + '/' + _officeRetry[j][1])) _officeRetry.splice(j, 1); }
+      }
+      _basePersistSoon();
+    }
+  }
   // shield in-flight records so the Firebase echo can't revert them mid-write
   dirty.forEach(([col,id])=>markLocalTouch(col,id));
   // v(scale-audit) — mark BEFORE the write attempt, not after: Firebase's
@@ -7298,6 +8186,7 @@ async function saveDB(silent){
     /* v216 - guarded. This await used to hang for the whole page load with no
        signal, so every caller that depended on its return value - above all
        the verification handler's durable fallback - never ran. */
+    try{ _deltaGuardedWrites.add(updates); }catch(e){}   /* v305i - already checked above by the saveDB visit guard */
     const _g = await _fbWriteGuard(fbRef('').update(updates), _fbWriteWaitMs());
     if(_g.timedOut){
       /* Deliberately NOT advancing _lastSnap and NOT clearing the pending
@@ -13063,10 +13952,58 @@ function donut(segs,centerNum,centerTxt){
   return h+'</div></div>';
 }
 
+/* ============ v304 - DATA USED (the download meter's screen) ============
+   Opened from the version badge. Reads window.__fvMeter only - no Firebase, no writes. */
+function _fmtBytes(n){
+  n = n || 0;
+  if(n >= 1048576) return (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' MB';
+  if(n >= 1024) return Math.round(n / 1024) + ' KB';
+  return n + ' bytes';
+}
+function _dataUsedText(){
+  const M = window.__fvMeter; if(!M) return 'The meter is not running on this page.';
+  const lines = [];
+  const mins = Math.max(1, Math.round((Date.now() - M.t0) / 60000));
+  lines.push('Farm Verification ' + APP_VERSION + ' - data downloaded from the database on this device');
+  lines.push('');
+  lines.push('Since this page opened (' + mins + ' min): ' + _fmtBytes(M.total) + ', of which ' + _fmtBytes(M.boot) + ' while starting');
+  Object.entries(M.byKey).sort((a, b) => b[1] - a[1]).slice(0, 10).forEach(([k, v]) => lines.push('   ' + k + ': ' + _fmtBytes(v)));
+  const rs = Object.entries(M.byRoute).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  if(rs.length){ lines.push(''); lines.push('By screen:'); rs.forEach(([k, v]) => lines.push('   ' + k + ': ' + _fmtBytes(v))); }
+  if(M.big.length){ lines.push(''); lines.push('Largest single downloads:'); M.big.forEach(b => lines.push('   ' + _fmtBytes(b.bytes) + '  ' + b.what + '  (' + b.route + ', ' + Math.round(b.at / 1000) + ' s after opening)')); }
+  const D = (typeof M.days === 'function') ? M.days() : {};
+  const ks = Object.keys(D).sort().reverse();
+  if(ks.length){
+    lines.push(''); lines.push('Each day on this device:');
+    ks.forEach(k => {
+      const d = D[k] || {};
+      const top = Object.entries(d.byKey || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([kk, v]) => kk + ' ' + _fmtBytes(v)).join(', ');
+      lines.push('   ' + k + ': ' + _fmtBytes(d.total) + ' in ' + (d.opens || 0) + ' opening' + ((d.opens || 0) === 1 ? '' : 's') + (top ? '  (' + top + ')' : ''));
+    });
+  }
+  return lines.join('\n');
+}
+function openDataUsed(){
+  try{
+    const txt = _dataUsedText();
+    modalShell('Data used on this device',
+      '<p style="margin:0 0 10px;color:var(--muted);font-size:13px">What this device has downloaded from the database. Counting only - it adds nothing to the download.</p>'
+      + '<pre id="dataUsedPre" style="white-space:pre-wrap;font-size:12px;line-height:1.5;margin:0;max-height:60vh;overflow:auto">' + esc(txt) + '</pre>',
+      '<button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" id="dataUsedCopy">Copy</button>');
+    const b = document.getElementById('dataUsedCopy');
+    if(b) b.onclick = () => {
+      try{ navigator.clipboard.writeText(_dataUsedText()).then(() => toast('Copied'), () => toast('Could not copy', 'error')); }
+      catch(e){ toast('Could not copy', 'error'); }
+    };
+  }catch(e){ console.warn('[Sristi] data used:', e); }
+}
+
 /* ============ NAV ============ */
 function renderNav(){
   const _vb = document.getElementById('appVerBadge');
   if(_vb) _vb.textContent = APP_VERSION;
+  /* v304 - the version badge opens the download meter */
+  if(_vb && !_vb._meter){ _vb._meter = true; _vb.style.cursor = 'pointer'; _vb.title = 'Data used on this device'; _vb.addEventListener('click', e => { e.stopPropagation(); openDataUsed(); }); }
   if(!usesAdminLayout()){$('#nav').innerHTML='';return;}
   const hs=haatStats(),cs=convStats();
   // v8 — FC users see a reduced nav (no Settings, no Data & Backup, no Team).
@@ -22707,6 +23644,7 @@ function viewSettings(){
             }catch(e){ marked = false; }
             let stillPending = 0;
             try{ stillPending = (typeof pendingSyncCount === 'function') ? pendingSyncCount() : 0; }catch(e){ stillPending = 0; }
+            try{ _basePersistOff = true; _baseClear(); }catch(e){}   /* v305/c - the saved server copy goes, and this page stops re-saving it: the next start downloads everything fresh */
             if(marked && !stillPending){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} try{ _mirrorClear(); }catch(e){} }   /* v303 - both homes */
             else console.warn('[Sristi] restore: keeping the local copy — mark', marked, 'pending', stillPending);
             _RESTORE_BUSY = false;

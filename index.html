@@ -4493,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v301';
+const APP_VERSION = 'v302';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -25064,12 +25064,71 @@ function _rptBars(rows, color, empty, group){
 }
 function _rptCard(title, sub, body){ return '<div class="rpt-card"><div class="rpt-ch"><h3>' + title + '</h3>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + body + '</div>'; }
 
+/* v302 - the answer cache lives in its OWN IndexedDB database. localStorage is capped at
+   ~5.2M characters per site and the offline copy of the whole database already needs most
+   of it; this cache took ~8% more on admin computers and pushed it over ("Device storage
+   full"). A separate database, not sristi_v11_local: no upgrade of the one that holds the
+   field queues, and nothing near the work it protects. */
+let _rptIdb = null, _rptIdbDead = false, _rptIdbState = 'idle';
+function _rptIdbOpen(){
+  return new Promise((resolve, reject) => {
+    if(_rptIdbDead){ reject(new Error('reports idb unavailable')); return; }
+    if(_rptIdb){ resolve(_rptIdb); return; }
+    if(!window.indexedDB){ _rptIdbDead = true; reject(new Error('no idb')); return; }
+    let req;
+    try{ req = indexedDB.open('sristi_fv_reports_v1', 1); }
+    catch(e){ _rptIdbDead = true; reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains('cache')) db.createObjectStore('cache', {keyPath:'key'});
+    };
+    req.onsuccess = () => { _rptIdb = req.result; resolve(_rptIdb); };
+    req.onerror   = () => { _rptIdbDead = true; reject(req.error); };
+    /* private windows and wedged profiles hang instead of failing */
+    setTimeout(() => { if(!_rptIdb) reject(new Error('reports idb timeout')); }, 4000);
+  });
+}
+function _rptIdbPut(obj){
+  return _rptIdbOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('cache', 'readwrite');
+    tx.objectStore('cache').put(Object.assign({key: RPT_STORE}, obj));
+    tx.oncomplete = () => res(true);
+    tx.onerror    = () => rej(tx.error);
+    tx.onabort    = () => rej(tx.error || new Error('aborted'));
+  }));
+}
+function _rptIdbGet(){
+  return _rptIdbOpen().then(db => new Promise((res, rej) => {
+    const rq = db.transaction('cache', 'readonly').objectStore('cache').get(RPT_STORE);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror   = () => rej(rq.error);
+  }));
+}
 function _rptLoadStored(){
   if(_rptAnswers) return _rptAnswers;
-  try{
-    const raw = localStorage.getItem(RPT_STORE);
-    if(raw){ const o = JSON.parse(raw); if(o && o.at && o.data) _rptAnswers = o; }
-  }catch(e){}
+  /* one-time move out of localStorage: the key is removed ONLY after IndexedDB has it,
+     and then the offline copy is saved again into the space it frees */
+  let raw = null;
+  try{ raw = localStorage.getItem(RPT_STORE); }catch(e){}
+  if(raw){
+    try{ const o = JSON.parse(raw); if(o && o.at && o.data) _rptAnswers = o; }catch(e){}
+    if(_rptAnswers){
+      _rptIdbPut(_rptAnswers).then(() => {
+        try{ localStorage.removeItem(RPT_STORE); }catch(e){}
+        try{ if(typeof cacheLocal === 'function') cacheLocal(); }catch(e){}
+      }).catch(err => console.warn('[Sristi] reports cache left in localStorage:', err));
+    }
+    _rptIdbState = 'done';
+    return _rptAnswers;
+  }
+  if(_rptIdbState === 'idle'){
+    _rptIdbState = 'loading';
+    _rptIdbGet().then(o => {
+      _rptIdbState = 'done';
+      if(o && o.at && o.data && !_rptAnswers){ _rptAnswers = o; }
+      if(ROUTE === 'reports') viewReports();
+    }).catch(() => { _rptIdbState = 'done'; if(ROUTE === 'reports') viewReports(); });
+  }
   return _rptAnswers;
 }
 /* v286 - read only what the reports use. A whole application sheet is about 23 KB;
@@ -25121,7 +25180,8 @@ async function rptFetchAnswers(onProgress, online, readAll){
     };
     for(let k = 0; k < list.length; k += 8) await Promise.all(list.slice(k, k + 8).map(one));
     _rptAnswers = {at: Date.now(), data, n: Object.keys(data).length, none, fromDevice, kept, fetched, missing, bytes};
-    try{ localStorage.setItem(RPT_STORE, JSON.stringify(_rptAnswers)); }catch(e){}
+    /* v302 - its own IndexedDB database, never localStorage */
+    _rptIdbPut(_rptAnswers).catch(err => console.warn('[Sristi] reports cache not saved:', err));
     return _rptAnswers;
   } finally { _rptBusy = false; }
 }
@@ -25271,7 +25331,9 @@ function viewReports(){
   _rptExport = {tab: RPT.tab, rows: []};
   if(RPT.prog === 'conv') h += RPT.tab === 'conv' ? _rptConvHtml(rptConversion(conv, today)) : _rptConvCoverageHtml(rptConvCoverage(conv, today));
   else if(RPT.tab === 'coverage') h += _rptCoverageHtml(rptCoverage(haat, [], P, today));
-  else if(!_rptAnswers) h += _rptAnswersPanel(haatAll.length);
+  else if(!_rptAnswers) h += (_rptIdbState === 'loading'
+      ? '<div class="rpt-card"><div class="rpt-empty">Opening the answers saved on this computer\u2026</div></div>'   /* v302 */
+      : _rptAnswersPanel(haatAll.length));
   else {
     const A = rptAnswers(haat, _rptAnswers.data, today);
     h += RPT.tab === 'cert' ? _rptCertHtml(A) : _rptProfileHtml(A);

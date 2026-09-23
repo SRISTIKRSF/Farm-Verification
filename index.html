@@ -4493,7 +4493,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v302';
+const APP_VERSION = 'v303';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -4709,10 +4709,8 @@ function setSyncPill(state){
 async function loadDB(){
   // 1. try local cache first so the UI can paint instantly
   let local=null;
-  try{
-    const raw=localStorage.getItem(STORE_KEY);
-    if(raw) local=JSON.parse(raw);
-  }catch(e){/* ignore */}
+  /* v303 - IndexedDB first, localStorage as the fallback (see _readMirror) */
+  try{ local = await _readMirror(); }catch(e){/* ignore */}
 
   // 2. if Firebase is configured, initialise and let the live listener sync
   if(fbConfigured() && typeof firebase!=='undefined'){
@@ -4804,6 +4802,7 @@ async function loadDB(){
           DB=normaliseDB(seedDB());
         }
       }
+      _mirrorArm();   /* v303c - DB now holds what was read */
       cacheLocal();
       /* v272 - NOT AWAITED. This is a one-time tidy-up of old form blobs, and
          it holds unguarded network calls that run before the live listener is
@@ -4868,6 +4867,7 @@ async function loadDB(){
 
   // 3. offline-only fallback (Firebase not configured or failed)
   DB = normaliseDB(local || seedDB());
+  _mirrorArm();   /* v303c */
   cacheLocal();
   setSyncPill('local');
 }
@@ -6030,6 +6030,126 @@ function cloudToDB(c){
     verifIndex:(c.verifIndex && typeof c.verifIndex==='object') ? c.verifIndex : {},
   });
 }
+/* ===================== v303 - THE OFFLINE COPY LIVES IN INDEXEDDB =====================
+   localStorage is capped at ~5.24M characters per site; the copy reached 85% of that on
+   21 Sep and grows ~12 points a week. Its own database, never sristi_v11_local. */
+const MIRROR_LS_NEWER = 'sristi_mirror_ls_newer';   /* set only when a write had to fall back */
+let _mirrorIdb = null, _mirrorIdbDead = false;
+let _mirrorBusy = false, _mirrorNext = null, _mirrorGen = 0;
+/* ⛔ 'read' only once start-up has POSITIVELY read the stored copy (an empty store counts).
+   Until then nothing may overwrite it - see cacheLocal. Found on staging: a read that lost a
+   race against a timer made start-up fall back to starter data and save that over the copy. */
+let _mirrorReadState = 'unread', _mirrorOpenTimeouts = 0, _mirrorBlockLogged = false;
+function _mirrorIdbOpen(){
+  return new Promise((resolve, reject) => {
+    if(_mirrorIdbDead){ reject(new Error('mirror idb unavailable')); return; }
+    if(_mirrorIdb){ resolve(_mirrorIdb); return; }
+    if(!window.indexedDB){ _mirrorIdbDead = true; reject(new Error('no idb')); return; }
+    let req, settled = false;
+    try{ req = indexedDB.open('sristi_fv_mirror_v1', 1); }
+    catch(e){ _mirrorIdbDead = true; reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains('mirror')) db.createObjectStore('mirror', {keyPath:'key'});
+    };
+    req.onsuccess = () => { if(settled) return; settled = true; _mirrorIdb = req.result; resolve(_mirrorIdb); };
+    req.onerror   = () => { if(settled) return; settled = true; _mirrorIdbDead = true; reject(req.error); };
+    /* a private window or a wedged profile hangs instead of failing */
+    /* one slow open is not a dead database; two in a row are treated as one */
+    setTimeout(() => { if(settled) return; settled = true; if(++_mirrorOpenTimeouts >= 2) _mirrorIdbDead = true; reject(new Error('mirror idb timeout')); }, 8000);
+  });
+}
+function _mirrorTx(mode, fn){
+  return _mirrorIdbOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('mirror', mode);
+    const out = fn(tx.objectStore('mirror'));
+    tx.oncomplete = () => res(out && 'result' in out ? out.result : true);
+    tx.onerror    = () => rej(tx.error);
+    tx.onabort    = () => rej(tx.error || new Error('aborted'));
+  }));
+}
+function _mirrorLsWrite(json){
+  /* the old path, unchanged: used only when IndexedDB cannot take the copy */
+  try{
+    localStorage.setItem(STORE_KEY, json);
+    try{ localStorage.setItem(MIRROR_LS_NEWER, '1'); }catch(e){}
+    _quotaWarned = false;
+  }catch(e){
+    const quota = e && (e.name==='QuotaExceededError' || e.code===22 || e.code===1014);
+    if(quota && !_quotaWarned){ _quotaWarned=true; console.warn('[Sristi] localStorage full — local mirror not saved.'); if(typeof toast==='function') toast('Device storage full — stay online so your changes sync.','error'); }
+    else console.warn('[Sristi] localStorage refused the write (site data blocked?):', e);
+  }
+}
+/* Writes run one at a time, in order, and a burst collapses to its newest copy - so an
+   older copy can never land after a newer one. */
+function _mirrorPut(json){
+  _mirrorNext = json;
+  if(_mirrorBusy) return;
+  _mirrorBusy = true;
+  const gen = _mirrorGen;
+  (function next(){
+    if(_mirrorNext === null || gen !== _mirrorGen){ _mirrorBusy = false; return; }
+    const j = _mirrorNext; _mirrorNext = null;
+    _mirrorTx('readwrite', st => st.put({key:'db', json:j, at:Date.now()})).then(() => {
+      if(gen !== _mirrorGen){ _mirrorBusy = false; return; }   /* cleared meanwhile - see _mirrorClear */
+      /* IndexedDB has it: now the localStorage copy can go, which is what frees the space */
+      try{ localStorage.removeItem(STORE_KEY); localStorage.removeItem(MIRROR_LS_NEWER); }catch(e){}
+      _quotaWarned = false;
+      next();
+    }).catch(err => {
+      console.warn('[Sristi] offline copy could not go to IndexedDB, using localStorage:', err);
+      _mirrorLsWrite(_mirrorNext !== null ? _mirrorNext : j);
+      _mirrorNext = null;
+      _mirrorBusy = false;
+    });
+  })();
+}
+/* Clear both homes, and drop any write still queued: after a sign-out that is meant to remove
+   a scoped copy, nothing may put it back. */
+function _mirrorClear(){
+  _mirrorGen++;
+  _mirrorNext = null;
+  try{ localStorage.removeItem(STORE_KEY); localStorage.removeItem(MIRROR_LS_NEWER); }catch(e){}
+  return _mirrorTx('readwrite', st => st.delete('db')).catch(() => {});
+}
+/* Start-up: IndexedDB first; localStorage when it is the newer copy (a fallback write) or the
+   only one (an install from before v303). */
+/* v303c - read ONCE per page: the public start-up and loadDB both ask, and a slow second
+   read must never undo a good first one. Same object shape as before (a fresh parse each ask). */
+let _mirrorReadP = null;
+function _readMirror(){
+  if(!_mirrorReadP) _mirrorReadP = _readMirrorOnce().then(j => j, () => null);
+  return _mirrorReadP.then(j => { if(!j) return null; try{ return JSON.parse(j); }catch(e){ console.warn('[Sristi] offline copy unreadable:', e); return null; } });
+}
+/* 'loaded' -> 'read': ONLY once DB holds what was read. Until then a save would write
+   whatever DB happens to be (null, starter data) over the real copy. */
+function _mirrorArm(){ if(_mirrorReadState === 'loaded') _mirrorReadState = 'read'; }
+async function _readMirrorOnce(){
+  const t0 = Date.now();
+  let lsRaw = null, lsNewer = false;
+  try{ lsRaw = localStorage.getItem(STORE_KEY); lsNewer = localStorage.getItem(MIRROR_LS_NEWER) === '1'; }catch(e){}
+  if(lsRaw && lsNewer){
+    _mirrorReadState = 'loaded'; return lsRaw;
+  }
+  const TIMEOUT = {};
+  let rec = TIMEOUT;
+  try{
+    rec = await Promise.race([
+      _mirrorTx('readonly', st => st.get('db')).then(r => r || null),
+      new Promise(r => setTimeout(() => r(TIMEOUT), 15000))
+    ]);
+  }catch(e){ rec = TIMEOUT; console.warn('[Sristi] could not read the offline copy from IndexedDB:', e); }
+  if(rec === TIMEOUT){
+    /* not read - so it must not be overwritten this session */
+    _mirrorReadState = 'failed';
+    console.warn('[Sristi] offline copy NOT read (' + (Date.now() - t0) + ' ms) - it will not be overwritten this session');
+    return lsRaw || null;
+  }
+  _mirrorReadState = 'loaded';
+  console.info('[Sristi] offline copy read from IndexedDB in ' + (Date.now() - t0) + ' ms' + (rec && rec.json ? '' : ' (none stored)'));
+  if(rec && rec.json) return rec.json;
+  return lsRaw || null;   /* an install from before v303 */
+}
 let _quotaWarned=false;
 function cacheLocal(){
   /* v265 - A VIEWER NEVER WRITES THE LOCAL MIRROR.
@@ -6058,7 +6178,17 @@ function cacheLocal(){
      cleared on sign-out. See signOutNow. */
   // v11 — forms are excluded from the localStorage mirror (they're cached in
   // IndexedDB instead, which has far more quota). Keeps the cache small.
-  try{ localStorage.setItem(STORE_KEY,JSON.stringify(DB,_stripReplacer)); _quotaWarned=false; }
+  /* v303 - the copy itself now goes to IndexedDB (see _mirrorPut). The same JSON as before;
+     localStorage is only the fallback when IndexedDB cannot take it. */
+  /* ⛔ v303 - never overwrite a copy start-up has not read (see _mirrorReadState) */
+  if(_mirrorReadState !== 'read' || !DB || typeof DB !== 'object'){
+    if(!_mirrorBlockLogged){ _mirrorBlockLogged = true; console.warn('[Sristi] offline copy not saved: start-up has not read the stored copy (' + _mirrorReadState + ')'); }
+    return;
+  }
+  let _json;
+  try{ _json = JSON.stringify(DB,_stripReplacer); }catch(e){ console.warn('[Sristi] offline copy not serialisable:', e); return; }
+  if(!_mirrorIdbDead){ _mirrorPut(_json); return; }
+  try{ localStorage.setItem(STORE_KEY,_json); try{ localStorage.setItem(MIRROR_LS_NEWER,'1'); }catch(e2){} _quotaWarned=false; }
   catch(e){
     // #45 — don't swallow quota errors silently: past the limit the local mirror
     // stops persisting, so warn once per session rather than losing edits unknowingly.
@@ -22577,7 +22707,7 @@ function viewSettings(){
             }catch(e){ marked = false; }
             let stillPending = 0;
             try{ stillPending = (typeof pendingSyncCount === 'function') ? pendingSyncCount() : 0; }catch(e){ stillPending = 0; }
-            if(marked && !stillPending){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} }
+            if(marked && !stillPending){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} try{ _mirrorClear(); }catch(e){} }   /* v303 - both homes */
             else console.warn('[Sristi] restore: keeping the local copy — mark', marked, 'pending', stillPending);
             _RESTORE_BUSY = false;
             /* The app already has a reload that waits for an open form or a
@@ -27879,7 +28009,7 @@ async function signOutNow(ask){
      signed in, because they work offline from it. */
   const _wasScoped = isViewerUser() || (typeof isMobilizerUser === 'function' && isMobilizerUser());
   SESSION = null;
-  if(_wasScoped){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} DB = normaliseDB(seedDB()); }
+  if(_wasScoped){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} try{ await _mirrorClear(); }catch(e){} DB = normaliseDB(seedDB()); }   /* v303 - both homes */
   /* v225 - '#login' was handled nowhere in the file, so both buttons landed on
      the farmer-facing page while the confirm promised the login page. '#admin'
      with no session opens the login modal at boot, which is what it says. */
@@ -31390,9 +31520,11 @@ window.addEventListener('hashchange', () => {
       document.body.classList.add('public-mode');
       ROUTE = publicRouteFromHash();
       // Load local cache so DB is non-empty before first render.
-      try{ const raw=localStorage.getItem(STORE_KEY); if(raw){ DB=normaliseDB(JSON.parse(raw)); } }catch(e){}
+      /* v303 - the same copy, from wherever it now lives */
+      try{ const _m = await _readMirror(); if(_m){ DB=normaliseDB(_m); } }catch(e){}
       // Always ensure DB is a valid (possibly empty) object before render.
       if(!DB) DB = normaliseDB(seedDB());
+      _mirrorArm();   /* v303c */
       render();
       // Now connect to Firebase in background (non-blocking).
       /* v272 - same safety net as the coordinator path: a farmer's own

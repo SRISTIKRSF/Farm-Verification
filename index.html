@@ -4626,7 +4626,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v305';
+const APP_VERSION = 'v306';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6530,6 +6530,17 @@ function markLocalTouch(col, id, ms){
   const _cur = _localTouches.get(col+'/'+id) || 0;
   _localTouches.set(col+'/'+id, _cur > _until ? _cur : _until);
 }
+/* v306 - the farmer record as it is NOW, for a screen's Save button.
+   The live listener replaces the farmer objects whenever anything changes on the server, so
+   the object a screen captured when it opened can be an orphan by the time Save is pressed:
+   the edit lands on a copy nothing saves while the screen says "saved". Re-find it by id at
+   the click (the v196/v199 lesson). null = no longer here.
+   v306b - no shield here: every caller edits and calls saveDB in the same tick, and saveDB
+   shields what it sends; a shield on a Save that then stops at a check only held the record. */
+function _recNow(col, id){
+  return ((DB && DB[col]) || []).find(x => x && x.id === id) || null;
+}
+function _recGoneToast(){ toast('This farmer is no longer on the list \u2014 nothing was changed', 'error'); }
 function isLocallyProtected(col, id){
   if(!col || !id) return false;
   const expiry = _localTouches.get(col+'/'+id);
@@ -9159,8 +9170,9 @@ function applyPhotoUrl(it, repl){
   if(rec && replacePhotoById(rec, it.photoId, repl)){ markLocalTouch(col, rec.id); recTouched = true; }
   const fc = FORMS_CACHE[it.farmerId];
   if(fc){
-    ['enrol','verif'].forEach(kind => { if(fc[kind] && replacePhotoById(fc[kind], it.photoId, repl)) formTouched = true; });
-    if(formTouched) persistForms(it.farmerId);
+    const _kinds = [];   /* v306 - only the sheet(s) the photo is in */
+    ['enrol','verif'].forEach(kind => { if(fc[kind] && replacePhotoById(fc[kind], it.photoId, repl)){ formTouched = true; _kinds.push(kind); } });
+    if(formTouched) persistForms(it.farmerId, _kinds);
   }
   if(recTouched) saveDB(true);
   else if(formTouched) cacheLocal();
@@ -9470,7 +9482,7 @@ function setForms(farmerId, kind, data, defer){   // kind: 'enrol' | 'verif'
                    extra: FORMS_CACHE[farmerId].extra||null,
                    rev: FORMS_CACHE[farmerId]._rev || 0, cachedAt: FORMS_CACHE[farmerId]._cachedAt,
                    cropsKey: FORMS_CACHE[farmerId]._cropsKey || ''}).catch(()=>{});
-  if(!defer) persistForms(farmerId);
+  if(!defer) persistForms(farmerId, kind);   /* v306 - only the sheet that changed */
 }
 /* v130 — attach a repeat submission to the farmer who already holds the
    phone number, as an additional enrolment form. The farmer record keeps only
@@ -9552,8 +9564,59 @@ async function loadPastVerifSheet(farmerId, key){
   }catch(e){ console.warn('[Sristi] past verification sheet:', e); return null; }
 }
 
-function persistForms(farmerId){
+/* v306 - forms/{id} holds TWO answer sheets written by different people: the farmer's
+   enrolment answers (enrol) and the verification (verif). It was written with set(), i.e.
+   REPLACED whole with whatever this device had - so a device without one of the sheets (an
+   admin verifying before a public farmer's answers had arrived, a phone holding a week-old
+   copy) erased or rolled back the other person's sheet.
+   Now each write is an update() of ONLY the sheet(s) this device changed ('kinds' on the queue
+   row), and never an empty one. A sheet this device did not change stays as the server has it.
+   A row with no 'kinds' (queued by v305 or earlier, or a caller that changed both) sends every
+   sheet it holds - but still never an empty one. */
+const _FORM_KINDS = ['enrol', 'verif'];
+function _formsNodeUpdate(payload, kinds){
+  if(!payload || typeof payload !== 'object') return null;
+  const up = {};
+  (Array.isArray(kinds) && kinds.length ? kinds : _FORM_KINDS).forEach(k => {
+    if(_FORM_KINDS.indexOf(k) >= 0 && payload[k] !== null && payload[k] !== undefined) up[k] = payload[k];
+  });
+  if(!Object.keys(up).length) return null;                 /* nothing of ours to send - never erase */
+  up._rev = payload._rev || 0;
+  return up;
+}
+function _formsPayloadNow(farmerId){
+  const fc = FORMS_CACHE[farmerId] || {};
+  return sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
+}
+/* One queue row per farmer. It carries every sheet this device changed and has not yet
+   sent - the kinds of the row it replaces are kept - and the sheets as they are NOW. Rows for
+   one farmer are written strictly one after another, so an older content can never land last. */
+const _formsRowChain = {};
+function _queueFormsRow(farmerId, kinds){
+  const prev = _formsRowChain[farmerId] || Promise.resolve();
+  const p = prev.catch(() => {}).then(() => idbGet('formWrites', farmerId).catch(() => null)).then(old => {
+    const ks = Array.isArray(kinds) && kinds.length ? kinds.slice() : _FORM_KINDS.slice();
+    const payload = _formsPayloadNow(farmerId);
+    if(old && old.payload){
+      (Array.isArray(old.kinds) && old.kinds.length ? old.kinds : _FORM_KINDS).forEach(k => {
+        if(ks.indexOf(k) >= 0) return;
+        ks.push(k);
+        /* v306b - a sheet queued earlier and not changed by this call keeps the content that was
+           queued: after a reload, loadForms may have put the server's OLDER copy in the cache */
+        if(old.payload[k] !== null && old.payload[k] !== undefined) payload[k] = old.payload[k];
+      });
+    }
+    let at = Date.now();
+    if(old && typeof old.at === 'number' && old.at >= at) at = old.at + 1;   /* v306b - never the same stamp twice */
+    const row = {key: farmerId, farmerId, payload, kinds: ks, at};
+    return idbPut('formWrites', row).then(() => row);
+  });
+  _formsRowChain[farmerId] = p;
+  return p;
+}
+function persistForms(farmerId, kinds){
   const fc = FORMS_CACHE[farmerId]; if(!fc) return;
+  kinds = (kinds === undefined || kinds === null) ? null : [].concat(kinds);   /* v306 */
   // v130 — deliberately NOT including attached forms here. This write
   // replaces the whole node, and a device on an older build writes only
   // {enrol, verif}; if attached forms lived here they would be wiped by any
@@ -9562,16 +9625,16 @@ function persistForms(farmerId){
      just fetched without trusting the record it came with. An older build
      writing {enrol, verif} drops it, which reads as revision 0, disagrees
      with the record and simply causes one more fetch - the safe direction. */
-  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
   // durable write queue — survives offline AND closing the tab
-  idbPut('formWrites', {key: farmerId, farmerId, payload, at: Date.now()})
+  _queueFormsRow(farmerId, kinds)
     .then(()=>{ updateUnsentCounts(); return flushFormWrites(); })
     .catch((e)=>{ // no IndexedDB: best-effort direct write
       /* v239 - this is the path a phone short of memory takes, and it used to
          be invisible. If the queue cannot even be written to, the only copy of
          this form is the one in the page - say so. */
       _storageTrouble('formWrites', e);
-      if(FB && FB.ready) fbRef('forms/'+farmerId).set(payload).catch(e2=>console.warn('forms write:',e2));
+      const up = _formsNodeUpdate(_formsPayloadNow(farmerId), kinds);   /* v306 */
+      if(up && FB && FB.ready) fbRef('forms/'+farmerId).update(up).catch(e2=>console.warn('forms write:',e2));
     });
 }
 /* v242 - the same write as persistForms, but AWAITED and answered honestly, so
@@ -9695,18 +9758,20 @@ async function _awaitEnrolRecord(ms){
   return false;
 }
 
-async function persistFormsNow(farmerId, ms){
+async function persistFormsNow(farmerId, ms, kinds){
   const fc = FORMS_CACHE[farmerId];
   if(!fc) return 'lost';
-  const payload = sanitizeForFB({enrol: fc.enrol||null, verif: fc.verif||null, _rev: fc._rev || 0});
-  let durable = false;
-  const _at = Date.now();
-  try{ await idbPut('formWrites', {key: farmerId, farmerId, payload, at: _at}); durable = true; }
+  kinds = (kinds === undefined || kinds === null) ? null : [].concat(kinds);   /* v306 */
+  let durable = false, row = null;
+  try{ row = await _queueFormsRow(farmerId, kinds); durable = true; }
   catch(e){ _storageTrouble('formWrites-now', e); }
+  const _at = row ? row.at : 0;
   updateUnsentCounts();
   if(!FB || !FB.ready || !navigator.onLine) return durable ? 'saved' : 'lost';
+  const up = row ? _formsNodeUpdate(row.payload, row.kinds) : _formsNodeUpdate(_formsPayloadNow(farmerId), kinds);
   try{
-    const g = await _fbWriteGuard(fbRef('forms/'+farmerId).set(payload), ms || 20000);
+    /* v306 - update() of this device's sheets only; nothing to send is already done */
+    const g = await _fbWriteGuard(up ? fbRef('forms/'+farmerId).update(up) : Promise.resolve(), ms || 20000);
     if(g.timedOut) return durable ? 'saved' : 'lost';
     /* it is on the server - drop the queue row so nothing re-sends it.
        v242 - but only if it is still OUR row: a newer setForms for the same
@@ -9780,7 +9845,12 @@ async function flushFormWrites(){
     const items = await idbAll('formWrites').catch(()=>[]);
     for(const it of items){
       try{
-        const _g = await _fbWriteGuard(fbRef(it.path || ('forms/'+it.farmerId)).set(it.payload), _QUEUE_WRITE_MS);
+        /* v306 - the answer-sheet node takes an update() of this device's sheets only */
+        const _node = !it.path || it.path === ('forms/' + it.farmerId);
+        const _up = _node ? _formsNodeUpdate(it.payload, it.kinds) : null;
+        const _w = !_node ? fbRef(it.path).set(it.payload)
+                 : _up ? fbRef('forms/'+it.farmerId).update(_up) : Promise.resolve();
+        const _g = await _fbWriteGuard(_w, _QUEUE_WRITE_MS);
         if(_g.timedOut){
           /* The write may still be travelling. Leave the row and move on rather
              than blocking every other form behind this one. */
@@ -14763,7 +14833,7 @@ function getFcQueueLists(){
 // Verification Queue. FC assigns a visit date."). Writes DB.verificationPlans
 // (+ f.plannedVisits for haat, matching openPlanVisitModal/openCreatePlanModal).
 function openFcPlanVisitModal(program, farmerId){
-  const f = program==='conv' ? (DB.convFarmers||[]).find(x=>x.id===farmerId) : (DB.haatFarmers||[]).find(x=>x.id===farmerId);
+  let f = program==='conv' ? (DB.convFarmers||[]).find(x=>x.id===farmerId) : (DB.haatFarmers||[]).find(x=>x.id===farmerId);
   if(!f) return;
   const existing = _fcPlanFor(farmerId, program);
   if(existing){
@@ -14780,6 +14850,7 @@ function openFcPlanVisitModal(program, farmerId){
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="fcpvSave">${svg(I.check)}Save plan</button>`);
   $('#fcpvSave').onclick=async()=>{
+    f = _recNow(program==='conv'?'convFarmers':'haatFarmers', farmerId); if(!f){ _recGoneToast(); return; }   /* v306 */
     const date=$('#fcpvDate').value||defaultDate;
     const note=$('#fcpvNote').value.trim();
     DB.verificationPlans=DB.verificationPlans||[];
@@ -18910,7 +18981,7 @@ function renderV5EnrollmentSummary(f){
 }
 
 function openCropsEditor(farmerId){
-  const f = DB.haatFarmers.find(x => x.id === farmerId);
+  let f = DB.haatFarmers.find(x => x.id === farmerId);   /* v306b - let: re-found at Save */
   if(!f) return;
   let rows = getFarmerCrops(f).map(c => Object.assign({}, c));
   if(rows.length === 0) rows = [{},{},{}];
@@ -18991,6 +19062,7 @@ function openCropsEditor(farmerId){
       name: r.name.trim(), area: r.area || '', yield: r.yield || '', season: r.season || ''
     }));
     if(!cleaned.length){ toast('Add at least one crop before saving'); return; }
+    f = _recNow('haatFarmers', farmerId); if(!f){ _recGoneToast(); return; }   /* v306b */
     f.cropHistory = f.cropHistory || [];
     // v9 audit-fix #4 + #28 — DB.session never existed; use the canonical
     // actor() helper so the by-field actually reflects who edited.
@@ -20240,7 +20312,8 @@ ${/* v265 - everything from here to Edit details changes the record. */''}
       else if(a==='compare')openCompareFormsModal(id);
       else if(a==='editCrops')openCropsEditor(id);
       else if(a==='cropsHistory'){ if(ev&&ev.preventDefault)ev.preventDefault(); openCropsHistoryModal(id); }
-      else if(a==='toggle'){f.active=!f.active;await saveDB();closeDrawer();render();toast(f.active?'Marked active':'Marked inactive');}
+      else if(a==='toggle'){ const _r=_recNow('haatFarmers',id); if(!_r){ _recGoneToast(); return; }   /* v306b */
+        _r.active=!f.active;   /* v306d - what the button offered ("Mark active/inactive"), not a flip of the fresh record */await saveDB();closeDrawer();render();toast(_r.active?'Marked active':'Marked inactive');}
       else if(a==='newview'){ recSetUi('page'); closeDrawer(); openHaatRecord(id); }   /* v258 */
     };
   });
@@ -20660,7 +20733,7 @@ function openDecisionModal(id){
 // v9 process-fix #54 — extracted the original modal body so the quality gate
 // can branch to a warning and proceed via this function.
 function _openDecisionInner(id){
-  const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
+  let f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;   /* v306 - let: re-found at Save */
 
   // Detect seasonal re-verification: farmer is already green (onboarded) and
   // is being verified again. New-enrolment decision = farmer is still pending.
@@ -20701,6 +20774,7 @@ function _openDecisionInner(id){
     chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{pick=c.dataset.v;paintChips();});
     paintChips();
     $('#saveDec').onclick=async()=>{
+      f = _recNow('haatFarmers', id); if(!f){ _recGoneToast(); return; }   /* v306 */
       const note=$('#dNote').value.trim();
       const today=todayISO();
       f.decisionNote=note;
@@ -20791,6 +20865,7 @@ function _openDecisionInner(id){
   paintChips();
   $('#saveDec').onclick=async()=>{
     if(!['green','yellow','red'].includes(pick)){toast('Pick a decision first');return;}
+    f = _recNow('haatFarmers', id); if(!f){ _recGoneToast(); return; }   /* v306 */
     // v9 process-fix #39 — Green onboarding REQUIRES a haat. Otherwise the
     // farmer is "approved" but unrouted; income recording later guesses the
     // wrong market.
@@ -20884,7 +20959,7 @@ function farmerSellsAt(f, name){
 }
 
 function openAssignHaatModal(id){
-  const f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;
+  let f=DB.haatFarmers.find(x=>x.id===id);if(!f)return;   /* v306 - let: re-found at Save */
   const list=getHaatList();
   if(!list.length){
     modalShell('No haats configured',
@@ -20929,6 +21004,7 @@ function openAssignHaatModal(id){
   document.querySelectorAll('.ah-cb').forEach(function(c){ c.onchange = _ahEcho; });
   _ahEcho();
   $('#ahSave').onclick=async()=>{
+    f = _recNow('haatFarmers', id); if(!f){ _recGoneToast(); return; }   /* v306 */
     let picked = [].slice.call(document.querySelectorAll('.ah-cb')).filter(function(c){return c.checked;}).map(function(c){return c.value;});
     const note=$('#ahNote').value.trim();
     const before = farmerHaats(f);
@@ -20974,7 +21050,7 @@ function openAssignHaatModal(id){
 
 /* ============ MODAL: ASSIGN FC ============ */
 function openAssignFcModal(id){
-  const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
+  let f=DB.convFarmers.find(x=>x.id===id);if(!f)return;   /* v306 - let: re-found at Save */
   const body=`<div class="hint" style="margin-bottom:12px"><b>${esc(f.name)}</b> · ${esc(f.village)}, ${esc(talukaDisplayName(f.taluka,f.district)||'')}${f.taluka?', ':''}${esc(f.district)}</div>`
     +fld('Assign field coordinator',sel('afFc',[['','— select field coordinator —'],...fcChoices(f.fcId||currentFcId()).map(x=>[x.id,x.name+(x.district?' ('+x.district+')':'')])],f.fcId||currentFcId()||''),true);
   modalShell('Assign field coordinator — '+esc(f.name),body,
@@ -20983,6 +21059,7 @@ function openAssignFcModal(id){
   $('#afSave').onclick=async()=>{
     const fcId=$('#afFc').value;
     if(!fcId){toast('Pick a field coordinator first');return;}
+    f = _recNow('convFarmers', id); if(!f){ _recGoneToast(); return; }   /* v306 */
     f.fcId=fcId; f.assignedAt=todayISO();
     if(!f.stage || f.stage==='enrolled') f.stage='assigned';
     if(!f.nextVisitDue) f.nextVisitDue=addDaysISO(todayISO(),30);
@@ -21450,7 +21527,7 @@ function openReassignFcModal(){
     const fromId = $('#raFrom').value, dist = $('#raDist').value, toId = $('#raTo').value;
     if(!toId)          return toast('Pick the coordinator they move to', 'error');
     if(toId === fromId) return toast('That is the same coordinator', 'error');
-    const list = _reassignMatches(fromId, dist);
+    let list = _reassignMatches(fromId, dist);   /* v306b - let: re-found after the confirm */
     if(!list.length)   return toast('Nobody matches that combination', 'error');
     const fromN = (fcById(fromId)||{}).name || fromId;
     const toN   = (fcById(toId)||{}).name || toId;
@@ -21466,6 +21543,9 @@ function openReassignFcModal(){
         + 'Nothing is deleted, and the previous coordinator is remembered on each record so this can be undone.',
       confirmLabel: 'Move ' + list.length + ' to ' + toN });
     if(!ok) return;
+    /* v306b - the records as they are NOW: the ones confirmed that are still with that coordinator */
+    { const _ids = new Set(list.map(f => f.id)); list = _reassignMatches(fromId, dist).filter(f => _ids.has(f.id)); }
+    if(!list.length) return toast('Nobody matches that combination any more \u2014 nothing was changed', 'error');
 
     const who = actor() || {};
     const nowIso = new Date().toISOString();
@@ -21490,7 +21570,7 @@ function openReassignFcModal(){
 
 /* ============ MODAL: SET CONVERSION STAGE (manager override) ============ */
 function openConvStatusModal(id){
-  const f=DB.convFarmers.find(x=>x.id===id);if(!f)return;
+  let f=DB.convFarmers.find(x=>x.id===id);if(!f)return;   /* v306 - let: re-found at Save */
   migrateConvFarmer(f);
   const sug=suggestConvStage(f);
   const opts=[
@@ -21519,7 +21599,10 @@ function openConvStatusModal(id){
   pickWrap.querySelectorAll('.status-opt').forEach(o=>o.onclick=()=>{pick=o.dataset.v;paint();});
   paint();
   $('#saveConvStatus').onclick=async(ev)=>{
-    const btn=ev.currentTarget; if(btn.disabled) return; btn.disabled=true; const _lbl=btn.innerHTML; btn.textContent='Saving…';
+    const btn=ev.currentTarget; if(btn.disabled) return;
+    f = _recNow('convFarmers', id); if(!f){ _recGoneToast(); return; }   /* v306 */
+    migrateConvFarmer(f);
+    btn.disabled=true; const _lbl=btn.innerHTML; btn.textContent='Saving…';
     f.stage=pick;
     // v8 — sync transitionStatus for every stage so the colour reflects the
     // current stage (was previously stale when demoting to enrolled/assigned).
@@ -21648,6 +21731,7 @@ function openFarmerModal(program,id){
   };
 
   $('#saveFarmer').onclick=async()=>{
+    if(editing){ f = _recNow(program==='haat'?'haatFarmers':'convFarmers', id); if(!f){ _recGoneToast(); return; } }   /* v306 */
     const name=$('#ffName').value.trim();
     if(!name){toast('Farmer name is required');return;}
     const _phoneRaw=$('#ffPhone').value.trim();
@@ -25031,8 +25115,14 @@ function openAssignMobilizerModal(){
         + 'recorded visit stay exactly as they are, and no farmer is removed from the Conversion programme.',
       confirmLabel: 'Save' });
     if(!ok) return;
-    add.forEach(f => { f.mobilizerId = mobId; markLocalTouch('convFarmers', f.id); });
-    remove.forEach(f => { delete f.mobilizerId; markLocalTouch('convFarmers', f.id); });
+    /* v306b - applied to the records as they are NOW, and again after the account write below
+       (a network wait) so a refresh during it cannot leave the change on a copy nothing saves */
+    const _addIds = add.map(f => f.id), _remIds = remove.map(f => f.id);
+    const _applyMob = () => {
+      _addIds.forEach(id => { const f = _recNow('convFarmers', id); if(f){ f.mobilizerId = mobId; markLocalTouch('convFarmers', id); } });
+      _remIds.forEach(id => { const f = _recNow('convFarmers', id); if(f){ delete f.mobilizerId; markLocalTouch('convFarmers', id); } });
+    };
+    _applyMob();
     /* v165 — the mobilizer's own account carries the id list, because that is
        what their device reads to know WHICH farmer records to fetch. Written
        as a child set() so the account node — password hash and all — is never
@@ -25044,6 +25134,7 @@ function openAssignMobilizerModal(){
       const _u = (typeof getUsersList === 'function' ? getUsersList() : []).find(x => x && x.id === mobId);
       if(_u) _u.farmers = mine;
     }catch(e){ console.warn('[Sristi] could not write the mobilizer farmer list:', e); }
+    _applyMob();   /* v306b */
     logActivity('status', '<b>' + esc(mobN) + '</b> mobilizer list updated — '
       + add.length + ' added, ' + remove.length + ' removed. Coordinator, stage, score and visits unchanged.');
     await saveDB();
@@ -25363,10 +25454,11 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
 
   // 1. settle the summary fields
   const rows = dupDiff(keep, drop);
+  const _summary = {};   /* v306b - kept so it can be applied to the records as they are NOW */
   rows.filter(r=>!r.same).forEach(r => {
     const side = picks[r.key] || (r.a ? 'keep' : 'drop');
     const val  = side==='keep' ? r.a : r.b;
-    keep[r.key] = DUP_NUMERIC.includes(r.key) ? (parseFloat(val)||0) : val;
+    keep[r.key] = _summary[r.key] = DUP_NUMERIC.includes(r.key) ? (parseFloat(val)||0) : val;
   });
 
   /* 2. both enrolment forms end up on the survivor. mainFormId decides which
@@ -25374,6 +25466,9 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
         v159 — before this the survivor always led with its own form, and since
         the survivor is picked by age, an empty older record led with an empty
         form while the real answers sat behind it. */
+  const _mergeXf = [];   /* v306c - Form 2 pointers put on the survivor, re-applied below */
+  let _mergeSwapped = false;   /* v306d - formsRev is raised only when the main form was swapped */
+  const _noteXf = (r, fid) => { try{ ((r && r.extraForms) || []).forEach(x => { if(x && x.id === fid) _mergeXf.push(Object.assign({}, x)); }); }catch(e){} };
   try{
     await loadForms(drop.id);
     await loadForms(keep.id);
@@ -25384,17 +25479,31 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
       // Demote the survivor's own form FIRST — setForms would otherwise
       // overwrite the only copy we still have of it in the cache.
       if(hasClaims(keepEnrol)){
-        await attachFormToFarmer(keep.id, keep.id, keepEnrol,
+        _noteXf(await attachFormToFarmer(keep.id, keep.id, keepEnrol,
           { at: keep.submittedAt || keep.publicSubmittedAt, name: keep.name||'',
-            from: 'the earlier form on '+keep.id });
+            from: 'the earlier form on '+keep.id }), keep.id);
       }
       setForms(keep.id, 'enrol', dropEnrol);
+      _mergeSwapped = true;
     } else if(hasClaims(dropEnrol)){
-      await attachFormToFarmer(keep.id, drop.id, dropEnrol,
-        { at: drop.submittedAt || drop.publicSubmittedAt, name: drop.name||'', from: 'merged from '+drop.id });
+      _noteXf(await attachFormToFarmer(keep.id, drop.id, dropEnrol,
+        { at: drop.submittedAt || drop.publicSubmittedAt, name: drop.name||'', from: 'merged from '+drop.id }), drop.id);
     }
   }catch(e){ console.warn('[Sristi] could not carry the form across:', e); }
 
+  /* v306b - the two waits above (forms, up to 20 s each) and the phone-index writes below let
+     the live listener replace both records; the edits below used to land on the copies captured
+     before them, which nothing saves, while the toast said "Combined". They are now applied to
+     the records as they are NOW - and applied again after the phone-index writes. Every step is
+     safe to repeat. */
+  const _kCol = kItem.program==='conv'?'convFarmers':'haatFarmers', _dCol = dItem.program==='conv'?'convFarmers':'haatFarmers';
+  const _archivedAt = new Date().toISOString(), _archivedBy = (actor()||{}).name || 'admin';
+  const _applyMerge = () => {
+  const keep = _recNow(_kCol, keepId), drop = _recNow(_dCol, dropId);
+  if(!keep || !drop) return null;
+  Object.keys(_summary).forEach(k => { keep[k] = _summary[k]; });
+  _mergeXf.forEach(p => { keep.extraForms = (keep.extraForms || []).filter(x => x && x.id !== p.id); keep.extraForms.push(Object.assign({}, p)); });
+  if(_mergeSwapped){ const _fr = (FORMS_CACHE[keep.id] || {})._rev; if(typeof _fr === 'number' && _fr > (keep.formsRev || 0)) keep.formsRev = _fr; }
   // 3a. v134 — carry the verification history across. Visits are only ever
   //     added by an FC completing a farm visit and nothing in the app removes
   //     one, so a union can never discard real work. Without this the visits
@@ -25417,20 +25526,25 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
 
   // 3. archive the loser — never delete
   drop._archived   = true;
-  drop.archivedAt  = new Date().toISOString();
-  drop.archivedBy  = (actor()||{}).name || 'admin';
+  drop.archivedAt  = _archivedAt;
+  drop.archivedBy  = _archivedBy;
   drop._mergedInto = keep.id;
-  keep._mergedFrom = (keep._mergedFrom||[]).concat([drop.id]);
-  markLocalTouch(dItem.program==='conv'?'convFarmers':'haatFarmers', drop.id);
-  markLocalTouch(kItem.program==='conv'?'convFarmers':'haatFarmers', keep.id);
+  if((keep._mergedFrom||[]).indexOf(drop.id) < 0) keep._mergedFrom = (keep._mergedFrom||[]).concat([drop.id]);
+  markLocalTouch(_dCol, drop.id);
+  markLocalTouch(_kCol, keep.id);
+  return keep;
+  };
+  let _kept = _applyMerge();
+  if(!_kept){ toast('One of these farmers is no longer on the list \u2014 nothing was combined', 'error'); return; }
 
   // 4. the phone must end up pointing at the SURVIVOR. Whichever record held
   //    the claim, release it and re-claim for the survivor — otherwise a future
   //    duplicate submission would sail straight through unnoticed.
   try{
     await releasePhoneIndex(phone);
-    await claimPhoneIndex(keep.phone, kItem.program, keep.id);
+    await claimPhoneIndex(_kept.phone, kItem.program, _kept.id);
   }catch(e){ console.warn('[Sristi] phone index re-point failed:', e); }
+  _kept = _applyMerge() || _kept;   /* v306b - again, after those waits */
 
   logActivity('decision', `Combined <b>${esc(drop.id)}</b> into <b>${esc(keep.id)}</b> — ${esc(keep.name||'')} (${esc(phone)}). Both forms kept; ${esc(drop.id)} archived.`);
   FILTERS.dup = { open:null, picks:{}, keep:null };
@@ -25512,9 +25626,9 @@ function countFarms(list){
 
 /* ---------------- add or edit a farm ---------------- */
 function openSecondFarmModal(farmerId, fid){
-  const f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
+  let f = (DB.haatFarmers||[]).find(x => x.id === farmerId);   /* v306 - let: re-found at Save */
   if(!f) return;
-  const farm = fid ? farmOf(f, fid) : null;
+  let farm = fid ? farmOf(f, fid) : null;
   const ex = farm || { village:'', taluka:'', district:'', survey:'', acres:'', fcId:'' };
   const dOpts = Object.keys(DB.states && DB.states[f.state] ? DB.states[f.state] : {});
   const body = `
@@ -25543,6 +25657,8 @@ function openSecondFarmModal(farmerId, fid){
     const village = $('#sfVillage').value.trim();
     const district = $('#sfDistrict').value;
     if(!village || !district){ toast('Village and district are needed', 'error'); return; }
+    f = _recNow('haatFarmers', farmerId); if(!f){ _recGoneToast(); return; }   /* v306 */
+    if(fid){ farm = farmOf(f, fid); if(!farm){ toast('This farm is no longer on the record \u2014 nothing was changed', 'error'); return; } }
     const data = {
       village, district,
       taluka: $('#sfTaluka').value.trim(),
@@ -25570,6 +25686,7 @@ function openSecondFarmModal(farmerId, fid){
   const del = $('#sfDel');
   if(del) del.onclick = async () => {
     if(!confirm('Remove this farm from '+f.name+'?\n\nAny visits recorded against it are removed with it. The farmer and Farm 1 are untouched.')) return;
+    f = _recNow('haatFarmers', farmerId); if(!f){ _recGoneToast(); return; }   /* v306 */
     f.farms = (f.farms||[]).filter(x => x.fid !== fid);
     markLocalTouch('haatFarmers', f.id);
     logActivity('edit', `Removed a farm from <b>${esc(f.name)}</b> (${esc(f.id)})`);
@@ -27382,7 +27499,7 @@ window.addEventListener('message',async ev=>{
              the truth. setForms queues the write and returns immediately; the
              confirmation used to appear in that same instant. */
           let _enrolSaved = 'lost';
-          try{ _enrolSaved = await persistFormsNow(rec.id, 20000); }
+          try{ _enrolSaved = await persistFormsNow(rec.id, 20000, 'enrol'); }
           catch(e){ console.warn('[Sristi] enrolment save:', e); }
           _ackEnrolSaved(_enrolSaved);
           if(_enrolSaved === 'lost') _reportEnrolNotSaved(rec);
@@ -27444,7 +27561,7 @@ window.addEventListener('message',async ev=>{
            button sat disabled for 25 seconds and then warned that nothing had
            been saved, on every single staff enrolment, when it had saved fine. */
         let _staffSaved = 'lost';
-        try{ _staffSaved = await persistFormsNow(last.id, 20000); }
+        try{ _staffSaved = await persistFormsNow(last.id, 20000, 'enrol'); }
         catch(e){ console.warn('[Sristi] enrolment save:', e); }
         _ackEnrolSaved(_staffSaved);
         if(_staffSaved === 'lost') _reportEnrolNotSaved(last);

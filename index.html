@@ -4626,7 +4626,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v307';
+const APP_VERSION = 'v312';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6329,7 +6329,9 @@ function cloudToDB(c){
     // v8.2: public self-enrolments queue.
     pendingEnrolments:mapToArr(c.pendingEnrolments),
     // v9 Batch 5: shared verification plans (cross-FC visibility).
-    verificationPlans:mapToArr(c.verificationPlans),
+    /* v308 - copies: an in-place edit (a plan marked completed) must never change the snapshot
+       the server baseline is built from, or saveDB believes the server already has it */
+    verificationPlans:mapToArr(c.verificationPlans).map(p => (p && typeof p === 'object') ? JSON.parse(JSON.stringify(p)) : p),
     // v125 — kept as a plain id->timestamp map, not an array.
     verifIndex:(c.verifIndex && typeof c.verifIndex==='object') ? c.verifIndex : {},
   });
@@ -6411,6 +6413,9 @@ function _mirrorPut(json){
 /* Clear both homes, and drop any write still queued: after a sign-out that is meant to remove
    a scoped copy, nothing may put it back. */
 function _mirrorClear(){
+  /* v310d - a waiting offline-copy write must not put back what is being cleared */
+  try{ if(_clTimer){ clearTimeout(_clTimer); _clTimer = null; } }catch(e){}
+  _mirrorCleared = true;
   _mirrorGen++;
   _mirrorNext = null;
   try{ localStorage.removeItem(STORE_KEY); localStorage.removeItem(MIRROR_LS_NEWER); }catch(e){}
@@ -6455,7 +6460,50 @@ async function _readMirrorOnce(){
   return lsRaw || null;   /* an install from before v303 */
 }
 let _quotaWarned=false;
-function cacheLocal(){
+/* v309 - the offline copy, assembled from the per-record text saveDB's diff has just made (the
+   same JSON.stringify of each record) instead of stringifying every farmer a second time. Only
+   ids that occur once in their list use it; everything else is stringified exactly as before. */
+const _MIRROR_DEEP_KEYS = /"(?:_u|enrollmentFormFull|verificationFormFull)":/;
+function _mirrorJsonFromSnap(snap){
+  const parts = [];
+  Object.keys(DB).forEach(k => {
+    const v = DB[k];
+    let j;
+    const sc = (snap && SYNC_COLS.indexOf(k) >= 0 && Array.isArray(v)) ? snap[k] : null;
+    if(sc){
+      const n = {};
+      v.forEach(r => { if(r && typeof r === 'object' && r.id) n[r.id] = (n[r.id] || 0) + 1; });
+      j = '[' + v.map(r => {
+        /* the diff's text strips these at the top level only; a record holding one deeper down is
+           stringified the old way, so the copy stays byte-for-byte what it was */
+        if(r && typeof r === 'object' && r.id && n[r.id] === 1 && typeof sc[r.id] === 'string'
+           && !_MIRROR_DEEP_KEYS.test(sc[r.id])) return sc[r.id];
+        const x = JSON.stringify(r, _stripReplacer);
+        return x === undefined ? 'null' : x;
+      }).join(',') + ']';
+    } else {
+      j = JSON.stringify(v, _stripReplacer);
+    }
+    if(j === undefined) return;   /* dropped, exactly as JSON.stringify drops it */
+    parts.push(JSON.stringify(k) + ':' + j);
+  });
+  return '{' + parts.join(',') + '}';
+}
+/* v310 - the offline copy after a server refresh, a few seconds later (a burst writes it once).
+   Any direct cacheLocal() - every save - writes at once and cancels the wait. */
+let _clTimer = null, _mirrorCleared = false;
+function _cacheLocalSoon(){
+  if(_clTimer) clearTimeout(_clTimer);
+  _clTimer = setTimeout(() => { _clTimer = null; cacheLocal(); }, 4000);
+}
+try{
+  const _clFlush = () => { if(_clTimer){ clearTimeout(_clTimer); _clTimer = null; try{ cacheLocal(); }catch(e){} } };
+  addEventListener('pagehide', _clFlush);
+  addEventListener('visibilitychange', () => { if(document.hidden) _clFlush(); });
+}catch(e){}
+function cacheLocal(snap){
+  if(_clTimer){ clearTimeout(_clTimer); _clTimer = null; }   /* v310 - this write supersedes a waiting one */
+  if(_mirrorCleared) return;   /* v310d - cleared for a sign-out / restore: nothing more until the reload */
   /* v265 - A VIEWER NEVER WRITES THE LOCAL MIRROR.
 
      Caught in testing, and it is the sharp edge of scoping by filtering DB. A
@@ -6490,7 +6538,10 @@ function cacheLocal(){
     return;
   }
   let _json;
-  try{ _json = JSON.stringify(DB,_stripReplacer); }catch(e){ console.warn('[Sristi] offline copy not serialisable:', e); return; }
+  if(snap){ try{ _json = _mirrorJsonFromSnap(snap); }catch(e){ _json = undefined; } }   /* v309 */
+  if(typeof _json !== 'string'){
+    try{ _json = JSON.stringify(DB,_stripReplacer); }catch(e){ console.warn('[Sristi] offline copy not serialisable:', e); return; }
+  }
   if(!_mirrorIdbDead){ _mirrorPut(_json); return; }
   try{ localStorage.setItem(STORE_KEY,_json); try{ localStorage.setItem(MIRROR_LS_NEWER,'1'); }catch(e2){} _quotaWarned=false; }
   catch(e){
@@ -6802,6 +6853,19 @@ const _attachedKeys = new Set();
    exactly as the server sent it, as JSON TEXT - never anything from DB (DB carries this
    device's unsent edits; a baseline holding unsent work is the v272 work-loss bug). */
 const _BASE_FULL_EVERY_MS = 24 * 60 * 60 * 1000;   /* a full download at least once a day */
+/* v312 - once a whole week has passed with no edit from an older app version, the full download
+   is weekly; any such edit puts it back to daily (and closes the changes-only gate). */
+const _BASE_FULL_CLEAN_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const _BASE_CLEAN_FOR_WEEKLY_MS = 14 * 24 * 60 * 60 * 1000;   /* v312b - two clean weeks first */
+function _baseFullEveryMs(b){
+  try{
+    if(b && (b.phone || b.scope)) return _BASE_FULL_EVERY_MS;   /* v312b - phones: always daily */
+    const clean = b && typeof b.cleanSince === 'number' ? b.cleanSince : null;
+    const dirty = b && typeof b.dirtyAt === 'number' ? b.dirtyAt : 0;
+    if(clean !== null && dirty <= clean && (Date.now() - clean) >= _BASE_CLEAN_FOR_WEEKLY_MS) return _BASE_FULL_CLEAN_WEEK_MS;   /* v312b */
+  }catch(e){}
+  return _BASE_FULL_EVERY_MS;
+}
 const _BASE_MARGIN_MS     = 10 * 60 * 1000;        /* re-ask for the last 10 minutes */
 let _baseIdb = null, _baseIdbDead = false, _basePreload = null;
 const _baseState = {};   /* col -> {mode, recs:{id:json}, u:{id:time}, hw, at, ...} */
@@ -6828,6 +6892,30 @@ function _baseTx(mode, fn){
   }));
 }
 function _baseKey(col){ return FB_NAMESPACE + '/' + col; }
+/* v311 - coordinator phones, changes only (see the version note). null = not such a phone. */
+function _phoneScope(){
+  try{
+    if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) return null;
+    if(!SESSION || SESSION.role !== 'fc' || !SESSION.userId) return null;
+    if(!window.indexedDB) return null;
+    try{ if(localStorage.getItem('fv_delta_off') === '1') return null; }catch(e){}
+    const on = DB && DB.settings && DB.settings.phoneDeltaFcs;
+    if(!Array.isArray(on) || on.indexOf(SESSION.userId) < 0) return null;
+    const ds = (typeof fcAssignedDistricts === 'function' ? (fcAssignedDistricts() || []) : []).slice().sort();
+    if(!ds.length) return null;   /* no districts: not scoped - the existing path */
+    return {fc: SESSION.userId, ds: ds, sig: 'fc:' + SESSION.userId + ':' + ds.join('|')};
+  }catch(e){ return null; }
+}
+/* the same rule as the district queries: own fcId, blank / absent district, or one of the districts */
+function _phoneInScope(sc, r){
+  if(!sc || !r || typeof r !== 'object') return false;
+  if(r.fcId === sc.fc) return true;
+  const d = r.district;
+  if(d === undefined || d === null || d === '') return true;
+  return sc.ds.indexOf(d) >= 0;
+}
+/* the label a saved copy must carry to be used here: null on admin computers */
+function _baseScopeSig(){ const sc = _phoneScope(); return sc ? sc.sig : null; }
 function _basePreloadStart(){
   if(_basePreload) return _basePreload;
   const one = col => Promise.race([
@@ -6840,11 +6928,12 @@ function _basePreloadStart(){
 function _baseClear(){
   try{ return _baseTx('readwrite', st => { _DELTA_COLS.forEach(c => st.delete(_baseKey(c))); }).catch(() => {}); }catch(e){ return Promise.resolve(); }
 }
-function _baseSame(b){ return !!(b && b.v === 1 && b.ns === FB_NAMESPACE && b.recs && typeof b.recs === 'object'); }
+function _baseSame(b){ return !!(b && b.v === 1 && b.ns === FB_NAMESPACE && b.recs && typeof b.recs === 'object'
+  && (b.scope || null) === _baseScopeSig()); }   /* v311 - a phone's copy only for that phone's scope; an admin's only for admins */
 function _baseValid(b){
   if(!_baseSame(b)) return false;
   const age = Date.now() - (b.at || 0);
-  return age >= -60000 && age < _BASE_FULL_EVERY_MS && typeof b.hw === 'number';
+  return age >= -60000 && age < _baseFullEveryMs(b) && typeof b.hw === 'number';   /* v312 */
 }
 /* v305b - changes-only mode opens only after this long without a single unstamped change */
 const _BASE_CLEAN_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6875,6 +6964,8 @@ function _baseSafeHw(st){
   const lim = (_svOffset !== null) ? Date.now() + _svOffset + 5 * 60 * 1000 : Infinity;
   let hw = 0;
   Object.keys(st.u || {}).forEach(id => { const u = st.u[id]; if(u > hw && u <= lim) hw = u; });
+  /* v311 - a phone also saw changes outside its scope; not asking for them again */
+  if(typeof st.hwOut === 'number' && st.hwOut > hw && st.hwOut <= lim) hw = st.hwOut;
   return hw;
 }
 function _basePersistSoon(){
@@ -6907,6 +6998,7 @@ function _basePersistNow(){
       g.onsuccess = () => {
         try{ _baseMergeGate(st, g.result); }catch(e){}
         store.put({key: _baseKey(col), v: 1, ns: FB_NAMESPACE, col: col, hw: _baseSafeHw(st), at: st.at, savedAt: Date.now(), recs: st.recs,
+                   scope: (st.phone && st.phone.sig) || null,   /* v311 */
                    cleanSince: (typeof st.cleanSince === 'number' ? st.cleanSince : null), dirtyAt: st.dirtyAt || null,
                    vi: st.vi || null});   /* v305f */
       };
@@ -6940,11 +7032,19 @@ function _basePublish(key, st){
   if(!st || _baseState[key] !== st) return;
   if(!st.mainSeen || (st.mode === 'delta' && !st.tombSeen)) return;
   st.ready = true; st.dirty = true; _basePersistSoon();
-  try{ _noteSeenVisits(); }catch(e){}   /* v305k - what is on screen before this refresh */
-  _liveSnapshot[key] = _baseParseAll(st.recs);
+  /* v310 - before the first merge: at once, as before. After it: the re-parse and the run are
+     done together by _runLiveSnapshot, once per burst. */
+  if(!_firstSnapshotMerged){
+    try{ _noteSeenVisits(); }catch(e){}   /* v305k - what is on screen before this refresh */
+    _liveSnapshot[key] = _baseParseAll(st.recs);
+    _liveSnapshotSeen.add(key);
+    if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
+    _processLiveSnapshot();
+    return;
+  }
+  _basePendingParse.add(key);
   _liveSnapshotSeen.add(key);
-  if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
-  _processLiveSnapshot();
+  _scheduleLiveSnapshot();
 }
 /* v305b/c - did anything change a farmer WITHOUT the marker? (an older app version, a hand
    edit in the console). Checked on every full download; any such change keeps this computer
@@ -6963,6 +7063,7 @@ function _baseCheckUnstamped(key, st){
   const bad = [], gone = [];
   Object.keys(old.recs).forEach(id => {
     const was = old.recs[id], now = st.recs[id], wasU = old.u[id] || 0;
+    if(now === undefined && st.phone) return;   /* v311 - left this phone's scope (deletions: deletion records) */
     if(now === undefined){
       if(!(typeof tomb[id] === 'number' && tomb[id] > wasU)) gone.push([id, wasU]);
     } else if(now !== was && (st.u[id] || 0) === wasU){
@@ -7036,7 +7137,7 @@ function _attachFullKey(key, prev){
     _liveSnapshot[key] = val;
     _liveSnapshotSeen.add(key);
     if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
-    _processLiveSnapshot();
+    _scheduleLiveSnapshot();   /* v310 */
   };
   tombRef.on('value', onTomb, onTombErr);
   mainRef.on('value', onMain);
@@ -7047,10 +7148,19 @@ function _attachFullKey(key, prev){
   st.off = () => { try{ mainRef.off('value', onMain); }catch(e){} try{ tombRef.off('value', onTomb); }catch(e){} try{ viRef && viRef.off('value', onVi); }catch(e){} };
   return st;
 }
-function _startDelta(key, b){
+function _startDelta(key, b, sc){
   const st = _baseState[key] = {mode:'delta', recs:Object.assign({}, b.recs), u:{}, hw:(b.hw || 0), at:b.at,
                                 mainSeen:false, tombSeen:false, tomb:null, lastIds:null, ready:false, dirty:false,
-                                cleanSince: b.cleanSince, dirtyAt: b.dirtyAt || null, compared: true, off: null, vi: b.vi || null};
+                                cleanSince: b.cleanSince, dirtyAt: b.dirtyAt || null, compared: true, off: null, vi: b.vi || null,
+                                phone: sc || null, hwOut: (sc && typeof b.hw === 'number') ? b.hw : undefined};   /* v311 */
+  /* v311 - keep a phone's record only if it is in its scope; one that left is removed */
+  const _note = (id, r) => {
+    if(st.phone && !_phoneInScope(st.phone, r)){
+      if(r && typeof r._u === 'number' && !(r._u <= (st.hwOut || 0))) st.hwOut = r._u;
+      delete st.recs[id]; delete st.u[id]; return;
+    }
+    _baseNoteRecord(st, id, r);
+  };
   Object.keys(st.recs).forEach(id => { try{ const r = JSON.parse(st.recs[id]); st.u[id] = r && typeof r._u === 'number' ? r._u : 0; }catch(e){ st.u[id] = 0; } });
   const from = Math.max(0, st.hw - _BASE_MARGIN_MS);
   console.info('[Sristi] ' + key + ': ' + Object.keys(st.recs).length + ' farmers from the saved copy; asking only for changes since ' + new Date(from).toISOString());
@@ -7060,7 +7170,7 @@ function _startDelta(key, b){
     if(fellBack || _baseState[key] !== st) return;
     const val = snap.exists() ? (snap.val() || {}) : {};
     const ids = Object.keys(val);
-    ids.forEach(id => _baseNoteRecord(st, id, val[id]));
+    ids.forEach(id => _note(id, val[id]));   /* v311 - scope filter on a phone */
     /* A record that LEFT the answer was deleted - or lost its marker to an older app
        version. Ask the server about that one record rather than guess. */
     const gone = st.lastIds ? Array.from(st.lastIds).filter(id => !(id in val)) : [];
@@ -7068,7 +7178,7 @@ function _startDelta(key, b){
     st.mainSeen = true;
     if(gone.length){
       Promise.all(gone.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
-        if(s1.exists()) _baseNoteRecord(st, id, s1.val());
+        if(s1.exists()) _note(id, s1.val());   /* v311 */
         else { delete st.recs[id]; delete st.u[id]; }
       }).catch(() => {}))).then(() => { _baseApplyTombs(st); _basePublish(key, st); });
       return;
@@ -7092,16 +7202,16 @@ function _startDelta(key, b){
     const cur = _baseViNote(st, snap);
     const was = viPrev; viPrev = cur; st.vi = cur; st.dirty = true;
     if(!was) return;   /* nothing to compare with: the next full download covers it */
-    const changed = Object.keys(cur).filter(id => cur[id] !== was[id]);
+    /* v312b - a phone looks only at its own farmers (the changes-only answer brings the rest) */
+    const changed = Object.keys(cur).filter(id => cur[id] !== was[id] && (!st.phone || st.recs[id] !== undefined));
     if(!changed.length) return;
     if(changed.length > 25){
-      _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
-      try{ st.off && st.off(); }catch(e){}
+      _baseGoFull(key, st);   /* v311 - the phone's own full download on a phone */
       return;
     }
     const reread = () => Promise.all(changed.map(id => fbRef(key + '/' + id).once('value').then(s1 => {
       if(_baseState[key] !== st || !s1.exists()) return;
-      _baseNoteRecord(st, id, s1.val());
+      _note(id, s1.val());   /* v311 */
     }).catch(() => {}))).then(() => { if(_baseState[key] !== st) return; _baseApplyTombs(st); _basePublish(key, st); });
     reread();
     /* v305h - an older phone writes verifIndex a moment BEFORE the farmer record: look again */
@@ -7113,13 +7223,93 @@ function _startDelta(key, b){
     if(fellBack) return; fellBack = true;
     console.warn('[Sristi] ' + key + ': changes-only listen failed, downloading the whole list:', err);
     try{ st.off(); }catch(e){}
-    _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
+    _baseGoFull(key, st, true);   /* v311 */
   };
   q.on('value', onQ, fallBack);
   tombRef.on('value', onT, onTErr);
   /* v305d - the roll-call, a few seconds in, so it never delays what is on screen */
-  setTimeout(() => { _baseCensus(key, st); }, 3000);
+  if(!st.phone) setTimeout(() => { _baseCensus(key, st); }, 3000);   /* v311 - no programme-wide roll-call on a phone */
   return st;
+}
+/* v311 - back to a full download: the whole list on an admin computer, the coordinator's own
+   district queries on a phone */
+function _baseGoFull(key, st, offAlready){
+  const prev = {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt, scope:(st.phone && st.phone.sig) || null};
+  if(st.phone){
+    const q = _scopedFcQueries(key);
+    if(q && q.length) _attachPhoneFull(key, prev, q, st.phone);
+    else _attachFullKey(key, prev);
+  } else _attachFullKey(key, prev);
+  if(!offAlready){ try{ st.off && st.off(); }catch(e){} }
+}
+/* v311 - a phone's full download: its district queries, merged exactly as before, AND kept as the
+   saved copy (checked against the previous copy for unstamped changes, like _attachFullKey) */
+function _attachPhoneFull(key, prev, queries, sc){
+  _svOffsetWatch();
+  const st = _baseState[key] = {mode:'full', recs:{}, u:{}, hw:0, at:Date.now(), mainSeen:false, tombSeen:false, tomb:{}, ready:false, dirty:false,
+                                cleanSince: null, dirtyAt: null, cmp: null, compared: false, off: null, phone: sc};
+  if(_baseSame(prev)){
+    const pu = {};
+    Object.keys(prev.recs).forEach(id => { try{ const r = JSON.parse(prev.recs[id]); pu[id] = r && typeof r._u === 'number' ? r._u : 0; }catch(e){ pu[id] = 0; } });
+    st.cmp = {recs: prev.recs, u: pu, cleanSince: (typeof prev.cleanSince === 'number' ? prev.cleanSince : null), at: prev.at || null, dirtyAt: prev.dirtyAt || null};
+  }
+  const tombRef = fbRef(_TOMB_NODE + '/' + key);
+  const onTomb = snap => {
+    if(_baseState[key] !== st) return;
+    st.tomb = snap.exists() ? (snap.val() || {}) : {};
+    st.tombSeen = true;
+    _baseCheckUnstamped(key, st);
+  };
+  const onTombErr = () => { if(_baseState[key] !== st) return; st.tomb = {}; st.tombSeen = true; _baseCheckUnstamped(key, st); };
+  const parts = {}, partsSeen = new Set(), handlers = [];
+  queries.forEach(q => {
+    const h = snap => {
+      if(_baseState[key] !== st) return;
+      const _val = snap.exists() ? snap.val() : null;
+      parts[q.tag] = q.wrapId ? (_val ? {[q.wrapId]: _val} : {}) : (_val || {});
+      partsSeen.add(q.tag);
+      const merged = {};
+      Object.keys(parts).forEach(tag => Object.assign(merged, parts[tag]));
+      _liveSnapshot[key] = merged;
+      if(partsSeen.size < queries.length) return;
+      try{
+        const recs = {}, u = {}; let hw = 0;
+        Object.keys(merged).forEach(id => {
+          const r = merged[id]; recs[id] = JSON.stringify(r);
+          const t = r && typeof r._u === 'number' ? r._u : 0; u[id] = t; if(t > hw) hw = t;
+        });
+        st.recs = recs; st.u = u; st.hw = hw; st.mainSeen = true; st.ready = true; st.dirty = true;
+        /* v312b - this full download is complete as of NOW (server time): changes-only may start here,
+           not at the newest change to this phone's own farmers (which can be days old) */
+        if(_svOffset !== null) st.hwOut = Date.now() + _svOffset - 60 * 1000;
+        if(!st.cmp){
+          st.cmp = {recs: recs, u: u, cleanSince: null, at: st.at, dirtyAt: null};
+          st.compared = true; _basePersistSoon();
+        } else _baseCheckUnstamped(key, st);
+      }catch(e){ console.warn('[Sristi] saved server copy (phone):', e); }
+      _liveSnapshotSeen.add(key);
+      if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
+      _scheduleLiveSnapshot();
+    };
+    handlers.push([q.ref, h]);
+    q.ref.on('value', h);
+  });
+  tombRef.on('value', onTomb, onTombErr);
+  let viRef = null;
+  const onVi = snap => { if(_baseState[key] !== st) return; st.vi = _baseViNote(st, snap); st.dirty = true; _basePersistSoon(); };
+  if(key === 'haatFarmers'){ viRef = fbRef('verifIndex'); viRef.on('value', onVi, () => {}); }
+  st.off = () => { handlers.forEach(([r, h]) => { try{ r.off('value', h); }catch(e){} }); try{ tombRef.off('value', onTomb); }catch(e){} try{ viRef && viRef.off('value', onVi); }catch(e){} };
+  return st;
+}
+/* v311 - which way a ticked coordinator's phone starts: saved copy + changes, or its full download */
+function _attachPhoneKey(key, queries, sc){
+  _basePreloadStart().then(pre => {
+    const b = pre && pre[key];
+    _svOffsetWatch();
+    if(b && b.__timedOut){ const st0 = _attachPhoneFull(key, null, queries, sc); st0.noPersist = true; return; }
+    if(!_baseValid(b) || !_baseGateOpen(b) || (b.scope || null) !== sc.sig){ _attachPhoneFull(key, b, queries, sc); return; }   /* v312b */
+    _startDelta(key, b, sc);
+  }).catch(e => { console.warn('[Sristi] saved server copy unavailable (phone):', e); _attachPhoneFull(key, null, queries, sc); });
 }
 /* v305d - ROLL-CALL. The changes-only answer cannot see a farmer created, or removed, by
    something that does not stamp `_u`. A shallow REST read lists every id (ids only, ~90 KB
@@ -7142,6 +7332,7 @@ function _baseTombPrune(key, t){
 async function _baseCensus(key, st){
   try{
     if(_baseState[key] !== st || st.mode !== 'delta' || !navigator.onLine) return;
+    if(st.phone) return;   /* v311 */
     if(!FB_CONFIG || !FB_CONFIG.databaseURL || typeof firebase === 'undefined') return;
     const usr = firebase.auth().currentUser;
     if(!usr) return;
@@ -7199,9 +7390,13 @@ async function _baseCensus(key, st){
    left open all day gets the saving on every reconnect too */
 function _baseMaybeDelta(key, st){
   if(_baseState[key] !== st || st.mode !== 'full' || !st.compared || !st.ready) return;
-  if(!_deltaEligible(key) || !_baseGateOpen(st) || _baseCensusBroken || st.noPersist) return;
-  if(Date.now() - st.at >= _BASE_FULL_EVERY_MS) return;
-  _startDelta(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:_baseSafeHw(st), at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt, vi:st.vi || null});
+  /* v311 - a phone may hand over only while it is still the same ticked coordinator and scope */
+  const _sc = st.phone ? _phoneScope() : null;
+  if(st.phone && !(_sc && _sc.sig === st.phone.sig)) return;
+  if(!st.phone && !_deltaEligible(key)) return;
+  if(!_baseGateOpen(st) || _baseCensusBroken || st.noPersist) return;
+  if(Date.now() - st.at >= _baseFullEveryMs(st)) return;   /* v312 */
+  _startDelta(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:_baseSafeHw(st), at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt, vi:st.vi || null}, st.phone || null);
   try{ st.off && st.off(); }catch(e){}
 }
 /* v305c - a changes-only tab left open still gets its daily full download, and goes back to
@@ -7211,12 +7406,11 @@ function _baseTick(){
     const st = _baseState[key];
     if(!st || !st.ready) return;
     try{
-      if(st.mode === 'delta' && (Date.now() - st.at >= _BASE_FULL_EVERY_MS || !_baseGateOpen(st))){
-        _attachFullKey(key, {v:1, ns:FB_NAMESPACE, recs:st.recs, hw:st.hw, at:st.at, cleanSince:st.cleanSince, dirtyAt:st.dirtyAt});
-        try{ st.off && st.off(); }catch(e){}
+      if(st.mode === 'delta' && (Date.now() - st.at >= _baseFullEveryMs(st) || !_baseGateOpen(st))){   /* v312 */
+        _baseGoFull(key, st);   /* v311 - the phone's own full download on a phone */
       } else if(st.mode === 'full'){
         _baseMaybeDelta(key, st);
-      } else if(st.mode === 'delta' && Date.now() - (st.censusAt || 0) >= 60 * 60 * 1000){
+      } else if(st.mode === 'delta' && !st.phone && Date.now() - (st.censusAt || 0) >= 60 * 60 * 1000){   /* v311 - no roll-call on a phone */
         _baseCensus(key, st);   /* v305d - hourly roll-call for a tab left open */
       }
     }catch(e){ console.warn('[Sristi] saved copy check:', e); }
@@ -7250,6 +7444,8 @@ const _seenVisitSigs = {};
 /* v305m - the FULL version of each visit most recently on this screen ('col/id' -> recordedAt -> json) */
 const _seenVisitFull = {};
 function _visitJson(v){ try{ const j = _stableJson(v); return j === undefined ? JSON.stringify(v) : j; }catch(e){ return null; } }
+/* v310 - last raw text per visit (col/id -> recordedAt -> JSON.stringify) */
+const _seenVisitRaw = {};
 function _noteSeenVisits(){
   try{
     if(typeof _baseState === 'undefined' || !_baseState || !Object.keys(_baseState).length) return;   /* admin computers only */
@@ -7260,7 +7456,16 @@ function _noteSeenVisits(){
       const k = col + '/' + r.id;
       const set = _seenVisitSigs[k] || (_seenVisitSigs[k] = new Set());
       const full = _seenVisitFull[k] || (_seenVisitFull[k] = {});
-      vs.forEach(v => { set.add(_deltaVisitSig(v)); if(v && v.recordedAt) full[v.recordedAt] = _visitJson(v); });
+      const raw = _seenVisitRaw[k] || (_seenVisitRaw[k] = {});
+      vs.forEach(v => {
+        set.add(_deltaVisitSig(v));
+        if(!v || !v.recordedAt) return;
+        /* v310 - the stable (sorted) text only when the visit's own text changed */
+        let r; try{ r = JSON.stringify(v); }catch(e){ r = null; }   /* always fresh: visits are edited in place */
+        if(r !== null && raw[v.recordedAt] === r && full[v.recordedAt] !== undefined) return;
+        raw[v.recordedAt] = r;
+        full[v.recordedAt] = _visitJson(v);
+      });
     }));
   }catch(e){}
 }
@@ -7302,6 +7507,7 @@ function _deltaDropGhost(col, id, snap){
   const st = _baseState[col];
   if(st){ delete st.recs[id]; delete st.u[id]; st.dirty = true; }
   try{ if(_liveSnapshot && _liveSnapshot[col]) delete _liveSnapshot[col][id]; }catch(e){}
+  _psLast = null;   /* v310d - the map changed in place: no reused baseline */
   DB[col] = (DB[col] || []).filter(r => !(r && r.id === id));
   try{ if(_lastSnap && _lastSnap[col]) delete _lastSnap[col][id]; }catch(e){}
   try{ if(snap && snap[col]) delete snap[col][id]; }catch(e){}
@@ -7331,6 +7537,7 @@ function _deltaVisitGuard(updates, snap, col, id, s1, prePending){
   const unseen = _unseenVisits(col, id, srv.visits, _outNow);
   if(st){ _baseNoteRecord(st, id, srv); st.dirty = true; }
   try{ if(_liveSnapshot && _liveSnapshot[col]) _liveSnapshot[col][id] = JSON.parse(JSON.stringify(srv)); }catch(e){}
+  _psLast = null;   /* v310d - the map changed in place: no reused baseline */
   if(!unseen.length) return;
   const put = list => _mergeUnseenVisits(list, unseen, _seenVisitFull[col + '/' + id]);   /* v305j/l/m */
   if(updates[rk + '/visits']) updates[rk + '/visits'] = put(_deltaVisitsOf(updates[rk + '/visits']));
@@ -7349,6 +7556,8 @@ function attachLiveListener(){
     const queries=_scopedFcQueries(key);
     /* v305 - the whole-list farmer listeners (admin) ask only for what changed */
     if(!queries && _deltaEligible(key)){ _attachDeltaKey(key); return; }
+    /* v311 - a coordinator ticked in Settings > Backup: saved copy + changes only */
+    if(queries && _DELTA_COLS.indexOf(key) >= 0){ const _sc = _phoneScope(); if(_sc){ _attachPhoneKey(key, queries, _sc); return; } }
     if(!queries){
       fbRef(key).on('value', snap => {
         _liveSnapshot[key] = snap.exists() ? snap.val() : null;
@@ -7364,7 +7573,7 @@ function attachLiveListener(){
         // LIVE_SYNC_KEYS.length would never be satisfied and the first
         // diff/swap would never run.
         if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
-        _processLiveSnapshot();
+        _scheduleLiveSnapshot();   /* v310 */
       });
       return;
     }
@@ -7393,10 +7602,77 @@ function attachLiveListener(){
         // LIVE_SYNC_KEYS.length would never be satisfied and the first
         // diff/swap would never run.
         if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
-        _processLiveSnapshot();
+        _scheduleLiveSnapshot();   /* v310 */
       });
     });
   });
+}
+/* v310 - one pipeline run per burst of listener events (see the version note). Before the first
+   merge every event still runs at once, so start-up is not delayed. */
+let _psTimer = null, _psFirstAt = 0, _psSettleTimer = null;
+const _basePendingParse = new Set();
+function _scheduleLiveSnapshot(){
+  if(!_firstSnapshotMerged){ _runLiveSnapshot(); return; }
+  const now = Date.now();
+  if(!_psTimer) _psFirstAt = now;
+  clearTimeout(_psTimer);
+  _psTimer = setTimeout(() => { _psTimer = null; _runLiveSnapshot(); }, Math.max(0, Math.min(150, 1000 - (now - _psFirstAt))));
+}
+function _runLiveSnapshot(){
+  if(_psTimer){ clearTimeout(_psTimer); _psTimer = null; }
+  /* the changes-only lists deferred their re-parse to here */
+  if(_basePendingParse.size){
+    try{ _noteSeenVisits(); }catch(e){}   /* v305k - what is on screen before this refresh */
+    _basePendingParse.forEach(key => {
+      const st = _baseState[key];
+      if(st && st.ready) _liveSnapshot[key] = _baseParseAll(st.recs);
+    });
+    _basePendingParse.clear();
+  }
+  /* v310d - as the listeners always did: not until every listened collection has reported */
+  if(_liveSnapshotSeen.size < _activeSyncKeys().length) return;
+  _processLiveSnapshot();
+}
+/* v310 - cheap fingerprint of a raw farmer map: count and newest change-marker. Every stamped
+   change raises the newest marker; a removal changes the count. */
+function _farmerMapSig(m){
+  if(!m || typeof m !== 'object') return '0|0';
+  let n = 0, mx = 0;
+  for(const id in m){ n++; const r = m[id]; const u = r && typeof r._u === 'number' ? r._u : 0; if(u > mx) mx = u; }
+  return n + '|' + mx;
+}
+let _psLast = null;   /* {h, c, sig, srv} - the farmer maps the last run saw, and their server baseline */
+/* v310 - a farmer's baseline text, reused while the server's own text for it (the saved copy's
+   record, which the listener keeps) is unchanged. Equal server text parses to an equal record,
+   so the result is exactly what snapCol would produce. Without that text: snapCol as before. */
+const _snapCache = {haatFarmers: new Map(), convFarmers: new Map()};
+function _snapColCached(col, arr){
+  const st = (typeof _baseState !== 'undefined' && _baseState) ? _baseState[col] : null;
+  const recs = st && st.recs;
+  if(!recs) return snapCol(arr);
+  const cache = _snapCache[col], m = {}, live = new Set();
+  (arr||[]).forEach(r => {
+    if(!r || !r.id) return;
+    live.add(r.id);
+    const raw = recs[r.id], hit = cache.get(r.id);
+    if(typeof raw === 'string' && hit && hit.raw === raw){ m[r.id] = hit.s; return; }
+    const s = JSON.stringify(_stripEphemeral(r));
+    m[r.id] = s;
+    /* v310d - cache only when the record used IS the saved copy's raw text (a re-read may have
+       updated st.recs before the re-parse caught up) */
+    let _ok = false;
+    try{ const src = _liveSnapshot && _liveSnapshot[col] ? _liveSnapshot[col][r.id] : null; _ok = typeof raw === 'string' && !!src && JSON.stringify(src) === raw; }catch(e){ _ok = false; }
+    if(_ok) cache.set(r.id, {raw: raw, s: s}); else cache.delete(r.id);
+  });
+  if(cache.size > live.size + 500) cache.forEach((v, id) => { if(!live.has(id)) cache.delete(id); });
+  return m;
+}
+function _smallColsJson(o){
+  return JSON.stringify(o.fcs)+JSON.stringify(o.activity)+JSON.stringify(o.verificationPlans||[])+JSON.stringify(o.pendingEnrolments||[])+JSON.stringify(o.incomeRecords||[])+JSON.stringify(o.verifIndex||{})+_metaJson(o);
+}
+/* v311c - settings and the reference lists: a change to them alone is applied at once */
+function _metaJson(o){
+  try{ return JSON.stringify([o.settings||{}, o.haats||null, o.crops||null, o.months||null, o.states||null, o.juths||null, o.convParams||null]); }catch(e){ return ''; }
 }
 function _processLiveSnapshot(){
     const cloud=cloudToDB(_liveSnapshot);
@@ -7409,14 +7685,28 @@ function _processLiveSnapshot(){
     // the UI on remote devices.
     // v11 — both sides stringified with _stripReplacer so locally-attached
     // on-demand forms don't make the comparison permanently unequal.
-    const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[])+JSON.stringify(cloud.verifIndex||{});
-    const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[])+JSON.stringify(DB.verifIndex||{});
+    /* v310 - see the version note: the whole-farmer comparison only when nothing cheaper can tell */
+    const _hMap = _liveSnapshot ? _liveSnapshot.haatFarmers : null, _cMap = _liveSnapshot ? _liveSnapshot.convFarmers : null;
+    const _sigNow = _farmerMapSig(_hMap) + '#' + _farmerMapSig(_cMap);
+    const _mapsSame = !!(_psLast && _psLast.h === _hMap && _psLast.c === _cMap);
+    let _changed;
+    if(_psLast && !_mapsSame && _sigNow !== _psLast.sig) _changed = true;
+    /* v310c - not while this device holds its own copy of some record: then the full comparison,
+       as before v310, so the screen settles to the server's copy once the shield ends */
+    else if(_mapsSame && !_baselineSubstituted.size) _changed = _smallColsJson(cloud) !== _smallColsJson(DB);
+    else {
+      const incoming=JSON.stringify(cloud.haatFarmers,_stripReplacer)+JSON.stringify(cloud.convFarmers,_stripReplacer)+JSON.stringify(cloud.fcs)+JSON.stringify(cloud.activity)+JSON.stringify(cloud.verificationPlans||[])+JSON.stringify(cloud.pendingEnrolments||[])+JSON.stringify(cloud.incomeRecords||[])+JSON.stringify(cloud.verifIndex||{})+_metaJson(cloud);   /* v311c */
+      const current=JSON.stringify(DB.haatFarmers,_stripReplacer)+JSON.stringify(DB.convFarmers,_stripReplacer)+JSON.stringify(DB.fcs)+JSON.stringify(DB.activity)+JSON.stringify(DB.verificationPlans||[])+JSON.stringify(DB.pendingEnrolments||[])+JSON.stringify(DB.incomeRecords||[])+JSON.stringify(DB.verifIndex||{})+_metaJson(DB);
+      _changed = incoming !== current;
+    }
+    const _prevFarmSrv = (_mapsSame && _psLast) ? _psLast.srv : null;
+    _psLast = {h: _hMap, c: _cMap, sig: _sigNow, srv: _prevFarmSrv};
     /* v272b - the merge below REPLACES entries in cloud[col] with this device's
        copies, so the server's own arrays are kept here first. This is a shallow
        copy of six array references, not a clone. */
     const _cloudBefore = {};
     try{ SYNC_COLS.forEach(col => { _cloudBefore[col] = (cloud[col]||[]).slice(); }); }catch(e){}
-    if(incoming!==current){
+    if(_changed){
       _baselineSubstituted.clear();   /* v272b - rebuilt by the merge below */
       // For each record this session JUST touched, keep the local copy until
       // the protection expires (5 s). All other records take the cloud value.
@@ -7428,8 +7718,13 @@ function _processLiveSnapshot(){
         cloud[col] = (cloud[col]||[]).map(rec => {
           if(!rec || !rec.id) return rec;
           if(isLocallyProtected(col, rec.id) && localById[rec.id]){
-            _baselineSubstituted.add(col + '/' + rec.id);   /* v272b */
-            return localById[rec.id];
+            /* v310d - only a copy that really differs from the server's: a just-saved record whose
+               echo is back is NOT substituted, or the next save would skip its field removals */
+            const _loc = localById[rec.id];
+            let _same = false;
+            try{ _same = _stableJson(_stripEphemeral(_loc)) === _stableJson(_stripEphemeral(rec)); }catch(e){ _same = false; }
+            if(!_same) _baselineSubstituted.add(col + '/' + rec.id);   /* v272b */
+            return _loc;
           }
           return rec;
         });
@@ -7442,6 +7737,18 @@ function _processLiveSnapshot(){
           }
         });
       });
+      /* v308 - activity lines this device wrote and has not yet seen come back from the server.
+         Replacing DB with the server's list dropped them before saveDB could send them: a
+         coordinator's "Verification submitted" never arrived, because the submit handler awaits
+         its row write and that write's own echo lands here first. */
+      /* v308b - only where this device listens to the activity list (not mobilizer/public/viewer) */
+      if(_activeSyncKeys().indexOf('activity') >= 0) try{
+        const _srvAct = new Set((cloud.activity || []).map(a => a && a.id));
+        const _unsent = (DB.activity || []).filter(a => a && a.id && !_srvAct.has(a.id)
+          && !Object.prototype.hasOwnProperty.call(_activitySeenFromServer, a.id)
+          && (Date.now() - (a.ts || 0)) < 24 * 60 * 60 * 1000);
+        if(_unsent.length) cloud.activity = _unsent.concat(cloud.activity || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      }catch(e){}
       DB=cloud;
       try{ if(typeof _noteSeenVisits === 'function') _noteSeenVisits(); }catch(e){}   /* v305k */
       // v105 — CRITICAL FIX: _lastSnap used to be set ONLY at boot and after
@@ -7482,13 +7789,29 @@ function _processLiveSnapshot(){
          baseline at all, which routes each one into a separate server read. */
       try{
         _serverSnap = {};
-        SYNC_COLS.forEach(col => { _serverSnap[col] = snapCol(_cloudBefore[col]||[]); });
+        SYNC_COLS.forEach(col => {
+          /* v310 - an unchanged farmer list keeps the baseline already built from it (a copy:
+             _excludePendingFromSnap edits what it is given) */
+          const _farm = (col === 'haatFarmers' || col === 'convFarmers');
+          if(_farm && _prevFarmSrv && _prevFarmSrv[col]) _serverSnap[col] = Object.assign({}, _prevFarmSrv[col]);
+          else if(_farm) _serverSnap[col] = _snapColCached(col, _cloudBefore[col]||[]);
+          else _serverSnap[col] = snapCol(_cloudBefore[col]||[]);
+        });
+        if(_psLast) _psLast.srv = {haatFarmers: Object.assign({}, _serverSnap.haatFarmers || {}), convFarmers: Object.assign({}, _serverSnap.convFarmers || {})};
       }catch(e){ console.warn('[Sristi] server snapshot:', e); _serverSnap = null; }
       _lastSnap=_excludePendingFromSnap(_serverSnap || snapAll());
       // v11 — re-attach any on-demand forms this session already loaded, so
       // an open drawer doesn't lose them when the snapshot replaces records.
       try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
-      cacheLocal();
+      _cacheLocalSoon();   /* v310 - see the version note */
+      /* v310c - this device kept its own copy of some records: look again just after the longest
+         shield ends, so the server's copy is shown even if nothing else arrives */
+      if(_baselineSubstituted.size){
+        let _until = 0;
+        _baselineSubstituted.forEach(k => { const e = _localTouches.get(k) || 0; if(e > _until) _until = e; });
+        clearTimeout(_psSettleTimer);
+        _psSettleTimer = setTimeout(() => { _psSettleTimer = null; _scheduleLiveSnapshot(); }, Math.max(500, Math.min(60000, _until - Date.now() + 300)));
+      }
       /* v237 - a restore writes to collections this listener watches, so its own
          writes used to re-render the Settings screen mid-run. That destroyed the
          progress line and the buttons, which silently removed the double-click
@@ -7836,7 +8159,8 @@ async function _serverDecisionAt(col, id){
   }catch(e){ return {ok:false}; }
 }
 async function saveDB(silent){
-  cacheLocal();
+  /* v309 - the offline copy is written right after the diff below (no await in between), from
+     the diff's own text. The paths that return before the diff still write it here. */
   /* v113 SAFETY — public mode must never run the whole-database sync.
      It deliberately does not subscribe to haatFarmers/convFarmers (see
      _activeSyncKeys), so its in-memory copy of those collections is empty BY
@@ -7858,10 +8182,11 @@ async function saveDB(silent){
     return true;
   }
   if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE){
+    cacheLocal();   /* v309 - as before */
     console.warn('[Sristi] saveDB() suppressed in public mode — public submissions write their own record directly.');
     return true;
   }
-  if(!FB.ready){setSyncPill('local');if(!silent)toast('Saved');return true;}
+  if(!FB.ready){cacheLocal();setSyncPill('local');if(!silent)toast('Saved');return true;}   /* v309 - cacheLocal as before */
   setSyncPill('pending');
   // v10 — the diff now compares JSON strings (see snapCol above), the
   // snapshot is captured BEFORE the await (so a slow write can't mark
@@ -8019,6 +8344,7 @@ async function saveDB(silent){
     }
     snap[col]=sc;
   });
+  cacheLocal(snap);   /* v309 - the offline copy, from the diff's text; still before any await */
   // #35 — write activity entries PER-ID rather than replacing the whole `activity`
   // node, so two devices saving within the same window don't clobber each other's
   // just-added log lines. Entries have stable ids; the listener rebuilds the array
@@ -8106,6 +8432,9 @@ async function saveDB(silent){
      and must not send those fields. If not - a new enrolment, or this device IS
      the one that decided - everything goes. One field, a few bytes, and only
      for records that are actually in this state. */
+  /* v310c - shield what is about to be sent BEFORE the server reads below: a refresh landing
+     during them used to put the server's older copy back on this screen */
+  if(_officeCheck.length) dirty.forEach(([col,id])=>markLocalTouch(col,id,20000));
   const _officeRetry=[];
   for(let _i=0;_i<_officeCheck.length;_i++){
     const _it=_officeCheck[_i];
@@ -11944,7 +12273,7 @@ async function loadVerifIndex(){
     const snap = await fbRef('verifIndex').get();
     DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
     /* v200 - and act on it. See autoHealVerifications. */
-    if(isAdminUser()) autoHealVerifications();
+    if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); }   /* v308 */
   }catch(e){ /* diagnostic only */ }
 }
 
@@ -12067,7 +12396,16 @@ function clearVerificationSubmitted(farmerId){
   if(DB.verifIndex) delete DB.verifIndex[farmerId];
   if(FB && FB.ready){ fbRef('verifIndex/'+farmerId).remove().catch(()=>{}); }
 }
+/* v312 - inside one screen draw the no-argument totals are worked out once */
+let _inRender = 0, _rmHaatStats = null;
 function haatStats(list){
+  if(!list && _inRender){
+    if(!_rmHaatStats) _rmHaatStats = _haatStatsCompute();
+    return Object.assign({}, _rmHaatStats);
+  }
+  return _haatStatsCompute(list);
+}
+function _haatStatsCompute(list){
   // v8 — FC users see only their own farmers in the dashboard tiles.
   // v9 process-fix #41 — seeded demo records excluded from counters.
   /* v270 - an optional subset, so the Haat screen can count the farmers its own
@@ -15041,6 +15379,67 @@ function fcMonthlyPlanStats(fcId, monthStr){
   const total=plans.length;
   return {planned:total, completed, pending, completionPct: total?Math.round(completed*100/total):0};
 }
+/* v308 - plans left at 'planned' by the lost-save bug although the visit was done. Same rule as
+   _fcAutoCompletePlan: farmer + programme + coordinator (or a plan with none), each visit made
+   on or after the plan was created completes at most ONE plan - the one whose planned date is
+   closest. Admin only, once per session, after the server data has arrived.
+   v308b - a one-off repair of the backlog, not a standing rule: only plans created before
+   2 Oct 2026 (v308 fixed the cause); "after" means the visit was RECORDED after the plan was
+   CREATED, full timestamps, never just the day; a visit a completed plan already names is not
+   used again. */
+const _PLAN_HEAL_BEFORE = '2026-10-02T00:00:00.000Z';
+let _plansHealed = false;
+async function _healStuckPlans(){
+  if(_plansHealed) return;
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) return;
+  if(!isAdminUser() || (typeof isViewerUser === 'function' && isViewerUser())) return;
+  for(let w = 0; w < 30000 && !(_firstSnapshotMerged && (DB.haatFarmers||[]).length); w += 1000){
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  if(!_firstSnapshotMerged || _plansHealed) return;
+  _plansHealed = true;
+  try{
+    const open = (DB.verificationPlans||[]).filter(p => p && p.id && p.farmerId && (!p.status || p.status === 'planned')
+      && typeof p.createdAt === 'string' && p.createdAt && p.createdAt < _PLAN_HEAL_BEFORE);   /* v308b */
+    if(!open.length) return;
+    const done = [];
+    const byFarmer = {};
+    open.forEach(p => { const k = (p.farmerProgram || '') + '|' + p.farmerId; (byFarmer[k] = byFarmer[k] || []).push(p); });
+    Object.keys(byFarmer).forEach(k => {
+      const plans = byFarmer[k], prog = plans[0].farmerProgram, fid = plans[0].farmerId;
+      const f = ((prog === 'conv' ? DB.convFarmers : DB.haatFarmers) || []).find(x => x && x.id === fid);
+      if(!f) return;
+      /* v308b - visits a completed plan of this farmer already names are spoken for */
+      const _used = new Set((DB.verificationPlans||[]).filter(p => p && p.farmerId === fid && (p.farmerProgram||'') === (prog||'')
+        && p.status === 'completed' && p.completedByVisitDate).map(p => String(p.completedByVisitDate)));
+      const visits = (Array.isArray(f.visits) ? f.visits : []).filter(v => v && v.date && typeof v.recordedAt === 'string' && v.recordedAt
+        && !_used.has(String(v.date))
+        && (prog === 'conv' || (!isImportedVisit(v) && v.claimVerifications)))
+        .slice().sort((a, b) => String(a.recordedAt).localeCompare(String(b.recordedAt)));
+      const left = plans.slice();
+      visits.forEach(v => {
+        const vMs = new Date(v.date).getTime();
+        const m = left.filter(p => new Date(v.recordedAt).getTime() > new Date(p.createdAt).getTime()   /* v308b - recorded AFTER the plan was made */
+                                && (!p.fcId || p.fcId === v.fc))
+          .sort((a, b) => Math.abs(new Date(a.plannedDate||0).getTime() - vMs) - Math.abs(new Date(b.plannedDate||0).getTime() - vMs))[0];
+        if(!m) return;
+        left.splice(left.indexOf(m), 1);
+        markLocalTouch('verificationPlans', m.id, 20000);
+        m.status = 'completed';
+        m.statusChangedAt = new Date().toISOString();
+        m.statusChangedBy = 'auto: visit logged';
+        m.completedByVisitDate = v.date;
+        done.push(m.id);
+      });
+    });
+    if(!done.length) return;
+    console.warn('[Sristi] v308 - ' + done.length + ' plan(s) were still "planned" after the visit was done; marked completed:', done);
+    logActivity('status', '<b>' + done.length + '</b> planned visit' + (done.length === 1 ? '' : 's')
+      + ' had been done but still showed as planned \u2014 marked completed');
+    await saveDB();
+    if(typeof render === 'function') render();
+  }catch(e){ console.warn('[Sristi] v308 plan heal:', e); }
+}
 /* Mirrors the conv-side "v9 process-fix #43" auto-complete — a Haat farm
    verification submission should retire its matching plan the same way a
    Conversion visit does, or the plan sits stuck as "planned"/"pending"
@@ -15062,6 +15461,7 @@ function _fcAutoCompletePlan(farmerId, program, visitDate, fcId){
       Math.abs(new Date(b.plannedDate||0).getTime()-visitMs)
     )[0];
     if(match){
+      if(match.id) markLocalTouch('verificationPlans', match.id, 20000);   /* v308 - the submit awaits before it saves */
       match.status='completed';
       match.statusChangedAt=new Date().toISOString();
       match.statusChangedBy='auto: visit logged';
@@ -15565,8 +15965,13 @@ function viewDashboard(){
 
   // ===== two summary tables, sitting under the two charts =====
   // LEFT: haat-wise active farmers   RIGHT: FC-wise verifications (last 3 months + total)
+  /* v312 - onboarded farmers grouped by every haat they sell at, in ONE pass (was one filter of
+     every farmer per haat); same membership and order as farmerSellsAt + DB order */
+  const _greenByHaat = {};
+  (DB.haatFarmers||[]).forEach(f => { if(f && f.status === 'green') farmerHaats(f).forEach(h => { (_greenByHaat[h] = _greenByHaat[h] || []).push(f); }); });
+  const _greenAt = hn => _greenByHaat[String(hn || '').trim()] || [];
   const haatRows=getHaatList().map(_h=>_h.name).map(hn=>{
-    const all=DB.haatFarmers.filter(f=>farmerSellsAt(f,hn)&&f.status==='green');
+    const all=_greenAt(hn);
     return {haat:hn, active:all.filter(f=>f.active).length, onboarded:all.length};
   }).sort((a,b)=>b.active-a.active);
 
@@ -15605,7 +16010,7 @@ function viewDashboard(){
   // whose latest visit fell in that month).
   const recent3M=recentMonths(3);   // v138 — see above
   const haatRowsMo=getHaatList().map(_h=>_h.name).map(hn=>{
-    const all=DB.haatFarmers.filter(f=>farmerSellsAt(f,hn)&&f.status==='green');
+    const all=_greenAt(hn);   /* v312 */
     const monthly=recent3M.map(m=>{
       const n=all.filter(f=>f.active && (f.visits||[]).some(v=>(v.date||'').startsWith(m))).length;
       return {m,n};
@@ -23403,7 +23808,29 @@ function viewSettings(){
       <div id="restoreSummary" style="margin-top:14px"></div>
     </div>`;
     }
+    /* v311 - coordinator phones, changes only: off for everyone until ticked here */
+    if(isAdminUser()){
+      const _on = (DB.settings && Array.isArray(DB.settings.phoneDeltaFcs)) ? DB.settings.phoneDeltaFcs : [];
+      const _fcList = (DB.fieldCoordinators && DB.fieldCoordinators.length ? DB.fieldCoordinators : (DB.fcs || [])).filter(x => x && x.id && !x.deleted);
+      h+=`<div class="card" style="padding:18px 20px;max-width:680px;margin-top:16px">
+      <div class="ct" style="font-size:14px;font-weight:700">\ud83d\udcf6 Coordinator phones: download only what changed</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 12px">
+        A ticked coordinator's phone keeps a copy of its own farmers and, each time the app opens, downloads only the farmers that changed since - instead of every farmer in its districts. It still downloads everything in full at least once a day, so nothing is missed. Start with one coordinator, check their phone works normally for a day or two, then tick the rest.<br><br>
+        The change takes effect the next time that coordinator opens the app.
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px">${_fcList.map(f => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" class="pdfc" value="${esc(f.id)}" ${_on.indexOf(f.id) >= 0 ? 'checked' : ''}>${esc(f.name || f.id)}</label>`).join('') || '<span class="hint">No field coordinators yet.</span>'}</div>
+      <button class="btn btn-sm btn-primary" id="phoneDeltaSave">Save</button>
+    </div>`;
+    }
     v.innerHTML=h;
+    if($('#phoneDeltaSave')) $('#phoneDeltaSave').onclick = async () => {
+      const ids = [].slice.call(document.querySelectorAll('.pdfc')).filter(c => c.checked).map(c => c.value);
+      DB.settings = DB.settings || {};
+      DB.settings.phoneDeltaFcs = ids;
+      logActivity('edit', 'Coordinator phones downloading only what changed: ' + (ids.length ? esc(ids.join(', ')) : 'none'));
+      await saveDB(true);
+      toast(ids.length ? ('Saved \u2014 ' + ids.length + ' coordinator' + (ids.length === 1 ? '' : 's') + ' ticked') : 'Saved \u2014 none ticked');
+    };
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     $('#downloadFullBackup').onclick=async()=>{
       const btn=$('#downloadFullBackup');
@@ -25915,7 +26342,13 @@ function download(name,content,mime){
 }
 
 /* ============ ROUTER ============ */
+/* v312 - a draw-scoped memo: cleared at the start and end of every draw */
 function render(){
+  _inRender++; if(_inRender === 1) _rmHaatStats = null;
+  try{ return _renderView.apply(this, arguments); }
+  finally{ _inRender--; if(!_inRender) _rmHaatStats = null; }
+}
+function _renderView(){
   /* v265 - the scope has to be applied where the answer is KNOWN. normaliseDB
      runs at boot, before a session exists, so isViewerUser() was false there
      and the filter did nothing: the sidebar read "Conversion Farmers 4" for a
@@ -26383,7 +26816,7 @@ async function rptFetchAnswers(onProgress, online, readAll){
       done++;
       if(onProgress) onProgress(done, list.length);
     };
-    for(let k = 0; k < list.length; k += 8) await Promise.all(list.slice(k, k + 8).map(one));
+    for(let k = 0; k < list.length; k += 24) await Promise.all(list.slice(k, k + 24).map(one));   /* v312 - 24 at a time (was 8) */
     _rptAnswers = {at: Date.now(), data, n: Object.keys(data).length, none, fromDevice, kept, fetched, missing, bytes};
     /* v302 - its own IndexedDB database, never localStorage */
     _rptIdbPut(_rptAnswers).catch(err => console.warn('[Sristi] reports cache not saved:', err));

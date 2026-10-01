@@ -4626,7 +4626,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v306';
+const APP_VERSION = 'v307';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10738,7 +10738,7 @@ const HAAT_STATUS={
    Display only: nothing is written, and HAAT_STATUS.verified was already
    defined and simply never reachable. */
 function haatStatusMeta(f){
-  if(f && f.status === 'pending' && f.stage === 'verified') return HAAT_STATUS.verified;
+  if(f && f.status === 'pending' && (f.stage === 'verified' || isAwaitingApproval(f))) return HAAT_STATUS.verified;   /* v307 */
   return HAAT_STATUS[f && f.status] || {cls:'grey', label:'—'};
 }
 
@@ -11968,7 +11968,9 @@ function _healCandidates(){
   return (DB.haatFarmers||[]).filter(f =>
     f && f.id && idx[f.id]
     && !f._archived && !_isSeededRecord(f)
-    && !f.verificationFormSubmittedAt
+    /* v307 - also a record that has the date but never reached 'verified' (no visit, lock
+       still on): Rohitbhai Somabhai Patel sat like that from 25 Aug, skipped by this check */
+    && !(f.verificationFormSubmittedAt && f.stage === 'verified')
     && !_HEAL_POST_DECISION.includes(f.stage));
 }
 async function autoHealVerifications(){
@@ -11989,18 +11991,37 @@ async function autoHealVerifications(){
     try{ await loadForms(id); }catch(e){ continue; }
     const v = (FORMS_CACHE[id]||{}).verif;
     if(!v || !v.submittedAt) continue;            // marker but no form - leave it alone
+    /* v307b - decide from the SERVER's row, read now. This device's copy can be the stored one
+       from before a coordinator re-verified; healing that would replace a real visit. */
+    let _srv = null;
+    try{
+      const _sg = await _fbWriteGuard(FB.db.ref(FB_NAMESPACE + '/haatFarmers/' + id).get(), 10000);
+      if(_sg.timedOut || !_sg.value || !_sg.value.exists()) continue;   // cannot check: next load
+      _srv = _sg.value.val() || {};
+    }catch(e){ continue; }
+    if(_srv._archived || _HEAL_POST_DECISION.includes(_srv.stage)) continue;
+    if(_srv.verificationFormSubmittedAt && _srv.stage === 'verified') continue;
     /* Re-resolve AFTER the await; the live listener replaces every record in
        DB.haatFarmers and the object above is an orphan by now. This is the bug
        that caused the very records being healed here. */
     const f = (DB.haatFarmers||[]).find(x => x && x.id === id);
     if(!f) continue;
-    if(f.verificationFormSubmittedAt) continue;   // healed elsewhere meanwhile
+    if(f.verificationFormSubmittedAt && f.stage === 'verified') continue;   // healed elsewhere meanwhile
     if(_HEAL_POST_DECISION.includes(f.stage)) continue;
     markLocalTouch('haatFarmers', f.id);
     const sm = v.summary || {};
     const claims = Array.isArray(v.claims) ? v.claims : [];
-    f.verificationFormSubmittedAt = v.submittedAt;
-    f.visits = f.visits || [];
+    f.verificationFormSubmittedAt = _srv.verificationFormSubmittedAt || f.verificationFormSubmittedAt || v.submittedAt;   /* v307 - keep a date already there */
+    /* v307b - the server's visits, plus any this device holds that the server lacks */
+    { const _sv = Array.isArray(_srv.visits) ? _srv.visits.filter(Boolean)
+                : ((_srv.visits && typeof _srv.visits === 'object') ? Object.values(_srv.visits).filter(Boolean) : []);
+      const _sig = x => [x&&x.date, x&&x.fc, x&&x.score, x&&x.notes].join('|');
+      const _have = new Set(_sv.map(_sig));
+      f.visits = _sv.concat((f.visits||[]).filter(x => x && !_have.has(_sig(x)))); }
+    /* v307 - never a second row for the same visit: only when no real visit on that date exists */
+    const _hvDate = sm.date || String(v.submittedAt).slice(0,10);
+    const _addVisit = !f.visits.some(x => x && !isImportedVisit(x) && x.date === _hvDate);
+    if(_addVisit)
     f.visits.push(stampAsVerifier(stamp({   /* v210 - credit the coordinator, not the admin running the recovery */
       date: sm.date || String(v.submittedAt).slice(0,10),
       fc: f.fcId || '',
@@ -12018,12 +12039,9 @@ async function autoHealVerifications(){
     if(FB && FB.ready){
       try{
         /* v244 - guarded. These are the RECOVERY tools, and an unguarded Firebase promise never settles on a link that is up but dead - so the one thing that finds a lost verification was itself the thing that hung. */
-        await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
-          verificationFormSubmittedAt: f.verificationFormSubmittedAt,
-          stage: 'verified',
-          visits: sanitizeForFB(f.visits),
-          verificationLock: null
-        }), 15000);
+        const _up = { verificationFormSubmittedAt: f.verificationFormSubmittedAt, stage: 'verified', verificationLock: null };
+        if(_addVisit) _up.visits = sanitizeForFB(f.visits);   /* v307b - visits only when one was added */
+        await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update(_up), 15000);
         healed.push(f.id);
       }catch(e){ console.error('[Sristi] auto-heal write failed for ' + f.id, e); }
     }
@@ -12057,7 +12075,7 @@ function haatStats(list){
   const f=_excludeSeeds(filterByCurrentFc(list || DB.haatFarmers)).filter(x=>!x._archived);
   return{
     total:f.length,
-    pending:f.filter(x=>x.stage==='verification_pending').length,
+    pending:f.filter(x=>x.stage==='verification_pending' && !isAwaitingApproval(x)).length,   /* v307 - not in both boxes */
     // v125 — was x.stage==='verified', which a record overwrite silently reset.
     verified:f.filter(isAwaitingApproval).length,
     green:f.filter(x=>x.status==='green').length,
@@ -16237,8 +16255,9 @@ function viewHaat(){
   // archive: hide archived farmers unless the "Show archived" toggle is on (then show ONLY archived)
   rows = archFilterRows('haat', rows);
   // status box keys: pending & verified are pipeline STAGES; green/yellow/red are decision STATUSES
-  if(F.status==='pending') rows=rows.filter(r=>r.stage==='verification_pending');
-  else if(F.status==='verified') rows=rows.filter(r=>r.stage==='verified');
+  /* v307 - the same rules the boxes above count with */
+  if(F.status==='pending') rows=rows.filter(r=>r.stage==='verification_pending' && !isAwaitingApproval(r));
+  else if(F.status==='verified') rows=rows.filter(isAwaitingApproval);
   else if(F.status==='green'||F.status==='yellow'||F.status==='red')
     rows=rows.filter(r=>r.status===F.status);
   rows=sortRows(rows);
@@ -16529,9 +16548,10 @@ function viewVerification(){
   // in their team queue; FCs can still drill into "only my own" via toolbar.
   const myFarmers    = _excludeSeeds(filterByCurrentFc(DB.haatFarmers));
   // Compute the three buckets
-  const newFarmers   = myFarmers.filter(f=>f.stage==='verification_pending');
+  /* v307 - the same rules as the Haat Farmers boxes */
+  const newFarmers   = myFarmers.filter(f=>f.stage==='verification_pending' && !isAwaitingApproval(f));
   const seasonalDue  = myFarmers.filter(isSeasonalVerificationDue);
-  const awaiting     = myFarmers.filter(f=>f.stage==='verified');
+  const awaiting     = myFarmers.filter(isAwaitingApproval);
 
   // FC greeting only — the Mine/Unclaimed/Seasonal counter tile was dropped
   // (user feedback: noise; the tab counts above carry the same information).
@@ -26408,7 +26428,7 @@ const _RPT_DRILL_PLAIN = {hasCert:1, soil:1, fssai:1, noDate:1, acres:1};
    answer the same question. */
 function _rptP(){
   return {
-    waitingVisit: f => f.stage === 'verification_pending',
+    waitingVisit: f => f.stage === 'verification_pending' && !(typeof isAwaitingApproval === 'function' && isAwaitingApproval(f)),   /* v307 */
     waitingDecision: f => (typeof isAwaitingApproval === 'function' ? isAwaitingApproval(f) : f.stage === 'verified'),
     onboarded: f => f.status === 'green'
   };

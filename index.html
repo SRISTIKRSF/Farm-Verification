@@ -544,6 +544,8 @@ tbody tr:last-child td{border-bottom:none}
 .empty svg{width:38px;height:38px;margin-bottom:11px;opacity:.3}
 .empty div{font-size:13px}
 .id-code{font-size:11px;color:var(--ink-faint);font-weight:600;letter-spacing:.02em}
+.fno-chip{display:inline-block;font:600 11px/1.6 ui-monospace,Consolas,monospace;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:0 6px;white-space:nowrap}
+.fno-chip.pending{font-family:inherit;font-weight:500;color:var(--ink-faint);background:var(--line-soft)}
 .name-cell{white-space:nowrap}
 .name-cell .nm{font-weight:600;font-size:13px}
 .name-cell .sub{font-size:10.5px;color:var(--ink-faint);margin-top:1px}
@@ -4625,8 +4627,154 @@ const GUJARAT_DISTRICTS = [
   'Surat (સુરત)','Surendranagar (સુરેન્દ્રનગર)','Tapi (તાપી)','Vadodara (વડોદરા)',
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
+/* FARMERNO-PURE-START - v314 farmer number. No DOM, no Firebase: tested by _tests/fno/t_pure.js */
+const FNO_STATE = 'GJ';
+const FNO_DISTRICT_CODES = {   /* same two-letter codes as Khedut Haat geo/districts; VT added for Vav-Tharad */
+  'Ahmedabad':'AM','Amreli':'AL','Anand':'AN','Aravalli':'AR','Banaskantha':'BK','Bharuch':'BR',
+  'Bhavnagar':'BN','Botad':'BT','Chhota Udaipur':'CU','Dahod':'DH','Dang':'DG','Devbhoomi Dwarka':'DW',
+  'Gandhinagar':'GN','Gir Somnath':'GS','Jamnagar':'JM','Junagadh':'JG','Kheda':'KH','Kutch':'KT',
+  'Mahisagar':'MH','Mehsana':'MS','Morbi':'MR','Narmada':'NR','Navsari':'NV','Panchmahal':'PN',
+  'Patan':'PT','Porbandar':'PB','Rajkot':'RJ','Sabarkantha':'SK','Surat':'SR','Surendranagar':'SN',
+  'Tapi':'TP','Vadodara':'VD','Valsad':'VL','Vav-Tharad':'VT'
+};
+const FNO_ALIASES = {'kachchh':'KT','devbhumi dwarka':'DW','chhotaudepur':'CU','chhota udepur':'CU','panchmahals':'PN','mahesana':'MS',
+  'the dangs':'DG','dangs':'DG','ahmadabad':'AM','sabar kantha':'SK','banas kantha':'BK','kachh':'KT'};
+function fnoDistrictCode(raw){
+  const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, ' '); if(!s) return null;
+  const eng = s.split(' (')[0].trim();
+  if(FNO_DISTRICT_CODES[eng]) return FNO_DISTRICT_CODES[eng];
+  const low = eng.toLowerCase(); if(FNO_ALIASES[low]) return FNO_ALIASES[low];
+  const sq = low.replace(/[^a-z]/g, '');       /* capitals, spaces, hyphens: "BANAS KANTHA", "Vav Tharad" */
+  if(sq){
+    for(const k in FNO_DISTRICT_CODES) if(k.toLowerCase().replace(/[^a-z]/g, '') === sq) return FNO_DISTRICT_CODES[k];
+    for(const k in FNO_ALIASES) if(k.replace(/[^a-z]/g, '') === sq) return FNO_ALIASES[k];
+  }
+  for(const d of GUJARAT_DISTRICTS){            /* Gujarati-only values */
+    const m = /^(.*) \((.*)\)$/.exec(d); if(m && (m[2] === s || m[2] === eng)) return FNO_DISTRICT_CODES[m[1]] || null;
+  }
+  return null;
+}
+function fnoProgrammeYear(t){
+  const ms = typeof t === 'number' ? t : Date.parse(t); if(isNaN(ms)) return null;
+  const d = new Date(ms + 330 * 60000);          /* India time */
+  const y = d.getUTCFullYear(), fy = d.getUTCMonth() >= 3 ? y : y - 1;
+  return String(fy).slice(-2);
+}
+function fnoAppliedAt(f){
+  for(const k of ['publicSubmittedAt','submittedAt','enrollmentFormSubmittedAt','createdAt','enrolledAt']){
+    const v = f && f[k]; const t = typeof v === 'number' ? v : Date.parse(v); if(v && !isNaN(t)) return t;
+  }
+  if(f && /^\d{4}-\d{2}$/.test(f.enrolledMonth || '')) return Date.parse(f.enrolledMonth + '-15T00:00:00Z');
+  return null;
+}
+function fnoFormat(dc, yy, n){ return FNO_STATE + '-' + dc + '-' + yy + '-' + String(n).padStart(5, '0'); }
+function fnoParse(s){
+  const m = /^(?:([CAHR])-)?([A-Z]{2})-([A-Z]{2})-(\d{2})-(\d{5})$/.exec(String(s || '').trim().toUpperCase());
+  return m ? {letter: m[1] || '', state: m[2], dc: m[3], yy: m[4], n: +m[5]} : null;
+}
+function fnoIndexKey(no){ const p = fnoParse(no); return p ? p.state + '-' + p.dc + '-' + String(p.n).padStart(5, '0') : null; }
+function fnoLetter(f, col){
+  if(col === 'convFarmers') return 'C';
+  if(f && f.status === 'green') return 'H';
+  if(f && f.status === 'red') return 'R';      /* office rejected (Guru, 2 Oct) */
+  return 'A';
+}
+function fnoDisplay(f, col){ return f && f.farmerNo ? fnoLetter(f, col) + '-' + f.farmerNo : ''; }
+function fnoMatches(f, col, q){
+  if(!f || !f.farmerNo) return false;
+  const p = fnoParse(f.farmerNo); if(!p) return false;
+  const t = String(q || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if(!t) return false;
+  const full = fnoDisplay(f, col).toUpperCase();
+  if(full === t || String(f.farmerNo).toUpperCase() === t) return true;
+  const m = /^(?:[CAHR]-)?(?:GJ-)?([A-Z]{2})-(?:\d{2}-)?0*(\d{1,5})$/.exec(t);
+  return !!(m && m[1] === p.dc && +m[2] === p.n);
+}
+/* FARMERNO-PURE-END */
+/* FARMERNO-UI-START - v314 farmer number on screen. Tested by _tests/fno/t_display.js */
+function fnoEnabled(){ try{ return !!(DB && DB.settings && DB.settings.farmerNoOn); }catch(e){ return false; } }
+function fnoColOf(f){
+  if(!f) return 'haatFarmers';
+  if(f.program === 'conversion' || f.program === 'conv') return 'convFarmers';
+  if(f.program === 'haat') return 'haatFarmers';
+  return /^CF/.test(String(f.id || '')) ? 'convFarmers' : 'haatFarmers';
+}
+function fnoChip(f, col){
+  const d = fnoDisplay(f, col);
+  if(d) return '<span class="fno-chip" title="Farmer number">' + esc(d) + '</span>';
+  if(!fnoEnabled()) return '';          /* numbering not switched on: show nothing new */
+  return '<span class="fno-chip pending" title="The number is given once this record reaches the server">\u0aa8\u0a82\u0aac\u0ab0 \u0aac\u0abe\u0a95\u0ac0 \u00b7 Number pending</span>';
+}
+function fnoChipLine(f, col){ const c = fnoChip(f, col); return c ? c + '<br>' : ''; }
+function fnoChipInline(f, col){ const c = fnoChip(f, col); return c ? c + ' ' : ''; }
+/* FARMERNO-UI-END */
+/* FARMERNO-NET-START - v314 giving a number. Not called anywhere until v315; refuses while the switch is off. */
+const _fnoInflight = new Map();   /* one request per farmer at a time: a double tap gets the same number */
+function fnoIssue(col, f, opts){
+  if(!f) return Promise.resolve(null);
+  if(f.farmerNo) return Promise.resolve(f.farmerNo);
+  const k = col + '/' + f.id;
+  if(_fnoInflight.has(k)) return _fnoInflight.get(k).then(no => { if(no && !f.farmerNo) f.farmerNo = no; return no; });
+  const p = _fnoIssueOnce(col, f, opts || {}).finally(() => _fnoInflight.delete(k));
+  _fnoInflight.set(k, p);
+  return p;
+}
+async function _fnoIssueOnce(col, f, opts){
+  if(!opts.force && !fnoEnabled()) return null;
+  if(isViewerUser()) return null;
+  const dc = fnoDistrictCode(f.district); if(!dc) return null;              /* pending until a district is set */
+  const yy = fnoProgrammeYear(fnoAppliedAt(f) || Date.now());
+  if(!(FB && FB.ready && navigator.onLine)) return null;                   /* pending while offline */
+  for(let tries = 0; tries < 6; tries++){
+    let g;
+    try{ g = await _fbWriteGuard(fbRef('counters/farmerNo/' + FNO_STATE + '-' + dc).transaction(c => (typeof c === 'number' ? c : 0) + 1), 8000); }
+    catch(e){ console.warn('[FarmerNo] counter failed:', e && e.message || e); return null; }
+    if(!g || g.timedOut || !g.value || !g.value.committed) return null;   /* a late commit only leaves a gap */
+    const n = g.value.snapshot.val();
+    const no = fnoFormat(dc, yy, n), key = fnoIndexKey(no);
+    if(!key) return null;
+    try{
+      const w = await _fbWriteGuard(fbRef('farmerNos/' + key).set({id: f.id, col: col, at: Date.now()}), 8000);
+      if(w && w.timedOut) return null;
+    }catch(e){
+      /* refused: find out why, once. Only "another farmer holds it" moves on to the next number;
+         any other refusal (rules, sign-in) stops here instead of burning a run of numbers. */
+      let cur = null;
+      try{ const r = await _fbWriteGuard(fbRef('farmerNos/' + key).get(), 6000); cur = r && !r.timedOut && r.value ? r.value.val() : null; }
+      catch(e2){ return null; }
+      if(cur && cur.id === f.id){ f.farmerNo = no; return no; }
+      if(cur) continue;
+      return null;
+    }
+    f.farmerNo = no;
+    /* fnoIssue NEVER writes the farmer record itself. Public callers run it BEFORE publicPersistRecord,
+       so the number travels inside that write (and its offline-queued copy). Staff callers' saveDB()
+       sends it as a field update. A separate field write here could leave a "ghost" record holding
+       only farmerNo if the real record never arrived. */
+    return no;
+  }
+  return null;
+}
+async function fnoIssuePending(){
+  if(!fnoEnabled() || PUBLIC_MODE || !isAdminUser()) return 0;
+  let given = 0, tried = 0;
+  outer: for(const col of ['haatFarmers', 'convFarmers']){
+    for(const f of (DB[col] || []).slice()){
+      if(tried >= 25) break outer;               /* at most 25 attempts per run: never a burst */
+      if(!f || f.farmerNo || f._seeded || f._mergedInto || !fnoDistrictCode(f.district)) continue;
+      tried++;
+      const no = await fnoIssue(col, Object.assign({}, f));   /* a copy: the record may be replaced while we wait */
+      if(!no) break outer;                       /* offline, slow or refused: stop this run, try next time */
+      const cur = _recNow(col, f.id);            /* the record as it is NOW */
+      if(cur && !cur.farmerNo){ cur.farmerNo = no; markLocalTouch(col, f.id); given++; }
+    }
+  }
+  if(given) await saveDB(true);
+  return given;
+}
+/* FARMERNO-NET-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v313';
+const APP_VERSION = 'v314';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14886,7 +15034,7 @@ function _fcActMatch(f,q){
   if(!q) return true;
   q=q.toLowerCase();
   return (f.name||'').toLowerCase().includes(q) || (f.id||'').toLowerCase().includes(q)
-      || (f.village||'').toLowerCase().includes(q) || farmerCropsMatch(f.crops,q);
+      || (f.village||'').toLowerCase().includes(q) || farmerCropsMatch(f.crops,q) || fnoMatches(f, fnoColOf(f), q);
 }
 function _fcActCards(rows,F,program){
   /* v210 - the status buttons above narrow this list. */
@@ -15022,7 +15170,7 @@ function _fcConvCards(farmers,F){
   const catProg={'pending':15,'red':30,'yellow':60,'green':100};
   let rows=[...farmers];
   if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
-  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q)||farmerCropsMatch(f.crops,q)||farmerPhoneMatch(f,q));}
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q)||farmerCropsMatch(f.crops,q)||farmerPhoneMatch(f,q)||fnoMatches(f, 'convFarmers', q));}
   rows.sort((a,b)=>farmerLatestTs(b)-farmerLatestTs(a)); // latest-submitted first
   const now=Date.now(),visible=rows.slice(0,F.lim),more=rows.length-F.lim;
   const ce=document.getElementById('fcCCount');if(ce)ce.textContent=rows.length+' farmers';
@@ -15275,7 +15423,8 @@ function _fcQueueMatch(item, F){
   if(F.q){
     const q=F.q.toLowerCase();
     if(!(item.name.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
-      || item.village.toLowerCase().includes(q) || farmerCropsMatch(item.farmer&&item.farmer.crops,q))) return false;
+      || item.village.toLowerCase().includes(q) || farmerCropsMatch(item.farmer&&item.farmer.crops,q)
+      || fnoMatches(item.farmer, fnoColOf(item.farmer), q))) return false;
   }
   return true;
 }
@@ -16608,7 +16757,7 @@ function viewHaat(){
     if(F.active==='0') a=a.filter(r=>r.status==='green'&&!r.active);
     if(window._q){ const q=window._q.toLowerCase();
       a=a.filter(r=>r.name.toLowerCase().includes(q)||r.village.toLowerCase().includes(q)
-                 ||r.id.toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)); }
+                 ||r.id.toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'haatFarmers', q)); }
     return a;
   })();
   const hs=haatStats(_audience);
@@ -16710,7 +16859,7 @@ function viewHaat(){
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
     h+=`<tr data-id="${r.id}">
       ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
-      <td><span class="id-code">${r.id}</span>${(function(){
+      <td>${fnoChipLine(r, 'haatFarmers')}<span class="id-code">${r.id}</span>${(function(){
         const st = recordStamp(r);
         return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
       })()}</td>
@@ -16912,7 +17061,7 @@ function exportHaatCSV(rows){
      should not rest on a button being where I remember it. */
   if(!canEditData()){ toast('View-only access \u2014 export is not available.'); return; }
   const data=rows.map(f=>({
-    id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
+    farmer_no:fnoDisplay(f, 'haatFarmers'),id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,
     certification:f.certification||'',
     field_coordinator:((farmerFcInfo(f).fc)||{}).name||'',
@@ -16927,7 +17076,7 @@ function exportHaatCSV(rows){
 function exportConvCSV(rows){
   if(!canEditData()){ toast('View-only access \u2014 export is not available.'); return; }
   const data=rows.map(f=>({
-    id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
+    farmer_no:fnoDisplay(f, 'convFarmers'),id:f.id,name:f.name,phone:f.phone,village:f.village,district:f.district,state:f.state,
     land_acres:f.landAcres||0,crops:(f.crops||[]).join('; '),
     field_coordinator:(fcById(f.fcId)||{}).name||'',mobilizer:mobilizerNameById(f.mobilizerId),
     juth:f.juth||'',
@@ -17595,7 +17744,7 @@ function viewConversion(){
     if(F.dateRange.preset!=='all') a=a.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
     if(window._q){ const q=window._q.toLowerCase();
       a=a.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)
-                 ||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)); }
+                 ||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'convFarmers', q)); }
     return a;
   })();
   const cs=convStats(_audience);
@@ -17681,7 +17830,7 @@ function viewConversion(){
       : '<span style="color:var(--ink-faint)">—</span>';
     h+=`<tr data-id="${r.id}">
       ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
-      <td><span class="id-code">${esc(r.id)}</span></td>
+      <td>${fnoChipLine(r, 'convFarmers')}<span class="id-code">${esc(r.id)}</span></td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres||0} acres</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td style="max-width:180px">${cropsCell}</td>
@@ -20176,6 +20325,7 @@ function viewHaatRecord(){
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
     +       '</div>'
     +       '<div class="rec-r2">'
+    +         (fnoChip(f, 'haatFarmers') ? fld('Farmer No', fnoChip(f, 'haatFarmers')) + '<span class="sep">|</span>' : '')   /* v314 */
     +         fld('ID', esc(f.id || '\u2014'))
     +         '<span class="sep">|</span>'
     +         fld('\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0',
@@ -20533,7 +20683,7 @@ function openHaatDrawer(id){
 
   let h=`<div class="drawer-head">
     <div class="row">
-      <div><div class="meta">${esc(f.id)} · Organic Haat Programme</div><h3>${esc(f.name)}</h3>
+      <div><div class="meta">${fnoChipInline(f, 'haatFarmers')}${esc(f.id)} · Organic Haat Programme</div><h3>${esc(f.name)}</h3>
       <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
         <span class="tag ${st.cls}"><span class="d"></span>${st.label}</span>
         ${f.status==='green'?`<span class="tag ${f.active?'green':'grey'}">${f.active?'Active':'Inactive'}</span>`:''}
@@ -20831,7 +20981,7 @@ function openConvDrawer(id){
   const st=CONV_STATUS[stKey]||CONV_STATUS.enrolled;
   const visits=(f.visits&&f.visits.length)?f.visits:(f.observations||[]);
   let h=`<div class="drawer-head"><div class="row">
-    <div><div class="meta">${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
+    <div><div class="meta">${fnoChipInline(f, 'convFarmers')}${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
       <span class="tag ${st.cls}" style="white-space:normal"><span class="d"></span>${esc(st.gu||st.label)}</span>
       ${(function(){
@@ -23172,6 +23322,7 @@ function openCompareFormsModal(id, opts){
       + '<div style="flex:1;min-width:0;border:1px solid #e7dde2;border-radius:8px;padding:11px 14px">'
       +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 16px">'
       +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u00b7 Farmer', '<span style="font-size:13.5px">' + esc(f.name||'\u2014') + '</span>')
+      +     (fnoDisplay(f, fnoColOf(f)) ? pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0aa8\u0a82\u0aac\u0ab0 \u00b7 Farmer No', esc(fnoDisplay(f, fnoColOf(f)))) : '')   /* v314 */
       +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 ID', esc(f.id||'\u2014'))
       +     pdfField('\u0a97\u0abe\u0aae \u00b7 Village', esc(f.village||'\u2014'))
       +     pdfField('\u0a9c\u0abf\u0ab2\u0acd\u0ab2\u0acb \u00b7 District', esc(districtDisplayName(f.district)||'\u2014'))
@@ -26258,7 +26409,7 @@ function viewData(){
      have added 100 sample farmers to the live database, Erase blanked this device's lists. */
   $('#expJson').onclick=()=>download('sristi-haat-backup.json',JSON.stringify(DB,null,1));
   $('#expHaat').onclick=()=>download('haat-farmers.csv',toCSV(DB.haatFarmers.map(f=>({
-    id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
+    farmer_no:fnoDisplay(f, 'haatFarmers'),id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     vertical:f.vertical||'',crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,certification:f.certification||'',
     field_coordinator:(fcById(f.fcId)||{}).name||'',haat:farmerHaats(f).join(' | '),juth:f.juth||'',
     // v8 bug fix: status may be undefined for unverified farmers — fall back gracefully
@@ -26267,7 +26418,7 @@ function viewData(){
     joined_month_year:farmerJoinedLabel(f),
   }))));
   $('#expConv').onclick=()=>download('conversion-farmers.csv',toCSV(DB.convFarmers.map(f=>({
-    id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
+    farmer_no:fnoDisplay(f, 'convFarmers'),id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
     crops:(f.crops||[]).join('; '),land_acres:f.landAcres||0,field_coordinator:(fcById(f.fcId)||{}).name||'',
     juth:f.juth||'',
     // v8 bug fix: transitionStatus may be undefined for never-scored farmers
@@ -31204,7 +31355,7 @@ function buildFarmerSummaryPdfHtml(f, claims, title){
   const dateStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
   return '<div class="pdfdoc" style="font-family:' + PDF_FONT + ';width:' + PDF_PAGE_W + 'px;color:#2a1a22;background:#fff">'
     + pdfLetterheadOuter(title, 'સૃષ્ટિ પ્રાકૃતિક ખેડૂત હાટ')
-    + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px"><b>'+esc(f.name||'—')+'</b> · '+esc(f.phone||f.mobile||'—')+'<br><span style="color:#6a5a61">જમા તારીખ: '+dateStr+'</span></div>'
+    + '<div style="background:#f4f4f4;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:13px">'+(fnoDisplay(f, fnoColOf(f)) ? '<b>'+esc(fnoDisplay(f, fnoColOf(f)))+'</b> · ' : '')+'<b>'+esc(f.name||'—')+'</b> · '+esc(f.phone||f.mobile||'—')+'<br><span style="color:#6a5a61">જમા તારીખ: '+dateStr+'</span></div>'
     + (rowsHtml || '<div style="padding:20px;text-align:center;color:#94a3b8">No form data available.</div>')
     + '</div>';
 }
@@ -31337,6 +31488,7 @@ function viewPublicThanks(){
       <div class="check">✓</div>
       <h1>તમારી અરજી મળી!</h1>`}
       ${_pending ? '' : `<p style="font-size:13px;color:#929fb5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-top:0">Application received</p>`}
+      ${fnoDisplay(app, fnoColOf(app)) ? '<div class="id">ખેડૂત નંબર / Farmer No: <b>' + esc(fnoDisplay(app, fnoColOf(app))) + '</b></div>' : ''}
       <div class="id">અરજી નં / Application ID: <b>${esc(app.id||'-')}</b></div>
       <p><b>${esc(app.name||'')}</b>${app.village?', '+esc(app.village):''}</p>
       <p style="margin-top:14px"><b>આગળ શું?</b><br>

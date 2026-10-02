@@ -10,11 +10,37 @@
         "$phone": {
           ".validate": "!data.exists() && newData.isString() && newData.val().length <= 64"
         }
-      }
+      },
+
+      "counters": {
+        "farmerNo": {
+          "$k": { ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())" }
+        }
+      },
+      "farmerNos": {
+        "$k": { ".validate": "(!data.exists() && newData.hasChildren(['id','col'])) || (data.exists() && newData.child('id').val() === data.child('id').val())" }
+      },
+      "haatHandover": { ".indexOn": ["updatedAt"] }
     },
     "prakrutik_kheti_staging": {
       "haatFarmers": { ".indexOn": ["district", "fcId", "_u"] },
-      "convFarmers": { ".indexOn": ["district", "fcId", "_u"] }
+      "convFarmers": { ".indexOn": ["district", "fcId", "_u"] },
+
+      "phoneIndex": {
+        "$phone": {
+          ".validate": "!data.exists() && newData.isString() && newData.val().length <= 64"
+        }
+      },
+
+      "counters": {
+        "farmerNo": {
+          "$k": { ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())" }
+        }
+      },
+      "farmerNos": {
+        "$k": { ".validate": "(!data.exists() && newData.hasChildren(['id','col'])) || (data.exists() && newData.child('id').val() === data.child('id').val())" }
+      },
+      "haatHandover": { ".indexOn": ["updatedAt"] }
     }
   }
 }

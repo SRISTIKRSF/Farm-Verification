@@ -3521,7 +3521,7 @@ function buildVerificationPdfHtml(lastClaims, summary){
       + '<div style="flex:1;min-width:0;border:1px solid #e7dde2;border-radius:8px;padding:11px 14px">'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 16px">'
           + pdfField('ખેડૂતનું નામ · Farmer', '<span style="font-size:13.5px">' + esc(FARMER.name||'—') + '</span>')
-          + pdfField('ખેડૂત ID · Farmer ID', esc(FARMER.id||'—'))
+          + pdfField('ખેડૂત ID · Farmer ID', esc(FARMER.farmerNoDisplay || FARMER.id||'—'))
           + pdfField('ગામ · Village', esc(FARMER.village||'—'))
           + pdfField('તાલુકો · Taluka', esc(FARMER.taluka||'—'))
           + pdfField('જિલ્લો · District', esc(FARMER.district||'—'))
@@ -4204,7 +4204,7 @@ function showDraftBanner(dr){
 
 function paintFarmer(){
   $('#fName').textContent = FARMER.name || '—';
-  $('#fId').textContent = FARMER.id || '—';
+  $('#fId').textContent = FARMER.farmerNoDisplay || FARMER.id || '—';
   $('#fVillage').textContent = FARMER.village || '—';
   $('#fTaluka').textContent = FARMER.taluka || '—';
   $('#fDistrict').textContent = FARMER.district || '—';
@@ -4638,7 +4638,8 @@ const FNO_DISTRICT_CODES = {   /* same two-letter codes as Khedut Haat geo/distr
   'Tapi':'TP','Vadodara':'VD','Valsad':'VL','Vav-Tharad':'VT'
 };
 const FNO_ALIASES = {'kachchh':'KT','devbhumi dwarka':'DW','chhotaudepur':'CU','chhota udepur':'CU','panchmahals':'PN','mahesana':'MS',
-  'the dangs':'DG','dangs':'DG','ahmadabad':'AM','sabar kantha':'SK','banas kantha':'BK','kachh':'KT'};
+  'the dangs':'DG','dangs':'DG','ahmadabad':'AM','sabar kantha':'SK','banas kantha':'BK','kachh':'KT',
+  'narmda':'NR'};   /* v315 - 48 Conversion records typed "Narmda" (B1 dry run, 2 Oct) */
 function fnoDistrictCode(raw){
   const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, ' '); if(!s) return null;
   const eng = s.split(' (')[0].trim();
@@ -4707,6 +4708,12 @@ function fnoChip(f, col){
 }
 function fnoChipLine(f, col){ const c = fnoChip(f, col); return c ? c + '<br>' : ''; }
 function fnoChipInline(f, col){ const c = fnoChip(f, col); return c ? c + ' ' : ''; }
+/* v315 - the farmer number REPLACES the internal record id on screen; the id shows only until a number exists */
+function fnoLabel(f, col){ return fnoDisplay(f, col) || (f && f.id) || ''; }
+function fnoIdHtml(f, col, idHtml, inline){
+  if(fnoDisplay(f, col)) return fnoChip(f, col);
+  return (inline ? fnoChipInline(f, col) : fnoChipLine(f, col)) + idHtml;
+}
 /* FARMERNO-UI-END */
 /* FARMERNO-NET-START - v314 giving a number. Not called anywhere until v315; refuses while the switch is off. */
 const _fnoInflight = new Map();   /* one request per farmer at a time: a double tap gets the same number */
@@ -4774,7 +4781,7 @@ async function fnoIssuePending(){
 }
 /* FARMERNO-NET-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v314';
+const APP_VERSION = 'v315';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15062,7 +15069,7 @@ function _fcActCards(rows,F,program){
         <p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(districtDisplayName(f.district)||f.district||'—')}</p></div>${right}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0;font-size:11px;color:var(--ink-soft)">${meta}</div>
       ${bar}
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span>${(program==='conv'&&canEditData())?`<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${r.pct!=null?`<button class="fc-btn-edit" data-convscore="${esc(f.id)}">${svg(I.edit,2)} Edit verification</button>`:''}<button class="fc-btn-edit" data-fcedit="${esc(f.id)}">${svg(I.edit,2)} Edit farmer details</button></span>`:''}</div>
+      <div class="fc-cm"><span class="fc-idchip">${esc(fnoLabel(f, fnoColOf(f)))}</span>${(program==='conv'&&canEditData())?`<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${r.pct!=null?`<button class="fc-btn-edit" data-convscore="${esc(f.id)}">${svg(I.edit,2)} Edit verification</button>`:''}<button class="fc-btn-edit" data-fcedit="${esc(f.id)}">${svg(I.edit,2)} Edit farmer details</button></span>`:''}</div>
       ${program==='haat'?_fcEditNote(r.visit)+_fcVerifActions(f,r.visit):''}
     </div>`;
   }).join(''):`<div class="fc-empty">${F.q?'Nothing matches that search':'Nothing here yet'}</div>`}
@@ -15193,7 +15200,7 @@ function _fcConvCards(farmers,F){
       <div class="fc-ct"><div><p class="fc-nm">${esc(f.name||'—')}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(f.village||'—')} · ${esc(f.district||'—')}</p></div><span class="fc-b ${catCls[cat]||'fpending'}">${catLabel[cat]||'Pending'}</span></div>
       <div class="fc-prog"><div class="fc-prog-t"><div class="fc-prog-f" style="width:${catProg[cat]||15}%;background:${catCol[cat]||'var(--grey)'}"></div></div>
       <div class="fc-prog-l"><span>Not visited</span><span>Struggling</span><span>In Progress</span><span ${cat==='green'?'style="color:var(--green);font-weight:600"':''}>Adopted</span></div></div>
-      <div class="fc-cm"><span class="fc-idchip">${esc(f.id)}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>
+      <div class="fc-cm"><span class="fc-idchip">${esc(fnoLabel(f, fnoColOf(f)))}</span><span class="fc-lv">${svg(I.clock,2)} ${lvText}</span>
       <div style="display:flex;gap:6px;margin-left:auto"><button class="fc-btn-edit" data-eid="${esc(f.id)}">${svg(I.edit,2)} Edit</button>${btn}</div></div>
     </div>`;
   }).join(''):'<div class="fc-empty">No farmers found</div>'}
@@ -15398,7 +15405,7 @@ function _fcQueueCardHtml(item){
       <span>· ${esc(item.status)}</span>
     </div>
     ${item.plannedBy?`<div style="font-size:11px;color:var(--blue);margin-bottom:6px">📌 Planned by ${esc(item.plannedBy)}${item.plannedDate?' on '+esc(fmtDate(item.plannedDate)):''}</div>`:''}
-    <div class="fc-cm"><span class="fc-idchip">${esc(item.id)}</span>
+    <div class="fc-cm"><span class="fc-idchip">${esc(item.farmer ? fnoLabel(item.farmer, fnoColOf(item.farmer)) : item.id)}</span>
       <div style="display:flex;gap:6px;margin-left:auto">
         <button class="fc-btn-v" data-act="verify" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.check,2.5)} Verify Now</button>
         ${!item.plannedBy?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.clock,2)} Plan for later</button>`:''}
@@ -16859,7 +16866,7 @@ function viewHaat(){
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
     h+=`<tr data-id="${r.id}">
       ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
-      <td>${fnoChipLine(r, 'haatFarmers')}<span class="id-code">${r.id}</span>${(function(){
+      <td>${fnoIdHtml(r, 'haatFarmers', '<span class="id-code">' + r.id + '</span>')}${(function(){
         const st = recordStamp(r);
         return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
       })()}</td>
@@ -17243,7 +17250,7 @@ function viewVerification(){
       }
       hh+=`<tr data-id="${r.id}">
         <td><input type="checkbox" data-sel="${r.id}" ${checked}></td>
-        <td><span class="pill">${r.id}</span></td>
+        <td><span class="pill">${esc(fnoLabel(r, fnoColOf(r)))}</span></td>
         <td class="name-cell"><b>${esc(r.name)}</b><div class="sub">${r.crops.length?esc(r.crops.slice(0,2).join(', '))+(r.crops.length>2?'...':''):''}</div></td>
         <td>${esc(r.village)}</td>
         <td>${esc(r.district)}</td>
@@ -17830,7 +17837,7 @@ function viewConversion(){
       : '<span style="color:var(--ink-faint)">—</span>';
     h+=`<tr data-id="${r.id}">
       ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
-      <td>${fnoChipLine(r, 'convFarmers')}<span class="id-code">${esc(r.id)}</span></td>
+      <td>${fnoIdHtml(r, 'convFarmers', '<span class="id-code">' + esc(r.id) + '</span>')}</td>
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres||0} acres</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td style="max-width:180px">${cropsCell}</td>
@@ -19222,7 +19229,7 @@ function viewFcInbox(){
   list.forEach(r=>{
     const fc=fcById(r.fcId);
     h+=`<tr data-id="${r.id}">
-      <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(r.id)}</div></td>
+      <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(fnoLabel(r, fnoColOf(r)))}</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(talukaDisplayName(r.taluka,r.district)||'')}${r.taluka?', ':''}${esc(r.district)}</div></td>
       <td>${fc?esc(fc.name):'—'}</td>
       <td style="font-size:11.5px">${esc(r.lastVisitAt||'—')}</td>
@@ -20325,8 +20332,8 @@ function viewHaatRecord(){
     +         '<span class="who">' + (f.phone ? esc(f.phone) + ' \u00b7 ' : '') + esc(where || '\u2014') + '</span>'
     +       '</div>'
     +       '<div class="rec-r2">'
-    +         (fnoChip(f, 'haatFarmers') ? fld('Farmer No', fnoChip(f, 'haatFarmers')) + '<span class="sep">|</span>' : '')   /* v314 */
-    +         fld('ID', esc(f.id || '\u2014'))
+    +         (fnoDisplay(f, 'haatFarmers') ? fld('Farmer No', fnoChip(f, 'haatFarmers'))   /* v315 - the number replaces the record id */
+                 : (fnoChip(f, 'haatFarmers') ? fld('Farmer No', fnoChip(f, 'haatFarmers')) + '<span class="sep">|</span>' : '') + fld('ID', esc(f.id || '\u2014')))
     +         '<span class="sep">|</span>'
     +         fld('\u0aaa\u0acd\u0ab0\u0abe\u0a95\u0ac3\u0aa4\u0abf\u0a95 \u0a96\u0ac7\u0aa4\u0ac0',
                  REC.loading ? '\u2026'
@@ -20683,7 +20690,7 @@ function openHaatDrawer(id){
 
   let h=`<div class="drawer-head">
     <div class="row">
-      <div><div class="meta">${fnoChipInline(f, 'haatFarmers')}${esc(f.id)} · Organic Haat Programme</div><h3>${esc(f.name)}</h3>
+      <div><div class="meta">${fnoIdHtml(f, 'haatFarmers', esc(f.id), true)} · Organic Haat Programme</div><h3>${esc(f.name)}</h3>
       <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
         <span class="tag ${st.cls}"><span class="d"></span>${st.label}</span>
         ${f.status==='green'?`<span class="tag ${f.active?'green':'grey'}">${f.active?'Active':'Inactive'}</span>`:''}
@@ -20981,7 +20988,7 @@ function openConvDrawer(id){
   const st=CONV_STATUS[stKey]||CONV_STATUS.enrolled;
   const visits=(f.visits&&f.visits.length)?f.visits:(f.observations||[]);
   let h=`<div class="drawer-head"><div class="row">
-    <div><div class="meta">${fnoChipInline(f, 'convFarmers')}${esc(f.id)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
+    <div><div class="meta">${fnoIdHtml(f, 'convFarmers', esc(f.id), true)} · Conversion Programme</div><h3>${esc(f.name)}</h3>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">
       <span class="tag ${st.cls}" style="white-space:normal"><span class="d"></span>${esc(st.gu||st.label)}</span>
       ${(function(){
@@ -23322,8 +23329,8 @@ function openCompareFormsModal(id, opts){
       + '<div style="flex:1;min-width:0;border:1px solid #e7dde2;border-radius:8px;padding:11px 14px">'
       +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 16px">'
       +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u00b7 Farmer', '<span style="font-size:13.5px">' + esc(f.name||'\u2014') + '</span>')
-      +     (fnoDisplay(f, fnoColOf(f)) ? pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0aa8\u0a82\u0aac\u0ab0 \u00b7 Farmer No', esc(fnoDisplay(f, fnoColOf(f)))) : '')   /* v314 */
-      +     pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 ID', esc(f.id||'\u2014'))
+      +     (fnoDisplay(f, fnoColOf(f)) ? pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 \u0aa8\u0a82\u0aac\u0ab0 \u00b7 Farmer No', esc(fnoDisplay(f, fnoColOf(f))))   /* v315 */
+                                        : pdfField('\u0a96\u0ac7\u0aa1\u0ac2\u0aa4 ID', esc(f.id||'\u2014')))
       +     pdfField('\u0a97\u0abe\u0aae \u00b7 Village', esc(f.village||'\u2014'))
       +     pdfField('\u0a9c\u0abf\u0ab2\u0acd\u0ab2\u0acb \u00b7 District', esc(districtDisplayName(f.district)||'\u2014'))
       +     pdfField('\u0a9a\u0a95\u0abe\u0ab8\u0aa8\u0abe\u0ab0 \u00b7 Verified by', esc(fcName))
@@ -25906,7 +25913,7 @@ function viewDuplicateRecords(){
     <div class="cs">The survivor keeps its ID. The other is archived — never deleted — and remembers what it was merged into.</div>
     <div style="display:flex;gap:9px;flex-wrap:wrap">
       ${[A,B].map(r => `<button class="btn btn-sm ${keepId===r.id?'btn-primary':'btn-ghost'}" data-dupkeep="${esc(r.id)}" style="text-align:left;padding:8px 12px">
-        <span style="font-family:var(--mono,monospace);font-size:11.5px">${esc(r.id)}</span>
+        <span style="font-family:var(--mono,monospace);font-size:11.5px">${esc(fnoLabel(r, fnoColOf(r)))}</span>
         <span style="display:block;font-size:10.5px;font-weight:400;opacity:.85">${esc(_dupTxt(r.name))} · ${_dupAnswered(r)} answers${r.visits&&r.visits.length?' · '+r.visits.length+' visit'+(r.visits.length===1?'':'s'):''}</span>
       </button>`).join('')}
     </div>
@@ -27929,7 +27936,7 @@ window.addEventListener('message',async ev=>{
         photos[qid] = arr.map(p => ({ name: (p&&p.name)||'', data: photoSrc(p)||(p&&p.photoId?photoPendingPlaceholder(p):'') })).filter(p => p.data);
       });
       const farmer = {
-        id: f.id, name: f.name,
+        id: f.id, name: f.name, farmerNoDisplay: fnoDisplay(f, 'haatFarmers'),   /* v315 - shown in place of the id */
         village: f.village || '', taluka: talukaDisplayName(f.taluka,f.district) || '', district: f.district || '',
         phone: e.mobile || f.phone || '', aadhaar: e.aadhaar || f.aadhaar || '',
         age: e.age || f.age || '',
@@ -31430,7 +31437,7 @@ function viewPublicThanks(){
   // happens internally during intake — the public-facing contact is SRISTI.
   const waPhone = SRISTI_OFFICE_WHATSAPP;
   const fcDisplayName = 'SRISTI office';
-  const waMsg = encodeURIComponent(`નમસ્કાર, મેં સૃષ્ટિ ${isHaat?'ખેડૂત હાટ':'કન્વર્ઝન'} માટે અરજી કરી છે. અરજી નં: ${app.id||'-'}. કૃપા કરી સંપર્ક કરો.`);
+  const waMsg = encodeURIComponent(`નમસ્કાર, મેં સૃષ્ટિ ${isHaat?'ખેડૂત હાટ':'કન્વર્ઝન'} માટે અરજી કરી છે. અરજી નં: ${fnoLabel(app, fnoColOf(app))||'-'}. કૃપા કરી સંપર્ક કરો.`);
   const waUrl = `https://wa.me/${waPhone}?text=${waMsg}`;
 
   /* v124 — a submission rejected for a duplicate phone used to land on this
@@ -31488,8 +31495,8 @@ function viewPublicThanks(){
       <div class="check">✓</div>
       <h1>તમારી અરજી મળી!</h1>`}
       ${_pending ? '' : `<p style="font-size:13px;color:#929fb5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-top:0">Application received</p>`}
-      ${fnoDisplay(app, fnoColOf(app)) ? '<div class="id">ખેડૂત નંબર / Farmer No: <b>' + esc(fnoDisplay(app, fnoColOf(app))) + '</b></div>' : ''}
-      <div class="id">અરજી નં / Application ID: <b>${esc(app.id||'-')}</b></div>
+      ${fnoDisplay(app, fnoColOf(app)) ? '<div class="id">ખેડૂત નંબર / Farmer No: <b>' + esc(fnoDisplay(app, fnoColOf(app))) + '</b></div>'
+        : '<div class="id">અરજી નં / Application ID: <b>' + esc(app.id||'-') + '</b></div>'}
       <p><b>${esc(app.name||'')}</b>${app.village?', '+esc(app.village):''}</p>
       <p style="margin-top:14px"><b>આગળ શું?</b><br>
       <b>${esc(fcDisplayName)}</b> તમારો <b>7 દિવસમાં</b> સંપર્ક કરશે. કૃપા કરી ફોન ઉપાડજો.</p>

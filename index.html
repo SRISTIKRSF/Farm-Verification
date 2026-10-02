@@ -4683,17 +4683,33 @@ function fnoLetter(f, col){
 function fnoDisplay(f, col){ return f && f.farmerNo ? fnoLetter(f, col) + '-' + f.farmerNo : ''; }
 function fnoMatches(f, col, q){
   if(!f || !f.farmerNo) return false;
-  const p = fnoParse(f.farmerNo); if(!p) return false;
   const t = String(q || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
   if(!t) return false;
-  const full = fnoDisplay(f, col).toUpperCase();
-  if(full === t || String(f.farmerNo).toUpperCase() === t) return true;
+  if(fnoDisplay(f, col).toUpperCase() === t) return true;
   const m = /^(?:[CAHR]-)?(?:GJ-)?([A-Z]{2})-(?:\d{2}-)?0*(\d{1,5})$/.exec(t);
-  return !!(m && m[1] === p.dc && +m[2] === p.n);
+  for(const no of [f.farmerNo].concat(Array.isArray(f.oldFarmerNos) ? f.oldFarmerNos : [])){   /* v316 - old numbers still found */
+    const p = fnoParse(no); if(!p) continue;
+    if(String(no).toUpperCase() === t) return true;
+    if(m && m[1] === p.dc && +m[2] === p.n) return true;
+  }
+  return false;
+}
+/* v316 - merging two records of one farmer: the OLDER number wins, the other is kept as an old number.
+   Runs twice inside the merge, so it must be idempotent. */
+function fnoMergeNumbers(keep, drop){
+  const d = fnoParse(drop && drop.farmerNo); if(!d || !keep) return;
+  if(keep.farmerNo === drop.farmerNo) return;
+  const k = fnoParse(keep.farmerNo);
+  if(!k){ keep.farmerNo = drop.farmerNo; return; }
+  const older = (+d.yy < +k.yy) || (d.yy === k.yy && d.dc === k.dc && d.n < k.n);
+  const lose = older ? keep.farmerNo : drop.farmerNo;
+  if(older) keep.farmerNo = drop.farmerNo;
+  keep.oldFarmerNos = Array.from(new Set([...(keep.oldFarmerNos || []), lose])).filter(x => x && x !== keep.farmerNo);
 }
 /* FARMERNO-PURE-END */
 /* FARMERNO-UI-START - v314 farmer number on screen. Tested by _tests/fno/t_display.js */
-function fnoEnabled(){ try{ return !!(DB && DB.settings && DB.settings.farmerNoOn); }catch(e){ return false; } }
+let _fnoPaused = false;   /* v316b - from meta/farmerNoPaused (its own node: no device's ordinary save rewrites it) */
+function fnoEnabled(){ return !_fnoPaused; }   /* v316 - on unless paused */
 function fnoColOf(f){
   if(!f) return 'haatFarmers';
   if(f.program === 'conversion' || f.program === 'conv') return 'convFarmers';
@@ -4732,22 +4748,30 @@ async function _fnoIssueOnce(col, f, opts){
   const dc = fnoDistrictCode(f.district); if(!dc) return null;              /* pending until a district is set */
   const yy = fnoProgrammeYear(fnoAppliedAt(f) || Date.now());
   if(!(FB && FB.ready && navigator.onLine)) return null;                   /* pending while offline */
+  const ms = opts.ms || 8000;
+  /* v316 - the server may already hold this farmer's number (a stale copy on this device lost it): adopt it */
+  if(!opts.fresh) try{
+    const ex = await _fbWriteGuard(fbRef(col + '/' + f.id + '/farmerNo').get(), ms);
+    if(!ex || ex.timedOut) return null;
+    const v = ex.value ? ex.value.val() : null;
+    if(v && fnoParse(v)){ f.farmerNo = v; return v; }
+  }catch(e){ return null; }
   for(let tries = 0; tries < 6; tries++){
     let g;
-    try{ g = await _fbWriteGuard(fbRef('counters/farmerNo/' + FNO_STATE + '-' + dc).transaction(c => (typeof c === 'number' ? c : 0) + 1), 8000); }
+    try{ g = await _fbWriteGuard(fbRef('counters/farmerNo/' + FNO_STATE + '-' + dc).transaction(c => (typeof c === 'number' ? c : 0) + 1), ms); }
     catch(e){ console.warn('[FarmerNo] counter failed:', e && e.message || e); return null; }
     if(!g || g.timedOut || !g.value || !g.value.committed) return null;   /* a late commit only leaves a gap */
     const n = g.value.snapshot.val();
     const no = fnoFormat(dc, yy, n), key = fnoIndexKey(no);
     if(!key) return null;
     try{
-      const w = await _fbWriteGuard(fbRef('farmerNos/' + key).set({id: f.id, col: col, at: Date.now()}), 8000);
+      const w = await _fbWriteGuard(fbRef('farmerNos/' + key).set({id: f.id, col: col, at: Date.now()}), ms);
       if(w && w.timedOut) return null;
     }catch(e){
       /* refused: find out why, once. Only "another farmer holds it" moves on to the next number;
          any other refusal (rules, sign-in) stops here instead of burning a run of numbers. */
       let cur = null;
-      try{ const r = await _fbWriteGuard(fbRef('farmerNos/' + key).get(), 6000); cur = r && !r.timedOut && r.value ? r.value.val() : null; }
+      try{ const r = await _fbWriteGuard(fbRef('farmerNos/' + key).get(), ms); cur = r && !r.timedOut && r.value ? r.value.val() : null; }
       catch(e2){ return null; }
       if(cur && cur.id === f.id){ f.farmerNo = no; return no; }
       if(cur) continue;
@@ -4764,24 +4788,71 @@ async function _fnoIssueOnce(col, f, opts){
 }
 async function fnoIssuePending(){
   if(!fnoEnabled() || PUBLIC_MODE || !isAdminUser()) return 0;
-  let given = 0, tried = 0;
+  if(!(await fnoWaitFirstSnapshot())) return 0;   /* v316b */
+  let given = 0, tried = 0, failedInRow = 0;
   outer: for(const col of ['haatFarmers', 'convFarmers']){
     for(const f of (DB[col] || []).slice()){
-      if(tried >= 25) break outer;               /* at most 25 attempts per run: never a burst */
+      if(tried >= 25 || failedInRow >= 3) break outer;   /* at most 25 attempts per run; stop on a bad link */
       if(!f || f.farmerNo || f._seeded || f._mergedInto || !fnoDistrictCode(f.district)) continue;
+      /* v316c - only farmers the server already has, and not changed in the last 3 minutes (the creating device goes first).
+         _u lives on the server copy (_liveSnapshot); the in-memory record has it stripped. */
+      const _sv = (typeof _liveSnapshot !== 'undefined' && _liveSnapshot && _liveSnapshot[col]) ? _liveSnapshot[col][f.id] : null;
+      if(!_sv) continue;
+      if(_sv._u && (Date.now() + (typeof _svOffset === 'number' ? _svOffset : 0)) - _sv._u < 180000) continue;
       tried++;
-      const no = await fnoIssue(col, Object.assign({}, f));   /* a copy: the record may be replaced while we wait */
-      if(!no) break outer;                       /* offline, slow or refused: stop this run, try next time */
-      const cur = _recNow(col, f.id);            /* the record as it is NOW */
-      if(cur && !cur.farmerNo){ cur.farmerNo = no; markLocalTouch(col, f.id); given++; }
+      const no = await fnoIssueAndApply(col, f.id);
+      if(no){ given++; failedInRow = 0; } else failedInRow++;
     }
   }
   if(given) await saveDB(true);
   return given;
 }
+/* v316 - staff creation: issue for the record as it is now, set it on the record as it is after the wait */
+async function fnoIssueAndApply(col, id, opts){
+  opts = opts || {};
+  const r0 = _recNow(col, id); if(!r0) return null;
+  if(r0.farmerNo) return r0.farmerNo;
+  let no = await fnoIssue(col, Object.assign({}, r0), opts);
+  if(!no) return null;
+  /* v316b - once the record is on the server, the SERVER decides: if another device numbered this
+     farmer in the meantime, adopt theirs (ours stays an unused entry in the used list - never a 2nd number) */
+  if(typeof _liveSnapshot !== 'undefined' && _liveSnapshot && _liveSnapshot[col] && _liveSnapshot[col][id]){
+    try{
+      const t = await _fbWriteGuard(fbRef(col + '/' + id + '/farmerNo').transaction(cur => cur ? undefined : no), opts.ms || 8000);
+      if(t && !t.timedOut && t.value && t.value.snapshot){ const v = t.value.snapshot.val(); if(v) no = v; }
+      /* v316d - a transaction carries no change-marker (_u): repeat the value as a stamped field update so
+         every device's changes-only sync sees it (same value - harmless) */
+      await _fbWriteGuard(fbRef(col + '/' + id).update({farmerNo: no}), opts.ms || 8000);
+    }catch(e){}
+  }
+  const r1 = _recNow(col, id);
+  if(r1 && !r1.farmerNo){ r1.farmerNo = no; markLocalTouch(col, id); }
+  return no;
+}
+async function fnoWaitFirstSnapshot(){   /* v316b - never save before this device has the server's copy */
+  for(let w = 0; w < 30000 && !(typeof _firstSnapshotMerged !== 'undefined' && _firstSnapshotMerged); w += 1000){
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return typeof _firstSnapshotMerged !== 'undefined' && _firstSnapshotMerged;
+}
+/* v316 - an enrolment queued offline gets its number once it has reached the server */
+async function fnoAfterReplay(rows){
+  if(!rows.length || !fnoEnabled()) return;
+  if(!PUBLIC_MODE && !(await fnoWaitFirstSnapshot())) return;   /* v316b */
+  let changed = 0;
+  for(const [col, id, rec] of rows.slice(0, 25)){
+    if(col !== 'haatFarmers' && col !== 'convFarmers') continue;
+    if(rec && rec.farmerNo) continue;
+    if(PUBLIC_MODE){
+      const no = await fnoIssue(col, Object.assign({}, rec || {}, {id: id}));
+      if(no){ try{ await _fbWriteGuard(fbRef(col + '/' + id + '/farmerNo').set(no), 8000); }catch(e){} }   /* the record exists now: no ghost */
+    } else if(await fnoIssueAndApply(col, id)) changed++;
+  }
+  if(changed) await saveDB(true);
+}
 /* FARMERNO-NET-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v315';
+const APP_VERSION = 'v316';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6394,6 +6465,7 @@ function _stableJson(v){
 }
 function _metaNoteFromServer(meta){
   if(!meta || typeof meta !== 'object') return;
+  try{ _fnoPaused = !!meta.farmerNoPaused; }catch(e){}   /* v316b */
   META_LISTS.forEach(function(k){
     if(meta[k] === undefined) return;
     const j = _stableJson(meta[k]);
@@ -8253,6 +8325,18 @@ async function publicPersistRecord(col, rec, actEntry){
       return { confirmed:false, queued:queued };
     }
     try{ await idbDel('offlineWrites', key); }catch(e){}
+    /* v316d - the record is on the server: now its farmer number, as a stamped field update (no ghost
+       possible - the record exists). Waited for at most 6 s; it finishes in the background after that,
+       and the thank-you screen is refreshed to show it. */
+    if((col === 'haatFarmers' || col === 'convFarmers') && !rec.farmerNo){
+      const _numbered = fnoIssue(col, rec, {ms: 4000, fresh: true}).then(async function(no){
+        if(!no) return null;
+        try{ await _fbWriteGuard(fbRef(col + '/' + rec.id).update({farmerNo: no}), 8000); }catch(e){}
+        try{ if(typeof ROUTE !== 'undefined' && ROUTE === 'public_thanks' && window._pfLastApp === rec) render(); }catch(e){}
+        return no;
+      }).catch(function(){ return null; });
+      await Promise.race([_numbered, new Promise(function(r){ setTimeout(r, 6000); })]);
+    }
     return { confirmed:true, queued:queued };
   }catch(e){
     console.warn('[Sristi] submission failed - kept on the device for retry:', e);
@@ -10472,6 +10556,7 @@ const _offlineWritesState = { tok: null };
 async function flushOfflineWrites(){
   if(!FB || !FB.ready || !navigator.onLine) return;
   const _tok = _queueTake(_offlineWritesState); if(!_tok) return;
+  const _fnoReplayed = [];   /* v316 - enrolments that reach the server get their number afterwards */
   try{
     const items = await idbAll('offlineWrites').catch(()=>[]);
     for(const it of items){
@@ -10569,6 +10654,7 @@ async function flushOfflineWrites(){
              update, never a set: fields this device never knew about survive. */
           patch = Object.assign({}, it.rec);
           delete patch.id;
+          it._fnoCand = true;
         }
         if(_officeRuledLater){
           OFFICE_OWNED_FIELDS.forEach(k => { delete patch[k]; });
@@ -10580,9 +10666,11 @@ async function flushOfflineWrites(){
           if(_g2.timedOut){ console.warn('[Sristi] offline record write timed out (kept for retry):', it.key); continue; }
         }
         await idbDel('offlineWrites', it.key);
+        if(it._fnoCand) _fnoReplayed.push([it.col, it.id, it.rec]);
       }catch(e){ console.warn('[Sristi] offline write flush failed (will retry):', e); }
     }
   } finally { _queueDrop(_offlineWritesState, _tok); }
+  if(_fnoReplayed.length) fnoAfterReplay(_fnoReplayed).catch(() => {});   /* v316 */
 }
 
 /* background pumps — started by startBackgroundPumps() only AFTER loadDB()
@@ -12428,7 +12516,7 @@ async function loadVerifIndex(){
     const snap = await fbRef('verifIndex').get();
     DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
     /* v200 - and act on it. See autoHealVerifications. */
-    if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); }   /* v308 */
+    if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); fnoIssuePending().catch(() => {});   /* v316 - catch-up numbers, 25 per opening */ }   /* v308 */
   }catch(e){ /* diagnostic only */ }
 }
 
@@ -19029,7 +19117,8 @@ function openConvEnrollmentForm(){
     if(!FB || !FB.ready || !navigator.onLine)
       idbPut('offlineWrites', {key:'convFarmers/'+rec.id, col:'convFarmers', id:rec.id, rec:sanitizeForFB(_stripEphemeral(rec))}).catch(()=>{});
     logActivity('enroll', 'New conversion farmer enrolled via KRSF form — <b>'+esc(rec.name)+'</b>, '+esc(rec.village));
-    saveDB(true).then(() => { closeModal(); if(typeof render==='function') render(); toast('Farmer enrolled'); });
+    saveDB(true).then(() => { closeModal(); if(typeof render==='function') render(); toast('Farmer enrolled');
+      fnoIssueAndApply('convFarmers', rec.id).then(n => { if(n) return saveDB(true); }).catch(() => {});   /* v316 */ });
   }
   renderForm();
 }
@@ -19154,7 +19243,7 @@ function openImportFormModal(){
     // rows with a missing/garbled phone, also checked cross-program now
     // (previously convFarmers-only, so a haat-side duplicate slipped through).
     const normName  = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
-    let added=0, skipped=0;
+    let added=0, skipped=0; const _fnoNew = [];   /* v316 */
     parsed.forEach(p=>{
       const {_unmatchedFcName, _landUnit, ...rec} = p;
       if(rec.phone) rec.phone = _normPhone(rec.phone) || rec.phone;
@@ -19170,10 +19259,14 @@ function openImportFormModal(){
       backupConvRecord(rec);
       indexFarmerPhone(rec, 'conv');       // v110 phone index (shadow write)
       DB.convFarmers.push(rec);
-      added++;
+      added++; _fnoNew.push(rec.id);
     });
     logActivity('enroll',`Imported <b>${added}</b> farmer${added===1?'':'s'} from form${skipped?' (skipped '+skipped+' duplicate'+(skipped===1?'':'s')+')':''}`);
     await saveDB(); closeModal(); render();
+    (async () => {   /* v316 - numbers for up to 25 now, the rest by the admin catch-up */
+      let _n = 0; for(const _id of _fnoNew.slice(0, 25)) if(await fnoIssueAndApply('convFarmers', _id)) _n++;
+      if(_n) await saveDB(true);
+    })().catch(() => {});
     toast(`Imported ${added} farmer${added===1?'':'s'}` + (skipped?` · skipped ${skipped} duplicate${skipped===1?'':'s'}`:''));
   };
 }
@@ -23980,6 +24073,16 @@ function viewSettings(){
       <button class="btn btn-sm btn-primary" id="phoneDeltaSave">Save</button>
     </div>`;
     }
+    /* v316 - farmer numbers are given automatically; this only pauses new ones */
+    if(isAdminUser()){
+      h+=`<div class="card" style="padding:18px 20px;max-width:680px;margin-top:16px">
+      <div class="ct" style="font-size:14px;font-weight:700">\ud83d\udd22 Farmer numbers</div>
+      <div class="cs" style="font-size:11.5px;color:var(--ink-faint);margin:4px 0 12px">
+        New farmers get their farmer number (for example H-GJ-NR-26-00057) automatically once their record reaches the server. Pausing stops new numbers being given. Numbers already given do not change (when two records of one farmer are merged, the older number is kept).
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="fnoPause" ${_fnoPaused ? 'checked' : ''}> Pause farmer numbers</label>
+    </div>`;
+    }
     v.innerHTML=h;
     if($('#phoneDeltaSave')) $('#phoneDeltaSave').onclick = async () => {
       const ids = [].slice.call(document.querySelectorAll('.pdfc')).filter(c => c.checked).map(c => c.value);
@@ -23988,6 +24091,16 @@ function viewSettings(){
       logActivity('edit', 'Coordinator phones downloading only what changed: ' + (ids.length ? esc(ids.join(', ')) : 'none'));
       await saveDB(true);
       toast(ids.length ? ('Saved \u2014 ' + ids.length + ' coordinator' + (ids.length === 1 ? '' : 's') + ' ticked') : 'Saved \u2014 none ticked');
+    };
+    if($('#fnoPause')) $('#fnoPause').onchange = async (e) => {   /* v316b - its own node, set directly */
+      const on = e.target.checked;
+      try{
+        const g = await _fbWriteGuard(fbRef('meta/farmerNoPaused').set(on ? true : null), 8000);
+        if(g && g.timedOut) throw new Error('timeout');
+        _fnoPaused = on;
+        logActivity('edit', on ? 'Farmer numbers paused' : 'Farmer numbers resumed');
+        toast(on ? 'Farmer numbers paused' : 'Farmer numbers on');
+      }catch(err){ e.target.checked = !on; toast('Could not reach the server \u2014 nothing changed', 'error'); }
     };
     v.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{FILTERS.settings.tab=t.dataset.st;render();});
     $('#downloadFullBackup').onclick=async()=>{
@@ -26103,6 +26216,7 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
      safe to repeat. */
   const _kCol = kItem.program==='conv'?'convFarmers':'haatFarmers', _dCol = dItem.program==='conv'?'convFarmers':'haatFarmers';
   const _archivedAt = new Date().toISOString(), _archivedBy = (actor()||{}).name || 'admin';
+  const _mergeDropNo = (_recNow(_dCol, dropId) || {}).farmerNo || null;   /* v316b */
   const _applyMerge = () => {
   const keep = _recNow(_kCol, keepId), drop = _recNow(_dCol, dropId);
   if(!keep || !drop) return null;
@@ -26129,6 +26243,8 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
     keep.verificationFormSubmittedAt = drop.verificationFormSubmittedAt;
   }
 
+  fnoMergeNumbers(keep, drop);   /* v316 - older number wins, the other stays findable */
+  if(drop.farmerNo){ drop.oldFarmerNos = Array.from(new Set([...(drop.oldFarmerNos || []), drop.farmerNo])); delete drop.farmerNo; }   /* v316b */
   // 3. archive the loser — never delete
   drop._archived   = true;
   drop.archivedAt  = _archivedAt;
@@ -26140,6 +26256,13 @@ async function mergeDuplicatePair(phone, keepId, dropId, picks, mainFormId){
   return keep;
   };
   let _kept = _applyMerge();
+  if(_mergeDropNo){   /* v316d - the merged-away record gives its number up on the server too (not only through saveDB's diff) */
+    const _dNow = _recNow(_dCol, dropId);
+    fbRef(_dCol + '/' + dropId).update({farmerNo: null, oldFarmerNos: (_dNow && _dNow.oldFarmerNos) || [_mergeDropNo]}).catch(() => {});
+  }
+  if(_kept && _mergeDropNo && _kept.farmerNo === _mergeDropNo){   /* v316b - the survivor took that number: point the used list at it */
+    fbRef('farmerNos/' + fnoIndexKey(_mergeDropNo) + '/movedTo').set({id: _kept.id, col: _kCol}).catch(() => {});
+  }
   if(!_kept){ toast('One of these farmers is no longer on the list \u2014 nothing was combined', 'error'); return; }
 
   // 4. the phone must end up pointing at the SURVIVOR. Whichever record held
@@ -28117,7 +28240,7 @@ window.addEventListener('message',async ev=>{
                public path: with no signal it never settles and never rejects,
                so everything after it - including the photo flush that used to
                live below - simply never ran. */
-            try { await _fbWriteGuard(fbRef('haatFarmers/'+rec.id).set(sanitizeForFB(_stripEphemeral(rec))), 20000); }
+            try { await _fbWriteGuard(fbRef('haatFarmers/'+rec.id).update(sanitizeForFB(_stripEphemeral(rec))), 20000); }   /* v316b - update: a number given meanwhile survives */
             catch(e) { console.warn('haatFarmer full update:',e); }
           }
           cacheLocal();
@@ -28386,7 +28509,8 @@ window.addEventListener('message',async ev=>{
           dup.record.lastDuplicateAt   = new Date().toISOString();
           dup.record.lastDuplicateName = name;
           logActivity('alert', `⚠ Duplicate FC/admin submission for phone <b>${esc(f.mobile)}</b> — already exists as <b>${esc(dup.record.name)}</b> (${esc(dup.record.id)}). Ignored.`);
-          try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).set(sanitizeForFB(_stripEphemeral(dup.record))); } catch(e) {}
+          /* v316 - only these 3 fields. The whole-record set this used to be could put a stale copy (no farmer number) over the server's. */
+          try { if(FB && FB.ready) await fbRef(dup.program+'Farmers/'+dup.record.id).update({duplicateAttempts: dup.record.duplicateAttempts, lastDuplicateAt: dup.record.lastDuplicateAt, lastDuplicateName: dup.record.lastDuplicateName}); } catch(e) {}
           cacheLocal();
           window._lastPublicAppId = dup.record.id;
           window._pfLastApp = dup.record;
@@ -28466,6 +28590,7 @@ window.addEventListener('message',async ev=>{
         idbPut('offlineWrites', {key:'haatFarmers/'+rec.id, col:'haatFarmers', id:rec.id, rec:sanitizeForFB(_stripEphemeral(rec))}).catch(()=>{});
       logActivity('enroll', `New Haat farmer enrolled — <b>${esc(name)}</b>${f.village?', '+esc(f.village):''} <span style="color:var(--ink-faint)">(via enrollment form)</span>`);
       await saveDB(true);
+      fnoIssueAndApply('haatFarmers', rec.id).then(n => { if(n) return saveDB(true); }).catch(() => {});   /* v316 - saved first, number a moment later */
     }
   }
   if(d.type==='kisan-haat-done'){
@@ -32510,7 +32635,7 @@ async function moveAttentionToOwnProgramme(id){
   if(!ok) return;
 
   const appId = r.id;
-  await acceptPendingEnrolment(appId, {force:true});
+  await acceptPendingEnrolment(appId, {force:true, fnoSkip:true});   /* v316 - the number is carried below */
 
   // The record acceptPendingEnrolment just created carries publicAppId = the
   // application id, which is how we find it without it having to hand one back.
@@ -32523,6 +32648,16 @@ async function moveAttentionToOwnProgramme(id){
     return;
   }
 
+  /* v316 - the same farmer keeps the same number in the new programme */
+  { const _nc = appliedHaat ? 'haatFarmers' : 'convFarmers';
+    const _oc = oldProg === 'haat' ? 'haatFarmers' : 'convFarmers';
+    const _old = _recNow(_oc, old.id) || old;   /* v316d - the record as it is now, not one held across the awaits above */
+    if(_old.farmerNo && !created.farmerNo){ const _no = _old.farmerNo; created.farmerNo = _no; markLocalTouch(_nc, created.id);
+      fbRef('farmerNos/' + fnoIndexKey(_no) + '/movedTo').set({id: created.id, col: _nc}).catch(() => {});
+      _old.oldFarmerNos = Array.from(new Set([...(_old.oldFarmerNos || []), _no])); delete _old.farmerNo;   /* v316b */
+      markLocalTouch(_oc, _old.id);
+      fbRef(_oc + '/' + _old.id).update({farmerNo: null, oldFarmerNos: _old.oldFarmerNos}).catch(() => {}); }   /* v316d - on the server too */
+    else if(!created.farmerNo){ fnoIssueAndApply(_nc, created.id).then(n => { if(n) return saveDB(true); }).catch(() => {}); } }
   await archiveFarmers(oldProg, [old.id]);
 
   // archiveFarmers() releases the phone from the index (so an archived farmer
@@ -33105,6 +33240,7 @@ async function acceptPendingEnrolment(id, opts){
   // server actually has it, and only then let go of the application.
   logActivity('enroll', `Public application <b>${esc(r.id)}</b> accepted — <b>${esc(r.name)}</b> moved to ${isHaat?'Haat':'Conversion'} pipeline as ${esc(newId)}`);
   await saveDB();
+  if(!opts.fnoSkip) fnoIssueAndApply(isHaat ? 'haatFarmers' : 'convFarmers', newId).then(n => { if(n) return saveDB(true); }).catch(() => {});   /* v316d - in the background */
 
   let landed = true;
   if(FB && FB.ready){

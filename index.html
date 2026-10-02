@@ -4626,7 +4626,7 @@ const GUJARAT_DISTRICTS = [
   'Valsad (વલસાડ)','Vav-Tharad (વાવ-થરાદ)',
 ];
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v312';
+const APP_VERSION = 'v313';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -26253,15 +26253,9 @@ function viewData(){
       <div class="ct">Restore</div>
       <div class="cs">Load a previously downloaded JSON backup. This replaces all current data.</div>
       <input type="file" id="impFile" accept=".json" style="font-size:13px">
-    </div>
-    <div class="card chart-card">
-      <div class="ct" style="color:var(--red)">Reset</div>
-      <div class="cs">Restore the original 100-farmer demo dataset, or wipe everything.</div>
-      <div style="display:flex;gap:9px;flex-wrap:wrap">
-        <button class="btn btn-ghost" id="reseed">Reload demo data</button>
-        <button class="btn btn-danger" id="wipe">${svg(I.trash)}Erase all data</button>
-      </div>
     </div>`;
+  /* v313 - the demo-era "Reset" card (Reload demo data / Erase all data) is removed: Reload would
+     have added 100 sample farmers to the live database, Erase blanked this device's lists. */
   $('#expJson').onclick=()=>download('sristi-haat-backup.json',JSON.stringify(DB,null,1));
   $('#expHaat').onclick=()=>download('haat-farmers.csv',toCSV(DB.haatFarmers.map(f=>({
     id:f.id,name:f.name,phone:f.phone||'',village:f.village||'',district:f.district||'',state:f.state||'',
@@ -26299,20 +26293,6 @@ function viewData(){
       e.target.value='';
     };
     r.readAsText(file);
-  };
-  $('#reseed').onclick=async()=>{
-    const ok=await confirmModal({title:'Reload demo data?', message:'This REPLACES all current farmer data on this device with the sample dataset and syncs to the cloud.\n\nThis cannot be undone.', confirmLabel:'Reload demo data', danger:true});
-    if(!ok) return;
-    // Route through the canonical seed+normalise path so live keys
-    // (settings, fieldCoordinators, incomeRecords, pendingEnrolments, …) aren't dropped.
-    DB=normaliseDB(seedDB());
-    await saveDB();render();toast('Demo data reloaded');
-  };
-  $('#wipe').onclick=async()=>{
-    const ok=await confirmModal({title:'Erase all farmer data?', message:'This permanently deletes ALL Haat and Conversion farmers and syncs the deletion to the cloud for every device.\n\nThis cannot be undone.', confirmLabel:'Erase everything', danger:true});
-    if(!ok) return;
-    DB.haatFarmers=[];DB.convFarmers=[];
-    await saveDB();render();toast('All farmer data erased');
   };
 }
 function toCSV(rows){

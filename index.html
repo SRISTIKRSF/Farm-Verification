@@ -4709,12 +4709,29 @@ function fnoMergeNumbers(keep, drop){
 /* v317 - one farmer's entry on the "ready for Khedut Haat" list. Only what Khedut Haat needs:
    never Aadhaar, answer sheets, photos or visits. */
 function fnoHandoverEntry(f){
-  return {no: f.farmerNo, letter: fnoLetter(f, 'haatFarmers'), name: f.name || '', phone: f.phone || '', village: f.village || '',
+  return {no: f.farmerNo, letter: fnoLetter(f, 'haatFarmers'), name: fnoTidy(f.name), phone: f.phone || '', village: fnoTidy(f.village),
     taluka: f.taluka || '', district: f.district || '', dc: (fnoParse(f.farmerNo) || {}).dc || '',
     crops: Array.isArray(f.crops) ? f.crops.slice(0, 30) : [],
     haat: fnoHaatList(f),
     fvId: f.id, status: (f.status === 'green' && !f._archived && !f._mergedInto) ? 'approved' : 'withdrawn',
     decidedAt: fnoDecidedAt(f)};
+}
+/* v318 - a name or village as it goes on the Khedut Haat list (the farmer record keeps what was typed):
+   extra spaces removed; an English word in ALL CAPITALS or all small letters gets a first capital
+   ("DEEPAK PATEL", "devesh patel" -> "Deepak Patel", "Devesh Patel"); a word that already mixes
+   ("ManishKumar") and Gujarati text are left exactly as they are. */
+function fnoTidy(v){
+  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().split(' ').map(function(w){
+    if(!/^[\x00-\x7F]+$/.test(w)) return w;                       /* Gujarati or anything not plain English */
+    const L = w.replace(/[^A-Za-z]/g, '');
+    if(!L || (L !== L.toUpperCase() && L !== L.toLowerCase())) return w;
+    return w.toLowerCase().replace(/(^|[^A-Za-z])([a-z])/g, function(m, a, b){ return a + b.toUpperCase(); });
+  }).reduce(function(out, w){
+    /* v318b - "Vijay bhai" -> "Vijaybhai": a separate bhai / ben joins the English name before it */
+    if(out.length && /^(bhai|ben)$/i.test(w) && /^[A-Za-z.]*[A-Za-z]$/.test(out[out.length - 1])) out[out.length - 1] += w.toLowerCase();
+    else out.push(w);
+    return out;
+  }, []).join(' ');
 }
 /* v317b - every haat the farmer sells at, main one first (same rule as farmerHaats, kept here so the block stays pure) */
 function fnoHaatList(f){
@@ -5026,7 +5043,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v317';
+const APP_VERSION = 'v318';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

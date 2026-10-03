@@ -5043,7 +5043,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v318';
+const APP_VERSION = 'v319';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8344,7 +8344,23 @@ const SYNC_COLS=['haatFarmers','convFarmers','fcs','incomeRecords','pendingEnrol
    definition, from before whatever the office decided in the meantime. Used by
    both saveDB (v218b) and flushOfflineWrites (v218a). */
 const OFFICE_OWNED_FIELDS = ['status','haat','active','stage',
-  'decisionAt','decisionBy','decisionById','decisionByRole','decisionNote','decisionHistory'];
+  'decisionAt','decisionBy','decisionById','decisionByRole','decisionNote','decisionHistory',
+  /* v319 - the seasonal review is an office decision too: a suspension sets these, not decisionAt */
+  'seasonalDecisionAt','seasonalDecisionBy','seasonalDecisionById','lastSeasonalReviewAt','lastSeasonalCheck',
+  'nextSeasonalCheck','seasonalFlag','suspendedFromHaat','suspendedAt'];
+/* v319 - when the office last decided on a farmer: the later of the onboarding decision and the seasonal
+   review. A value that is present but cannot be read as a date is returned as it is, so the comparisons
+   below treat it exactly as they did before (as "not provably mine" - the decision is held back). */
+function _latestDecision(a, b){
+  let best = null, bestT = -Infinity;
+  for(const x of [a, b]){
+    if(x === null || x === undefined || x === '') continue;
+    const t = Date.parse(String(x));
+    if(isNaN(t)) return String(x);
+    if(t > bestT){ bestT = t; best = new Date(t).toISOString(); }
+  }
+  return best;
+}
 function snapCol(arr){const m={};(arr||[]).forEach(r=>{if(r&&r.id)m[r.id]=JSON.stringify(_stripEphemeral(r));});return m;}
 function snapAll(){const s={};SYNC_COLS.forEach(col=>{s[col]=snapCol(DB[col]||[]);});return s;}
 /* v(scale-audit) — durable "not yet confirmed synced to Firebase" tracker.
@@ -8578,14 +8594,16 @@ async function _serverDecisionAt(col, id){
     const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);
+    /* v319 - both decision times, read together (two values of a few bytes each); the later one counts */
     let res;
     try{
-      res = await fetch(base + '/' + col + '/' + id + '/decisionAt.json?auth=' + encodeURIComponent(tok),
-                        {signal: ctrl.signal, cache: 'no-store'});
+      res = await Promise.all(['decisionAt', 'seasonalDecisionAt'].map(f =>
+        fetch(base + '/' + col + '/' + id + '/' + f + '.json?auth=' + encodeURIComponent(tok),
+              {signal: ctrl.signal, cache: 'no-store'})));
     } finally { clearTimeout(timer); }
-    if(!res || !res.ok) return {ok:false};
-    const v = await res.json();
-    return {ok:true, at: (v === null || v === undefined) ? null : String(v)};
+    if(!res || res.some(r => !r || !r.ok)) return {ok:false};
+    const vs = await Promise.all(res.map(r => r.json()));
+    return {ok:true, at: _latestDecision(vs[0], vs[1])};
   }catch(e){ return {ok:false}; }
 }
 async function saveDB(silent){
@@ -8719,15 +8737,19 @@ async function saveDB(silent){
            "the UI removed a field" case it was written for. */
         if(!_baselineSubstituted.has(col + '/' + id)){
           Object.keys(prevObj).forEach(k=>{
-            if(k !== '_u' && !(k in curObj)) updates[col+'/'+id+'/'+k]=null;   // this device removed it
+            if(k !== '_u' && !(k in curObj)){   // this device removed it
+              /* v319b - an office field's removal waits for the same server check as its other fields */
+              if(_isFarmerCol && OFFICE_OWNED_FIELDS.indexOf(k) >= 0) _off[k] = null;
+              else updates[col+'/'+id+'/'+k]=null;
+            }
           });
         }
-        if(Object.keys(_off).length) _officeCheck.push({col:col, id:id, obj:_off, mine:curObj.decisionAt||null});
+        if(Object.keys(_off).length) _officeCheck.push({col:col, id:id, obj:_off, mine:_latestDecision(curObj.decisionAt, curObj.seasonalDecisionAt)});   /* v319 */
       } else if(_isFarmerCol && _pathSafe(curObj)){
         /* No baseline: either a brand-new record, or one _excludePendingFromSnap
            dropped so offline work would re-send. Whether the office-owned fields
            may go out is decided against the server, below. */
-        _officeCheck.push({col:col, id:id, obj:curObj, mine:curObj.decisionAt||null});
+        _officeCheck.push({col:col, id:id, obj:curObj, mine:_latestDecision(curObj.decisionAt, curObj.seasonalDecisionAt)});   /* v319 */
       } else {
         updates[col+'/'+id]=curObj;
       }
@@ -10773,8 +10795,11 @@ async function flushOfflineWrites(){
            is allowed near the decision at all. */
         let _decAt = null;
         try{
-          const _g = await _fbWriteGuard(fbRef(it.col+'/'+it.id+'/decisionAt').get(), _fbWriteWaitMs());
-          if(!_g.timedOut && _g.value && _g.value.exists()) _decAt = _g.value.val();
+          /* v319 - the seasonal review counts too: read both decision times together, use the later */
+          const _gs = await Promise.all(['decisionAt', 'seasonalDecisionAt'].map(f =>
+            _fbWriteGuard(fbRef(it.col+'/'+it.id+'/'+f).get(), _fbWriteWaitMs())));
+          const _vs = _gs.map(g => (!g.timedOut && g.value && g.value.exists()) ? g.value.val() : null);
+          _decAt = _latestDecision(_vs[0], _vs[1]);
         }catch(e){}
         /* v244 - this compared the OFFICE's timestamp against THIS PHONE's
            clock. A phone running a day fast made a real later decision look

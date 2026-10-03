@@ -4706,6 +4706,29 @@ function fnoMergeNumbers(keep, drop){
   if(older) keep.farmerNo = drop.farmerNo;
   keep.oldFarmerNos = Array.from(new Set([...(keep.oldFarmerNos || []), lose])).filter(x => x && x !== keep.farmerNo);
 }
+/* v317 - one farmer's entry on the "ready for Khedut Haat" list. Only what Khedut Haat needs:
+   never Aadhaar, answer sheets, photos or visits. */
+function fnoHandoverEntry(f){
+  return {no: f.farmerNo, letter: fnoLetter(f, 'haatFarmers'), name: f.name || '', phone: f.phone || '', village: f.village || '',
+    taluka: f.taluka || '', district: f.district || '', dc: (fnoParse(f.farmerNo) || {}).dc || '',
+    crops: Array.isArray(f.crops) ? f.crops.slice(0, 30) : [],
+    haat: fnoHaatList(f),
+    fvId: f.id, status: (f.status === 'green' && !f._archived && !f._mergedInto) ? 'approved' : 'withdrawn',
+    decidedAt: fnoDecidedAt(f)};
+}
+/* v317b - every haat the farmer sells at, main one first (same rule as farmerHaats, kept here so the block stays pure) */
+function fnoHaatList(f){
+  const out = [];
+  [].concat(Array.isArray(f.haat) ? f.haat : [f.haat], Array.isArray(f.haats) ? f.haats : []).forEach(function(x){
+    const v = String(x == null ? '' : x).trim(); if(v && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+}
+/* v317b - when the office last decided on this farmer (onboarding or seasonal review); '' if never */
+function fnoDecidedAt(f){
+  const t = [f.decisionAt, f.seasonalDecisionAt].map(function(x){ return x ? Date.parse(x) : NaN; }).filter(function(x){ return !isNaN(x); });
+  return t.length ? new Date(Math.max.apply(null, t)).toISOString() : '';
+}
 /* FARMERNO-PURE-END */
 /* FARMERNO-UI-START - v314 farmer number on screen. Tested by _tests/fno/t_display.js */
 let _fnoPaused = false;   /* v316b - from meta/farmerNoPaused (its own node: no device's ordinary save rewrites it) */
@@ -4827,6 +4850,8 @@ async function fnoIssueAndApply(col, id, opts){
   }
   const r1 = _recNow(col, id);
   if(r1 && !r1.farmerNo){ r1.farmerNo = no; markLocalTouch(col, id); }
+  /* v317b - the number went to the server directly, so saveDB may never send it: update the list here */
+  if(col === 'haatFarmers' && typeof fnoHandoverAfterNumber === 'function') fnoHandoverAfterNumber(id);
   return no;
 }
 async function fnoWaitFirstSnapshot(){   /* v316b - never save before this device has the server's copy */
@@ -4851,8 +4876,157 @@ async function fnoAfterReplay(rows){
   if(changed) await saveDB(true);
 }
 /* FARMERNO-NET-END */
+/* FARMERNO-HANDOVER-START - v317 the "ready for Khedut Haat" list. Tested by _tests/fno/t_handover.js */
+const FNO_HANDOVER_FIELDS = ['status', 'haat', 'haats', 'name', 'phone', 'village', 'taluka', 'district', 'crops', 'farmerNo',
+  'oldFarmerNos', '_archived', '_mergedInto', 'decisionAt', 'seasonalDecisionAt'];
+/* v317c - the exact values this save sent for one farmer (field writes, or a whole-record write) */
+function fnoHandoverSent(id, updates){
+  const out = {}, pre = 'haatFarmers/' + id;
+  Object.keys(updates || {}).forEach(function(k){
+    const v = updates[k];
+    if(k === pre){ if(v && typeof v === 'object') Object.keys(v).forEach(function(f){ out[f] = v[f]; }); return; }
+    if(k.indexOf(pre + '/') !== 0) return;
+    const f = k.slice(pre.length + 1); if(f.indexOf('/') < 0) out[f] = v;
+  });
+  return out;
+}
+/* v317c - the farmer as the SERVER now holds it: this device's copy of the server record, with the exact values
+   this save sent laid on top. The local copy is used only when this save sent the decision itself and there is
+   no server copy (a brand-new record). saveDB holds a stale decision back (v218), so the local copy can lie. */
+function fnoHandoverRec(id, sent){
+  const sv = (typeof _liveSnapshot !== 'undefined' && _liveSnapshot && _liveSnapshot.haatFarmers) ? _liveSnapshot.haatFarmers[id] : null;
+  if(!sv && !Object.prototype.hasOwnProperty.call(sent, 'status')) return null;
+  const base = sv || _recNow('haatFarmers', id); if(!base) return null;
+  const r = JSON.parse(JSON.stringify(base));
+  Object.keys(sent).forEach(function(k){ if(sent[k] == null) delete r[k]; else r[k] = sent[k]; });
+  r.id = id;
+  return r;
+}
+function fnoHandoverAfterSave(updates){
+  try{
+    if(PUBLIC_MODE || isViewerUser()) return;
+    const ids = new Set();
+    Object.keys(updates || {}).forEach(function(k){
+      const m = /^haatFarmers\/([^/]+)(?:\/([^/]+))?/.exec(k);
+      if(m && (m[2] ? FNO_HANDOVER_FIELDS.indexOf(m[2]) >= 0 : !!updates[k])) ids.add(m[1]);
+    });
+    ids.forEach(function(id){ fnoHandoverRun(id, fnoHandoverSent(id, updates)); });
+  }catch(e){}
+}
+/* v317d - a list write is remembered on this device (which fields the save carried, never their values)
+   until the server confirms it; a write cut off by a closed tab or a bad link is done again at the next
+   opening, from the server's copy of the farmer. At most 50 farmers, forgotten after 7 days. */
+const FNO_HO_PENDING_KEY = 'sristi_fno_handover_pending_v1';
+function _fnoPend(fn){
+  try{
+    let m = {}; try{ m = JSON.parse(localStorage.getItem(FNO_HO_PENDING_KEY) || '{}') || {}; }catch(e){ m = {}; }
+    fn(m);
+    const ks = Object.keys(m); ks.slice(0, Math.max(0, ks.length - 50)).forEach(function(k){ delete m[k]; });
+    if(Object.keys(m).length) localStorage.setItem(FNO_HO_PENDING_KEY, JSON.stringify(m)); else localStorage.removeItem(FNO_HO_PENDING_KEY);
+  }catch(e){}
+}
+function fnoHandoverRun(id, sent){
+  try{
+    const r = fnoHandoverRec(id, sent); if(!r) return Promise.resolve(false);
+    const all = Object.assign({}, sent), t = Date.now();
+    let keys = Object.keys(sent).filter(function(k){ return FNO_HANDOVER_FIELDS.indexOf(k) >= 0; });
+    _fnoPend(function(m){
+      /* an earlier write for this farmer not confirmed yet: carry its decision along with this one */
+      ((m[id] && m[id].k) || []).forEach(function(k){ if(keys.indexOf(k) < 0){ keys.push(k); if(!Object.prototype.hasOwnProperty.call(all, k)) all[k] = r[k]; } });
+      m[id] = {k: keys, t: t};
+    });
+    return fnoHandoverWrite(r, all).then(function(ok){
+      if(ok) _fnoPend(function(m){ if(m[id] && m[id].t === t) delete m[id]; });
+      return ok;
+    }).catch(function(){ return false; });
+  }catch(e){ return Promise.resolve(false); }
+}
+async function fnoHandoverReplay(){
+  if(PUBLIC_MODE || isViewerUser()) return 0;
+  let m = {}; _fnoPend(function(x){ m = JSON.parse(JSON.stringify(x)); });
+  const ids = Object.keys(m); if(!ids.length) return 0;
+  if(!(await fnoWaitFirstSnapshot())) return 0;
+  let n = 0;
+  for(const id of ids){
+    const p = m[id];
+    if(!p || !Array.isArray(p.k) || Date.now() - (p.t || 0) > 7 * 864e5){ _fnoPend(function(x){ delete x[id]; }); continue; }
+    const sv = (_liveSnapshot && _liveSnapshot.haatFarmers) ? _liveSnapshot.haatFarmers[id] : null;
+    if(!sv) continue;
+    const sent = {}; p.k.forEach(function(k){ sent[k] = sv[k]; });   /* the server's values now, this device's decision flags */
+    if(await fnoHandoverRun(id, sent)) n++;
+  }
+  return n;
+}
+/* the number was written straight to the server (fnoIssueAndApply) */
+function fnoHandoverAfterNumber(id){
+  try{
+    if(PUBLIC_MODE || isViewerUser()) return;
+    const f = _recNow('haatFarmers', id); if(!f || !f.farmerNo) return;
+    fnoHandoverRun(id, {farmerNo: f.farmerNo});
+  }catch(e){}
+}
+/* is decision time a later than b? A missing time counts as older than any real one. */
+function _fnoLater(a, b){ const x = a ? Date.parse(a) : NaN, y = b ? Date.parse(b) : NaN; return !isNaN(x) && (isNaN(y) || x > y); }
+/* Every list write is a transaction on that one entry, so it is judged against what the server holds.
+   No copy on this device -> answer null: a no-op that makes the server send the real value and ask again.
+   Nothing to change -> hand the entry back unchanged (never "abort" on a possibly stale copy). */
+function _fnoTxRaw(key, fn){ return _fbWriteGuard(fbRef('haatHandover/' + key).transaction(fn), 8000); }
+async function fnoHandoverWrite(f, sent){
+  if(!f) return true;
+  sent = sent || {};
+  let done = true;   /* v317d - false when any write did not confirm (kept for a retry) */
+  const _fnoTx = function(key, fn){ return _fnoTxRaw(key, fn).then(function(t){ if(!t || t.timedOut) done = false; return t; }); };
+  const has = function(k){ return Object.prototype.hasOwnProperty.call(sent, k); };
+  const decided = has('status') || has('_archived') || has('_mergedInto');   /* this save carried a decision */
+  const renumbered = has('farmerNo') || has('oldFarmerNos');                 /* this save gave or moved a number */
+  const TS = firebase.database.ServerValue.TIMESTAMP;
+  const stamp = function(e){ return Object.assign({}, e, {updatedAt: TS}); };
+  const olds = (Array.isArray(f.oldFarmerNos) ? f.oldFarmerNos : []).map(fnoIndexKey).filter(Boolean);
+  if(!f.farmerNo){
+    /* gave its number up (merged away / moved): its own entries that still say approved are withdrawn */
+    if(!decided && !renumbered) return true;
+    for(const ok of olds){
+      await _fnoTx(ok, function(cur){
+        if(!cur) return null;
+        if(cur.status !== 'approved' || cur.fvId !== f.id) return cur;
+        return Object.assign({}, cur, {status: 'withdrawn', updatedAt: TS});
+      });
+    }
+    return done;
+  }
+  const key = fnoIndexKey(f.farmerNo); if(!key) return true;
+  const e = sanitizeForFB(fnoHandoverEntry(f));
+  await _fnoTx(key, function(cur){
+    if(!cur) return (e.status === 'approved' && (decided || renumbered)) ? stamp(e) : null;
+    if(cur.fvId && cur.fvId !== f.id){
+      /* another farmer's entry: only a save that gave or moved THIS number (a merge) takes it over -
+         or, v317d, an approval of the farmer who holds the number now, when that entry is withdrawn */
+      if(e.status !== 'approved') return cur;
+      return (renumbered || (decided && cur.status === 'withdrawn')) ? stamp(e) : cur;
+    }
+    /* archived or merged away by THIS save: always withdrawn, whatever the decision times say */
+    if((has('_archived') && f._archived) || (has('_mergedInto') && f._mergedInto)) return cur.status === 'approved' ? stamp(e) : cur;
+    if(_fnoLater(cur.decidedAt, e.decidedAt)) return cur;                 /* the list already has a later decision */
+    if(cur.status === 'replaced') return cur;
+    if(cur.status !== e.status && !decided && !renumbered && !_fnoLater(e.decidedAt, cur.decidedAt)) return cur;
+    return stamp(e);
+  });
+  /* a merge gave this farmer an older number: the entry under the old number now points here */
+  if(e.status === 'approved' && (decided || renumbered)){
+    for(const ok of olds){
+      if(ok === key) continue;
+      await _fnoTx(ok, function(cur){
+        if(!cur) return null;
+        if(cur.status === 'replaced') return cur;
+        return Object.assign({}, cur, {status: 'replaced', replacedBy: e.no, updatedAt: TS});
+      });
+    }
+  }
+  return done;
+}
+/* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v316';
+const APP_VERSION = 'v317';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8808,6 +8982,7 @@ async function saveDB(silent){
     /* v218d - except the ones whose office fields we could not check: they are
        not finished, and clearing them would strand an admin's offline decision. */
     _officeRetry.forEach(([col,id])=>markPendingSync(col,id));
+    fnoHandoverAfterSave(updates);   /* v317 - the "ready for Khedut Haat" list; never awaited */
   }catch(e){
     console.error('[Sristi] cloud save failed:',e);
     setSyncPill('error');
@@ -12517,6 +12692,7 @@ async function loadVerifIndex(){
     DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
     /* v200 - and act on it. See autoHealVerifications. */
     if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); fnoIssuePending().catch(() => {});   /* v316 - catch-up numbers, 25 per opening */ }   /* v308 */
+    fnoHandoverReplay().catch(() => {});   /* v317d - list writes cut off last time */
   }catch(e){ /* diagnostic only */ }
 }
 

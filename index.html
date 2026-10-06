@@ -5043,7 +5043,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v319';
+const APP_VERSION = 'v320';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -19026,7 +19026,7 @@ function openConvEnrollmentForm(){
       : 'Add new conversion farmer';
     const saveLabel = PUBLIC_MODE ? L('Send application','અરજી મોકલો','अर्जी भेजें') : 'Save farmer';
     modalShell(modalTitle, body,
-      '<button class="btn btn-ghost" onclick="closeModal()">Cancel<</button>'
+      '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
       + '<button class="btn btn-primary" id="krSave">'+svg(I.check)+saveLabel+'</button>');
     const modalEl = document.getElementById('modal'); if(modalEl) modalEl.classList.add('wide');
     wireInputs();

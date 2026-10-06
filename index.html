@@ -5043,7 +5043,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v320';
+const APP_VERSION = 'v321';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6792,8 +6792,15 @@ function _mirrorTx(mode, fn){
     tx.onabort    = () => rej(tx.error || new Error('aborted'));
   }));
 }
+const MIRROR_LS_MAX = 5200000;   /* v321 - Chrome/Android cap localStorage at ~5.24M chars per site */
+let _mirrorRetry = 0;
 function _mirrorLsWrite(json){
-  /* the old path, unchanged: used only when IndexedDB cannot take the copy */
+  /* the old path: used only when IndexedDB cannot take the copy */
+  /* v321 - a copy that cannot fit is not attempted: the write would only fail */
+  if(typeof json === 'string' && json.length > MIRROR_LS_MAX){
+    if(!_quotaWarned){ _quotaWarned = true; console.warn('[Sristi] offline copy (' + json.length + ' chars) not saved: IndexedDB refused it and it is too big for localStorage'); if(typeof toast==='function') toast('Device storage full — stay online so your changes sync.','error'); }
+    return;
+  }
   try{
     localStorage.setItem(STORE_KEY, json);
     try{ localStorage.setItem(MIRROR_LS_NEWER, '1'); }catch(e){}
@@ -6819,8 +6826,20 @@ function _mirrorPut(json){
       /* IndexedDB has it: now the localStorage copy can go, which is what frees the space */
       try{ localStorage.removeItem(STORE_KEY); localStorage.removeItem(MIRROR_LS_NEWER); }catch(e){}
       _quotaWarned = false;
+      _mirrorRetry = 0;
       next();
     }).catch(err => {
+      /* v321 - one refused write is not a broken database: try IndexedDB again (after 1 s, then 4 s)
+         before the small localStorage fallback. Writes arriving meanwhile only replace _mirrorNext,
+         so the retry always saves the newest copy. */
+      if(!_mirrorIdbDead && gen === _mirrorGen && _mirrorRetry < 2){
+        _mirrorRetry++;
+        console.warn('[Sristi] offline copy write to IndexedDB refused, trying again (' + _mirrorRetry + '/2):', err);
+        if(_mirrorNext === null) _mirrorNext = j;
+        setTimeout(next, _mirrorRetry === 1 ? 1000 : 4000);
+        return;
+      }
+      _mirrorRetry = 0;
       console.warn('[Sristi] offline copy could not go to IndexedDB, using localStorage:', err);
       _mirrorLsWrite(_mirrorNext !== null ? _mirrorNext : j);
       _mirrorNext = null;
@@ -6961,6 +6980,7 @@ function cacheLocal(snap){
     try{ _json = JSON.stringify(DB,_stripReplacer); }catch(e){ console.warn('[Sristi] offline copy not serialisable:', e); return; }
   }
   if(!_mirrorIdbDead){ _mirrorPut(_json); return; }
+  if(_json.length > MIRROR_LS_MAX){ _mirrorLsWrite(_json); return; }   /* v321 - warns once, does not attempt */
   try{ localStorage.setItem(STORE_KEY,_json); try{ localStorage.setItem(MIRROR_LS_NEWER,'1'); }catch(e2){} _quotaWarned=false; }
   catch(e){
     // #45 — don't swallow quota errors silently: past the limit the local mirror

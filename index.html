@@ -280,6 +280,11 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   border-radius:20px;padding:4px 13px;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink-soft)}
 .oc-chip:hover{border-color:var(--line-strong)}
 .oc-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+/* v322 - tells the conversion strip apart from the Haat one directly above it */
+.journey.conv-journey{border-left:4px solid var(--green)}
+/* five boxes, not four, so each may be a little narrower */
+.conv-journey .jstep{flex-basis:130px;min-width:130px}
+.jwho.who-progress{background:var(--yellow-bg);color:var(--yellow)}
 /* filter-mode "selected" state (Haat Farmers list — click a step to filter) */
 .jstep.active{outline:2px solid var(--jc,var(--accent));outline-offset:-2px;background:var(--panel-2)}
 .oc-chip.active{outline:2px solid currentColor;outline-offset:-2px;font-weight:700}
@@ -369,6 +374,9 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .section-head{display:flex;align-items:center;gap:12px;margin:24px 0 13px}
 .section-head h3{font-size:15px;font-weight:700}
 .section-head .line{flex:1;height:1px;background:var(--line)}
+/* v322 - the Dashboard names each programme in Gujarati */
+.section-head h3.sh-gu{font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',sans-serif;
+  font-size:16.5px;font-weight:700;line-height:1.4}
 .panel-grid{display:grid;gap:16px}
 .panel-grid>*{min-width:0}
 @media(min-width:1080px){
@@ -5043,7 +5051,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v321';
+const APP_VERSION = 'v322';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14506,11 +14514,11 @@ function convStats(list){
      everywhere else, which is every other caller, so nothing else changes. */
   const f=_excludeSeeds(filterByCurrentFc(list || DB.convFarmers)).filter(x=>!x._archived);
   const today=todayISO();
-  let pending=0, red=0, yellow=0, green=0;
+  let pending=0, pendingNoFc=0, red=0, yellow=0, green=0;
   let enrolled=0, assigned=0, inProgress=0, adopted=0, chemFlag=0, firstVisitDue=0, overdue=0, readyToAdopt=0;
   f.forEach(x=>{
     const cat=convCategory(x);
-    if(cat==='pending') pending++;
+    if(cat==='pending'){ pending++; if(!x.fcId) pendingNoFc++; }
     else if(cat==='red') red++;
     else if(cat==='yellow') yellow++;
     else if(cat==='green') green++;
@@ -14526,7 +14534,7 @@ function convStats(list){
   });
   return{
     total:f.length,
-    pending, red, yellow, green,
+    pending, pendingNoFc, red, yellow, green,
     enrolled, assigned, inProgress, adopted,
     chemFlag, firstVisitDue, overdue, readyToAdopt,
     dropped:f.filter(x=>x.transitionStatus==='dropped').length,
@@ -16429,9 +16437,15 @@ function viewDashboard(){
       + ', and tick the programmes and districts you should see.</div></div>';
     return;
   }
+  /* v322 - the conversion programme gets its own strip, built like the Haat
+     one and drawn directly under it (it used to be a one-line peek further
+     down the page). A viewer granted only conversion gets it at the top. */
+  const _convDash = `<div class="section-head"><h3 class="sh-gu">🌱 રાસાયણિક ખેતીમાંથી ઓર્ગેનિક ખેતી શરુ કરવા માટેનો પ્રોગ્રામ</h3><div class="line"></div></div>`
+                  + convJourneyHtml(cs);
   if(_shHaat){
-  h+=`<div class="section-head"><h3>🛒 Prakrutik Khedut Haat Program — Farmers</h3><div class="line"></div></div>`;
+  h+=`<div class="section-head"><h3 class="sh-gu">🛒 ખેડૂત હાટ સાથે જોડવાનો પ્રોગ્રામ</h3><div class="line"></div></div>`;
   h+=journeyBoxesHtml(hs,'nav');
+  if(_shConv) h+=_convDash;
 
   // ===== two cumulative charts side by side — Cumulative / Year-wise (FY, Apr–Mar) / Month-wise =====
   const cum=cumulativeData();
@@ -16567,18 +16581,8 @@ function viewDashboard(){
   </tr></tfoot></table></div></div>
   </div>`;
 
-  // v33 — the full Conversion funnel used to sit here as its own 5-box grid,
-  // right under the Haat funnel, and read as a confusing second/duplicate
-  // pipeline. It now lives entirely on the Conversion Farmers page; the
-  // Dashboard just gets a one-line peek + link (see convPointerHtml).
-  // v87 — moved down to sit right above Recent updates (was directly under
-  // the Haat funnel, where its own "applications" number sat right next to
-  // the Haat funnel's "Farmers applied" number and read as one confusing
-  // pipeline instead of two separate programs).
   }
-  if(_shConv){
-  h+=`<div class="section-head"><h3>🌱 Organic Farming Conversion Program — Farmers</h3><div class="line"></div></div>`;
-  h+=convPointerHtml(cs);
+  if(_shConv && !_shHaat) h+=_convDash;
 
   // ===== v139 — recent public applications, and the date filter that drives them =====
   // The pills used to sit alone at the very top of the dashboard, above the
@@ -16587,7 +16591,6 @@ function viewDashboard(){
   // Both panels are now rendered, and the filter sits immediately above them
   // rather than above the tiles, so it is clear what it does and does not
   // touch: the counts and charts above stay totals, always.
-  }
   /* Applications and the activity log are not a viewer's business, and are not
      fetched for one either - see _activeSyncKeys. Drawing them would put two
      permanently empty panels on the screen and invite a question about missing
@@ -16796,7 +16799,9 @@ function journeyBoxesHtml(hs, mode, activeStatus){
    bar above). Used only on the Conversion Farmers list page (filter-toggle
    clicks via data-box, matching that page's existing F.status logic). */
 function convFunnelHtml(cs, activeStatus, notInterestedOn){
-  const on = k => (activeStatus||'')===k;
+  /* v322 - 'assessed' (the Dashboard's "Farm assessed" box) is all three score
+     bands, so all three cards show as selected. */
+  const on = k => (activeStatus||'')===k || (activeStatus==='assessed' && (k==='red'||k==='yellow'||k==='green'));
   let h = '<div class="conv-wrap"><div class="conv-flow">';
   h += `<button class="conv-step jstep${on('')?' active':''}" data-box="" data-tip="કન્વર્ઝન પ્રોગ્રામમાં જોડાવા માટે કુલ આટલી અરજી આવી છે.">
     <span class="jwho who-done">All</span>
@@ -16855,17 +16860,49 @@ function convFunnelHtml(cs, activeStatus, notInterestedOn){
   }
   return h;
 }
-/* Small dashboard "peek" card — the full conversion funnel lives on the
-   Conversion Farmers page (too much detail for the shared Dashboard,
-   which is why it used to read as a confusing second funnel). */
-function convPointerHtml(cs){
-  return `<button class="conv-pointer" data-nav="conversion">
-    <div>
-      <div class="cp-main">🌱 ${cs.total} applications · ${cs.green} adopted, ${cs.yellow} in progress, ${cs.red} not adopting</div>
-      <div class="cp-sub">${cs.pending} waiting for FC farm assessment</div>
-    </div>
-    <span class="cp-cta">View full Conversion Program →</span>
-  </button>`;
+/* v322 - Dashboard strip for the conversion programme, built the same way as
+   the Haat one (journeyBoxesHtml) and drawn directly under it. Every box and
+   chip opens Conversion Farmers filtered to exactly those farmers.
+   "Farm assessed" is everyone with a score, whatever the band, so it is
+   In progress + Adopted + Not adopting. Not adopting sits in the line below,
+   where Haat keeps its rejected / on hold. */
+function convJourneyHtml(cs){
+  const n = x => Number(x||0).toLocaleString('en-IN');
+  const assessed = cs.green + cs.yellow + cs.red;
+  const noFc = cs.pendingNoFc || 0;
+  const steps = [
+    {key:'', who:'done', whoLbl:'All', label:'Farmers applied', num:cs.total,
+     sub:'Total applications received',
+     tip:'કન્વર્ઝન પ્રોગ્રામમાં જોડાવા માટે કુલ આટલી અરજી આવી છે.'},
+    {key:'pending', who:'fc', whoLbl:"FC's move", label:'Waiting for farm visit', num:cs.pending,
+     sub: noFc ? n(noFc)+' of them '+(noFc===1?'has':'have')+' no coordinator yet' : 'Field Coordinator has not visited yet',
+     jc:'var(--orange)',
+     tip:'આ એવા ખેડૂતો છે જેમનું ફાર્મ વેરીફીકેશન કરવાનું બાકી છે.'},
+    {key:'assessed', who:'admin', whoLbl:'Visit done', label:'Farms assessed', num:assessed,
+     sub:'Score given by the coordinator', jc:'var(--blue)',
+     tip:'આ એવા ખેડૂતો છે જેમના ખેતરની મુલાકાત થઇ ગઇ છે અને ફિલ્ડ કોઓર્ડિનેટરે સ્કોર આપ્યો છે.'},
+    {key:'yellow', who:'progress', whoLbl:'Progress', label:'In progress', num:cs.yellow,
+     sub:'50–70%, no chemical use', jc:'var(--yellow)',
+     tip:'આ ખેડૂતોનો સ્કોર 50-70% ની વચ્ચે છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી તરફ આગળ વધી રહ્યા છે.'},
+    {key:'green', who:'done', whoLbl:'Done', label:'Adopted', num:cs.green,
+     sub:'Above 70%, no chemical use', jc:'var(--green)',
+     tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
+  ];
+  let h = '<div class="journey conv-journey">';
+  steps.forEach(s=>{
+    h += `<button class="jstep" data-nav="conv:${s.key}" ${s.jc?`style="--jc:${s.jc}"`:''} data-tip="${esc(s.tip)}">
+      <span class="jwho who-${s.who}">${s.whoLbl}</span>
+      <div class="jnum">${n(s.num)}</div>
+      <div class="jlabel">${s.label}</div>
+      <div class="jsub">${s.sub}</div>
+    </button>`;
+  });
+  h += '</div>';
+  h += `<div class="journey-outcomes">
+    <span class="oc-lbl">Not adopted:</span>
+    <button class="oc-chip" data-nav="conv:red" data-tip="${esc('આ ખેડૂતોનો સ્કોર 50% કરતાં ઓછો છે, અથવા ખેતરમાં રાસાયણિક ખાતર / જંતુનાશકનો ઉપયોગ જણાયો છે.')}"><span class="oc-dot" style="background:var(--red)"></span>${n(cs.red)} not adopting</button>
+  </div>`;
+  return h;
 }
 /* ============ VIEW: HAAT FARMERS ============ */
 /* ============ ARCHIVE (soft-delete) — admin multi-select ============
@@ -18116,7 +18153,10 @@ function viewConversion(){
   let rows = _audience.slice();
   // archive: hide archived unless "Show archived" is on (then show ONLY archived)
   rows = archFilterRows('conv', rows);
-  if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
+  /* v322 - 'assessed' comes from the Dashboard's "Farm assessed" box: every
+     scored farmer, whichever of the three bands they are in. */
+  if(F.status==='assessed') rows=rows.filter(r=>convCategory(r)!=='pending');
+  else if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
   rows=sortRows(rows);
 

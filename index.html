@@ -5051,7 +5051,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v322';
+const APP_VERSION = 'v323';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -30745,6 +30745,28 @@ async function ensureUsersLoaded() {
   return getUsersList().length > 0;
 }
 
+/* v323 - a saved account list can be out of date. ensureUsersLoaded() above
+   only reads config/users on a device that has no copy at all, and the live
+   listener only runs while someone is signed in. So a shared phone kept the
+   list from the last time anyone was signed in on it, and an account added or
+   changed since then (a Mobilizer made a Viewer and switched back on, a new
+   password) was refused as "Invalid ID or password". Sign-in now calls this
+   once when the saved copy says no, and checks again.
+   One bounded read, no writes. If the read fails, or comes back empty, the
+   saved copy is kept exactly as it was - never cleared. */
+async function refreshUsersList() {
+  if (!(FB && FB.ready && navigator.onLine)) return false;
+  try {
+    const snap = await fbWithin(fbRef('config/users').get(), 15000, null, 'account list refresh');
+    if (!snap || !snap.exists()) return false;
+    const fresh = Object.values(snap.val()).filter(u => u && u.id);
+    if (!fresh.length) return false;
+    USERS_LIST = fresh;
+    saveUsersCache(USERS_LIST);
+    return true;
+  } catch(e) { console.warn('[Auth] could not refresh config/users:', e); return false; }
+}
+
 function generateSalt() {
   const a = new Uint8Array(16);
   crypto.getRandomValues(a);
@@ -31309,6 +31331,8 @@ function openLoginModal(){
     try {
       await ensureUsersLoaded();
       authUser = await verifyCredentials(idVal, pwVal);
+      /* v323 - the saved list may be older than the account: ask once more */
+      if(!authUser && await refreshUsersList()) authUser = await verifyCredentials(idVal, pwVal);
     } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
     if(!authUser){
       submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';

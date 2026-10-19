@@ -285,6 +285,22 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 /* five boxes, not four, so each may be a little narrower */
 .conv-journey .jstep{flex-basis:130px;min-width:130px}
 .jwho.who-progress{background:var(--yellow-bg);color:var(--yellow)}
+/* v324 - In progress + Adopted share a green bracket with their total. All five
+   boxes start at the same top so the numbers stay on one line; the bracket hangs
+   below the last two. */
+.journey.conv-journey{align-items:flex-start}
+.conv-journey .jgroup{flex:2 1 260px;min-width:260px;display:flex;flex-direction:column;position:relative}
+.conv-journey .jgroup-row{display:flex}
+.conv-journey .jgroup-row .jstep{flex:1 1 130px}
+.conv-journey .jgroup-row .jstep:first-child::before{content:"";position:absolute;left:-9px;top:50%;transform:translateY(-50%) rotate(45deg);
+  width:12px;height:12px;border-top:2px solid var(--line-strong);border-right:2px solid var(--line-strong)}
+.conv-band{margin:8px 10px 0;border:2px solid var(--green-line,#9fd8b2);border-top:none;border-radius:0 0 14px 14px;background:var(--green-bg);
+  padding:8px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;position:relative;font-family:inherit;text-align:left}
+.conv-band::before,.conv-band::after{content:"";position:absolute;top:-10px;width:2px;height:10px;background:var(--green-line,#9fd8b2)}
+.conv-band::before{left:-2px}.conv-band::after{right:-2px}
+.conv-band:hover{filter:brightness(.98)}
+.conv-band .cb-n{font-size:24px;font-weight:800;color:var(--green);letter-spacing:-.02em;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
+.conv-band .cb-t{font-family:'Hind Vadodara','Nirmala UI','Noto Sans Gujarati',sans-serif;font-size:15px;font-weight:700;color:#166534;line-height:1.35}
 /* filter-mode "selected" state (Haat Farmers list — click a step to filter) */
 .jstep.active{outline:2px solid var(--jc,var(--accent));outline-offset:-2px;background:var(--panel-2)}
 .oc-chip.active{outline:2px solid currentColor;outline-offset:-2px;font-weight:700}
@@ -324,6 +340,10 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   .journey{flex-direction:column;gap:2px;padding:10px}
   .jstep{padding:12px 12px}
   .jstep+.jstep::before{left:22px;top:-7px;transform:rotate(135deg)}
+  .conv-journey .jgroup{min-width:0;flex-basis:auto}
+  .conv-journey .jgroup-row{flex-direction:column;gap:2px}
+  .conv-journey .jgroup-row .jstep:first-child::before{left:22px;top:-7px;transform:rotate(135deg)}
+  .conv-band{margin:6px 4px 2px}
   .tip-bubble{left:12px;transform:none;width:calc(100vw - 64px)}
 }
 
@@ -5051,7 +5071,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v323';
+const APP_VERSION = 'v324';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16686,7 +16706,7 @@ function viewDashboard(){
   v.querySelectorAll('[data-act-days]').forEach(b=>b.onclick=()=>{ FILTERS.dashAct.days = +b.dataset.actDays; FILTERS.dashAct.page = 0; render(); });
   v.querySelectorAll('[data-act-page]').forEach(b=>{ if(!b.disabled) b.onclick=()=>{ FILTERS.dashAct.page = +b.dataset.actPage; render(); }; });
   v.querySelectorAll('[data-go]').forEach(r=>r.onclick=()=>{ROUTE=r.dataset.go;render();});
-  v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav],.conv-pointer[data-nav]').forEach(b=>{
+  v.querySelectorAll('.statbox[data-nav],.jstep[data-nav],.oc-chip[data-nav],.conv-pointer[data-nav],.conv-band[data-nav]').forEach(b=>{
     b.onclick=()=>{
       const nav=b.dataset.nav;
       if(nav.includes(':')){
@@ -16801,7 +16821,8 @@ function journeyBoxesHtml(hs, mode, activeStatus){
 function convFunnelHtml(cs, activeStatus, notInterestedOn){
   /* v322 - 'assessed' (the Dashboard's "Farm assessed" box) is all three score
      bands, so all three cards show as selected. */
-  const on = k => (activeStatus||'')===k || (activeStatus==='assessed' && (k==='red'||k==='yellow'||k==='green'));
+  const on = k => (activeStatus||'')===k || (activeStatus==='assessed' && (k==='red'||k==='yellow'||k==='green'))
+    || (activeStatus==='practising' && (k==='yellow'||k==='green'));   /* v324 - the Dashboard's green bracket */
   let h = '<div class="conv-wrap"><div class="conv-flow">';
   h += `<button class="conv-step jstep${on('')?' active':''}" data-box="" data-tip="કન્વર્ઝન પ્રોગ્રામમાં જોડાવા માટે કુલ આટલી અરજી આવી છે.">
     <span class="jwho who-done">All</span>
@@ -16888,15 +16909,20 @@ function convJourneyHtml(cs){
      sub:'Above 70%, no chemical use', jc:'var(--green)',
      tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
   ];
-  let h = '<div class="journey conv-journey">';
-  steps.forEach(s=>{
-    h += `<button class="jstep" data-nav="conv:${s.key}" ${s.jc?`style="--jc:${s.jc}"`:''} data-tip="${esc(s.tip)}">
+  const box = s => `<button class="jstep" data-nav="conv:${s.key}" ${s.jc?`style="--jc:${s.jc}"`:''} data-tip="${esc(s.tip)}">
       <span class="jwho who-${s.who}">${s.whoLbl}</span>
       <div class="jnum">${n(s.num)}</div>
       <div class="jlabel">${s.label}</div>
       <div class="jsub">${s.sub}</div>
     </button>`;
-  });
+  let h = '<div class="journey conv-journey">';
+  h += steps.slice(0, 3).map(box).join('');
+  /* v324 - In progress + Adopted: the farmers who have started farming without
+     chemicals. One green bracket under the two with their total; it opens both. */
+  h += `<div class="jgroup"><div class="jgroup-row">${steps.slice(3).map(box).join('')}</div>
+    <button class="conv-band" data-nav="conv:practising" data-tip="${esc('પ્રગતિમાં અને અપનાવેલ — બંને મળીને. આ ખેડૂતોના ખેતરમાં રાસાયણિક ખાતર / જંતુનાશકનો ઉપયોગ નથી.')}">
+      <span class="cb-n">🌱 ${n(cs.yellow + cs.green)}</span><span class="cb-t">પ્રાકૃતિક ખેતી કરવાની શરૂઆત કરી છે</span>
+    </button></div>`;
   h += '</div>';
   h += `<div class="journey-outcomes">
     <span class="oc-lbl">Not adopted:</span>
@@ -18156,6 +18182,8 @@ function viewConversion(){
   /* v322 - 'assessed' comes from the Dashboard's "Farm assessed" box: every
      scored farmer, whichever of the three bands they are in. */
   if(F.status==='assessed') rows=rows.filter(r=>convCategory(r)!=='pending');
+  /* v324 - the Dashboard's green bracket: In progress + Adopted together */
+  else if(F.status==='practising') rows=rows.filter(r=>{ const c=convCategory(r); return c==='yellow'||c==='green'; });
   else if(F.status) rows=rows.filter(r=>convCategory(r)===F.status);
   if(F.notInterested) rows=rows.filter(r=>r.intake && r.intake.willingChemFree==='no');
   rows=sortRows(rows);

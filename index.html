@@ -373,11 +373,18 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 .score-sub{font-size:10px;color:var(--ink-faint);margin-top:3px}
 .conv-note{font-size:11px;color:var(--ink-faint);margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);
   display:flex;align-items:center;gap:6px}
+/* v325 - the same green bracket as the Dashboard, under In progress + Adopted */
+.conv-fan{align-items:flex-start}
+.fan-group{flex:2 1 270px;min-width:270px;display:flex;flex-direction:column}
+.fan-row{display:flex;gap:10px}
+.conv-band.active{outline:2px solid var(--green);outline-offset:-2px}
 @media(max-width:760px){
   .conv-flow{flex-direction:column;align-items:stretch}
   .conv-arrow{transform:rotate(90deg);align-self:center}
   .conv-branch-arrow{transform:rotate(90deg);flex:none;padding:8px 0}
-  .conv-fan{flex-direction:column}
+  .conv-fan{flex-direction:column;align-items:stretch}
+  .fan-group{min-width:0;flex-basis:auto}
+  .fan-row{flex-direction:column}
 }
 /* condensed dashboard pointer card (full funnel lives on Conversion Farmers page) */
 .conv-pointer{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
@@ -5071,7 +5078,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v324';
+const APP_VERSION = 'v325';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -16852,18 +16859,23 @@ function convFunnelHtml(cs, activeStatus, notInterestedOn){
     {key:'green', gauge:'✓', num:cs.green, label:'Adopted', sub:'Above 70%, no chemical use', sc:'var(--green)', scb:'var(--green-bg)', scl:'var(--green-line)',
      tip:'આ ખેડૂતોનો સ્કોર 70% કરતાં વધુ છે અને ખેતરમાં કોઈ રાસાયણિક ઉપયોગ નથી — પ્રાકૃતિક ખેતી સંપૂર્ણ અપનાવી લીધી છે.'},
   ];
-  h += '<div class="conv-fan">';
-  cards.forEach(c=>{
-    h += `<button class="score-card${on(c.key)?' active':''}" data-box="${c.key}" style="--sc:${c.sc};--scb:${c.scb};--scl:${c.scl}" data-tip="${esc(c.tip)}">
+  const card = c => `<button class="score-card${on(c.key)?' active':''}" data-box="${c.key}" style="--sc:${c.sc};--scb:${c.scb};--scl:${c.scl}" data-tip="${esc(c.tip)}">
       <div class="score-gauge">${c.gauge}</div>
       <div class="score-num">${c.num}</div>
       <div class="score-label">${c.label}</div>
       <div class="score-sub">${c.sub}</div>
     </button>`;
-  });
+  h += '<div class="conv-fan">';
+  h += cards.filter(c => c.key === 'red').map(card).join('');
+  /* v325 - In progress + Adopted under one green bracket with their total, as on the Dashboard */
+  h += `<div class="fan-group"><div class="fan-row">${cards.filter(c => c.key !== 'red').map(card).join('')}</div>
+    <button class="conv-band${activeStatus==='practising'?' active':''}" data-box="practising" data-tip="${esc('પ્રગતિમાં અને અપનાવેલ — બંને મળીને. આ ખેડૂતોના ખેતરમાં રાસાયણિક ખાતર / જંતુનાશકનો ઉપયોગ નથી.')}">
+      <span class="cb-n">🌱 ${Number((cs.yellow||0) + (cs.green||0)).toLocaleString('en-IN')}</span><span class="cb-t">પ્રાકૃતિક ખેતી કરવાની શરૂઆત કરી છે</span>
+    </button></div>`;
   h += '</div></div>';
-  h += '<div class="conv-note">ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.'
-     + '<br>Chemical fertilizer or chemical pesticide found on the plot (questions A1 / A2) puts the farmer in <b>Not adopting</b> whatever the total score is — so a farmer can sit there on 75/100.</div>';
+  /* v325 - the text sits in one span: .conv-note is a flex row, and the bare <b> used to become its own column */
+  h += '<div class="conv-note"><span>ⓘ Score bands are calculated automatically from the FC\'s farm assessment — no separate admin approval step, unlike the Haat program.'
+     + '<br>Chemical fertilizer or chemical pesticide found on the plot (questions A1 / A2) puts the farmer in <b>Not adopting</b> whatever the total score is — so a farmer can sit there on 75/100.</span></div>';
   h += '</div>';
   // v80 — "Organic Commitment" (question 3 at intake) is a separate axis from
   // the score bands above (that's adoption progress; this is willingness at
@@ -18261,7 +18273,7 @@ function viewConversion(){
   if(convPrev) convPrev.onclick = () => { F.page--; render(); };
   if(convNext) convNext.onclick = () => { F.page++; render(); };
 
-  v.querySelectorAll('.conv-step[data-box],.score-card[data-box]').forEach(b=>{
+  v.querySelectorAll('.conv-step[data-box],.score-card[data-box],.conv-band[data-box]').forEach(b=>{
     b.onclick=()=>{const k=b.dataset.box;F.status=(F.status||'')===k?'':k;F.page=0;render();};
   });
   const notInterestedBtn = v.querySelector('[data-notinterested]');

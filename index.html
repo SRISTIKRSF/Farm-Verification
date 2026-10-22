@@ -1489,6 +1489,8 @@ body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#f8f5f6 0,trans
 .sf-logos{display:flex;align-items:center;gap:7px;margin-bottom:8px}
 .sf-logos img{width:30px;height:30px;border-radius:50%;object-fit:contain;background:#fff;border:1px solid #ebe3e6;padding:2px}
 .sf-logos span{font-size:11.5px;font-weight:700;color:#5c4a53;margin-left:2px}
+/* v328 - on a phone the sidebar foot is hidden, so the logos sit before the page title */
+.tb-logos{display:none}
 .topbar h2{font-size:20px}.topbar h2 .count{color:var(--accent);background:var(--accent-soft)}.content{padding:26px 30px 72px;max-width:1680px;width:100%;margin:0 auto}
 .search input{width:270px;border-radius:10px;background:#faf6f8;border-color:transparent;padding-top:9px;padding-bottom:9px}.search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px rgba(92,46,74,.16)}
 .sync{border:1px solid #e8dce2}.btn{border-radius:10px;padding:9px 15px}.btn-primary{background:linear-gradient(135deg,#5c2e4a,#4a2239);box-shadow:0 7px 15px -8px rgba(92,46,74,.75)}.btn-primary:hover{background:#4a2239}.btn-ghost,.btn-excel{border-color:var(--line-strong);background:#fff}
@@ -1502,6 +1504,11 @@ body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#f8f5f6 0,trans
   html,body{min-height:100%;background:var(--bg)}.app{display:block;min-height:100dvh;padding-bottom:70px}.main{display:block}.sidebar{position:fixed;z-index:80;inset:auto 0 0;width:100%;height:70px;border:0;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -8px 24px -16px rgba(34,16,27,.6)}
   .brand,.sidebar-foot,.nav-label{display:none!important}.nav{height:70px;padding:6px 7px!important;display:flex;align-items:stretch;gap:2px;overflow-x:auto;overflow-y:hidden}.nav-item{min-width:66px;flex:1;justify-content:center;flex-direction:column;gap:2px;padding:5px 6px!important;text-align:center;font-size:9px!important;line-height:1.15}.nav-item svg{width:18px;height:18px}.nav-item .badge{position:absolute;margin:0 0 22px 25px;min-width:16px;padding:0 4px;font-size:9px}
   .topbar{position:sticky;top:0;z-index:30;min-height:62px;padding:9px 12px;gap:9px;background:rgba(255,255,255,.94)}.topbar h2{font-size:16px}.topbar .tt{max-width:calc(100% - 152px)}.topbar .count{display:none!important}.topbar .search{order:3;width:100%;flex-basis:100%}.topbar .search input{width:100%;height:38px}.topbar .sync,#userPillName,#userPill span:last-child{display:none!important}#userPill{padding:6px!important;border-radius:50%!important}#quickAdd{padding:9px 10px;min-width:40px}#quickAdd span{display:none}
+  .topbar .tt{display:flex;align-items:center;gap:8px;min-width:0}
+  .topbar .tt h2{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .tb-logos{display:flex;flex:none}
+  .tb-logos img{width:26px;height:26px;border-radius:50%;object-fit:contain;background:#fff;border:1px solid #ebe3e6;padding:1px}
+  .tb-logos img+img{margin-left:-6px}
   .content{padding:14px 12px 22px}.statbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px}.statbox{padding:13px 12px}.statbox .sb-value{font-size:23px}.section-head{margin:18px 0 10px}.filter-row,.toolbar,.table-tools{gap:8px!important}.btn{min-height:40px}.drawer{width:100%!important}.drawer-head{padding:17px 16px!important}.drawer-body{padding:16px!important}.modal{width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;border-radius:14px!important}.modal-head,.modal-body,.modal-foot{padding-left:14px!important;padding-right:14px!important}.modal-foot{position:sticky;bottom:0;background:#fff}.field-row{gap:8px}.data-table,.tbl{font-size:12px}
 }
 @media(max-width:380px){.nav-item{min-width:58px;font-size:8px!important}.topbar .tt{max-width:calc(100% - 126px)}.statbox-grid{grid-template-columns:1fr}.topbar h2{font-size:15px}}
@@ -1534,7 +1541,7 @@ body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#f8f5f6 0,trans
   </aside>
   <main class="main">
     <div class="topbar">
-      <div class="tt"><h2 id="pageTitle">Dashboard <span class="count" id="pageCount" style="display:none"></span></h2></div>
+      <div class="tt"><span class="tb-logos" aria-hidden="true"><img src="sristi-logo.jpg" alt="" onerror="this.style.display='none'"><img src="krsf-logo.png" alt="" onerror="this.style.display='none'"></span><h2 id="pageTitle">Dashboard <span class="count" id="pageCount" style="display:none"></span></h2></div>
       <div class="spacer"></div>
       <div class="search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -5097,7 +5104,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v327';
+const APP_VERSION = 'v328';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};

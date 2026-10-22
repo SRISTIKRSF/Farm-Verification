@@ -1,6 +1,6 @@
 // Sristi Farm Verification — Service Worker
 // Cache version: bump this string whenever index.html changes significantly.
-const CACHE = 'sristi-fv-v326';
+const CACHE = 'sristi-fv-v327';
 
 // The one entry that IS the app. Everything else in SHELL is a library the app
 // can survive one session without; without this there is nothing to show.
@@ -22,7 +22,7 @@ const SHELL = [
   './',
   './index.html',
   './home-scene.webp',   // v288 - the farmer home page picture, downloaded once
-  './sristi-logo.jpg',   // v326 - the two logos at the foot of the sidebar (about 24 KB together)
+  './sristi-logo.jpg',   // v326 - the two logos at the foot of the sidebar; v327 - resized to 192 px (about 37 KB together)
   './krsf-logo.png',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js',

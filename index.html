@@ -5112,7 +5112,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v330';
+const APP_VERSION = 'v331';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -22381,7 +22381,7 @@ function openAutoAssignFcModal(){
         if(!f) return;
         if(f.fcId) return;                       // changed under us - skip
         markLocalTouch('convFarmers', f.id);     // v196 - protect before editing
-        f.fcPrevId       = f.fcId || '';         // reversible
+        f.fcPrevId       = f.fcPrevId || f.fcId || '';   // reversible (v331 - keeps a coordinator deactivation left there)
         f.fcId           = code;
         f.assignedAt     = todayISO();
         if(!f.stage || f.stage === 'enrolled') f.stage = 'assigned';
@@ -22437,7 +22437,7 @@ async function _autoAssignNew(){
         const f = (DB.convFarmers||[]).find(x => x && x.id === id);
         if(!f || f.fcId || f._archived) return;
         markLocalTouch('convFarmers', f.id);
-        f.fcPrevId       = f.fcId || '';
+        f.fcPrevId       = f.fcPrevId || f.fcId || '';   // v331 - keeps who it was before a deactivation
         f.fcId           = code;
         f.assignedAt     = todayISO();
         if(!f.stage || f.stage === 'enrolled') f.stage = 'assigned';
@@ -23437,6 +23437,34 @@ function editCoordinatorByFcCode(code){
    still resolves to their name. Farmers are deliberately NOT auto-unassigned
    \u2014 that would erase who was responsible. We report the number instead so
    the admin can reassign on purpose. */
+/* v331 - a deactivated coordinator's Conversion farmers become unassigned (owner, 24 Oct).
+   Reversible: fcPrevId keeps who it was. Only the coordinator and an 'assigned' stage change -
+   visits, scores, plans and the mobilizer stay. Called AFTER the account is written inactive,
+   so the coordinator no longer counts as covering a district when the automatic assignment
+   (v330) then gives each farmer to the one other coordinator who covers it - or leaves it
+   unassigned when nobody does. Haat farmers are not touched. Returns how many were freed. */
+async function _freeConvFarmersOf(code, name){
+  if(!code) return 0;
+  const aB = actor(), nowIso = new Date().toISOString();
+  let n = 0;
+  (DB.convFarmers||[]).forEach(f => {
+    if(!f || f._archived || f.fcId !== code) return;
+    markLocalTouch('convFarmers', f.id);
+    f.fcPrevId = code;
+    f.fcId = '';
+    if(f.stage === 'assigned') f.stage = 'enrolled';
+    f.fcUnassignedAt = nowIso;
+    f.fcUnassignedBy = aB.name;
+    f.fcUnassignedWhy = 'coordinator deactivated';
+    n++;
+  });
+  if(!n) return 0;
+  logActivity('status', '<b>' + n + '</b> Conversion farmer' + (n===1?'':'s') + ' taken off <b>' + esc(name || code)
+    + '</b> (deactivated) — each goes to the coordinator covering the district, or stays unassigned');
+  await saveDB();
+  try{ _autoAssignSoon(); }catch(e){}
+  return n;
+}
 async function setCoordinatorActive(code, makeActive){
   const u=userForFcCode(code);
   if(!u){ toast('No login account found for '+code,'error'); return; }
@@ -23454,7 +23482,11 @@ async function setCoordinatorActive(code, makeActive){
   } else {
     msg=`Deactivate "${u.name}"?\n\nThey will no longer be able to sign in, and will not appear when assigning farmers.`;
     msg+=`\n\nNothing is deleted \u2014 their name stays on every past visit, and you can reactivate them any time.`;
-    if(total) msg+=`\n\n${total} farmer${total===1?'':'s'} (${haatLinked} Haat, ${convLinked} Conversion) still report to them. They stay assigned \u2014 reassign them when you are ready.`;
+    /* v331 - their Conversion farmers are taken off them (owner, 24 Oct): the automatic
+       assignment then gives each to the other coordinator covering the district, or the
+       farmer stays unassigned when nobody does. Haat farmers stay as before. */
+    if(convLinked) msg+=`\n\n${convLinked} Conversion farmer${convLinked===1?'':'s'} will be taken off them. Each goes to the other coordinator who covers that district, or stays unassigned if nobody does.`;
+    if(haatLinked) msg+=`\n\n${haatLinked} Haat farmer${haatLinked===1?'':'s'} still report to them and stay assigned \u2014 reassign them when you are ready.`;
     if(planLinked) msg+=`\n${planLinked} planned visit${planLinked===1?'':'s'} still open.`;
   }
   if(!confirm(msg)) return;
@@ -23468,8 +23500,14 @@ async function setCoordinatorActive(code, makeActive){
     }
     if(reconcileFcsFromUsers()) await saveDB(true);
     logActivity('edit',`Field Coordinator ${makeActive?'reactivated':'deactivated'} \u2014 <b>${esc(u.name)}</b>`);
+    /* v331 - deactivated: their Conversion farmers become unassigned (reversible: fcPrevId
+       keeps who it was). Only the coordinator and an 'assigned' stage change - visits,
+       scores, plans and the mobilizer stay. The account is written first, so the
+       coordinator no longer counts as covering a district when the automatic
+       assignment looks at these farmers. */
+    const _freed = makeActive ? 0 : await _freeConvFarmersOf(code, u.name);
     render();
-    toast(makeActive?'Field Coordinator reactivated':'Field Coordinator deactivated');
+    toast(makeActive?'Field Coordinator reactivated':('Field Coordinator deactivated' + (_freed ? ' \u00b7 ' + _freed + ' Conversion farmer' + (_freed===1?'':'s') + ' unassigned' : '')));
   }catch(e){
     toast('Could not update the account: '+(e&&e.message?e.message:'Error'),'error');
   }
@@ -31346,9 +31384,13 @@ async function setUserActive(userId, makeActive) {
   if (!(navigator.onLine && FB && FB.ready)) {
     toast('Offline \u2014 connect to change accounts.', 'error'); return;
   }
+  /* v331 - a coordinator's Conversion farmers are taken off them here too, as in Field Coordinators */
+  const _fcCode = user.role === 'fc' ? (user.fcCode || '') : '';
+  const _convN = _fcCode ? (DB.convFarmers||[]).filter(f => f && !f._archived && f.fcId === _fcCode).length : 0;
   const msg = makeActive
     ? 'Reactivate "' + user.name + '" (@' + userId + ')?\n\nThey will be able to sign in again.'
-    : 'Deactivate "' + user.name + '" (@' + userId + ')?\n\nThey will no longer be able to sign in.\n\nNothing is deleted \u2014 you can reactivate them any time.';
+    : 'Deactivate "' + user.name + '" (@' + userId + ')?\n\nThey will no longer be able to sign in.\n\nNothing is deleted \u2014 you can reactivate them any time.'
+      + (_convN ? '\n\n' + _convN + ' Conversion farmer' + (_convN===1?'':'s') + ' will be taken off them. Each goes to the other coordinator who covers that district, or stays unassigned if nobody does.' : '');
   if (!confirm(msg)) return;
   try {
     await fbRef('config/users/u_' + userId + '/active').set(!!makeActive);
@@ -31360,8 +31402,9 @@ async function setUserActive(userId, makeActive) {
     }
     if (reconcileFcsFromUsers()) await saveDB(true);
     logActivity('edit', (makeActive ? 'Account reactivated' : 'Account deactivated') + ' \u2014 <b>' + esc(user.name) + '</b>');
+    const _freed = (!makeActive && _fcCode) ? await _freeConvFarmersOf(_fcCode, user.name) : 0;   /* v331 */
     render();
-    toast(makeActive ? 'Account reactivated.' : 'Account deactivated.');
+    toast(makeActive ? 'Account reactivated.' : ('Account deactivated.' + (_freed ? ' ' + _freed + ' Conversion farmer' + (_freed===1?'':'s') + ' unassigned.' : '')));
   } catch(e) {
     toast('Update failed: ' + (e && e.message ? e.message : 'Error'), 'error');
   }

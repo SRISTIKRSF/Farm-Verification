@@ -5112,7 +5112,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v329';
+const APP_VERSION = 'v330';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8329,6 +8329,7 @@ function _processLiveSnapshot(){
     // v126 — we now know what the server holds, so a catch-up push is safe.
     _firstSnapshotMerged = true;
     _runPendingCatchUp();
+    try{ _autoAssignSoon(); }catch(e){}   /* v330 - new applications get their district's coordinator */
 }
 
 /* ---------- SAVE ---------- */
@@ -22396,6 +22397,64 @@ function openAutoAssignFcModal(){
     await saveDB(); closeModal(); render();
     toast(n + ' farmer' + (n===1?'':'s') + ' assigned');
   };
+}
+
+/* v330 - the button above, done by itself. It was pressed on 18 Aug, 20 Aug and 1 Sep
+   and never again, so from September new applications sat with no coordinator (90 by
+   19 Oct) - which read as "new entries are no longer assigned".
+
+   Exactly the button's rule and the button's write: an unassigned, live, non-seeded
+   conversion farmer goes to the ONE coordinator whose account covers the district;
+   two coordinators or none - left alone, as the button leaves them. Only fcId, the
+   stage bump and the audit stamps change.
+
+   Runs only where its answer can be trusted: an admin, online, after the live farmer
+   lists and the live account list have both arrived - never from a saved or offline
+   copy, never during a restore or while this computer still has changes to send.
+   Triggered a few seconds after live data is applied, so an admin opening the app,
+   or a new application arriving while one is open, is enough. */
+let _aaTimer = null, _aaRunning = false;
+function _autoAssignSoon(){
+  clearTimeout(_aaTimer);
+  _aaTimer = setTimeout(() => { _aaTimer = null; _autoAssignNew(); }, 5000);
+}
+async function _autoAssignNew(){
+  if(_aaRunning) return;
+  try{
+    if(!isAdminUser()) return;
+    if(!(FB && FB.ready && FB.online && navigator.onLine)) return;
+    if(typeof _firstSnapshotMerged === 'undefined' || !_firstSnapshotMerged) return;
+    if(!Array.isArray(USERS_LIST) || !USERS_LIST.length) return;          // the live account list, not the saved copy
+    if(typeof _RESTORE_BUSY !== 'undefined' && _RESTORE_BUSY) return;
+    if(typeof _appIsBusy === 'function' && _appIsBusy()){ _autoAssignSoon(); return; }   // try again once things settle
+    const plan = _autoAssignPlan();
+    if(!Object.keys(plan.perFc).length) return;
+    _aaRunning = true;
+    const aB = actor(), nowIso = new Date().toISOString();
+    let n = 0;
+    Object.keys(plan.perFc).forEach(code => {
+      plan.perFc[code].forEach(id => {
+        const f = (DB.convFarmers||[]).find(x => x && x.id === id);
+        if(!f || f.fcId || f._archived) return;
+        markLocalTouch('convFarmers', f.id);
+        f.fcPrevId       = f.fcId || '';
+        f.fcId           = code;
+        f.assignedAt     = todayISO();
+        if(!f.stage || f.stage === 'enrolled') f.stage = 'assigned';
+        f.fcAssignedBy   = (aB.name || 'Admin') + ' (automatic)';
+        f.fcAssignedById = aB.id;
+        f.fcAssignedAt   = nowIso;
+        f.fcAutoAssignedAt = nowIso;
+        n++;
+      });
+    });
+    if(!n) return;
+    logActivity('status', '<b>' + n + '</b> new conversion farmer' + (n===1?'':'s')
+      + ' given to the field coordinator of their district automatically');
+    await saveDB();
+    if(typeof render === 'function') render();
+  }catch(e){ console.warn('[Sristi] automatic coordinator assignment skipped:', e); }
+  finally{ _aaRunning = false; }
 }
 
 /* ============ MODAL: BULK-ASSIGN FC BY TALUKA ============ */

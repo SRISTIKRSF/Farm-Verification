@@ -375,6 +375,12 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   display:flex;align-items:center;gap:6px}
 /* v325 - the same green bracket as the Dashboard, under In progress + Adopted */
 .conv-fan{align-items:flex-start}
+/* v329 - the two steps on the left line up with the score cards' top row instead of
+   centring against the cards + the green bracket below them. The step's number then
+   sits on the same line as the cards' numbers; the arrows point at that line. */
+.conv-flow{align-items:flex-start}
+.conv-flow>.conv-step{margin-top:15px}
+.conv-flow>.conv-arrow,.conv-flow>.conv-branch-arrow{align-self:flex-start;margin-top:46px}
 .fan-group{flex:2 1 270px;min-width:270px;display:flex;flex-direction:column}
 .fan-row{display:flex;gap:10px}
 .conv-band.active{outline:2px solid var(--green);outline-offset:-2px}
@@ -383,6 +389,8 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   .conv-arrow{transform:rotate(90deg);align-self:center}
   .conv-branch-arrow{transform:rotate(90deg);flex:none;padding:8px 0}
   .conv-fan{flex-direction:column;align-items:stretch}
+  .conv-flow>.conv-step{margin-top:0}
+  .conv-flow>.conv-arrow,.conv-flow>.conv-branch-arrow{margin-top:0;align-self:center}
   .fan-group{min-width:0;flex-basis:auto}
   .fan-row{flex-direction:column}
 }
@@ -5104,7 +5112,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v328';
+const APP_VERSION = 'v329';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12499,6 +12507,11 @@ function districtDisplayName(raw){
     const r = roots(entry);
     if(target.en && r.en && (r.en.startsWith(target.en) || target.en.startsWith(r.en))){ _districtNormCache.set(s, entry); return entry; }
   }
+  /* v329 - spellings seen on real records that neither pass catches. 48 archived
+     conversion farmers say "Narmda"; it showed as its own district in the filter.
+     Display and filtering only - the stored value is never changed. */
+  const fix = { narmda:'narmada' }[target.en];
+  if(fix){ const hit = pool.find(e => roots(e).en === fix); if(hit){ _districtNormCache.set(s, hit); return hit; } }
   _districtNormCache.set(s, s);
   return s;
 }
@@ -18194,7 +18207,8 @@ function viewConversion(){
   /* v271 - same as the Haat screen: no funnel over the archive. */
   let h = ARCH_SHOW.conv ? '' : convFunnelHtml(cs,F.status,F.notInterested);
   h+=dateRangePillsHtml(F.dateRange);   /* v243 - "Submitted", as before */
-  const convDistricts=[...new Set(DB.convFarmers.map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
+  /* v329 - only districts of the farmers the list can show: archived ones unless "Show archived" is on */
+  const convDistricts=[...new Set(DB.convFarmers.filter(x=>x && (ARCH_SHOW.conv ? x._archived : !x._archived)).map(x=>districtDisplayName(x.district)).filter(Boolean))].sort();
   h+=`<div class="toolbar">
     <select id="cState"><option value="">All states</option>
       ${Object.keys(DB.states).map(x=>`<option ${F.state===x?'selected':''}>${x}</option>`).join('')}
@@ -26092,9 +26106,15 @@ function openAssignMobilizerModal(){
     return;
   }
   const pool = (DB.convFarmers||[]).filter(f => f && !f._archived && !_isSeededRecord(f));
-  const talukas = {};
-  pool.forEach(f => { const t = (talukaDisplayName(f.taluka,f.district)||f.district||'—').trim(); talukas[t] = (talukas[t]||0)+1; });
-  const tOpts = Object.keys(talukas).sort().map(t => [t, t + ' (' + talukas[t] + ')']);
+  /* v329 - pick a DISTRICT, then a taluka ("All talukas" by default). Before, the one
+     list mixed talukas with districts: a farmer with a taluka on record sat under that
+     taluka, so "Narmada (413)" left out every Narmada farmer filed under Dediapada,
+     Nandod or Tilakwada, and the district total (447) never appeared anywhere. */
+  const dOf = f => districtDisplayName(f.district) || '—';
+  const tOf = f => (f.taluka ? talukaDisplayName(f.taluka, f.district) : '') || '';
+  const dCount = {};
+  pool.forEach(f => { const d = dOf(f); dCount[d] = (dCount[d]||0)+1; });
+  const dOpts = Object.keys(dCount).sort().map(d => [d, d + ' (' + dCount[d] + ')']);
 
   const body = `
     <div class="hint" style="margin-bottom:12px">
@@ -26103,7 +26123,10 @@ function openAssignMobilizerModal(){
     </div>
     <div class="field-row">
       ${fld('Mobilizer', sel('amMob', mobs.map(m => [m.id, m.name + ' (' + mobilizerFarmerCount(m.id) + ' now)'])), true)}
-      ${fld('Taluka', sel('amTaluka', tOpts, tOpts[0] && tOpts[0][0]), true)}
+    </div>
+    <div class="field-row">
+      ${fld('District', sel('amDist', dOpts, dOpts[0] && dOpts[0][0]), true)}
+      ${fld('Taluka', sel('amTaluka', [['', 'All talukas']], ''), false)}
     </div>
     <div id="amPick" style="margin-top:6px"></div>`;
 
@@ -26111,9 +26134,17 @@ function openAssignMobilizerModal(){
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
      <button class="btn btn-primary" id="amGo">Assign selected</button>`);
 
+  function talukaOptions(){
+    const d = $('#amDist').value, inD = pool.filter(f => dOf(f) === d), tc = {};
+    let none = 0;
+    inD.forEach(f => { const t = tOf(f); if(t) tc[t] = (tc[t]||0)+1; else none++; });
+    $('#amTaluka').innerHTML = '<option value="">All talukas (' + inD.length + ')</option>'
+      + Object.keys(tc).sort().map(t => '<option value="' + esc(t) + '">' + esc(t) + ' (' + tc[t] + ')</option>').join('')
+      + (none && Object.keys(tc).length ? '<option value="__none__">No taluka on record (' + none + ')</option>' : '');
+  }
   function refresh(){
-    const t = $('#amTaluka').value, mobId = $('#amMob').value;
-    const list = pool.filter(f => (talukaDisplayName(f.taluka,f.district)||f.district||'—').trim() === t);
+    const d = $('#amDist').value, t = $('#amTaluka').value, mobId = $('#amMob').value;
+    const list = pool.filter(f => dOf(f) === d && (!t || (t === '__none__' ? !tOf(f) : tOf(f) === t)));
     /* v167 — a taluka can hold 375 farmers and the admin needs 8 of them.
        The rows are HIDDEN, never removed: the save reads every [data-amf] box
        in the DOM to work out what to add and what to take away, so filtering
@@ -26136,14 +26167,14 @@ function openAssignMobilizerModal(){
             + '</span></span></label>').join('')
         + '<div id="amNone" style="display:none;padding:10px 2px;font-size:12.5px;color:var(--ink-faint)">Nobody matches that.</div>'
         + '</div>'
-      : '<div class="hint">No conversion farmers in that taluka.</div>';
+      : '<div class="hint">No conversion farmers here.</div>';
 
     const rows = [...document.querySelectorAll('[data-amrow]')];
     const countEl = document.getElementById('amCount');
     const noneEl = document.getElementById('amNone');
     const paint = () => {
       const n = rows.filter(r => r.querySelector('input').checked).length;
-      if(countEl) countEl.innerHTML = '<b>' + n + '</b> selected of ' + rows.length + ' in this taluka';
+      if(countEl) countEl.innerHTML = '<b>' + n + '</b> selected of ' + rows.length + ' in this list';
     };
     const search = document.getElementById('amSearch');
     if(search) search.oninput = () => {
@@ -26159,8 +26190,10 @@ function openAssignMobilizerModal(){
     rows.forEach(r => r.querySelector('input').addEventListener('change', paint));
     paint();
   }
+  $('#amDist').onchange = () => { talukaOptions(); refresh(); };   /* v329 */
   $('#amTaluka').onchange = refresh;
   $('#amMob').onchange = refresh;
+  talukaOptions();
   refresh();
 
   $('#amGo').onclick = async () => {

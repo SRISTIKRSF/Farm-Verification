@@ -5112,7 +5112,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v331';
+const APP_VERSION = 'v332';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -10857,6 +10857,205 @@ async function flushPendingEnrolments(){
 }
 
 const _offlineWritesState = { tok: null };
+/* ============ v332 - A FARMER IS NEVER LEFT WITHOUT A NAME ============
+   26 Oct 2026, Deepak Bhai Baranda (HF_PUB_1779680): his record was missing on the
+   server when his verification was submitted. The submit writes only its own fields
+   (date, stage, visit) with update(), and update() on a missing record CREATES one
+   holding just those - a farmer with no name, phone, village or farmer number. The
+   office saw "—" where his name should be.
+   Two guards. Both only ever FILL BLANKS: a field the server already has is never
+   touched, so neither can overwrite anybody's work.
+     1. _topUpBareFarmer - after a coordinator's verification reaches the server
+        (straight away, or replayed from the offline queue), ask the server which
+        fields that farmer has. No name, no phone and no programme means the record
+        is bare: send the rest of the record this phone holds.
+     2. autoHealBareFarmers - when the office opens the app, a farmer the server
+        holds with no name is filled back in from his own saved application
+        (forms/<id>/enrol for Haat, convForms/<id> for Conversion), with the number
+        the farmerNos register already gave him. */
+async function _serverFarmerKeys(col, id){
+  /* The field NAMES the server holds for one farmer: {} when there is no record at
+     all, null when we could not tell. ?shallow=true returns the names only - a few
+     hundred bytes - and a REST read always asks the server, never this device's
+     cache of what it believes. */
+  try{
+    if(!navigator.onLine) return null;
+    const u = (firebase.auth && firebase.auth().currentUser) || null;
+    if(!u || !FB_CONFIG || !FB_CONFIG.databaseURL) return null;
+    const _tg = await _fbWriteGuard(u.getIdToken(), 8000);
+    if(_tg.timedOut) return null;
+    const base = FB_CONFIG.databaseURL.replace(/\/$/,'') + '/' + FB_NAMESPACE;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    let res;
+    try{
+      res = await fetch(base + '/' + col + '/' + encodeURIComponent(id) + '.json?shallow=true&auth='
+                        + encodeURIComponent(_tg.value), {signal: ctrl.signal, cache: 'no-store'});
+    } finally { clearTimeout(timer); }
+    if(!res || !res.ok) return null;
+    const v = await res.json();
+    return (v && typeof v === 'object') ? v : {};
+  }catch(e){ return null; }
+}
+function _isBareFarmerKeys(keys){
+  return !!keys && typeof keys === 'object' && !keys.name && !keys.phone && !keys.program;
+}
+async function _topUpBareFarmer(col, rec){
+  try{
+    if(!rec || !rec.id || !String(rec.name || '').trim()) return false;   // nothing better to give
+    if(!(FB && FB.ready)) return false;
+    const keys = await _serverFarmerKeys(col, rec.id);
+    if(!_isBareFarmerKeys(keys)) return false;            // a normal record, or we could not tell
+    let full;
+    try{ full = JSON.parse(JSON.stringify(sanitizeForFB(_stripEphemeral(rec)) || {})); }catch(e){ return false; }
+    const patch = {};
+    Object.keys(full).forEach(k => {
+      if(k === '_u' || k === 'verificationLock') return;
+      if(Object.prototype.hasOwnProperty.call(keys, k)) return;    // FILL BLANKS ONLY
+      patch[k] = full[k];
+    });
+    if(!patch.name) return false;
+    const g = await _fbWriteGuard(fbRef(col + '/' + rec.id).update(patch), 15000);
+    if(!g || g.timedOut) return false;
+    console.warn('[Sristi] v332 - ' + col + '/' + rec.id + ' had no name on the server; filled '
+                 + Object.keys(patch).length + ' blank fields from this device');
+    try{ logActivity('alert', '⚠ The record of <b>' + esc(rec.name) + '</b> (' + esc(rec.id)
+           + ') had lost its name and details on the server — filled back in from this phone. Nothing was overwritten.'); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+/* v332 - the record fields a Haat application carries, rebuilt from the saved form
+   exactly as the enrolment handler builds them. Null when the form has no name. */
+function _haatFieldsFromEnrol(e){
+  if(!e || typeof e !== 'object') return null;
+  const claims = Array.isArray(e.claims) ? e.claims : [];
+  const ans = k => { const v = e[k]; return (v !== undefined && v !== null && v !== '') ? v : _claimAnswer(claims, k); };
+  const name = String(ans('farmer_name') || '').trim();
+  if(!name) return null;
+  const district = String(e.district || '').trim();
+  const out = {
+    program: 'haat', name: name,
+    phone: String(ans('mobile') || '').trim(),
+    village: String(e.village || ''),
+    taluka: e.taluka ? (talukaDisplayName(e.taluka, district) || String(e.taluka)) : '',
+    district: district, state: guessState(district),
+    pincode: String(e.pincode || ''),
+    landAcres: parseFloat(ans('total_bigha')) || 0,
+    vertical: 'Livelihood',
+    yearsOrganic: _parseYearsOrganic(ans('years_organic')),
+    certification: 'Registration pending'
+  };
+  if(e._submittedAt){
+    out.enrollmentFormSubmittedAt = e._submittedAt;
+    out.enrolledMonth = String(e._submittedAt).slice(0, 7);
+  }
+  try{
+    const major = ans('major_crops_table');
+    if(Array.isArray(major) && major.length){
+      const c = majorCropsToNameRows(major).map(r => r.name).filter(Boolean);
+      if(c.length) out.crops = c;
+    }
+  }catch(e2){}
+  return out;
+}
+let _bareHealBusy = false;
+async function autoHealBareFarmers(){
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) return 0;
+  if(!isAdminUser() || _bareHealBusy) return 0;
+  _bareHealBusy = true;
+  try{
+    if(!(await fnoWaitFirstSnapshot())) return 0;
+    if(!(FB && FB.ready && navigator.onLine)) return 0;
+    const srvOf = col => (typeof _liveSnapshot !== 'undefined' && _liveSnapshot && _liveSnapshot[col]) || {};
+    const cands = [];
+    ['haatFarmers', 'convFarmers'].forEach(col => {
+      const srv = srvOf(col);
+      (DB[col] || []).forEach(f => {
+        if(!f || !f.id || f._archived || f._mergedInto || f._seeded) return;
+        if(typeof _isSeededRecord === 'function' && _isSeededRecord(f)) return;
+        if(String(f.name || '').trim()) return;
+        const s = srv[f.id];
+        if(!s || s.name || s.phone || s.program) return;   // only a record the SERVER holds bare
+        cands.push({col: col, id: f.id});
+      });
+    });
+    if(!cands.length) return 0;                              // the normal case: silent
+    console.warn('[Sristi] v332 - farmer record(s) with no name on the server:', cands.map(c => c.id));
+    /* The farmer-number register, read once (about 150 KB, and only when something is
+       broken). A healed farmer keeps the number he was given; if the register cannot
+       be read, nobody is healed this time - fnoIssuePending would otherwise hand him a
+       second number once his district is back. */
+    let reg = null;
+    try{
+      const rg = await _fbWriteGuard(fbRef('farmerNos').get(), 20000);
+      if(rg && !rg.timedOut && rg.value) reg = rg.value.val() || {};
+    }catch(e){}
+    if(!reg) return 0;
+    const healed = [];
+    for(const it of cands.slice(0, 20)){
+      let fill = null;
+      try{
+        if(it.col === 'haatFarmers'){
+          await loadForms(it.id);
+          fill = _haatFieldsFromEnrol((FORMS_CACHE[it.id] || {}).enrol);
+          if(fill && /^HF_PUB_/.test(it.id) && fill.enrollmentFormSubmittedAt){
+            fill.source = 'self-enrolled-public';
+            fill.submittedAt = fill.enrollmentFormSubmittedAt;
+            fill.publicSubmittedAt = fill.enrollmentFormSubmittedAt;
+          }
+        } else {
+          const cg = await _fbWriteGuard(fbRef('convForms/' + it.id).get(), 15000);
+          const c = (cg && !cg.timedOut && cg.value && cg.value.exists()) ? cg.value.val() : null;
+          if(c && String(c.name || '').trim()){
+            fill = Object.assign({}, c);
+            delete fill._backupSavedAt; delete fill._u; delete fill.id;
+          }
+        }
+      }catch(e){ fill = null; }
+      if(!fill) continue;                                    // nothing saved to rebuild from
+      const regKey = Object.keys(reg).find(k => reg[k] && reg[k].id === it.id && reg[k].col === it.col);
+      const rp = regKey ? /^([A-Z]{2})-([A-Z]{2})-(\d{5})$/.exec(regKey) : null;
+      if(rp){
+        const yy = fnoProgrammeYear(fnoAppliedAt(fill) || Date.now());
+        if(yy) fill.farmerNo = rp[1] + '-' + rp[2] + '-' + yy + '-' + rp[3];
+      }
+      /* re-resolve after the awaits: the live listener replaces records meanwhile */
+      const f = (DB[it.col] || []).find(x => x && x.id === it.id);
+      if(!f || String(f.name || '').trim()) continue;
+      const srvNow = srvOf(it.col)[it.id] || {};
+      if(srvNow.name || srvNow.phone || srvNow.program) continue;   // filled elsewhere meanwhile
+      const patch = {};
+      Object.keys(fill).forEach(k => {
+        if(fill[k] === undefined || fill[k] === null) return;
+        if(Object.prototype.hasOwnProperty.call(srvNow, k)) return;  // FILL BLANKS ONLY
+        patch[k] = fill[k];
+      });
+      if(!patch.name) continue;
+      patch.detailsRestoredAt = new Date().toISOString();
+      patch.detailsRestoredNote = 'Name and details had gone missing from this record; filled back in '
+        + 'automatically from the farmer\'s saved application' + (patch.farmerNo ? ' and the farmer-number register' : '') + ' (v332).';
+      markLocalTouch(it.col, it.id);
+      let ok = false;
+      try{
+        const g = await _fbWriteGuard(fbRef(it.col + '/' + it.id).update(sanitizeForFB(patch)), 15000);
+        ok = !!(g && !g.timedOut);
+      }catch(e){ console.error('[Sristi] v332 - could not fill ' + it.id, e); }
+      if(!ok) continue;
+      Object.keys(patch).forEach(k => { if(f[k] === undefined || f[k] === null || f[k] === '') f[k] = patch[k]; });
+      healed.push(patch.name + ' (' + it.id + ')');
+    }
+    if(!healed.length) return 0;
+    logActivity('alert', '<b>' + healed.length + '</b> farmer record' + (healed.length === 1 ? '' : 's')
+      + ' had lost the name and details — filled back in automatically from the saved application: <b>'
+      + esc(healed.slice(0, 5).join(', ')) + (healed.length > 5 ? ' …' : '') + '</b>. Nothing was overwritten.');
+    await saveDB(true);
+    if(typeof render === 'function') render();
+    toast(healed.length + ' farmer record' + (healed.length === 1 ? '' : 's') + ' with a missing name filled back in');
+    return healed.length;
+  }catch(e){ console.warn('[Sristi] v332 - autoHealBareFarmers:', e); return 0; }
+  finally{ _bareHealBusy = false; }
+}
+
 async function flushOfflineWrites(){
   if(!FB || !FB.ready || !navigator.onLine) return;
   const _tok = _queueTake(_offlineWritesState); if(!_tok) return;
@@ -10973,6 +11172,11 @@ async function flushOfflineWrites(){
           if(_g2.timedOut){ console.warn('[Sristi] offline record write timed out (kept for retry):', it.key); continue; }
         }
         await idbDel('offlineWrites', it.key);
+        /* v332 - a replayed visit or verification writes only its own fields; if the
+           farmer's record was missing on the server those fields are now ALL it holds.
+           Not awaited: it only fills blanks, and the queue must not wait on it. */
+        if(Array.isArray(it.fields) && it.fields.length && it.rec && typeof it.rec === 'object')
+          _topUpBareFarmer(it.col, Object.assign({}, it.rec, {id: it.id})).catch(() => {});
         if(it._fnoCand) _fnoReplayed.push([it.col, it.id, it.rec]);
       }catch(e){ console.warn('[Sristi] offline write flush failed (will retry):', e); }
     }
@@ -12828,7 +13032,7 @@ async function loadVerifIndex(){
     const snap = await fbRef('verifIndex').get();
     DB.verifIndex = (snap.exists() ? snap.val() : {}) || {};
     /* v200 - and act on it. See autoHealVerifications. */
-    if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); fnoIssuePending().catch(() => {});   /* v316 - catch-up numbers, 25 per opening */ }   /* v308 */
+    if(isAdminUser()){ autoHealVerifications(); _healStuckPlans(); autoHealBareFarmers().catch(() => {});   /* v332 */ fnoIssuePending().catch(() => {});   /* v316 - catch-up numbers, 25 per opening */ }   /* v308 */
     fnoHandoverReplay().catch(() => {});   /* v317d - list writes cut off last time */
   }catch(e){ /* diagnostic only */ }
 }
@@ -28879,6 +29083,7 @@ window.addEventListener('message',async ev=>{
             visits: sanitizeForFB(f.visits),
             verificationLock: null
           });
+          _topUpBareFarmer('haatFarmers', f).catch(() => {});   /* v332 */
         }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
       }
       delete f.verificationLock;
@@ -29971,6 +30176,8 @@ window.addEventListener('message',async ev=>{
               verificationLock: null
             }), _fbWriteWaitMs());
             _rowConfirmed = !(_rowG && _rowG.timedOut);
+            /* v332 - see _topUpBareFarmer: Deepak Bhai Baranda lost his name exactly here */
+            if(_rowConfirmed) _topUpBareFarmer('haatFarmers', f).catch(() => {});
           }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
         }
         /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.

@@ -5112,7 +5112,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v332';
+const APP_VERSION = 'v333';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27291,7 +27291,21 @@ function download(name,content,mime){
 
 /* ============ ROUTER ============ */
 /* v312 - a draw-scoped memo: cleared at the start and end of every draw */
+/* v333 - Guru: "the names should sort by latest at the top. I dont need
+   alphabetically. Across the funnel." Only the sidebar link set newest-first;
+   every other way into the list - a funnel stage on the dashboard, a haat or
+   coordinator row, Back from a farmer - kept whatever order the previous screen
+   used, and most screens sort by name. So the farmer lists now open newest
+   applicant first however they are reached. A column the user clicks still
+   holds while they stay on the list, including Back from a farmer's page. */
+let _sortOwner = ROUTE;
+function _listSortOnArrive(){
+  if(ROUTE === 'haatRecord') return;   // a farmer opened from the list: the list keeps its order
+  if((ROUTE === 'haat' || ROUTE === 'conversion') && _sortOwner !== ROUTE) SORT = {col:'_sortTs', dir:-1};
+  _sortOwner = ROUTE;
+}
 function render(){
+  if(_inRender === 0) _listSortOnArrive();   /* v333 */
   _inRender++; if(_inRender === 1) _rmHaatStats = null;
   try{ return _renderView.apply(this, arguments); }
   finally{ _inRender--; if(!_inRender) _rmHaatStats = null; }

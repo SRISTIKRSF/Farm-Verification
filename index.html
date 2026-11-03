@@ -62,6 +62,7 @@
   --blue:#2563eb; --blue-bg:#eff6ff; --blue-line:#bfdbfe;
   /* chart bar colors — clear blue + green, strong on white */
   --c-onboard:#22c55e; --c-visit:#3b82f6;
+  --c-dash-haat:#818cf8; --c-dash-conv:#f472b6; /* v334 - the two dashboard charts only */
   --sh-1:0 1px 2px rgba(15,23,42,.06);
   --sh-2:0 1px 3px rgba(15,23,42,.08),0 4px 12px -4px rgba(15,23,42,.10);
   --sh-3:0 8px 24px -6px rgba(15,23,42,.16),0 24px 60px -20px rgba(15,23,42,.28);
@@ -5112,7 +5113,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v333';
+const APP_VERSION = 'v334';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -14991,29 +14992,93 @@ function cumulativeData(){
 }
 // Each FY's OWN total (not a slice of the all-time running total) — answers
 // "how many this financial year", for the Year-wise drill-down level.
+/* v334 - both helpers work on any series: every "<name>New" field in the rows is
+   summed (year-wise) or run up (month-wise) into "<name>New" + "<name>Total".
+   cumulativeData() rows (onboarded / visits) come out exactly as before; the
+   conversion chart's rows (started) go through the same code. */
+function _cumSeriesKeys(monthlyRows){
+  const ks = Object.keys((monthlyRows && monthlyRows[0]) || {}).filter(k => /New$/.test(k)).map(k => k.slice(0, -3));
+  return ks.length ? ks : ['onboarded', 'visits'];
+}
 function fyWiseData(monthlyRows){
+  const keys=_cumSeriesKeys(monthlyRows);
   const byFY={};
   monthlyRows.forEach(r=>{
     const fy=fyStartYearOfYM(r.m);
-    if(!byFY[fy]) byFY[fy]={fy, onboardedNew:0, visitsNew:0};
-    byFY[fy].onboardedNew+=r.onboardedNew;
-    byFY[fy].visitsNew+=r.visitsNew;
+    if(!byFY[fy]){ byFY[fy]={fy}; keys.forEach(k=>{ byFY[fy][k+'New']=0; }); }
+    keys.forEach(k=>{ byFY[fy][k+'New']+=(r[k+'New']||0); });
   });
-  return Object.keys(byFY).map(Number).sort((a,b)=>a-b).map(fy=>({
-    fy, onboardedNew:byFY[fy].onboardedNew, onboardedTotal:byFY[fy].onboardedNew,
-    visitsNew:byFY[fy].visitsNew, visitsTotal:byFY[fy].visitsNew,
-  }));
+  return Object.keys(byFY).map(Number).sort((a,b)=>a-b).map(fy=>{
+    const out={fy};
+    keys.forEach(k=>{ out[k+'New']=byFY[fy][k+'New']; out[k+'Total']=byFY[fy][k+'New']; });
+    return out;
+  });
 }
 // One FY's own running total, RESET to 0 at April and ending at that FY's
 // total in March — shows the year's own build-up, for the Month-wise level.
 function fyMonthWiseData(monthlyRows, fyStartYear){
+  const keys=_cumSeriesKeys(monthlyRows);
   const byM={}; monthlyRows.forEach(r=>{ byM[r.m]=r; });
-  let oRun=0,vRun=0;
+  const run={}; keys.forEach(k=>{ run[k]=0; });
   return monthsInFY(fyStartYear).map(m=>{
-    const r=byM[m];
-    const oNew=r?r.onboardedNew:0, vNew=r?r.visitsNew:0;
-    oRun+=oNew; vRun+=vNew;
-    return {m, onboardedNew:oNew, onboardedTotal:oRun, visitsNew:vNew, visitsTotal:vRun};
+    const r=byM[m], out={m};
+    keys.forEach(k=>{ const n=r?(r[k+'New']||0):0; run[k]+=n; out[k+'New']=n; out[k+'Total']=run[k]; });
+    return out;
+  });
+}
+/* v334 - CONVERSION: the month a farmer started farming without chemicals.
+   Only asked of farmers who are In progress or Adopted today (the dashboard's
+   green "started natural farming" number), so the chart ends on that number.
+   1. the first visit, dated today or earlier, whose score put the farmer In
+      progress or Adopted with no chemical use - the real month it happened;
+   2. else the earliest saved score history entry that was In progress/Adopted;
+   3. else when the current score was saved;
+   4. else their latest visit, else this month - so nobody drops out of the total.
+   A farmer who later fell back to Not adopting is not in today's number, so is
+   not in the chart either. */
+function convStartedYM(f){
+  const _t=todayISO();
+  const vs=(Array.isArray(f.visits)?f.visits:[]).filter(v=>v && v.date && String(v.date).slice(0,10)<=_t)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const hit=vs.find(v=>(v.status==='inProgress'||v.status==='adopted') && v.chemFree!==false);
+  if(hit) return String(hit.date).slice(0,7);
+  const h=(Array.isArray(f.conversionScoringHistory)?f.conversionScoringHistory:[])
+    .filter(x=>x && x.at && (x.status==='inProgress'||x.status==='adopted'))
+    .sort((a,b)=>String(a.at).localeCompare(String(b.at)))[0];
+  if(h) return String(h.at).slice(0,7);
+  if(f.conversionScoring && f.conversionScoring.lastUpdated) return String(f.conversionScoring.lastUpdated).slice(0,7);
+  if(vs.length) return String(vs[vs.length-1].date).slice(0,7);
+  return _t.slice(0,7);
+}
+/* v334 - put empty months in front of a running-total series so it starts at
+   fromYM (every "<name>New"/"<name>Total" field is 0 there). Rows already
+   starting at or before fromYM come back unchanged. */
+function _padCumFront(rows, fromYM){
+  if(!rows || !rows.length || !fromYM || rows[0].m <= fromYM) return rows || [];
+  const keys = Object.keys(rows[0]).filter(k => k !== 'm');
+  const lead = _ymRangeInclusive(fromYM, rows[0].m).slice(0, -1).map(m => {
+    const r = {m}; keys.forEach(k => { r[k] = 0; }); return r;
+  });
+  return lead.concat(rows);
+}
+/* Running total, month by month, of conversion farmers who started natural
+   farming. Same farmers convStats() counts as yellow + green. */
+function convStartedMonthly(){
+  const farmers=_excludeSeeds(filterByCurrentFc(DB.convFarmers||[])).filter(x=>x && !x._archived);
+  const nw={}; let minYM=null;
+  farmers.forEach(f=>{
+    const c=convCategory(f);
+    if(c!=='yellow' && c!=='green') return;
+    const ym=convStartedYM(f);
+    nw[ym]=(nw[ym]||0)+1;
+    if(!minYM||ym<minYM) minYM=ym;
+  });
+  const todayYM=todayISO().slice(0,7);
+  if(!minYM||minYM>todayYM) minYM=todayYM;
+  let run=0;
+  return _ymRangeInclusive(minYM,todayYM).map(m=>{
+    const n=nw[m]||0; run+=n;
+    return {m, startedNew:n, startedTotal:run};
   });
 }
 /* ============ ICONS ============ */
@@ -15086,10 +15151,10 @@ function cumulativeChart(rows,color){
    stateKey: 'onboard' | 'visits' — keyed into window.DASH_CUM so each
    chart's drill state is independent. pickTotal/pickNew read the right
    field off a row regardless of whether it's a monthly or FY-shaped row. */
-function _cumChartCard(stateKey, title, color, monthlyRows, pickTotal, pickNew){
+function _cumChartCard(stateKey, title, color, monthlyRows, pickTotal, pickNew, opts){
   if(!window.DASH_CUM) window.DASH_CUM={};
   const st = window.DASH_CUM[stateKey] = window.DASH_CUM[stateKey] || {mode:'cumulative', fy:null};
-  let bars, subtitle, crumbLabel, crumbTo, total;
+  let bars, subtitle, crumbLabel, crumbTo, total, monthNote='';
   if(st.mode==='year'){
     const rows=fyWiseData(monthlyRows);
     subtitle='Totals by financial year (Apr–Mar) — click a year to see months';
@@ -15107,12 +15172,16 @@ function _cumChartCard(stateKey, title, color, monthlyRows, pickTotal, pickNew){
     bars=cumulativeChart(monthlyRows.map(r=>({label:monthLabel(r.m),total:pickTotal(r),delta:pickNew(r)})),color);
     crumbLabel='View by year →'; crumbTo=stateKey+':year';
     total=monthlyRows.length?pickTotal(monthlyRows[monthlyRows.length-1]):0;
+    if(opts&&opts.thisMonth&&monthlyRows.length){
+      const n=pickNew(monthlyRows[monthlyRows.length-1])||0;
+      monthNote=`<span style="color:${color};font-weight:700;margin-right:10px">+${n} this month</span>`;
+    }
   }
   return `<div class="card chart-card" data-chart="${stateKey}">
     <div class="chart-head">
       <div><div class="ct">${esc(title)}</div>
       <div class="cs">${subtitle} &nbsp;·&nbsp; <a data-cumview="${crumbTo}" style="cursor:pointer;color:var(--accent);font-weight:600;text-decoration:none">${crumbLabel}</a></div></div>
-      <div class="chart-total"><b>${total}</b> total</div>
+      <div class="chart-total">${monthNote}<b>${total}</b> total</div>
     </div>
     ${bars}
   </div>`;
@@ -16729,9 +16798,23 @@ function viewDashboard(){
 
   // ===== two cumulative charts side by side — Cumulative / Year-wise (FY, Apr–Mar) / Month-wise =====
   const cum=cumulativeData();
+  /* v334 - the right-hand chart is the conversion programme's headline: farmers
+     who have started farming without chemicals (In progress + Adopted), month by
+     month. It replaced "Field Visits Done"; the coordinator table below still
+     shows field visits. A viewer without the conversion programme keeps the
+     visits chart, so the slot is never empty. */
+  /* v334 - both charts start in the same month, so they have the same number of
+     bars, the same bar width and the months line up side by side (the
+     conversion series began months later and its few bars spread wide). */
+  const _started = _shConv ? convStartedMonthly() : [];
+  const _from = _started.length && _started[0].m < cum[0].m ? _started[0].m : cum[0].m;
+  const _cumL = _padCumFront(cum, _from), _startedR = _padCumFront(_started, _from);
+  const _rightChart = _shConv
+    ? _cumChartCard('started','Started Natural Farming — Conversion','var(--c-dash-conv)',_startedR,r=>r.startedTotal,r=>r.startedNew,{thisMonth:true})
+    : _cumChartCard('visits','Field Visits Done','var(--c-visit)',_cumL,r=>r.visitsTotal,r=>r.visitsNew);
   h+=`<div class="panel-grid two-eq">
-    ${_cumChartCard('onboard','Farmers Onboarded','var(--c-onboard)',cum,r=>r.onboardedTotal,r=>r.onboardedNew)}
-    ${_cumChartCard('visits','Field Visits Done','var(--c-visit)',cum,r=>r.visitsTotal,r=>r.visitsNew)}
+    ${_cumChartCard('onboard','Farmers Onboarded','var(--c-dash-haat)',_cumL,r=>r.onboardedTotal,r=>r.onboardedNew)}
+    ${_rightChart}
   </div>`;
 
   // v139 — "Farmers Joined — by year" removed. Every farmer on the books
@@ -16754,8 +16837,10 @@ function viewDashboard(){
   const recent3=recentMonths(3);  // v138 — from the calendar, not a stored list
   // Verifications are done by the Field Coordinators (Ayush / Harsh / Maheshbhai
   // and any others added in Settings) — not by every field coordinator in DB.fcs.
-  /* v227 - built from countedHaatVisits(), the same list the chart above uses,
-     so this table's Total row equals "Field Visits Done" by construction. */
+  /* v227 - built from countedHaatVisits(), the same list cumulativeData() uses,
+     so this table's Total row equals the field-visit count by construction
+     (v334: the "Field Visits Done" chart now shows only for viewers without
+     the conversion programme). */
   const _counted = countedHaatVisits();
   const _byFc = {};
   _counted.forEach(x => { (_byFc[x.fcId] = _byFc[x.fcId] || []).push(x); });

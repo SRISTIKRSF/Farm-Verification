@@ -38,3 +38,7 @@ docs/Khedut-Chakasani-Guide.pdf
 # rebuilt from the live file by _stg_build_site.py, so there is nothing here
 # worth versioning and it would double the repo size.
 staging-site/
+
+# Security plan Phase 4/5 emulator tests and the emulator build of the app. They spell
+# out the database rules model in full. This repo is public. Never push.
+_tests/

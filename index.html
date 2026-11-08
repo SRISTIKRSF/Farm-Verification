@@ -4865,7 +4865,9 @@ async function _fnoIssueOnce(col, f, opts){
     if(!ex || ex.timedOut) return null;
     const v = ex.value ? ex.value.val() : null;
     if(v && fnoParse(v)){ f.farmerNo = v; return v; }
-  }catch(e){ return null; }
+  }catch(e){
+    if(!(opts.freshIfRefused && _isPermDenied(e))) return null;   /* v335 - see fnoAfterReplay */
+  }
   for(let tries = 0; tries < 6; tries++){
     let g;
     try{ g = await _fbWriteGuard(fbRef('counters/farmerNo/' + FNO_STATE + '-' + dc).transaction(c => (typeof c === 'number' ? c : 0) + 1), ms); }
@@ -4956,7 +4958,7 @@ async function fnoAfterReplay(rows){
     if(col !== 'haatFarmers' && col !== 'convFarmers') continue;
     if(rec && rec.farmerNo) continue;
     if(PUBLIC_MODE){
-      const no = await fnoIssue(col, Object.assign({}, rec || {}, {id: id}));
+      const no = await fnoIssue(col, Object.assign({}, rec || {}, {id: id}), {freshIfRefused: true});   /* v335 */
       if(no){ try{ await _fbWriteGuard(fbRef(col + '/' + id + '/farmerNo').set(no), 8000); }catch(e){} }   /* the record exists now: no ghost */
     } else if(await fnoIssueAndApply(col, id)) changed++;
   }
@@ -5113,7 +5115,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v334';
+const APP_VERSION = 'v335';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5542,7 +5544,11 @@ async function loadDB(){
       try{ _basePreloadStart(); }catch(e){}
       // Anonymous auth gates RTDB. SDK caches token in localStorage so
       // offline visits after first load continue to work.
-      try{ await firebase.auth().signInAnonymously(); }
+      /* v335 - but not on top of a staff sign-in this browser already holds:
+         signInAnonymously() REPLACES the current user. authBoot() waits for the
+         saved sign-in to come back (it does, offline too) and only signs in
+         anonymously when there is none. */
+      try{ await authBoot(); }
       catch(e){ console.warn('[Auth] Anonymous sign-in failed (offline?):', e); }
       FB.db=firebase.database();
       FB.ready=true;
@@ -6727,6 +6733,7 @@ function _stableJson(v){
 function _metaNoteFromServer(meta){
   if(!meta || typeof meta !== 'object') return;
   try{ _fnoPaused = !!meta.farmerNoPaused; }catch(e){}   /* v316b */
+  try{ _authNoteCutover(!!meta.authCutover); }catch(e){}   /* v335 */
   META_LISTS.forEach(function(k){
     if(meta[k] === undefined) return;
     const j = _stableJson(meta[k]);
@@ -8589,7 +8596,17 @@ let _saveRetryCount=0;
    Queue it, then try to send it, and only drop the queued copy once the server
    has confirmed. Returns whether it was confirmed, so the thank-you screen can
    say something true. See the note on this version. */
+/* v335 (Phase 5) - the submissions this page is sending right now. The queue pump would
+   otherwise re-send the same record in the same second (the Conversion form's answers
+   backup kicks the pump), and under create-only rules the second copy is refused. */
+const _pubInFlight = new Set();
 async function publicPersistRecord(col, rec, actEntry){
+  const k = col + '/' + rec.id;
+  _pubInFlight.add(k);
+  try{ return await _publicPersistRecord1(col, rec, actEntry); }
+  finally{ setTimeout(function(){ _pubInFlight.delete(k); }, 1000); }
+}
+async function _publicPersistRecord1(col, rec, actEntry){
   const key = col + '/' + rec.id;
   const row = { key: key, col: col, id: rec.id,
                 rec: sanitizeForFB(_stripEphemeral(rec)),
@@ -9812,6 +9829,7 @@ async function _uploadQueuedPhoto(it){
      the photo, and for any copy applyPhotoUrl could not reach. */
   if(!_photoSession[it.photoId]) _photoSessionPut(it.photoId, it.dataUrl);
   let applied = applyPhotoUrl(it, repl);
+  if(applied && typeof applied.then === 'function') applied = await applied;   /* v335 - the public form's queued address */
   /* ⛔ v244 - THE SESSION THAT QUEUES A PHOTO IS RARELY THE SESSION THAT SENDS
      IT. A verification's photos live inside the FORM, not on the farmer record
      (the record keeps only a count), and FORMS_CACHE starts EMPTY at every
@@ -9822,7 +9840,7 @@ async function _uploadQueuedPhoto(it){
      Load the answer sheet and try again. loadForms reads this phone's own copy
      first, so in the ordinary case it costs nothing. */
   if(!applied && it.farmerId && !(FORMS_CACHE[it.farmerId] && (FORMS_CACHE[it.farmerId].enrol || FORMS_CACHE[it.farmerId].verif))){
-    try{ await loadForms(it.farmerId); applied = applyPhotoUrl(it, repl); }
+    try{ await loadForms(it.farmerId); applied = applyPhotoUrl(it, repl); if(applied && typeof applied.then === 'function') applied = await applied; }
     catch(e){ console.warn('[Sristi] could not load the form to attach a photo:', e); }
   }
   if(applied){
@@ -10037,6 +10055,19 @@ function replacePhotoById(obj, photoId, repl){
   return hit;
 }
 function applyPhotoUrl(it, repl){
+  /* v335 (Phase 5) - on the public form the answer sheet is the farmer's to CREATE, not to
+     rewrite. Each uploaded photo's address goes to its own create-only spot instead,
+     formPhotos/{farmer}/{photo}, through the same durable queue as the submission, and the
+     office's copy of the app puts it into the sheet (_mergeFormPhotos). Resolves to true once
+     the address is safe in this phone's queue - only then may the caller let the photo go. */
+  if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE && !SESSION && it && it.farmerId && it.photoId && it.program !== 'conv'){
+    try{ const fc0 = FORMS_CACHE[it.farmerId]; if(fc0) ['enrol', 'verif'].forEach(k => { if(fc0[k]) replacePhotoById(fc0[k], it.photoId, repl); }); }catch(e){}
+    const _col = 'formPhotos/' + it.farmerId, _now = Date.now();
+    const _row = { key: _col + '/' + it.photoId, col: _col, id: it.photoId,
+                   rec: sanitizeForFB(Object.assign({}, repl, {at: _now})), at: _now, atIso: new Date(_now).toISOString() };
+    return idbPut('offlineWrites', _row).then(function(){ setTimeout(function(){ try{ flushOfflineWrites(); }catch(e){} }, 0); return true; },
+      function(e){ console.warn('[Sristi] could not queue the photo address:', e); return false; });
+  }
   let recTouched = false, formTouched = false;
   const col = it.program === 'conv' ? 'convFarmers' : 'haatFarmers';
   const rec = (DB[col]||[]).find(x => x.id === it.farmerId);
@@ -10215,6 +10246,39 @@ function _formsCacheIsFresh(fc, rec){
   }
   return true;
 }
+/* v335 (Phase 5) - photo addresses the public form filed separately (see applyPhotoUrl).
+   Only asked for when the sheet still has a photo with no address, so it costs nothing for
+   every other farmer. A coordinator's or admin's copy then saves the completed sheet; a
+   viewer's copy just shows it. The entries stay where they are (a few hundred bytes each) -
+   nothing here deletes anything. */
+function _formHasOpenPhotos(o){
+  let open = false; const seen = new WeakSet();
+  (function walk(x){
+    if(open || !x || typeof x !== 'object' || seen.has(x)) return;
+    seen.add(x);
+    if(x.photoId && !x.url){ open = true; return; }
+    (Array.isArray(x) ? x : Object.values(x)).forEach(walk);
+  })(o);
+  return open;
+}
+async function _mergeFormPhotos(farmerId, fc){
+  try{
+    if(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE && !SESSION) return false;
+    if(!fc || !fc.enrol || !_formHasOpenPhotos(fc.enrol)) return false;
+    if(!(FB && FB.ready && navigator.onLine)) return false;
+    const g = await _fbWriteGuard(fbRef('formPhotos/' + farmerId).get(), 8000);
+    if(!g || g.timedOut || !g.value || !g.value.exists()) return false;
+    const all = g.value.val() || {};
+    let hit = false;
+    Object.keys(all).forEach(function(pid){
+      const r = all[pid];
+      if(!r || typeof r.url !== 'string' || r.url.indexOf('https://') !== 0) return;
+      if(replacePhotoById(fc.enrol, pid, {photoId: pid, url: r.url, w: r.w || 0, h: r.h || 0, bytes: r.bytes || 0, name: r.name || ''})) hit = true;
+    });
+    if(hit && typeof canEditData === 'function' && canEditData()) persistForms(farmerId, ['enrol']);
+    return hit;
+  }catch(e){ console.warn('[Sristi] could not fill in the public form\'s photos:', e); return false; }
+}
 async function loadForms(farmerId){
   if(!farmerId) return null;
   const rec = (DB.haatFarmers||[]).find(x => x.id === farmerId);
@@ -10249,6 +10313,7 @@ async function loadForms(farmerId){
   if(_formsCacheIsFresh(fc, rec) && !_missingExtras){
     fc._complete = true;
     fc._attempted = true;
+    await _mergeFormPhotos(farmerId, fc);   /* v335 */
     _attachFormsToRecord(farmerId);
     return fc;
   }
@@ -10327,6 +10392,7 @@ async function loadForms(farmerId){
     }catch(e){ console.warn('[Sristi] forms load failed:', e); }
   }
   fc._attempted = true;
+  await _mergeFormPhotos(farmerId, fc);   /* v335 */
   _attachFormsToRecord(farmerId);
   return fc;
 }
@@ -10738,7 +10804,15 @@ async function flushFormWrites(){
            is left alone; the next pump re-reads it. */
         const cur = await idbGet('formWrites', it.key).catch(()=>null);
         if(cur && cur.at === it.at){ await idbDel('formWrites', it.key); }
-      }catch(e){ console.warn('[Sristi] forms write failed (will retry):', e); }
+      }catch(e){
+        /* v335 (Phase 5) - a public re-send of an answer sheet that already arrived */
+        if(await _publicRefusalMeansDelivered(e, 'formWrites', it.key).catch(() => false)){
+          console.warn('[Sristi] answer sheet already on the server (re-send refused) - dropping the queued copy:', it.key);
+          try{ const cur = await idbGet('formWrites', it.key); if(cur && cur.at === it.at) await idbDel('formWrites', it.key); }catch(x){}
+          continue;
+        }
+        console.warn('[Sristi] forms write failed (will retry):', e);
+      }
     }
   } finally { _queueDrop(_formFlushState, _tok); updateUnsentCounts(); }
 }
@@ -10790,6 +10864,14 @@ async function migrateLegacyData(){
           FORMS_CACHE[f.id] = FORMS_CACHE[f.id] || {};
           if(f.enrollmentFormFull   && !FORMS_CACHE[f.id].enrol) FORMS_CACHE[f.id].enrol = f.enrollmentFormFull;
           if(f.verificationFormFull && !FORMS_CACHE[f.id].verif) FORMS_CACHE[f.id].verif = f.verificationFormFull;
+          /* v335 (Phase 5) - a demo record baked into this file: its answers are shown from
+             here and never sent. Sending them rewrote the demo sheet on the server from every
+             page that opened, signed in or not; under the tightened rules a visitor's copy is
+             refused and that phone would retry it for ever. */
+          if(/^(HF-DEMO-|HF_VANSHITA_|HF_MESSI_|CF_RONALDO_)/.test(String(f.id || ''))){
+            idbPut('forms', {farmerId:f.id, enrol:FORMS_CACHE[f.id].enrol||null, verif:FORMS_CACHE[f.id].verif||null}).catch(()=>{});
+            continue;
+          }
           if(cloudinaryConfigured()){
             if(FORMS_CACHE[f.id].enrol) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].enrol, {program:'haat', farmerId:f.id});
             if(FORMS_CACHE[f.id].verif) queuedPhotos += await extractPhotos(FORMS_CACHE[f.id].verif, {program:'haat', farmerId:f.id});
@@ -11064,6 +11146,7 @@ async function flushOfflineWrites(){
   try{
     const items = await idbAll('offlineWrites').catch(()=>[]);
     for(const it of items){
+      if(_pubInFlight.has(it.key)) continue;   /* v335 - still being sent by publicPersistRecord */
       try{
         /* v242 - the shield has to outlast the write it is shielding. It was
            10 seconds while the guarded write below may take 45, so between the
@@ -11160,7 +11243,7 @@ async function flushOfflineWrites(){
           /* Queued before v218, or by an enrolment. Send the record, but as an
              update, never a set: fields this device never knew about survive. */
           patch = Object.assign({}, it.rec);
-          delete patch.id;
+          patch.id = it.id;   /* v335 (Phase 5) - was deleted; a re-sent NEW record needs it */
           it._fnoCand = true;
         }
         if(_officeRuledLater){
@@ -11179,7 +11262,20 @@ async function flushOfflineWrites(){
         if(Array.isArray(it.fields) && it.fields.length && it.rec && typeof it.rec === 'object')
           _topUpBareFarmer(it.col, Object.assign({}, it.rec, {id: it.id})).catch(() => {});
         if(it._fnoCand) _fnoReplayed.push([it.col, it.id, it.rec]);
-      }catch(e){ console.warn('[Sristi] offline write flush failed (will retry):', e); }
+      }catch(e){
+        /* v335 (Phase 5) - a public re-send of something that already arrived */
+        if(await _publicRefusalMeansDelivered(e, it.col, it.id).catch(() => false)){
+          if(it.col === 'haatFarmers' && it.rec && it.rec.enrollmentFormSubmittedAt){
+            const _a = { enrollmentFormSubmittedAt: it.rec.enrollmentFormSubmittedAt };
+            if(Array.isArray(it.rec.crops) && it.rec.crops.length) _a.crops = it.rec.crops;
+            try{ await _fbWriteGuard(fbRef(it.col + '/' + it.id).update(sanitizeForFB(_a)), 8000); }catch(x){}
+          }
+          console.warn('[Sristi] already on the server (re-send refused) - dropping the queued copy:', it.key);
+          try{ await idbDel('offlineWrites', it.key); }catch(x){}
+          continue;
+        }
+        console.warn('[Sristi] offline write flush failed (will retry):', e);
+      }
     }
   } finally { _queueDrop(_offlineWritesState, _tok); }
   if(_fnoReplayed.length) fnoAfterReplay(_fnoReplayed).catch(() => {});   /* v316 */
@@ -11510,14 +11606,16 @@ function saveSession(s, keepOnThisDevice){
   }catch(e){}
 }
 /* v221 - sign out for a reason other than the person asking to. */
-function forceSignOut(why){
+function forceSignOut(why, kind){
   /* v225 - take this device's multi-device row down too. Without this a
      deactivated account's flag outlived the account by up to 8 hours. */
   try{ _clearMyActiveSession(_sessionKeyOf(SESSION)); }catch(e){}
+  /* v335 - and the offline copy of this person's password on this phone */
+  try{ if(SESSION && kind !== 'info') _forgetOfflineLogin(SESSION.loginId || SESSION.userId || ''); }catch(e){}
   try{ sessionStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   try{ localStorage.removeItem(USER_SESSION_KEY); }catch(e){}
   SESSION = null;
-  try{ if(typeof toast === 'function') toast(why, 'error'); }catch(e){}
+  try{ if(typeof toast === 'function') toast(why, kind === 'info' ? undefined : 'error'); }catch(e){}
   /* v221 - wait 1.8s so the message can be read, then do not reload on top of
      a submission. The account is already signed out in memory so nothing new
      can start; this only decides when the page is allowed to go down. Same two
@@ -11536,7 +11634,10 @@ function forceSignOut(why){
        sign-out landed on the farmer-facing page instead of the login screen.
        '#admin' with no session opens the login modal at boot. */
     location.hash = '#admin';
-    location.reload();
+    /* v335 - out of Firebase too: a deactivated account's sign-in is worth nothing now */
+    const _a = _fbAuthOrNull();
+    if(kind !== 'info' && _a && _a.currentUser && !_a.currentUser.isAnonymous) _authRace(_a.signOut(), 4000).then(function(){ location.reload(); });
+    else location.reload();
   };
   setTimeout(_fsGo, 1800);
 }
@@ -29026,7 +29127,16 @@ window.addEventListener('message',async ev=>{
                public path: with no signal it never settles and never rejects,
                so everything after it - including the photo flush that used to
                live below - simply never ran. */
-            try { await _fbWriteGuard(fbRef('haatFarmers/'+rec.id).update(sanitizeForFB(_stripEphemeral(rec))), 20000); }   /* v316b - update: a number given meanwhile survives */
+            /* v335 (Phase 5) - only the two fields the answers ADD. The rest is already in the
+               record this page created; re-sending it is a rewrite, which the public form may not
+               do. The queued copy gets them too, for when the record has not left the phone yet. */
+            const _add = { enrollmentFormSubmittedAt: rec.enrollmentFormSubmittedAt };
+            if(Array.isArray(rec.crops) && rec.crops.length) _add.crops = rec.crops;
+            try{
+              const _q = await idbGet('offlineWrites', 'haatFarmers/' + rec.id);
+              if(_q && _q.rec){ _q.rec = Object.assign({}, _q.rec, sanitizeForFB(_add)); await idbPut('offlineWrites', _q); }
+            }catch(e){}
+            try { await _fbWriteGuard(fbRef('haatFarmers/'+rec.id).update(sanitizeForFB(_add)), 20000); }   /* v316b - update: a number given meanwhile survives */
             catch(e) { console.warn('haatFarmer full update:',e); }
           }
           cacheLocal();
@@ -30568,6 +30678,10 @@ async function signOutNow(ask){
      five farmers. They differ only in that a mobilizer needs the mirror WHILE
      signed in, because they work offline from it. */
   const _wasScoped = isViewerUser() || (typeof isMobilizerUser === 'function' && isMobilizerUser());
+  /* v335 - a field phone keeps its Firebase sign-in, so the same person can sign back in
+     tomorrow in a village with no signal. Everyone else (the office, viewers) is signed out
+     of Firebase too, so a shared computer is left holding nobody's identity. */
+  const _keepFirebase = !!(SESSION && AUTH_FIELD_ROLES.indexOf(SESSION.role) >= 0);
   SESSION = null;
   if(_wasScoped){ try{ localStorage.removeItem(STORE_KEY); }catch(e){} try{ await _mirrorClear(); }catch(e){} DB = normaliseDB(seedDB()); }   /* v303 - both homes */
   /* v225 - '#login' was handled nowhere in the file, so both buttons landed on
@@ -30588,7 +30702,9 @@ async function signOutNow(ask){
       setTimeout(_soGo, 1500);
       return;
     }
-    location.reload();
+    const _a = _keepFirebase ? null : _fbAuthOrNull();
+    if(_a && _a.currentUser && !_a.currentUser.isAnonymous) _authRace(_a.signOut(), 4000).then(function(){ location.reload(); });
+    else location.reload();
   };
   _soGo();
 }
@@ -30682,6 +30798,7 @@ function enterAdminMode(){
   // because _activeSyncKeys() reads that flag, and after SESSION is set, so
   // an FC gets their district-scoped queries rather than unscoped ones.
   attachLiveListener();
+  setTimeout(function(){ try{ authAfterBoot(); }catch(e){} }, 5000);   /* v335 */
   if(location.hash !== '#admin') location.hash = '#admin';
   document.body.classList.remove('public-mode');
   // v9 Batch 4 — FC users land on the Verification Queue (their primary work
@@ -31303,6 +31420,292 @@ async function verifyCredentials(id, password) {
   return null;
 }
 
+/* ===================== v335 - SECURITY PLAN PHASE 4: REAL STAFF SIGN-IN =====================
+   Until v334 a staff sign-in was checked HERE, in the browser, against password hashes the
+   app downloaded from config/users - which is why every visitor could read those hashes, and
+   why the database could not tell an admin from a member of the public: everybody was the
+   same anonymous Firebase user. Now a staff member signs in to Firebase Auth itself.
+
+   Nothing changes on screen. The person still types their username and password. The app
+   turns the username into an address only it uses, <username>@<namespace>.fv.invalid
+   (".invalid" can never be a real mail domain), and signs in with that.
+
+   - authMap/{uid} = "u_<username>" is written by the office (or the migration script) and is
+     how the database rules (Phase 5) find the account - role and active stay in config/users,
+     the one place they have always lived (Doc 03 F5).
+   - loginAlias/{username} exists only for an account whose sign-in address is not the plain
+     one: after the office resets a password (a new sign-in is made, because a browser cannot
+     change somebody else's password) or renames the username.
+   - authSeen/{uid}/{device} records each Firebase sign-in with the app version. It is how the
+     office can see that everybody has moved before Phase 5 tightens the rules.
+   - Offline: Firebase keeps a person signed in on their phone across restarts, offline too.
+     So the password typed on a phone with no signal is checked against a slow (PBKDF2) copy
+     kept on that phone from its last online sign-in, and the saved Firebase sign-in carries on.
+   - Until the office switches meta/authCutover on, the old hash check still works as a
+     fallback, so a person whose sign-in has not been moved yet is never locked out. */
+const AUTH_DOMAIN = FB_NAMESPACE.replace(/_/g, '-') + '.fv.invalid';
+const AUTH_OFFLINE_KEY  = 'sristi_fv_offline_login_v1';
+const AUTH_REPROMPT_KEY = 'sristi_fv_auth_reprompt_v1';
+const AUTH_CUTOVER_KEY  = 'sristi_fv_auth_cutover_v1';
+const AUTH_FIELD_ROLES  = ['fc', 'mobilizer'];
+let _authSignedInHere = false;   /* a staff sign-in was typed on this page (see authAfterBoot) */
+let _authCutover = (function(){ try{ return localStorage.getItem(AUTH_CUTOVER_KEY) === '1'; }catch(e){ return false; } })();
+function _authNoteCutover(on){
+  const was = _authCutover;
+  _authCutover = !!on;
+  try{ if(on) localStorage.setItem(AUTH_CUTOVER_KEY, '1'); else localStorage.removeItem(AUTH_CUTOVER_KEY); }catch(e){}
+  /* switched on while this page is open: a session made the old way can no longer reach the
+     database, so it is asked to sign in again now rather than at the next start */
+  if(on && !was) setTimeout(function(){ try{ authAfterBoot(); }catch(e){} }, 3000);
+}
+/* true once the office has finished the move: no stored password hashes are used or written */
+function authCutoverDone(){ return !!_authCutover; }
+function authEmail(local){ return String(local || '').trim().toLowerCase() + '@' + AUTH_DOMAIN; }
+function _fbAuthOrNull(){
+  try{ return (typeof firebase !== 'undefined' && typeof firebase.auth === 'function' && FB && FB.app) ? firebase.auth() : null; }
+  catch(e){ return null; }
+}
+/* the Firebase user, if it is one of OUR staff sign-ins (not anonymous, not some other address) */
+function authCurrentStaff(){
+  const a = _fbAuthOrNull(); const u = a && a.currentUser;
+  return (u && !u.isAnonymous && u.email && String(u.email).toLowerCase().endsWith('@' + AUTH_DOMAIN)) ? u : null;
+}
+/* {value} | {error} | {timedOut}. Auth promises can hang on a dead socket exactly like RTDB
+   ones (F26), and the caller needs the error CODE, which fbWithin() deliberately swallows. */
+function _authRace(p, ms){
+  return new Promise(function(res){
+    let done = false;
+    const t = setTimeout(function(){ if(!done){ done = true; res({timedOut: true}); } }, ms);
+    Promise.resolve(p).then(function(v){ if(!done){ done = true; clearTimeout(t); res({value: v}); } },
+                            function(e){ if(!done){ done = true; clearTimeout(t); res({error: e}); } });
+  });
+}
+function _authCode(r){ return (r && r.error && (r.error.code || r.error.message)) || (r && r.timedOut ? 'timeout' : ''); }
+
+async function authBoot(){
+  const a = firebase.auth();
+  const back = await _authRace(new Promise(function(res){
+    const off = a.onAuthStateChanged(function(u){ try{ off(); }catch(e){} res(u); });
+  }), 8000);
+  const u = back.value || a.currentUser;
+  if(u) return u;
+  return a.signInAnonymously();
+}
+async function _authBackToAnonymous(){
+  const a = _fbAuthOrNull(); if(!a) return;
+  if(!navigator.onLine) return;   /* offline nobody could get an anonymous sign-in back - keep what there is */
+  await _authRace(a.signOut(), 5000);
+  await _authRace(a.signInAnonymously(), 10000);
+}
+/* a sign-in by the old route leaves the Firebase user alone - unless it is SOMEONE ELSE's
+   staff sign-in kept on this phone, whose identity this person's work must not carry */
+async function _authBackToAnonymousIfOther(id){
+  const cur = authCurrentStaff();
+  if(cur && String(cur.email).toLowerCase() !== authEmail(id)) await _authBackToAnonymous();
+}
+async function _authLocalFor(id){
+  try{
+    if(!(FB && FB.ready && FB.db && navigator.onLine)) return id;
+    const g = await _authRace(fbRef('loginAlias/' + id).get(), 5000);
+    const v = (g && g.value && g.value.exists()) ? g.value.val() : null;
+    return (typeof v === 'string' && /^[a-z0-9_.]{2,40}$/.test(v)) ? v : id;
+  }catch(e){ return id; }
+}
+/* {mapped: true|false|null (could not tell), acct}. The account comes straight from the
+   server - the person's OWN record, which the rules let them read even when deactivated, so
+   the screen can say so - rather than from a saved list that may be days old. */
+async function _authOwn(uid, id){
+  try{
+    const g = await _authRace(fbRef('authMap/' + uid).get(), 6000);
+    if(!g.value) return {mapped: null, acct: null};
+    const key = g.value.exists() ? g.value.val() : null;
+    if(typeof key !== 'string' || !/^u_/.test(key)) return {mapped: false, acct: null};
+    const r = await _authRace(fbRef('config/users/' + key).get(), 6000);
+    const acct = (r.value && r.value.exists()) ? r.value.val() : null;
+    if(!acct) return {mapped: r.value ? false : null, acct: null};
+    return {mapped: acct.id === id, acct: acct.id === id ? acct : null};
+  }catch(e){ return {mapped: null, acct: null}; }
+}
+function _authNoteSeen(uid, id, mapped){
+  try{
+    if(!(FB && FB.ready && FB.db) || !uid) return;
+    fbRef('authSeen/' + uid + '/' + deviceId()).set({
+      id: id || '', v: APP_VERSION, mapped: !!mapped, at: firebase.database.ServerValue.TIMESTAMP,
+    }).catch(function(e){ console.warn('[Auth] could not record the sign-in:', e && e.code || e); });
+  }catch(e){}
+}
+/* ---- the offline copy: PBKDF2, on this phone only, for the person who last signed in here ---- */
+async function _pbkdf2Hex(salt, pw){
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const b = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 60000}, k, 256);
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function _offlineLogins(){ try{ return JSON.parse(localStorage.getItem(AUTH_OFFLINE_KEY) || '{}') || {}; }catch(e){ return {}; } }
+async function _rememberOfflineLogin(id, uid, pw){
+  try{
+    const salt = generateSalt();
+    const hash = await _pbkdf2Hex(salt, pw);
+    const all = _offlineLogins();
+    all[id] = {uid: uid, salt: salt, hash: hash, at: Date.now()};
+    const out = {};
+    Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0)).slice(0, 3).forEach(k => { out[k] = all[k]; });
+    localStorage.setItem(AUTH_OFFLINE_KEY, JSON.stringify(out));
+  }catch(e){}
+}
+function _forgetOfflineLogin(id){
+  try{ const all = _offlineLogins(); delete all[id]; localStorage.setItem(AUTH_OFFLINE_KEY, JSON.stringify(all)); }catch(e){}
+}
+async function _checkOfflineLogin(id, pw){
+  try{
+    const cur = authCurrentStaff(); if(!cur) return false;
+    const v = _offlineLogins()[id];
+    if(!v || v.uid !== cur.uid) return false;
+    return (await _pbkdf2Hex(v.salt, pw)) === v.hash;
+  }catch(e){ return false; }
+}
+
+/* THE sign-in. Returns {user, via: 'firebase'|'offline'|'hash', uid} or {user:null, msg}. */
+async function staffSignIn(id, pw){
+  const a = _fbAuthOrNull();
+  const fallbackOk = !authCutoverDone();
+  const hashPath = async function(){
+    if(!fallbackOk) return null;
+    await ensureUsersLoaded();
+    let u = await verifyCredentials(id, pw);
+    if(!u && await refreshUsersList()) u = await verifyCredentials(id, pw);
+    return u;
+  };
+  if(a && FB && FB.ready && navigator.onLine){
+    const local = await _authLocalFor(id);
+    const r = await _authRace(a.signInWithEmailAndPassword(authEmail(local), pw), 15000);
+    if(r.value && r.value.user){
+      const fu = r.value.user;
+      const own = await _authOwn(fu.uid, id);
+      const mapped = own.mapped;
+      await refreshUsersList();
+      const acct = own.acct || getUsersList().find(u => u && u.id === id);
+      if(!acct || acct.active === false){ await _authBackToAnonymous(); return {user: null, msg: acct ? 'inactive' : 'noaccount'}; }
+      /* a Firebase sign-in the office never connected to this account (mapped false/unknown) is
+         accepted only if the stored password agrees as well - never on its own */
+      if(mapped !== true && !(await hashPath())){
+        await _authBackToAnonymous();
+        return {user: null, msg: (mapped === null && !fallbackOk) ? 'slow' : ''};
+      }
+      _rememberOfflineLogin(id, fu.uid, pw);
+      _authNoteSeen(fu.uid, id, mapped === true);
+      return {user: acct, via: 'firebase', uid: fu.uid};
+    }
+    const code = _authCode(r);
+    console.warn('[Auth] Firebase sign-in did not succeed:', code);
+    if(code === 'auth/user-disabled') return {user: null, msg: 'disabled'};
+    if(code !== 'auth/network-request-failed' && code !== 'timeout'){
+      /* not accepted by Firebase - wrong password, an account not moved yet, or sign-in by
+         password not switched on. Until the cutover the stored hash still decides. */
+      const u = await hashPath();
+      if(u){ await _authBackToAnonymousIfOther(u.id); return {user: u, via: 'hash', tried: true}; }
+      return {user: null, msg: code === 'auth/too-many-requests' ? 'throttled' : ''};
+    }
+  }
+  /* no signal (or the sign-in service gave no answer) */
+  if(await _checkOfflineLogin(id, pw)){
+    const acct = getUsersList().find(u => u && u.id === id);
+    if(acct && acct.active !== false){ const cur = authCurrentStaff(); return {user: acct, via: 'offline', uid: cur && cur.uid}; }
+  }
+  const u = await hashPath();
+  if(u) return {user: u, via: 'hash'};
+  return {user: null, msg: fallbackOk ? '' : 'needonline'};
+}
+
+/* Office side: make a sign-in for someone else, through a second, throw-away copy of the
+   Firebase app, so the admin's own sign-in is untouched. `existing` is the account as it is
+   now (null for a new one). The first free address wins: <id>, then <id>.2, <id>.3 ... - an
+   address can already be taken by this account's previous password, or by a stranger who
+   signed up as it, and neither may block the office. */
+async function authCreateLogin(id, pw, existing){
+  if(!(FB && FB.ready && navigator.onLine) || typeof firebase === 'undefined') return {ok: false, msg: 'offline'};
+  let app2 = null;
+  try{
+    app2 = firebase.initializeApp(FB_CONFIG, 'fv-login-maker-' + Date.now());
+    const a2 = app2.auth();
+    await _authRace(a2.setPersistence(firebase.auth.Auth.Persistence.NONE), 3000);
+    let n = 1;
+    const _prev = (existing && existing.authUid) ? String(existing.authLocal || existing.id || '') : '';
+    if(_prev && _prev.replace(/\.\d+$/, '') === id){ const m = /\.(\d+)$/.exec(_prev); n = m ? (+m[1] + 1) : 2; }
+    for(let tries = 0; tries < 8; tries++, n++){
+      const local = n === 1 ? id : (id + '.' + n);
+      const r = await _authRace(a2.createUserWithEmailAndPassword(authEmail(local), pw), 15000);
+      if(r.value && r.value.user) return {ok: true, uid: r.value.user.uid, local: local};
+      const code = _authCode(r);
+      if(code === 'auth/email-already-in-use') continue;
+      if(code === 'auth/operation-not-allowed') return {ok: false, soft: true, msg: 'sign-in by password is not switched on for this project yet'};
+      if(code === 'auth/weak-password') return {ok: false, msg: 'the password must be at least 6 characters'};
+      return {ok: false, msg: code || 'unknown error'};
+    }
+    return {ok: false, msg: 'no free sign-in address for this username'};
+  }finally{
+    if(app2){ try{ await _authRace(app2.auth().signOut(), 3000); }catch(e){} try{ await _authRace(app2.delete(), 3000); }catch(e){} }
+  }
+}
+
+/* After boot: a session restored from "keep me signed in", or made by v334's route, has no
+   Firebase identity of its own. Ask once per account per device (online only, and never on
+   top of unsaved work - forceSignOut waits for that) so everyone moves before Phase 5. After
+   the cutover it is no longer optional: without it the database will not answer them. */
+async function authAfterBoot(){
+  try{
+    if(!SESSION || (typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE)) return;
+    if(!(FB && FB.ready && navigator.onLine) || !_fbAuthOrNull()) return;
+    const cur = authCurrentStaff();
+    if(cur && SESSION.authUid && cur.uid === SESSION.authUid){
+      /* once a day per device is plenty for the office's "who has moved" view */
+      const k = 'sristi_fv_auth_seen_day_v1', day = new Date().toISOString().slice(0, 10);
+      let last = ''; try{ last = localStorage.getItem(k) || ''; }catch(e){}
+      if(last !== day + ':' + cur.uid){ _authNoteSeen(cur.uid, SESSION.loginId || '', true); try{ localStorage.setItem(k, day + ':' + cur.uid); }catch(e){} }
+      return;
+    }
+    /* a session from v334 or earlier carries only userId, which is the FC code for a
+       coordinator (fcCode || id) - found the same way revalidateSession() finds it */
+    const acct = getUsersList().find(u => u && ((SESSION.loginId && u.id === SESSION.loginId) || (!SESSION.loginId && (u.fcCode || u.id) === SESSION.userId)));
+    const who = (acct && acct.id) || SESSION.loginId || SESSION.userId || '';
+    if(authCutoverDone()){
+      forceSignOut('પ્રવેશની રીત બદલાઈ છે — ફરી સાઇન ઇન કરો · Sign-in has been upgraded. Please sign in again with your usual username and password.', 'info');
+      return;
+    }
+    /* before the cutover: only once the office has moved this account across (it then
+       carries authUid) - asking earlier would spend the one prompt on a sign-in that cannot
+       work yet. A session this version signed in through Firebase needs nothing more. One it
+       signed in the old way is asked only when the account was moved AFTER that sign-in
+       (authTriedUid is the move Firebase was asked about then): otherwise a "keep me signed
+       in" session would carry no Firebase identity for up to 30 days and hold the cutover
+       back. Never straight after the password was typed on this page - the next start asks. */
+    if(!acct || !acct.authUid) return;
+    if(SESSION.authVia && SESSION.authVia !== 'hash') return;
+    if(SESSION.authVia === 'hash' && (_authSignedInHere || SESSION.authTriedUid === acct.authUid)) return;
+    const askKey = who + ':' + acct.authUid;
+    let asked = {}; try{ asked = JSON.parse(localStorage.getItem(AUTH_REPROMPT_KEY) || '{}') || {}; }catch(e){}
+    if(asked[askKey]) return;
+    asked[askKey] = Date.now();
+    try{ localStorage.setItem(AUTH_REPROMPT_KEY, JSON.stringify(asked)); }catch(e){}
+    forceSignOut('પ્રવેશની રીત બદલાઈ છે — એક વાર ફરી સાઇન ઇન કરો · Sign-in has been upgraded. Please sign in once more with your usual username and password.', 'info');
+  }catch(e){ console.warn('[Auth] after-boot check skipped:', e); }
+}
+/* Phase 5: the public form may only CREATE. A queued copy re-sent after the first one did land
+   (a slow link: confirmed after the 6 s wait) is refused, and must count as delivered or it
+   is retried for ever and holds the phone's updates back. Only for a visitor with no staff
+   sign-in; a farmer record is checked through its change-marker first. */
+function _isPermDenied(e){ const s = String((e && (e.code || e.message)) || ''); return /permission[_ ]denied/i.test(s); }
+async function _publicRefusalMeansDelivered(e, col, id){
+  /* the public form only: a STAFF write that is refused (a session from before the cutover)
+     must stay queued until they sign in again - dropping it would lose their work */
+  if(!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) || SESSION) return false;
+  if(!_isPermDenied(e) || authCurrentStaff()) return false;
+  if(col === 'haatFarmers' || col === 'convFarmers'){
+    try{ const g = await _authRace(fbRef(col + '/' + id + '/_u').get(), 6000); return !!(g.value && g.value.exists()); }
+    catch(x){ return false; }
+  }
+  return true;
+}
+
 /* v111 — mandatory password change on next sign-in.
    Set mustChangePassword:true on a config/users record and the next successful
    sign-in is intercepted: the account gets NO session until a new password has
@@ -31341,7 +31744,7 @@ async function forcePasswordChangeModal(user){
     if(cancelBtn) cancelBtn.onclick = () => { _pcDone = true; closeModal(); resolve(false); };
     $('#pcSave').onclick = async () => {
       const a = $('#pcNew').value || '', b = $('#pcNew2').value || '';
-      if(a.length < 10) return fail('Please use at least 10 characters. Stored password hashes are readable until the database rules are tightened, so short passwords can be cracked offline.');
+      if(a.length < 10) return fail('Please use at least 10 characters.');
       if(a !== b)       return fail('The two passwords do not match.');
       if(!(FB && FB.ready && navigator.onLine)) return fail('You must be online to change the password. Reconnect and try again.');
       const btn = $('#pcSave'); btn.disabled = true; btn.textContent = 'Saving…';
@@ -31358,18 +31761,30 @@ async function forcePasswordChangeModal(user){
         const all  = snap.exists() ? snap.val() : {};
         const key  = Object.keys(all).find(k => all[k] && all[k].id === user.id);
         if(!key) throw new Error('account not found in config/users');
-        const salt = generateSalt();
-        const passwordHash = await hashPassword(salt, a);
-        const _wrote = await fbWithin(fbRef('config/users/'+key).update({
-          salt, passwordHash,
-          mustChangePassword: null,          // null deletes the flag
-          passwordChangedAt: new Date().toISOString(),
-        }).then(function(){ return true; }), 12000, false, 'password-change write');
+        /* v335 - a person signed in through Firebase changes the Firebase password itself.
+           The stored hash is kept in step only until the cutover; after it there is none. */
+        const _fu = authCurrentStaff();
+        if(_fu){
+          const _up = await _authRace(_fu.updatePassword(a), 12000);
+          if(_pcDone) return;
+          if(_up.timedOut) throw new Error('the sign-in service did not answer - check your connection and try again');
+          if(_up.error) throw new Error(_authCode(_up) === 'auth/weak-password' ? 'please choose a longer password' : ('the new password was not accepted (' + _authCode(_up) + ')'));
+        } else if(authCutoverDone()){
+          throw new Error('please sign in again while connected to the internet, then change the password');
+        }
+        const _pcUpd = { mustChangePassword: null, passwordChangedAt: new Date().toISOString() };   // null deletes the flag
+        let salt = null, passwordHash = null;
+        if(!authCutoverDone()){
+          salt = generateSalt();
+          passwordHash = await hashPassword(salt, a);
+          _pcUpd.salt = salt; _pcUpd.passwordHash = passwordHash;
+        }
+        const _wrote = await fbWithin(fbRef('config/users/'+key).update(_pcUpd).then(function(){ return true; }), 12000, false, 'password-change write');
         if(_pcDone) return;
         if(!_wrote) throw new Error('the new password could not be saved - check your connection and try again');
         // Keep the in-memory list in step so the session continues cleanly.
         const local = getUsersList().find(u => u.id === user.id);
-        if(local){ local.salt = salt; local.passwordHash = passwordHash; delete local.mustChangePassword; }
+        if(local){ if(salt){ local.salt = salt; local.passwordHash = passwordHash; } delete local.mustChangePassword; }
         saveUsersCache(getUsersList());
         _pcDone = true;
         closeModal();
@@ -31592,7 +32007,9 @@ function openUserModal(userId, opts) {
        viewer ringing to ask why their screen is empty. */
     if (role === 'viewer' && !vwProgs.length) return showErr('Choose at least one programme for a viewer.');
     if (role === 'viewer' && !vwDists.length) return showErr('Choose at least one district for a viewer \u2014 a viewer with no districts sees nothing.');
-    if (pw && pw.length < 4) return showErr('Password must be at least 4 characters.');
+    /* v335 - Firebase Auth will not take a NEW password shorter than 6. Existing shorter
+       passwords keep working - they were moved across as they are. */
+    if (pw && pw.length < 6) return showErr('Password must be at least 6 characters.');
     if (isNew && users.some(u => u.id === uid)) return showErr('Username already taken.');
     if (!isNew && uid !== origId && users.some(u => u.id === uid)) return showErr('Username already taken.');
     const saveBtn = $('#umSave');
@@ -31630,13 +32047,40 @@ function openUserModal(userId, opts) {
         createdAt: (existing && existing.createdAt) || Date.now(),
         updatedAt: Date.now(),
       };
-      if (pw) {
-        record.salt = generateSalt();
-        record.passwordHash = await hashPassword(record.salt, pw);
-      } else if (existing) {
-        record.salt = existing.salt;
-        record.passwordHash = existing.passwordHash;
+      /* v335 - the stored hash only until the cutover; the real password lives in Firebase Auth */
+      if (!authCutoverDone()) {
+        if (pw) {
+          record.salt = generateSalt();
+          record.passwordHash = await hashPassword(record.salt, pw);
+        } else if (existing) {
+          record.salt = existing.salt;
+          record.passwordHash = existing.passwordHash;
+        }
       }
+      /* v335 - and the Firebase sign-in, written in the SAME update as the account below */
+      const _authUpd = {};
+      if (existing && existing.authUid) { record.authUid = existing.authUid; if (existing.authLocal) record.authLocal = existing.authLocal; }
+      if (pw) {
+        const made = await authCreateLogin(uid, pw, existing);
+        if (made.ok) {
+          if (existing && existing.authUid && existing.authUid !== made.uid) _authUpd['authMap/' + existing.authUid] = null;
+          record.authUid = made.uid; record.authLocal = made.local;
+          _authUpd['authMap/' + made.uid] = 'u_' + uid;
+          _authUpd['loginAlias/' + uid] = made.local !== uid ? made.local : null;
+        } else if (!(made.soft && !authCutoverDone())) {
+          saveBtn.disabled = false; saveBtn.textContent = isNew ? 'Create user' : 'Save changes';
+          return showErr('Could not create the sign-in: ' + esc(made.msg) + '. Nothing was saved.');
+        } else {
+          console.warn('[Auth] account saved without a Firebase sign-in (' + made.msg + '); the migration will add it');
+        }
+      } else if (!isNew && origId && origId !== uid && record.authUid) {
+        /* renamed, same password: the sign-in address stays the old one, found through the alias */
+        _authUpd['authMap/' + record.authUid] = 'u_' + uid;
+        const _oldLocal = record.authLocal || origId;
+        record.authLocal = _oldLocal;
+        _authUpd['loginAlias/' + uid] = _oldLocal !== uid ? _oldLocal : null;
+      }
+      if (!isNew && origId && origId !== uid) _authUpd['loginAlias/' + origId] = null;
       /* v185 - DATA LOSS. The write below is a .set(), which REPLACES the whole
          account node. `record` is built from the form fields only, so anything
          added to an account outside this screen was silently erased by an
@@ -31649,18 +32093,15 @@ function openUserModal(userId, opts) {
          cancelling a pending forced password reset.
          Carry through every field this screen does not own. */
       if (existing) {
-        ['farmers','mustChangePassword','passwordChangedAt','lastLoginAt','migratedFrom']
+        ['farmers','mustChangePassword','passwordChangedAt','lastLoginAt','migratedFrom','authImportedAt']
           .forEach(function(k){ if (existing[k] !== undefined && record[k] === undefined) record[k] = existing[k]; });
       }
-      if (!isNew && origId && origId !== uid) {
-        // ID changed — write to new key and delete old key atomically
-        const updates = {};
-        updates[newKey] = record;
-        updates[oldKey] = null;
-        await fbRef('').update(updates);
-      } else {
-        await fbRef(newKey).set(record);
-      }
+      /* v335 - one multi-path update: the account, and its sign-in map, land together or not
+         at all. A path in an update REPLACES what is there, exactly as the old set() did. */
+      const updates = Object.assign({}, _authUpd);
+      updates[newKey] = record;
+      if (!isNew && origId && origId !== uid) updates[oldKey] = null;   // ID changed — old key goes in the same write
+      await fbRef('').update(updates);
       if (reconcileFcsFromUsers()) await saveDB(true);
       closeModal();
       render();
@@ -31844,17 +32285,27 @@ function openLoginModal(){
           rural connection silently downgraded to the weaker credentials.
           Now we explicitly wait for the account list once, and if it truly
           cannot be loaded we say so instead of blaming the password. */
+    /* v335 - Firebase Auth first (Phase 4); the v323 hash check is now its fallback, inside
+       staffSignIn(), until the office switches the cutover on. */
+    let _signIn = {user: null};
     try {
-      await ensureUsersLoaded();
-      authUser = await verifyCredentials(idVal, pwVal);
-      /* v323 - the saved list may be older than the account: ask once more */
-      if(!authUser && await refreshUsersList()) authUser = await verifyCredentials(idVal, pwVal);
-    } catch(e) { console.warn('[Auth] verifyCredentials failed:', e); }
+      _signIn = await staffSignIn(idVal, pwVal);
+      authUser = _signIn.user;
+    } catch(e) { console.warn('[Auth] sign-in failed:', e); }
     if(!authUser){
       submitBtn.disabled = false; submitBtn.textContent = 'Sign in →';
       // Distinguish "no accounts reachable" from "wrong password" — otherwise a
       // first sign-in on a new device with no connection reads as a bad password.
-      errEl.innerHTML = getUsersList().length
+      const _m = _signIn && _signIn.msg;
+      errEl.innerHTML = _m === 'inactive' || _m === 'disabled'
+        ? '<div class="lm-err">⚠️ આ એકાઉન્ટ બંધ છે. This account has been deactivated — please contact the office.</div>'
+        : _m === 'throttled'
+        ? '<div class="lm-err">⚠️ ઘણા પ્રયત્નો થયા. Too many attempts — please wait a few minutes and try again.</div>'
+        : _m === 'slow'
+        ? '<div class="lm-err">⚠️ ઇન્ટરનેટ ધીમું છે. The connection is too slow to finish signing in — please try again.</div>'
+        : _m === 'needonline'
+        ? '<div class="lm-err">⚠️ આ ફોન પર પહેલી વાર ઇન્ટરનેટ સાથે સાઇન ઇન કરો. Connect to the internet to sign in on this phone — after that it works without signal too.</div>'
+        : (getUsersList().length || (navigator.onLine && authCutoverDone()))
         ? '<div class="lm-err">⚠️ ખોટું ID કે Password. Invalid ID or password. કૃપા કરી ફરી પ્રયત્ન કરો.</div>'
         : '<div class="lm-err">⚠️ એકાઉન્ટ લોડ થઈ શક્યા નથી. Could not load accounts — connect to the internet once to sign in on this device.</div>';
       $('#lmPw').value = '';
@@ -31979,7 +32430,11 @@ function openLoginModal(){
       }
     }
     // Success — set session and flip to admin mode.
-    SESSION = { role: authUser.role, userId: authUser.fcCode || authUser.id || '', userName: authUser.name, sessKey: userKey };
+    SESSION = { role: authUser.role, userId: authUser.fcCode || authUser.id || '', userName: authUser.name, sessKey: userKey,
+                /* v335 - which route signed them in, the Firebase identity it carries, and the username */
+                loginId: authUser.id || '', authVia: (_signIn && _signIn.via) || 'hash', authUid: (_signIn && _signIn.uid) || '',
+                authTriedUid: (_signIn && _signIn.tried) ? (authUser.authUid || '') : '' };
+    _authSignedInHere = true;
     saveSession(SESSION, _keepMe);   /* v221 - captured before the awaits above */
     closeModal();
     enterAdminMode();
@@ -34163,6 +34618,7 @@ window.addEventListener('hashchange', () => {
       await loadDB();
       render();
       startBackgroundPumps();   // pumps start now that Firebase init is done
+      setTimeout(() => { authAfterBoot(); }, 4000);   /* v335 */
     }
     // v11 — background sweep: move legacy inline forms to forms/{id} and
     // queue legacy base64 photos for Cloudinary. Runs after first paint.

@@ -5115,7 +5115,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v335';
+const APP_VERSION = 'v336';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9246,7 +9246,13 @@ function idbOpen(){
     req.onerror = () => { if(_settled) return; _settled = true; clearTimeout(_t); reject(req.error); };
   });
 }
-function idbPut(store, val){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
+function idbPut(store, val){
+  /* v336 - a row queued by a visitor on the public form says so, decided when it is made
+     (see _publicRefusalMeansDelivered: only these may be dropped when a re-send is refused) */
+  if((store === 'offlineWrites' || store === 'formWrites') && val && typeof val === 'object' && !('pub' in val)){
+    try{ if(_isPublicVisitor()) val.pub = true; }catch(e){}
+  }
+  return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
 function idbGet(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).get(key); rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>rej(rq.error); })); }
 function idbAll(store){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
 function idbDel(store, key){ return idbOpen().then(db => new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
@@ -10806,7 +10812,7 @@ async function flushFormWrites(){
         if(cur && cur.at === it.at){ await idbDel('formWrites', it.key); }
       }catch(e){
         /* v335 (Phase 5) - a public re-send of an answer sheet that already arrived */
-        if(await _publicRefusalMeansDelivered(e, 'formWrites', it.key).catch(() => false)){
+        if(await _publicRefusalMeansDelivered(e, 'formWrites', it.key, it).catch(() => false)){
           console.warn('[Sristi] answer sheet already on the server (re-send refused) - dropping the queued copy:', it.key);
           try{ const cur = await idbGet('formWrites', it.key); if(cur && cur.at === it.at) await idbDel('formWrites', it.key); }catch(x){}
           continue;
@@ -11264,7 +11270,7 @@ async function flushOfflineWrites(){
         if(it._fnoCand) _fnoReplayed.push([it.col, it.id, it.rec]);
       }catch(e){
         /* v335 (Phase 5) - a public re-send of something that already arrived */
-        if(await _publicRefusalMeansDelivered(e, it.col, it.id).catch(() => false)){
+        if(await _publicRefusalMeansDelivered(e, it.col, it.id, it).catch(() => false)){
           if(it.col === 'haatFarmers' && it.rec && it.rec.enrollmentFormSubmittedAt){
             const _a = { enrollmentFormSubmittedAt: it.rec.enrollmentFormSubmittedAt };
             if(Array.isArray(it.rec.crops) && it.rec.crops.length) _a.crops = it.rec.crops;
@@ -31694,9 +31700,23 @@ async function authAfterBoot(){
    is retried for ever and holds the phone's updates back. Only for a visitor with no staff
    sign-in; a farmer record is checked through its change-marker first. */
 function _isPermDenied(e){ const s = String((e && (e.code || e.message)) || ''); return /permission[_ ]denied/i.test(s); }
-async function _publicRefusalMeansDelivered(e, col, id){
+/* v336 - true only for a visitor on the public form: no staff session, no staff sign-in.
+   idbPut stamps every queued row made then with pub:true (see idbPut). */
+function _isPublicVisitor(){
+  try{ return !!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE && !SESSION && !authCurrentStaff()); }
+  catch(e){ return false; }
+}
+async function _publicRefusalMeansDelivered(e, col, id, row){
   /* the public form only: a STAFF write that is refused (a session from before the cutover)
      must stay queued until they sign in again - dropping it would lose their work */
+  /* v336 - and only a row the public form itself queued. v335 decided this from where the
+     phone IS now, not who made the row: a field phone sitting on the sign-in screen after
+     "please sign in again" is in public mode with no session, so a coordinator's queued
+     visit or answer sheet, refused by the Phase 5 rules, was taken for a farmer's re-send
+     and deleted (the farmer already has _u on the server). Found on the emulators,
+     _tests/auth/t_oldphone_visit.py. A staff row (or any row from v335 and earlier) has
+     no pub mark and is kept until a staff sign-in sends it. */
+  if(!row || row.pub !== true || (Array.isArray(row.fields) && row.fields.length) || String(row.key || '').indexOf('#') >= 0) return false;
   if(!(typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE) || SESSION) return false;
   if(!_isPermDenied(e) || authCurrentStaff()) return false;
   if(col === 'haatFarmers' || col === 'convFarmers'){

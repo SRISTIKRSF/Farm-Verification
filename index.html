@@ -5115,7 +5115,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v336';
+const APP_VERSION = 'v337';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8223,6 +8223,11 @@ function _processLiveSnapshot(){
     try{ SYNC_COLS.forEach(col => { _cloudBefore[col] = (cloud[col]||[]).slice(); }); }catch(e){}
     if(_changed){
       _baselineSubstituted.clear();   /* v272b - rebuilt by the merge below */
+      /* v337 - records with a change this device has not sent yet, and the copy from before it
+         (see _withPendingChanges). Read once per merge; nearly always empty. */
+      let _pb = null, _pend = null;
+      try{ const _b = _readPendingBase(); if(Object.keys(_b).length){ _pb = _b; _pend = _readPendingSync(); } }catch(e){ _pb = null; }
+      const _withMine = new Set();
       // For each record this session JUST touched, keep the local copy until
       // the protection expires (5 s). All other records take the cloud value.
       // Cross-device writes are NOT blocked because their record ids aren't
@@ -8241,13 +8246,23 @@ function _processLiveSnapshot(){
             if(!_same) _baselineSubstituted.add(col + '/' + rec.id);   /* v272b */
             return _loc;
           }
+          /* v337 - the server's copy, with this device's unsent changes put back on top */
+          if(_pb){
+            const _k = col + '/' + rec.id, _b = _pb[_k];
+            if(typeof _b === 'string' && _b !== '' && _pend.has(_k) && localById[rec.id]){
+              const _m = _withPendingChanges(_b, localById[rec.id], rec);
+              if(_m){ _withMine.add(_k); return _m; }
+            }
+          }
           return rec;
         });
         // Also preserve locally-created records that the cloud snapshot
         // doesn't yet know about (race: our write didn't reach Firebase yet).
+        /* v337 - and one created on this device that has not been sent yet (base '') */
         const cloudIds = new Set((cloud[col]||[]).map(r => r && r.id).filter(Boolean));
         (DB[col]||[]).forEach(r => {
-          if(r && r.id && !cloudIds.has(r.id) && isLocallyProtected(col, r.id)){
+          if(r && r.id && !cloudIds.has(r.id) && (isLocallyProtected(col, r.id)
+             || (_pb && _pb[col + '/' + r.id] === '' && _pend.has(col + '/' + r.id)))){
             cloud[col].push(r);
           }
         });
@@ -8314,7 +8329,19 @@ function _processLiveSnapshot(){
         });
         if(_psLast) _psLast.srv = {haatFarmers: Object.assign({}, _serverSnap.haatFarmers || {}), convFarmers: Object.assign({}, _serverSnap.convFarmers || {})};
       }catch(e){ console.warn('[Sristi] server snapshot:', e); _serverSnap = null; }
+      /* v337 - a record carrying this device's unsent changes keeps the SERVER's copy as its
+         baseline, so the catch-up save sends exactly those changes and nothing stale. Taken
+         before _excludePendingFromSnap, which deletes pending ids from what it is given. */
+      const _mineBase = {};
+      if(_withMine.size && _serverSnap) _withMine.forEach(k => {
+        const i = k.indexOf('/'), c = k.slice(0, i), id = k.slice(i + 1);
+        if(_serverSnap[c] && _serverSnap[c][id] !== undefined) _mineBase[k] = _serverSnap[c][id];
+      });
       _lastSnap=_excludePendingFromSnap(_serverSnap || snapAll());
+      Object.keys(_mineBase).forEach(k => {
+        const i = k.indexOf('/'), c = k.slice(0, i), id = k.slice(i + 1);
+        if(_lastSnap && _lastSnap[c]) _lastSnap[c][id] = _mineBase[k];
+      });
       // v11 — re-attach any on-demand forms this session already loaded, so
       // an open drawer doesn't lose them when the snapshot replaces records.
       try{ Object.keys(FORMS_CACHE).forEach(_attachFormsToRecord); }catch(e){}
@@ -8492,12 +8519,67 @@ function markPendingSync(col,id){
   if(!col||!id) return;
   const s = _readPendingSync(); s.add(col+'/'+id); _writePendingSync(s);
 }
-function clearPendingSync(col,id){
+function clearPendingSync(col,id,keepBase){
   if(!col||!id) return;
   const s = _readPendingSync();
   if(s.delete(col+'/'+id)) _writePendingSync(s);
+  if(!keepBase) _dropPendingBases([col+'/'+id]);   /* v337 */
 }
 function pendingSyncCount(){ return _readPendingSync().size; }
+/* ================= v337 - AN UNSENT CHANGE SURVIVES REOPENING THE APP =================
+   A change saved with no signal lives only on this phone (the pending marker says "not sent
+   yet"). When the app was opened again WITH signal, the first server copy replaced this phone's
+   copy of every record - _processLiveSnapshot keeps a local copy only while it is shielded, and
+   shields die with the page - so the catch-up save found nothing to send and the change was
+   gone. v334 did the same; found 8 Nov 2026 with _tests/auth/t_oldphone.py (mode "same").
+   Farm visits were never affected: they have their own durable row in offlineWrites.
+
+   The fix keeps the record AS IT WAS BEFORE this device's first unsent change (its "base").
+   Then the merge can tell the two apart: a field where this phone differs from the base is
+   this phone's change and is kept; every other field takes the server's value, so other
+   people's work is never undone (_withPendingChanges). '' = a record this device created.
+   The base goes when the save is confirmed (clearPendingSync). localStorage, one copy per
+   unsent record, at most PENDING_BASE_MAX; if it cannot be stored the app behaves exactly as
+   before v337. */
+const PENDING_BASE_KEY = 'sristi_pending_base_v1';
+const PENDING_BASE_MAX = 200;
+function _readPendingBase(){
+  try{
+    const raw = localStorage.getItem(PENDING_BASE_KEY);
+    if(!raw) return {};
+    const o = JSON.parse(raw);
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  }catch(e){ return {}; }
+}
+function _writePendingBase(o){
+  try{
+    if(Object.keys(o).length) localStorage.setItem(PENDING_BASE_KEY, JSON.stringify(o));
+    else localStorage.removeItem(PENDING_BASE_KEY);
+  }catch(e){ console.warn('[Sristi] could not keep the copy before an unsent change on this device:', e); }
+}
+function _dropPendingBases(keys){
+  if(!keys || !keys.length) return;
+  let raw = null; try{ raw = localStorage.getItem(PENDING_BASE_KEY); }catch(e){ return; }
+  if(!raw) return;   /* the usual case: nothing kept, nothing to read */
+  const o = _readPendingBase(); let n = 0;
+  keys.forEach(k => { if(k in o){ delete o[k]; n++; } });
+  if(n) _writePendingBase(o);
+}
+/* The server's record with this device's unsent changes put back on top. null = nothing to add. */
+function _withPendingChanges(baseStr, local, server){
+  let base, loc;
+  try{ base = baseStr ? JSON.parse(baseStr) : {}; loc = JSON.parse(JSON.stringify(_stripEphemeral(local))); }catch(e){ return null; }
+  if(!base || typeof base !== 'object' || !loc || typeof loc !== 'object' || !server || typeof server !== 'object') return null;
+  const out = Object.assign({}, server);
+  let n = 0;
+  new Set(Object.keys(loc).concat(Object.keys(base))).forEach(k => {
+    if(k === '_u' || k === 'id' || k === '_localTouchAt' || FORM_FIELDS.indexOf(k) >= 0) return;
+    if(_stableJson(loc[k]) === _stableJson(base[k])) return;      /* this device did not change it */
+    if(k in loc){ if(_stableJson(out[k]) !== _stableJson(loc[k])){ out[k] = loc[k]; n++; } }
+    else if(k in out){ delete out[k]; n++; }                        /* this device removed it */
+  });
+  return n ? out : null;
+}
 /* Strip any still-pending (col,id) pairs out of a freshly-computed snapshot
    so they read as "new/changed" (prev[id]===undefined) on the very next
    diff, instead of being mistaken for already-synced baseline state. */
@@ -8752,6 +8834,7 @@ async function saveDB(silent){
   const updates={};
   const snap={};
   const dirty=[];
+  const _baseCand=[];   /* v337 - [col/id, baseline text] for each changed record */
   /* v218b - farmer records with no baseline, resolved against the server just
      before the write. See the note in the diff below. */
   const _officeCheck=[];
@@ -8862,6 +8945,7 @@ async function saveDB(silent){
         updates[col+'/'+id]=curObj;
       }
       dirty.push([col,id]);
+      _baseCand.push([col+'/'+id, prev[id]]);   /* v337 */
     });
     // deleted records
     const allMissing = Object.keys(prev).filter(id=>!cur[id]);
@@ -8904,6 +8988,23 @@ async function saveDB(silent){
     }
     snap[col]=sc;
   });
+  /* v337 - the copy before this change, kept until the server confirms it (see _withPendingChanges).
+     Still before any await, so the base is the baseline this diff was made against. */
+  if(_baseCand.length && _baseCand.length <= PENDING_BASE_MAX){
+    try{
+      const _pb = _readPendingBase(), _pend = _readPendingSync(); let _add = 0;
+      _baseCand.forEach(([k, p]) => {
+        if(k in _pb) return;                        /* keep the OLDEST: the copy before the first unsent change */
+        if(_baselineSubstituted.has(k)) return;     /* baseline is the server's while DB holds an older copy */
+        if(p === undefined){
+          if(_pend.has(k)) return;                  /* unsent from before v337: no base known, left as before */
+          _pb[k] = '';                              /* created on this device */
+        } else _pb[k] = p;
+        _add++;
+      });
+      if(_add && Object.keys(_pb).length <= PENDING_BASE_MAX) _writePendingBase(_pb);
+    }catch(e){}
+  }
   cacheLocal(snap);   /* v309 - the offline copy, from the diff's text; still before any await */
   // #35 — write activity entries PER-ID rather than replacing the whole `activity`
   // node, so two devices saving within the same window don't clobber each other's
@@ -9114,7 +9215,13 @@ async function saveDB(silent){
     // own behavior (update() can resolve "optimistically" while offline).
     // If we're still offline when this resolves, leave it marked pending so
     // a reload before reconnecting doesn't lose track of it.
-    if(navigator.onLine) dirty.forEach(([col,id])=>clearPendingSync(col,id));
+    /* v337 - the copy before the change goes too, in one write - except for a record whose office
+       fields are still held back (_officeRetry, marked pending again below): it still needs it */
+    if(navigator.onLine){
+      const _keepBase = new Set(_officeRetry.map(([c, i]) => c + '/' + i));
+      dirty.forEach(([col,id])=>clearPendingSync(col,id,true));
+      try{ _dropPendingBases(dirty.map(([c, i]) => c + '/' + i).filter(k => !_keepBase.has(k))); }catch(e){}
+    }
     /* v222 - nothing this save wrote is folded into either baseline. Both are
        set only from what the SERVER reports, which arrives on the live listener
        a moment later; until it does, the entry is simply written again. See the

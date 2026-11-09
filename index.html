@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v339';
+const APP_VERSION = 'v340';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -28967,13 +28967,22 @@ function qmOpenQuestionEditor(qid, newInCat){
   };
 }
 
+/* v339b - security fix 3: a message is only acted on when it really came from the app's own
+   enrolment or verification iframe, same origin and the exact window object - not from any other
+   window that happens to hold a reference to this tab (NV-14). Checked per message type below,
+   because this tab can receive BOTH kinds of message while either form is open. */
+function _trustedFrameMsg(ev, frameId){
+  if(ev.origin !== location.origin) return false;
+  const fr = document.getElementById(frameId);
+  return !!(fr && fr.contentWindow && ev.source === fr.contentWindow);
+}
 /* receive the farmer's submitted enrollment from the embedded form */
 window.addEventListener('message',async ev=>{
   const d=ev.data;
   if(!d||typeof d!=='object')return;
 
   /* v5 — enrolment form requests the question schema */
-  if(d.type==='enrol-ready'){
+  if(d.type==='enrol-ready' && _trustedFrameMsg(ev,'enrollFrame')){
     const schema = {categories: window.CATEGORIES_V5 || [], questions: window.QUESTIONS_V5 || []};
     const frame = document.getElementById('enrollFrame');
     if(frame && frame.contentWindow){
@@ -28983,7 +28992,7 @@ window.addEventListener('message',async ev=>{
   }
 
   /* v6 — verification form receives schema + farmer + claims + farmer photos */
-  if(d.type==='verif-ready' && _verifyTargetId){
+  if(d.type==='verif-ready' && _verifyTargetId && _trustedFrameMsg(ev,'verifyFrame')){
     const f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);
     if(f){
       // v11 — forms live at forms/{id}; fetch before building the prefill.
@@ -29201,7 +29210,7 @@ window.addEventListener('message',async ev=>{
   }
 
   /* item #9 — store the FULL form payload so admin can review later */
-  if(d.type==='kisan-haat-full' && d.data){
+  if(d.type==='kisan-haat-full' && d.data && _trustedFrameMsg(ev,'enrollFrame')){
     /* attach to the most recently created haat farmer (last one in array,
        since the kisan-haat-enrollment message above pushes the record).
        This is best-effort; for a more robust mapping use an explicit ID.
@@ -29368,7 +29377,7 @@ window.addEventListener('message',async ev=>{
     });
     return;
   }
-  if(d.type==='farm-verification-full' && d.data && _verifyTargetId){
+  if(d.type==='farm-verification-full' && d.data && _verifyTargetId && _trustedFrameMsg(ev,'verifyFrame')){
     let f = DB.haatFarmers.find(x=>x.id===_verifyTargetId);   // v199 - re-resolved below
     // v132 — when a second farm is being verified, the visit and the result
     // belong to THAT farm, not to the farmer. _tgt is the farm when one was
@@ -29462,7 +29471,7 @@ window.addEventListener('message',async ev=>{
     }
     return;
   }
-  if(d.type==='kisan-haat-enrollment' && d.farmer){
+  if(d.type==='kisan-haat-enrollment' && d.farmer && _trustedFrameMsg(ev,'enrollFrame')){
     const f=d.farmer;
     const name=(f.name||'').trim();
     if(!name)return;                       // ignore empty submissions
@@ -29635,7 +29644,7 @@ window.addEventListener('message',async ev=>{
       fnoIssueAndApply('haatFarmers', rec.id).then(n => { if(n) return saveDB(true); }).catch(() => {});   /* v316 - saved first, number a moment later */
     }
   }
-  if(d.type==='kisan-haat-done'){
+  if(d.type==='kisan-haat-done' && _trustedFrameMsg(ev,'enrollFrame')){
     // v8.2 — public mode: close the iframe and show our branded thank-you
     // screen with the application ID + WhatsApp link.
     if(PUBLIC_MODE){
@@ -30202,6 +30211,9 @@ function closeVerificationForm(){
   if(_verifyTargetId && $('#drawer').classList.contains('show')){
     openHaatDrawer(_verifyTargetId);
   }
+  /* v339b - security fix 3 (NV-14): once this verification session is truly over, no later
+     message can be mistaken for belonging to it. Set last, after the two uses above. */
+  _verifyTargetId=null;
   if(window._runPendingReload) window._runPendingReload();   /* v219 */
 }
 /* v10 — the form's `photos` payload is an OBJECT {questionId: [dataURLs]},
@@ -30223,7 +30235,7 @@ window.addEventListener('message',async ev=>{
   /* v287 - the verification form's own "Download PDF". Waits (up to 20 s) for
      THIS submit's sheet to be in memory, so it never prints the previous visit,
      then runs the record page's builder. Reads and builds only. */
-  if(d.type==='verif-pdf-request' && d.farmerId){
+  if(d.type==='verif-pdf-request' && d.farmerId && _trustedFrameMsg(ev,'verifyFrame')){
     const _reply = () => { try{ const fr = document.getElementById('verifyFrame'); if(fr && fr.contentWindow) fr.contentWindow.postMessage({type:'verif-pdf-done'}, '*'); }catch(e){} };
     const _until = Date.now() + 20000;
     const _ready = () => { const v = (FORMS_CACHE[d.farmerId] || {}).verif; return !!(v && (!d.submittedAt || v.submittedAt === d.submittedAt)); };
@@ -30233,7 +30245,7 @@ window.addEventListener('message',async ev=>{
     catch(e){ console.warn('[Sristi] verification PDF:', e); toast('Could not build the PDF \u2014 try again', 'error'); _reply(); }
     return;
   }
-  if(d.type==='farm-verification-done' && _verifyTargetId){
+  if(d.type==='farm-verification-done' && _verifyTargetId && _trustedFrameMsg(ev,'verifyFrame')){
     /* v219 - hold any queued version update back until this has finished
        writing. Cleared at both exits below; the deadline is the backstop. */
     window._verifBusyUntil = Date.now() + 90000;
@@ -30675,10 +30687,10 @@ window.addEventListener('message',async ev=>{
   /* v219 - the FC has tapped Submit. Hold any queued version update back from
      here, not from the moment the payload arrives: submit() waits on GPS
      first, and that wait is long enough to reload into. */
-  if(d.type==='verif-submitting'){ window._verifBusyUntil = Date.now() + 90000; return; }
+  if(d.type==='verif-submitting' && _trustedFrameMsg(ev,'verifyFrame')){ window._verifBusyUntil = Date.now() + 90000; return; }
   /* v219 - an autosave from the verification form. Nothing here goes near
      Firebase: it is written to this phone only. */
-  if(d.type==='verif-draft' && _verifyTargetId){
+  if(d.type==='verif-draft' && _verifyTargetId && _trustedFrameMsg(ev,'verifyFrame')){
     /* Ignore anything that does not belong to the form currently open - a
        message that arrives late, after the FC has moved to another farmer,
        must never overwrite the new farmer's draft. */

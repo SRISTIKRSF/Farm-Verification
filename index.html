@@ -2306,9 +2306,9 @@ function buildCropRows(){
       + (CROP_ROWS.length > 1 ? '<button type="button" class="crop-del" data-delidx="'+i+'" title="Remove">✕</button>' : '') + '</div>'
       + '<div class="crop-fields">'
       + '<div><label>પાક (Crop)</label><select data-crop="'+i+'" data-f="name"><option value="">— પસંદ કરો —</option>'+CROPS.map(c=>'<option'+(r.name===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
-      + '<div><label>એકર (Area)</label><input type="number" step="0.5" data-crop="'+i+'" data-f="area" value="'+(r.area||'')+'" placeholder="0.0"></div>'
-      + '<div><label>ઉત્પાદન (Yield)</label><input type="text" data-crop="'+i+'" data-f="yield" value="'+(r.yield||'')+'" placeholder="400 kg"></div>'
-      + '<div><label>આવક ₹ (Income)</label><input type="number" data-crop="'+i+'" data-f="income" value="'+(r.income||'')+'" placeholder="0"></div>'
+      + '<div><label>એકર (Area)</label><input type="number" step="0.5" data-crop="'+i+'" data-f="area" value="'+esc(r.area||'')+'" placeholder="0.0"></div>'
+      + '<div><label>ઉત્પાદન (Yield)</label><input type="text" data-crop="'+i+'" data-f="yield" value="'+esc(r.yield||'')+'" placeholder="400 kg"></div>'
+      + '<div><label>આવક ₹ (Income)</label><input type="number" data-crop="'+i+'" data-f="income" value="'+esc(r.income||'')+'" placeholder="0"></div>'
       + '</div>';
     wrap.appendChild(card);
   });
@@ -3004,8 +3004,11 @@ window.addEventListener('message', ev => {
   const d = ev.data;
   if(!d || typeof d !== 'object') return;
   if(d.type === 'enrol-prefill' && d.schema){
-    CATEGORIES = d.schema.categories || [];
-    QUESTIONS = d.schema.questions || [];
+    /* v339 - every real question code is plain letters, numbers and _ ; a code with a quote or
+       a bracket could break the page markup, so such a question is left out */
+    var _okKey = function(k){ return typeof k === 'string' && k !== '' && !/["'<>&]/.test(k); };
+    CATEGORIES = (Array.isArray(d.schema.categories) ? d.schema.categories : []).filter(function(c){ return c && _okKey(c.key); });
+    QUESTIONS = (Array.isArray(d.schema.questions) ? d.schema.questions : []).filter(function(q){ return q && _okKey(q.id); });
     // Show draft restore banner if a recent draft exists; let the user decide.
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
@@ -4610,7 +4613,12 @@ window.addEventListener('message', ev => {
     return;
   }
   if(d.type === 'verif-prefill'){
-    if(d.schema){ CATEGORIES = d.schema.categories || []; QUESTIONS = d.schema.questions || []; }
+    if(d.schema){
+      /* v339 - same check as the enrolment form: a question code with a quote or bracket is left out */
+      var _okKey = function(k){ return typeof k === 'string' && k !== '' && !/["'<>&]/.test(k); };
+      CATEGORIES = (Array.isArray(d.schema.categories) ? d.schema.categories : []).filter(function(c){ return c && _okKey(c.key); });
+      QUESTIONS = (Array.isArray(d.schema.questions) ? d.schema.questions : []).filter(function(q){ return q && _okKey(q.id); });
+    }
     FARMER = Object.assign({}, FARMER, d.farmer || {});
     if(d.verifierName) VERIFIER_NAME = d.verifierName;
     if(d.photos && typeof d.photos === 'object') FARMER_PHOTOS = d.photos;
@@ -5116,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v338';
+const APP_VERSION = 'v339';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -11475,6 +11483,17 @@ function actor(){
 // literal name. The activity feed renderer swaps tokens for the CURRENT
 // name from DB, so renaming a farmer doesn't leave old name in the log.
 function farmerToken(id){ return id ? '{{id:'+id+'}}' : ''; }
+/* v339 - activity lines are stored as HTML, and anyone signed in (even the public form) can
+   add one. Only the few tags the app itself writes are shown as formatting: <b>, </b> and the
+   grey <span>. Everything else is shown as plain text, so a planted line cannot run code. */
+function safeActivityHtml(text){
+  if(text == null) return '';
+  return esc(String(text))
+    .replace(/&lt;(\/?)b&gt;/g, '<$1b>')
+    .replace(/&lt;span style=&quot;color:var\(--ink-faint\)&quot;&gt;/g, '<span style="color:var(--ink-faint)">')
+    .replace(/&lt;\/span&gt;/g, '</span>')
+    .replace(/&amp;(#[0-9]{1,7}|#x[0-9a-f]{1,6}|[a-z]{2,8});/gi, '&$1;');
+}
 function resolveActivityTokens(text){
   if(!text) return text;
   return String(text).replace(/\{\{id:([^}]+)\}\}/g, (_m, id) => {
@@ -13044,8 +13063,20 @@ function syncPracticesFromDB(){
       if(CONV_SCORE_LOCKED_SECTIONS.indexOf(k) >= 0){
         // Locked: only marks can flex, label/practices stay system-defined.
         if(typeof sf[k].marks === 'number') CONV_SCORE_FRAMEWORK[k].marks = sf[k].marks;
-      } else {
-        Object.assign(CONV_SCORE_FRAMEWORK[k], sf[k]);
+      } else if(sf[k] && typeof sf[k] === 'object'){
+        /* v339 - marks and thresholds are used in sums and shown on screen, so only real
+           numbers are taken (the Settings editor always saves numbers); anything else keeps
+           the default. A practice list must be a list. */
+        Object.keys(sf[k]).forEach(f => {
+          const val = sf[k][f];
+          if(f === 'marks' || f === 'threshold' || f === 'halfThreshold'){
+            if(typeof val === 'number' && isFinite(val)) CONV_SCORE_FRAMEWORK[k][f] = val;
+          } else if(f === 'practices'){
+            if(Array.isArray(val)) CONV_SCORE_FRAMEWORK[k][f] = val.filter(p => p && typeof p === 'object');
+          } else {
+            CONV_SCORE_FRAMEWORK[k][f] = val;
+          }
+        });
       }
     });
   }
@@ -14830,9 +14861,9 @@ function convScoreCell(f){
   return '<div style="display:flex;flex-direction:column;gap:3px;min-width:140px">'
     + '<div style="display:flex;align-items:center;gap:6px">'
     +   '<div style="flex:1;height:7px;background:var(--line);border-radius:5px;overflow:hidden;position:relative;min-width:60px">'
-    +     '<div style="position:absolute;left:0;top:0;height:100%;width:' + cs.total + '%;background:' + barColor + ';transition:width .25s"></div>'
+    +     '<div style="position:absolute;left:0;top:0;height:100%;width:' + (+cs.total||0) + '%;background:' + barColor + ';transition:width .25s"></div>'
     +   '</div>'
-    +   '<b style="font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap">' + cs.total + '<span style="color:var(--ink-faint);font-weight:500"> / 100</span></b>'
+    +   '<b style="font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap">' + esc(cs.total) + '<span style="color:var(--ink-faint);font-weight:500"> / 100</span></b>'
     + '</div>'
     + '<span class="tag ' + status.cls + '" style="font-size:9.5px;padding:1px 6px;align-self:flex-start"><span class="d"></span>' + status.label + '</span>'
     + '</div>';
@@ -14888,7 +14919,7 @@ function convScoreCard(f){
       + '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.45">' + key + '. ' + guLine(fw.gu || fw.label, fw.shortLabel || '') + '</div>'
       + (detail ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px">' + detail + '</div>' : '')
       + '</div>'
-      + '<div style="text-align:right;flex-shrink:0"><b style="color:' + color + ';font-size:14px;font-variant-numeric:tabular-nums">' + gotMarks + '</b><span style="color:var(--ink-faint);font-size:11px"> / ' + max + '</span></div>'
+      + '<div style="text-align:right;flex-shrink:0"><b style="color:' + color + ';font-size:14px;font-variant-numeric:tabular-nums">' + gotMarks + '</b><span style="color:var(--ink-faint);font-size:11px"> / ' + esc(max) + '</span></div>'
       + '</div>';
   };
   const F = CONV_SCORE_FRAMEWORK;
@@ -15599,8 +15630,8 @@ function openFcRefModal(program, id){
     <div class="detail-cell"><div class="k">Taluka</div><div class="v">${esc(talukaDisplayName(f.taluka,f.district)||'—')}</div></div>
     <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district)||'—')}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone||'—')}</div></div>
-    <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||'—'} acres</div></div>
-    <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic||'—'} yrs</div></div>
+    <div class="detail-cell"><div class="k">Land</div><div class="v">${esc(f.landAcres||'—')} acres</div></div>
+    <div class="detail-cell"><div class="k">Years organic</div><div class="v">${esc(f.yearsOrganic||'—')} yrs</div></div>
     <div class="detail-cell full"><div class="k">Crops</div><div class="v">${(f.crops||[]).map(c=>`<span class="pill">${esc(cropDisplayName(c))}</span>`).join('')||'—'}</div></div>
   </div>`;
   if(program==='conv'){
@@ -16291,7 +16322,7 @@ function _fcQueueCardHtml(item){
   const isUrgent = secKey==='seasonalVerifications'
     ? (()=>{ const lv=item.farmer.lastVisitAt||lastVisitDate(item.farmer); return lv ? daysBetween(lv, todayISO())>180 : true; })()
     : item.bucket==='overdue';
-  return `<div class="fc-card fc-card-v2" data-act="open" data-id="${esc(item.id)}" data-program="${item.program}" style="--sec-color:${sec.color};--sec-bg:${sec.bg}">
+  return `<div class="fc-card fc-card-v2" data-act="open" data-id="${esc(item.id)}" data-program="${esc(item.program)}" style="--sec-color:${sec.color};--sec-bg:${sec.bg}">
     <div class="fc-ct"><div><p class="fc-nm">${esc(item.name)}</p><p class="fc-lc">${svg(I.pin,2)} ${esc(item.village)} · ${esc(item.district)}</p></div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
       <span class="fc-tag">${svg(sec.icon,2)}${esc(sec.tag)}</span>
@@ -16305,8 +16336,8 @@ function _fcQueueCardHtml(item){
     ${item.plannedBy?`<div style="font-size:11px;color:var(--blue);margin-bottom:6px">📌 Planned by ${esc(item.plannedBy)}${item.plannedDate?' on '+esc(fmtDate(item.plannedDate)):''}</div>`:''}
     <div class="fc-cm"><span class="fc-idchip">${esc(item.farmer ? fnoLabel(item.farmer, fnoColOf(item.farmer)) : item.id)}</span>
       <div style="display:flex;gap:6px;margin-left:auto">
-        <button class="fc-btn-v" data-act="verify" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.check,2.5)} Verify Now</button>
-        ${!item.plannedBy?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${item.program}">${svg(I.clock,2)} Plan for later</button>`:''}
+        <button class="fc-btn-v" data-act="verify" data-id="${esc(item.id)}" data-program="${esc(item.program)}">${svg(I.check,2.5)} Verify Now</button>
+        ${!item.plannedBy?`<button class="fc-btn-edit" data-act="plan" data-id="${esc(item.id)}" data-program="${esc(item.program)}">${svg(I.clock,2)} Plan for later</button>`:''}
       </div>
     </div>
   </div>`;
@@ -17146,7 +17177,7 @@ function viewDashboard(){
     h+=`<tr><td colspan="${recent3.length+3}" class="mini-empty">No Field Coordinators yet — add some on the Field Coordinators page.</td></tr>`;
   }
   fcRows.forEach((r,i)=>{
-    h+=`<tr ${r.unassigned ? '' : 'data-fc="' + r.fc.id + '"'}${r.unassigned ? ' style="color:var(--ink-soft)"' : ''}>
+    h+=`<tr ${r.unassigned ? '' : 'data-fc="' + esc(r.fc.id) + '"'}${r.unassigned ? ' style="color:var(--ink-soft)"' : ''}>
       <td class="rk">${r.unassigned ? '\u2014' : (i+1)}</td>
       <td class="strong">${esc(r.fc.name)}${r.fc.phone?`<div class="mini-sub">📞 ${esc(r.fc.phone)}</div>`:''}${r.unassigned?'<div class="mini-sub">recorded without a coordinator</div>':''}</td>
       ${r.perMonth.map(n=>`<td class="num ${n?'':'muted'}">${n||'·'}</td>`).join('')}
@@ -17239,9 +17270,9 @@ function viewDashboard(){
         ? `<span style="font-weight:600;color:var(--ink)">${esc(a.actorName)}</span>${roleTag}`
         : '<span style="color:var(--ink-faint)">—</span>';
       h+=`<div class="act-row">
-        <div class="act-ico ${a.kind}">${svg(ACT_ICON[a.kind]||I.check,2.2)}</div>
+        <div class="act-ico ${esc(a.kind)}">${svg((Object.prototype.hasOwnProperty.call(ACT_ICON, a.kind) && ACT_ICON[a.kind])||I.check,2.2)}</div>
         <div class="act-body">
-          <div class="act-text">${resolveActivityTokens(a.text)}</div>
+          <div class="act-text">${resolveActivityTokens(safeActivityHtml(a.text))}</div>
           <div class="act-time">by ${who} · ${timeAgo(a.ts)}</div>
         </div>
       </div>`;
@@ -17818,14 +17849,14 @@ function viewHaat(){
     else activeCell = r.active
         ? '<span class="tag green" style="font-size:10.5px"><span class="d"></span>Active</span>'
         : '<span class="tag grey" style="font-size:10.5px"><span class="d"></span>Inactive</span>';
-    h+=`<tr data-id="${r.id}">
-      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
-      <td>${fnoIdHtml(r, 'haatFarmers', '<span class="id-code">' + r.id + '</span>')}${(function(){
+    h+=`<tr data-id="${esc(r.id)}">
+      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${esc(r.id)}" ${ARCH_SEL.haat.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
+      <td>${fnoIdHtml(r, 'haatFarmers', '<span class="id-code">' + esc(r.id) + '</span>')}${(function(){
         const st = recordStamp(r);
         return st ? '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:3px;white-space:nowrap">'+esc(st)+'</div>' : '';
       })()}</td>
       <td class="name-cell"><div class="nm">${r.name?esc(r.name):'<span style="color:var(--ink-faint);font-style:italic">no name on record</span>'}</div>
-        <div class="sub">${(r.landAcres==null||r.landAcres==='')?'—':r.landAcres} acres · ${(r.yearsOrganic==null||r.yearsOrganic==='')?'—':r.yearsOrganic} yr organic</div></td>
+        <div class="sub">${(r.landAcres==null||r.landAcres==='')?'—':esc(r.landAcres)} acres · ${(r.yearsOrganic==null||r.yearsOrganic==='')?'—':esc(r.yearsOrganic)} yr organic</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td class="crop-cell" style="max-width:260px">${cropsHtml}</td>
       <td>${farmerHaats(r).length?esc(farmerHaatLabel(r)):'<span style="color:var(--ink-faint)">—</span>'}</td>
@@ -17834,7 +17865,7 @@ function viewHaat(){
       <td>${activeCell}</td>
       <td style="font-size:11.5px">${lastV}</td>
       <td style="font-size:11.5px">${farmerJoinedLabel(r)}</td>
-      ${ARCH_SHOW.haat?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
+      ${ARCH_SHOW.haat?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${esc(r.id)}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${esc(r.id)}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
   if(haatTotalPages > 1){
@@ -18196,14 +18227,14 @@ function viewVerification(){
         : fmtDate(r.enrolledMonth||'');
       let actionBtn;
       if(F.tab==='awaiting'){
-        actionBtn=`<button class="btn btn-primary btn-sm" data-act="decide" data-id="${r.id}">${svg(I.check,2.2)}Make decision</button>`;
+        actionBtn=`<button class="btn btn-primary btn-sm" data-act="decide" data-id="${esc(r.id)}">${svg(I.check,2.2)}Make decision</button>`;
       } else {
         // Seasonal-coloured button if seasonal
         const btnClass = F.tab==='seasonal'?'btn-primary':'btn-clay';
-        actionBtn=`<button class="btn ${btnClass} btn-sm" data-act="visit" data-id="${r.id}">${svg(I.plus,2.2)}${F.tab==='seasonal'?'Re-verify farm':'Verification form'}</button>`;
+        actionBtn=`<button class="btn ${btnClass} btn-sm" data-act="visit" data-id="${esc(r.id)}">${svg(I.plus,2.2)}${F.tab==='seasonal'?'Re-verify farm':'Verification form'}</button>`;
       }
-      hh+=`<tr data-id="${r.id}">
-        <td><input type="checkbox" data-sel="${r.id}" ${checked}></td>
+      hh+=`<tr data-id="${esc(r.id)}">
+        <td><input type="checkbox" data-sel="${esc(r.id)}" ${checked}></td>
         <td><span class="pill">${esc(fnoLabel(r, fnoColOf(r)))}</span></td>
         <td class="name-cell"><b>${esc(r.name)}</b><div class="sub">${r.crops.length?esc(r.crops.slice(0,2).join(', '))+(r.crops.length>2?'...':''):''}</div></td>
         <td>${esc(r.village)}</td>
@@ -18723,7 +18754,7 @@ function viewConversion(){
     </select>
     <select id="cFc"><option value="">All field coordinators</option>
       <option value="__none__" ${F.fc==='__none__'?'selected':''}>— Unassigned —</option>
-      ${filterFcChoices(DB.fcs, DB.convFarmers).map(x=>`<option value="${x.id}" ${F.fc===x.id?'selected':''}>${x.name}</option>`).join('')}
+      ${filterFcChoices(DB.fcs, DB.convFarmers).map(x=>`<option value="${esc(x.id)}" ${F.fc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
     </select>
     <select id="cMobF"><option value="">All mobilizers</option>
       <option value="__none__" ${F.mob==='__none__'?'selected':''}>— No mobilizer —</option>
@@ -18795,10 +18826,10 @@ function viewConversion(){
       ? cropsArr.slice(0,3).map(c=>`<span class="tag grey" style="font-size:10.5px;padding:1px 6px;margin:0 2px 2px 0;display:inline-block">${esc(cropDisplayName(c))}</span>`).join('')
         + (cropsArr.length>3 ? `<span style="font-size:10.5px;color:var(--ink-faint)"> +${cropsArr.length-3}</span>` : '')
       : '<span style="color:var(--ink-faint)">—</span>';
-    h+=`<tr data-id="${r.id}">
-      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${r.id}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
+    h+=`<tr data-id="${esc(r.id)}">
+      ${canEditData()?`<td><input type="checkbox" class="arch-cb" data-aid="${esc(r.id)}" ${ARCH_SEL.conv.has(r.id)?'checked':''} aria-label="Select farmer"></td>`:''}
       <td>${fnoIdHtml(r, 'convFarmers', '<span class="id-code">' + esc(r.id) + '</span>')}</td>
-      <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${r.landAcres||0} acres</div></td>
+      <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(r.landAcres||0)} acres</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(r.district)}, ${esc(r.state)}</div></td>
       <td style="max-width:180px">${cropsCell}</td>
       <td>${fc?esc(fc.name):'<span class="tag grey"><span class="d"></span>Unassigned</span>'}</td>
@@ -18807,8 +18838,8 @@ function viewConversion(){
       <td style="font-size:11.5px">${lastVisit?fmtDate(lastVisit):'<span style="color:var(--ink-faint)">—</span>'}</td>
       <td style="font-size:11.5px">${r.nextVisitDue?fmtDate(r.nextVisitDue):'<span style="color:var(--ink-faint)">—</span>'}${overdue?' <span class="tag red" style="font-size:9.5px;padding:1px 6px">overdue</span>':''}</td>
       <td style="font-size:11.5px">${farmerJoinedLabel(r)}</td>
-      <td>${canEditData()?`<button class="btn btn-clay btn-sm" data-act="score" data-id="${r.id}">${svg(I.check,2.2)}Log visit + score</button>`:'—'}</td>
-      ${ARCH_SHOW.conv?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${r.id}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${r.id}">${svg(I.trash,2)}Delete</button></td>`:''}
+      <td>${canEditData()?`<button class="btn btn-clay btn-sm" data-act="score" data-id="${esc(r.id)}">${svg(I.check,2.2)}Log visit + score</button>`:'—'}</td>
+      ${ARCH_SHOW.conv?`<td style="white-space:nowrap"><button class="btn btn-sm arch-restore" data-rid="${esc(r.id)}" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">${svg(I.check,2)}Restore</button> <button class="btn btn-sm btn-danger arch-del" data-rid="${esc(r.id)}">${svg(I.trash,2)}Delete</button></td>`:''}
     </tr>`;
   });
   if(convTotalPages > 1){
@@ -20159,7 +20190,7 @@ function viewFcInbox(){
   let h='';
   h+=`<div class="toolbar">
     <select id="fiFc"><option value="">All FCs (manager view)</option>
-      ${DB.fcs.map(x=>`<option value="${x.id}" ${myFc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
+      ${DB.fcs.map(x=>`<option value="${esc(x.id)}" ${myFc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
     </select>
     <span style="font-size:11.5px;color:var(--ink-faint);margin-left:4px">Tip: pick yourself to see only your assigned farmers.</span>
   </div>`;
@@ -20193,7 +20224,7 @@ function viewFcInbox(){
   if(!list.length) h+=`<tr><td colspan="7"><div class="empty">${svg(I.check)}<div>Nothing here. Pick another tile.</div></div></td></tr>`;
   list.forEach(r=>{
     const fc=fcById(r.fcId);
-    h+=`<tr data-id="${r.id}">
+    h+=`<tr data-id="${esc(r.id)}">
       <td class="name-cell"><div class="nm">${esc(r.name)}</div><div class="sub">${esc(fnoLabel(r, fnoColOf(r)))}</div></td>
       <td>${esc(r.village)}<div style="font-size:10.5px;color:var(--ink-faint)">${esc(talukaDisplayName(r.taluka,r.district)||'')}${r.taluka?', ':''}${esc(r.district)}</div></td>
       <td>${fc?esc(fc.name):'—'}</td>
@@ -20795,7 +20826,7 @@ function _renderHaatEnrollmentDataSingle(f){
     const filt=rows.filter(([,v])=>v!==''&&v!=null&&v!==false);
     if(!filt.length) return '';
     return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 12px;font-size:12px">
-      ${filt.map(([k,v])=>`<div><span style="color:var(--ink-faint)">${esc(k)}:</span> <b>${typeof v==='string'?esc(v):v}</b></div>`).join('')}
+      ${filt.map(([k,v])=>`<div><span style="color:var(--ink-faint)">${esc(k)}:</span> <b>${esc(v)}</b></div>`).join('')}
     </div>`;
   };
   const ynline=(v,suffix='')=>v===true?'<span style="color:var(--green);font-weight:700">હા</span>'+suffix:v===false?'<span style="color:var(--red);font-weight:700">ના</span>'+suffix:esc(v||'')+suffix;
@@ -20815,7 +20846,7 @@ function _renderHaatEnrollmentDataSingle(f){
       const icon=c.claimed?'<span style="color:var(--green);font-weight:700">✓</span>':'<span style="color:var(--ink-faint)">○</span>';
       const noteHtml=c.note?` <span style="color:var(--ink-soft);font-style:italic">— ${esc(c.note)}</span>`:'';
       return `<div style="display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12px">
-        ${icon} <span style="font-size:14px">${p.emoji}</span> <span>${esc(p.label)}</span>${noteHtml}
+        ${icon} <span style="font-size:14px">${esc(p.emoji)}</span> <span>${esc(p.label)}</span>${noteHtml}
       </div>`;
     }).join('');
     h+=sec("Practices the farmer claims to follow",
@@ -21679,8 +21710,8 @@ function openHaatDrawer(id){
     <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district))}</div></div>
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
-    <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres} acres</div></div>
-    <div class="detail-cell"><div class="k">Years organic</div><div class="v">${f.yearsOrganic} yrs</div></div>
+    <div class="detail-cell"><div class="k">Land</div><div class="v">${esc(f.landAcres)} acres</div></div>
+    <div class="detail-cell"><div class="k">Years organic</div><div class="v">${esc(f.yearsOrganic)} yrs</div></div>
     <div class="detail-cell"><div class="k">Certification</div><div class="v">${esc(f.certification)}</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fcCellHtml(f)}</div></div>
     <div class="detail-cell"><div class="k">Haat${farmerHaats(f).length>1?'s':''} assigned</div><div class="v">${farmerHaats(f).length?esc(farmerHaats(f).join(', ')):'—'}</div></div>
@@ -21743,7 +21774,7 @@ ${/* v265 - everything from here to Edit details changes the record. */''}
             const e = cv[p.key];
             const st = VERIF_STATE[e.state] || VERIF_STATE.not_specified;
             return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px">
-              <span style="font-size:13px">${p.emoji}</span>
+              <span style="font-size:13px">${esc(p.emoji)}</span>
               <b style="flex-shrink:0">${esc(p.label)}:</b>
               <span class="tag ${st.cls}" style="font-size:10px"><span class="d"></span>${st.label}</span>
               ${e.fcNote?`<span style="color:var(--ink-soft);font-style:italic">— ${esc(e.fcNote)}</span>`:''}
@@ -21753,9 +21784,9 @@ ${/* v265 - everything from here to Edit details changes the record. */''}
         }
       } else if(vis.livingFence && vis.livingFence!=='—'){
         paramsHtml=`<div class="tl-params">
-          <span class="pill">Living fence: ${vis.livingFence}</span>
-          <span class="pill">Compost: ${vis.compost}</span>
-          <span class="pill">Soil: ${vis.soilHealth}</span>
+          <span class="pill">Living fence: ${esc(vis.livingFence)}</span>
+          <span class="pill">Compost: ${esc(vis.compost)}</span>
+          <span class="pill">Soil: ${esc(vis.soilHealth)}</span>
           <span class="pill">Pest: ${esc(vis.pestControl)}</span>
         </div>`;
       }
@@ -21786,7 +21817,7 @@ ${/* v265 - everything from here to Edit details changes the record. */''}
           const rows=['cow','buffalo','goat','hen'].filter(k=>ls[k]!=null).map(k=>{
             const seen=ls[k], cl=claimed[k]||0;
             const cls = seen===cl?'green':seen<cl?'red':'yellow';
-            return `<span class="tag ${cls}" style="font-size:10px"><span class="d"></span>${k}: ${seen}/${cl}</span>`;
+            return `<span class="tag ${cls}" style="font-size:10px"><span class="d"></span>${k}: ${esc(seen)}/${esc(cl)}</span>`;
           }).join(' ');
           if(rows) fcObsHtml+=`<div style="margin-top:6px;font-size:11px"><b>Livestock seen vs claimed:</b> ${rows}</div>`;
         }
@@ -21991,7 +22022,7 @@ function openConvDrawer(id){
     <div class="detail-cell"><div class="k">District</div><div class="v">${esc(districtDisplayName(f.district))}</div></div>
     <div class="detail-cell"><div class="k">State</div><div class="v">${esc(f.state)}</div></div>
     <div class="detail-cell"><div class="k">Phone</div><div class="v">${esc(f.phone)}</div></div>
-    <div class="detail-cell"><div class="k">Land</div><div class="v">${f.landAcres||0} acres</div></div>
+    <div class="detail-cell"><div class="k">Land</div><div class="v">${esc(f.landAcres||0)} acres</div></div>
     <div class="detail-cell"><div class="k">Field Coordinator</div><div class="v">${fc?esc(fc.name):'<span style="color:var(--red);font-weight:600">— Unassigned —</span>'}</div></div>
     <div class="detail-cell"><div class="k">Mobilizer</div><div class="v">${mobName?esc(mobName):'<span style="color:var(--ink-faint)">— None —</span>'}</div></div>
     <div class="detail-cell"><div class="k">Juth / FPC</div><div class="v">${f.juth?esc(f.juth):'<span style="color:var(--ink-faint)">—</span>'}</div></div>
@@ -23255,7 +23286,7 @@ function openFarmerModal(program,id){
     ${fld('District',sel('ffDistrict',distOpts,f.district),true)}
   </div>
   <div class="field-row">
-    ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${f.landAcres||''}">`)
+    ${fld('Land (acres)',`<input type="number" step="0.1" id="ffLand" value="${esc(f.landAcres||'')}">`)
     }${program==='haat'?fld('Field Coordinator',sel('ffFc',fcPickerOptions(f.fcId),f.fcId||''),true):''}
   </div>`;
   /* v220 - the farmer's juth or FPC. Outside the program branches below
@@ -23267,14 +23298,14 @@ function openFarmerModal(program,id){
     + '</div>');
   if(program==='haat'){
     body+=`<div class="field-row">
-      ${fld('Years doing organic',`<input type="number" id="ffYears" value="${f.yearsOrganic||''}">`)}
+      ${fld('Years doing organic',`<input type="number" id="ffYears" value="${esc(f.yearsOrganic||'')}">`)}
       ${fld('Certification',sel('ffCert',['GOPCA','PGS','None (Tribal exemption)','Registration pending'],f.certification))}
     </div>`;
     // v84 — legacy farmers (200+) have been with Sristi since before this app
     // existed; their real in-app enrollment date only reflects when they were
     // digitally added, not when they actually joined. This manually-entered
     // year overrides that for the Onboarded charts — see farmerOnboardYM().
-    body+=fld('Association with Sristi (year)',`<input type="number" id="ffAssocYear" min="2000" max="${new Date().getFullYear()}" placeholder="e.g. 2023 — only for legacy farmers, leave blank otherwise" value="${f.associationYear||''}">`);
+    body+=fld('Association with Sristi (year)',`<input type="number" id="ffAssocYear" min="2000" max="${new Date().getFullYear()}" placeholder="e.g. 2023 — only for legacy farmers, leave blank otherwise" value="${esc(f.associationYear||'')}">`);
     body+=fld('Crops grown',`<input type="text" id="ffCropSearch" placeholder="🔍 Search crop…" style="width:100%;padding:7px 9px;border:1px solid var(--line-strong);border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:7px;box-sizing:border-box"><div class="checkgrid" id="ffCrops" style="max-height:260px;overflow-y:auto">${cropChecks}</div>`);
   }
 
@@ -23529,10 +23560,10 @@ function viewFieldCoordinators(){
       const farmerCount=(DB.haatFarmers||[]).filter(f=>f.fcId===fc.id).length
                        +(DB.convFarmers||[]).filter(f=>f.fcId===fc.id).length;
       const dCount=fc.districtCount!=null?fc.districtCount:0;
-      h+=`<tr data-id="${fc.id}" style="${fc.inactive?'opacity:.55':''}">
+      h+=`<tr data-id="${esc(fc.id)}" style="${fc.inactive?'opacity:.55':''}">
         <td>
           <div style="display:flex;align-items:center;gap:10px">
-            <div class="fc-avatar" style="--accent:${ac};width:32px;height:32px;font-size:11px">${initials(fc.name)}</div>
+            <div class="fc-avatar" style="--accent:${ac};width:32px;height:32px;font-size:11px">${esc(initials(String(fc.name||'')))}</div>
             <div><div style="font-weight:600">${esc(fc.name)}${fc.inactive?' <span class="tag" style="font-size:9.5px;background:var(--panel-2);color:var(--ink-faint)">Inactive</span>':''}</div>
               <div style="font-size:10.5px;color:var(--ink-faint)">${esc(fc.id)}</div></div>
           </div>
@@ -23545,10 +23576,10 @@ function viewFieldCoordinators(){
         <td class="num">${r.visitsTotal}</td>
         <td style="font-size:11.5px">${r.lastVisitAt?fmtDate(r.lastVisitAt):'<span style="color:var(--ink-faint);font-size:11px">No visits yet</span>'}</td>
         <td>${canEditPeople?`
-          <button class="btn-icon" data-edit-ffc="${fc.id}" title="Edit" aria-label="Edit field coordinator" style="margin-right:3px">${svg(I.edit,2)}</button>
+          <button class="btn-icon" data-edit-ffc="${esc(fc.id)}" title="Edit" aria-label="Edit field coordinator" style="margin-right:3px">${svg(I.edit,2)}</button>
           ${fc.inactive
-            ? `<button class="btn-icon" data-react-ffc="${fc.id}" title="Reactivate" aria-label="Reactivate field coordinator">${svg(I.check,2)}</button>`
-            : `<button class="btn-icon-danger" data-off-ffc="${fc.id}" title="Deactivate" aria-label="Deactivate field coordinator">${svg(I.trash,2)}</button>`}
+            ? `<button class="btn-icon" data-react-ffc="${esc(fc.id)}" title="Reactivate" aria-label="Reactivate field coordinator">${svg(I.check,2)}</button>`
+            : `<button class="btn-icon-danger" data-off-ffc="${esc(fc.id)}" title="Deactivate" aria-label="Deactivate field coordinator">${svg(I.trash,2)}</button>`}
         `:'<span style="color:var(--ink-faint);font-size:11px">\u2014</span>'}</td>
       </tr>`;
     });
@@ -25514,7 +25545,7 @@ function viewSettings(){
         +   '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">' + esc(fw.gu) + '</div></div>'
         +   '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
         +     '<label style="font-size:10.5px;color:var(--ink-faint);font-weight:700;text-transform:uppercase">Marks</label>'
-        +     '<input type="number" min="0" max="100" value="' + fw.marks + '" data-fwf="' + k + ':marks" style="width:64px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:5px;font-size:13px;text-align:center">'
+        +     '<input type="number" min="0" max="100" value="' + esc(fw.marks) + '" data-fwf="' + k + ':marks" style="width:64px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:5px;font-size:13px;text-align:center">'
         +     '<label style="font-size:10.5px;color:var(--ink-faint);font-weight:700;text-transform:uppercase">Need ≥</label>'
         // v8 — bound threshold to the practice count so admin can't set
         // an unreachable threshold (e.g. need ≥ 5 when only 3 practices exist).
@@ -27428,7 +27459,7 @@ function renderFarmsCard(f){
       </div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px">
         ${esc(u.village||'—')}${u.taluka?', '+esc(_dupPlain(u.taluka)):''}, ${esc(districtDisplayName(u.district)||'—')}
-        ${u.survey?` · survey ${esc(u.survey)}`:''}${u.acres?` · ${u.acres} acres`:''}
+        ${u.survey?` · survey ${esc(u.survey)}`:''}${u.acres?` · ${esc(u.acres)} acres`:''}
       </div>
       <div style="font-size:11.5px;color:var(--ink-faint);margin-top:3px">
         ${fc?('FC: '+esc(fc.name)):'No field coordinator yet'} · ${u.visits.length} visit${u.visits.length===1?'':'s'}
@@ -29929,9 +29960,11 @@ function openVerificationForm(farmerId, farmFid, opts){
             sel.style.width = '100%';
             sel.innerHTML = '<option value="">— FC પસંદ કરો —</option>' +
               fcList.map(function(fc){
-                var nm = (fc.name||'').replace(/"/g,'&quot;');
-                var ph = (fc.phone||'').replace(/"/g,'&quot;');
-                return '<option value="'+nm+'" data-mob="'+ph+'">'+fc.name+(fc.phone?' ('+fc.phone+')':'')+'</option>';
+                /* v339 - names and phones escaped in full, not just quotes */
+                var e = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); };
+                var nm = e(fc.name||'');
+                var ph = e(fc.phone||'');
+                return '<option value="'+nm+'" data-mob="'+ph+'">'+nm+(fc.phone?' ('+ph+')':'')+'</option>';
               }).join('') +
               '<option value="__other__">— અન્ય (ટાઇપ કરો) —</option>';
             sel.name = 'verifier_name';
@@ -33603,7 +33636,10 @@ async function openAttentionReview(id){
       '<div class="hint">આ નંબર સાથે નોંધાયેલ ખેડૂત મળ્યો નથી.<br>'
       + '<span style="color:var(--ink-faint)">The farmer this number belongs to could not be found.</span></div>',
       '<button class="btn btn-ghost" onclick="closeModal()">બંધ કરો</button>'
-      + '<button class="btn btn-primary" onclick="closeModal();moveAttentionToFarmers(\'' + esc(id) + '\')">નવો ખેડૂત બનાવો</button>');
+      + '<button class="btn btn-primary" id="attNewFarmerBtn">નવો ખેડૂત બનાવો</button>');
+    /* v339 - wired here, not as onclick text: the id comes from a public submission */
+    const _nb = document.getElementById('attNewFarmerBtn');
+    if(_nb) _nb.onclick = () => { closeModal(); moveAttentionToFarmers(id); };
     return;
   }
 
@@ -34511,7 +34547,7 @@ function openPendingDetailModal(id){
       <tr><td style="padding:4px 0;color:var(--ink-soft)">ગામ / Village</td><td>${esc(r.village)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">તાલુકો / Taluka</td><td>${esc(talukaDisplayName(r.taluka,r.district)||'—')}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">જિલ્લો / District</td><td>${esc(r.district)}</td></tr>
-      <tr><td style="padding:4px 0;color:var(--ink-soft)">જમીન / Land</td><td>${isHaat?(r.landAcres||0)+' acres':(r.landAcres||0)+' acres · '+(r.organicAcres!=null?r.organicAcres:(r.organicBigha||0))+' acre to convert'}</td></tr>
+      <tr><td style="padding:4px 0;color:var(--ink-soft)">જમીન / Land</td><td>${esc(isHaat?(r.landAcres||0)+' acres':(r.landAcres||0)+' acres · '+(r.organicAcres!=null?r.organicAcres:(r.organicBigha||0))+' acre to convert')}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">પાક / Crops</td><td>${esc(cropsTxt)}</td></tr>
       <tr><td style="padding:4px 0;color:var(--ink-soft)">સબમિટ / Submitted</td><td>${esc(String(r.submittedAt||'').slice(0,16).replace('T',' '))}</td></tr>
     </table>

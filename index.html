@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v340';
+const APP_VERSION = 'v341';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27597,7 +27597,13 @@ function viewData(){
 function toCSV(rows){
   if(!rows.length)return'';
   const keys=Object.keys(rows[0]);
-  const esc=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  /* v340b - security fix 4 (NV-30): a stored value can start with =, +, - or @ — a public
+     form submission or a coordinator can write whatever text they like into name/village/
+     phone/etc, and a spreadsheet reads a leading one of those as the start of a formula, not
+     as text. A planted formula (built from neighbouring cells) could leak other farmers' data
+     to an outside site, or worse, when someone in the office opens the exported file. A leading
+     apostrophe tells every common spreadsheet "this is text", with no change to what is shown. */
+  const esc=v=>{v=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
   // v97 — leading UTF-8 BOM. Without it, Excel (the near-universal way anyone
   // opens a CSV) guesses the system ANSI codepage instead of UTF-8 on open —
   // Gujarati/Hindi script can't be represented there, so it silently renders

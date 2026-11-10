@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v344';
+const APP_VERSION = 'v345';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -7934,6 +7934,10 @@ function _baseMaybeDelta(key, st){
 /* v305c - a changes-only tab left open still gets its daily full download, and goes back to
    full at once if another tab on this computer has found an unstamped change */
 function _baseTick(){
+  /* security fix 18 (NV-25) - piggybacked on this existing 15-minute heartbeat rather than
+     adding a fourth timer to the file. _revalidateOwnAccountLive() guards on SESSION itself,
+     so running it unconditionally here (session or not) is safe. */
+  try{ _revalidateOwnAccountLive(); }catch(e){}
   _DELTA_COLS.forEach(key => {
     const st = _baseState[key];
     if(!st || !st.ready) return;
@@ -11854,7 +11858,13 @@ function saveSession(s, keepOnThisDevice){
     }
   }catch(e){}
 }
-/* v221 - sign out for a reason other than the person asking to. */
+/* v221 - sign out for a reason other than the person asking to.
+   kind: undefined (the default) is a REAL revocation - deactivated, reset, or otherwise no
+   longer this person's account; also signs out of Firebase, forgets the offline login, and
+   (security fix 18, NV-28... NV-25) wipes this device's local farmer copy once nothing is left
+   queued to send. kind: 'info' is the unrelated auth-migration re-prompt (authAfterBoot) - the
+   account is still perfectly valid, so none of those three extra steps apply; a future call
+   site should only pass 'info' when it means exactly that. */
 function forceSignOut(why, kind){
   /* v225 - take this device's multi-device row down too. Without this a
      deactivated account's flag outlived the account by up to 8 hours. */
@@ -11871,7 +11881,7 @@ function forceSignOut(why, kind){
      conditions the version-update gate uses. Capped, so a flag left set cannot
      strand somebody signed out on screen but still inside the app. */
   let _fsTries = 0;
-  const _fsGo = function(){
+  const _fsGo = async function(){
     /* Also while a form is open: its draft reaches IndexedDB through a
        postMessage and a 1.5s debounce, and a reload can outrun that. The text
        half is written synchronously and is safe either way; the photos are not. */
@@ -11879,6 +11889,15 @@ function forceSignOut(why, kind){
               || (function(){ try{ return typeof window._formIsOpen === 'function' && window._formIsOpen(); }catch(e){ return false; } })()
               || (function(){ try{ return typeof pendingSyncCount === 'function' && pendingSyncCount() > 0; }catch(e){ return false; } })();
     if(busy && _fsTries++ < 40){ setTimeout(_fsGo, 1500); return; }
+    /* security fix 18 (NV-25) - a real revocation (never kind 'info') also wipes this
+       device's local farmer copy, but only once busy resolved to false here - that means
+       pendingSyncCount() was 0, so nothing queued is destroyed. Awaited, so the reload below
+       can never race the IndexedDB delete. If busy was still true after giving up at 40 tries,
+       this is skipped on purpose: the mirror is left alone rather than risk it. */
+    if(kind !== 'info' && !busy){
+      try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+      try{ await _mirrorClear(); }catch(e){}
+    }
     /* v225 - was '#login', which nothing in this file handles, so a forced
        sign-out landed on the farmer-facing page instead of the login screen.
        '#admin' with no session opens the login modal at boot. */
@@ -11889,6 +11908,46 @@ function forceSignOut(why, kind){
     else location.reload();
   };
   setTimeout(_fsGo, 1800);
+}
+let _revalidateBusy = false;
+/* security fix 18 (NV-25) - revalidateSession only ever runs once config/users' WHOLE LIST
+   arrives, which the tight rules now refuse to exactly the account that most needs catching
+   (a deactivated account's own listener on that node is permission-denied). This checks only
+   THIS account's own record - authMap/<uid> then config/users/<key> - which the rules allow
+   even when deactivated, so it still works at exactly the moment the whole-list check cannot. */
+async function _revalidateOwnAccountLive(){
+  /* a field device keeps its Firebase sign-in on purpose after an in-app sign-out
+     (signOutNow, AUTH_FIELD_ROLES) - SESSION can be null while a real, still-valid staff
+     Firebase user is current. This is only ever about SESSION's own account. */
+  if(!SESSION || _revalidateBusy) return;
+  _revalidateBusy = true;
+  try{
+    const au = _fbAuthOrNull();
+    const cur = au && au.currentUser;
+    const uid = (cur && !cur.isAnonymous) ? cur.uid : (SESSION.authUid || '');
+    if(!uid) return;   // a pure offline/hash session with no Firebase identity yet - nothing narrow to check
+    const g = await _authRace(fbRef('authMap/' + uid).get(), 6000);
+    if(!g.value) return;   // inconclusive (offline, timeout) - never act on it
+    const key = g.value.exists() ? g.value.val() : null;
+    if(typeof key !== 'string' || !/^u_/.test(key)){
+      /* the authMap entry for THIS uid is genuinely gone - exactly what a password reset
+         does to the OLD uid. A rename never does this (it keeps the same authMap entry). */
+      forceSignOut('તમારી સાઇન-ઇન માહિતી બદલાઈ ગઈ છે · Your sign-in was reset — signing out. Please sign in again.');
+      return;
+    }
+    const r = await _authRace(fbRef('config/users/' + key).get(), 6000);
+    if(!r.value) return;
+    const acct = r.value.exists() ? r.value.val() : null;
+    if(!acct) return;   // inconclusive
+    /* deliberately NOT comparing acct.id to SESSION.loginId here - a rename keeps the same
+       authMap entry and is not a revocation; comparing ids would false-positive on every live
+       session left open across a rename. active is scoped correctly regardless of a rename,
+       since it is still read from the same uid's own account. */
+    if(acct.active === false){
+      forceSignOut('તમારું એકાઉન્ટ બંધ કરવામાં આવ્યું છે · This account has been deactivated — signing out.');
+    }
+  }catch(e){}
+  finally{ _revalidateBusy = false; }
 }
 /* v221 - nothing in this app ever re-checked a session once it existed;
    subscribeUsers() only refreshed the list. That was survivable while a session
@@ -32044,6 +32103,12 @@ async function authAfterBoot(){
   try{
     if(!SESSION || (typeof PUBLIC_MODE !== 'undefined' && PUBLIC_MODE)) return;
     if(!(FB && FB.ready && navigator.onLine) || !_fbAuthOrNull()) return;
+    /* security fix 18 (NV-25) - every normal online boot (including a 30-day kept session
+       restored from local storage with no live check of its own) gets checked here, once,
+       against the account's own live record - closing the "kept session with no live check"
+       gap directly. */
+    try{ await _revalidateOwnAccountLive(); }catch(e){}
+    if(!SESSION) return;   /* just signed out above */
     const cur = authCurrentStaff();
     if(cur && SESSION.authUid && cur.uid === SESSION.authUid){
       /* once a day per device is plenty for the office's "who has moved" view */
@@ -32216,7 +32281,14 @@ function subscribeUsers() {
     USERS_LIST = Object.values(snap.val()).filter(u => u && u.id);
     saveUsersCache(USERS_LIST);
     revalidateSession(USERS_LIST);   /* v221 */
-  }, err => { console.warn('[Users] Firebase sync error:', err); });
+  }, err => {
+    console.warn('[Users] Firebase sync error:', err);
+    /* security fix 18 (NV-25) - this is a single, definitive denial (not offline churn - a
+       purely offline device gets no event here at all), and for a deactivated account it is
+       exactly the moment revalidateSession above can no longer run: config/users' whole list
+       now refuses the one account that most needs catching. Checked narrowly instead. */
+    try{ _revalidateOwnAccountLive(); }catch(e){}
+  });
 }
 
 /* v109 SECURITY — this used to auto-seed config/users from the hardcoded

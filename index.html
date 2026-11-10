@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v343';
+const APP_VERSION = 'v344';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -9369,7 +9369,7 @@ function idbOpen(){
   return new Promise((resolve, reject) => {
     if(_idb){ resolve(_idb); return; }
     if(!window.indexedDB){ reject(new Error('no idb')); return; }
-    const req = indexedDB.open('sristi_v11_local', 3);
+    const req = indexedDB.open('sristi_v11_local', 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if(!db.objectStoreNames.contains('photoQueue'))         db.createObjectStore('photoQueue',         {keyPath:'photoId'});
@@ -9377,6 +9377,10 @@ function idbOpen(){
       if(!db.objectStoreNames.contains('formWrites'))         db.createObjectStore('formWrites',         {keyPath:'key'});
       if(!db.objectStoreNames.contains('pendingEnrolments'))  db.createObjectStore('pendingEnrolments',  {keyPath:'id'});
       if(!db.objectStoreNames.contains('offlineWrites'))      db.createObjectStore('offlineWrites',      {keyPath:'key'});
+      /* security fix 17 (NV-28) - writes held back because the farmer they targeted was
+         permanently deleted in the meantime; never silently dropped, kept here so nothing
+         vanishes without a trace */
+      if(!db.objectStoreNames.contains('offlineWritesHeld'))  db.createObjectStore('offlineWritesHeld',  {keyPath:'key'});
     };
     /* v244 - a wedged profile or another tab holding a versionchange makes
        indexedDB.open() HANG rather than fail. Every durable store in the app
@@ -11101,6 +11105,54 @@ async function flushPendingEnrolments(){
 }
 
 const _offlineWritesState = { tok: null };
+/* ============ security fix 17 (NV-28) - A PERMANENTLY DELETED FARMER STAYS DELETED ============
+   deleteFarmersPermanently never leaves a stray marker on the farmer's own path - its real
+   trace is syncTombstones/<col>/<id>, written a layer down by saveDB/_stampUpdates. A queued
+   write (or a repair tool acting on a stale local copy) that still targets that exact id would
+   otherwise .update() a path Firebase happily recreates, resurrecting a farmer the office was
+   told, in words, could never come back. Ids are uid()'d (timestamp+random) and never reused,
+   so a tombstone's mere existence is final proof - no restore/undelete feature exists anywhere
+   in this app. _isTombstoned is the one check every one of those write sites now makes first. */
+async function _isTombstoned(col, id){
+  try{
+    if(!(FB && FB.ready)) return true;   // cannot confirm either way - the safe answer is "held"
+    const g = await _fbWriteGuard(fbRef(_TOMB_NODE + '/' + col + '/' + id).get(), 8000);
+    if(g.timedOut) return true;
+    return !!(g.value && g.value.exists());
+  }catch(e){ return true; }
+}
+/* Never silently drop a write this device could not deliver - move it where the office can
+   see it was held, and why, instead of retrying forever against something that can never
+   succeed (or just vanishing with no trace). */
+async function _holdOfflineWrite(item, reason){
+  try{ await idbPut('offlineWritesHeld', Object.assign({}, item, {heldAt: new Date().toISOString(), heldReason: reason})); }catch(e){}
+  try{ await idbDel('offlineWrites', item.key); }catch(e){}
+}
+/* logActivity() only ever touches the LOCAL DB.activity array - it needs a later saveDB() to
+   reach the server, which nothing here calls. Queued the same durable way every other
+   delivery-failure alert in this file already is (_reportPublicFormNotReceived), so it reaches
+   the office even when nobody happens to be looking at this exact device right now. */
+async function _logHeldAlert(text){
+  try{ logActivity('alert', text); }catch(e){}
+  try{
+    const id = uid('ACT');
+    const a = actor();
+    const entry = { id: id, kind: 'alert', text: text, ts: Date.now(), actorName: a.name, actorId: a.id, actorRole: a.role };
+    await idbPut('offlineWrites', { key: 'activity/' + id, col: 'activity', id: id, rec: sanitizeForFB(entry) });
+  }catch(e){}
+}
+async function _holdTombstonedWrite(item){
+  const name = (item && item.rec && item.rec.name) ? String(item.rec.name).trim() : '';
+  await _holdOfflineWrite(item, 'farmer permanently deleted');
+  await _logHeldAlert('⚠ A queued update for <b>' + esc(name || (item && item.id) || '')
+    + '</b> (' + esc((item && item.id) || '') + ') could not be delivered — the record was '
+    + 'permanently deleted before it could be sent. Nothing was changed; the update was held, not lost.');
+}
+async function _holdUnexpectedColumnWrite(item){
+  await _holdOfflineWrite(item, 'unexpected column');
+  await _logHeldAlert('⚠ A queued update to an unexpected location (<b>' + esc((item && item.col) || '')
+    + '</b>) was held, not sent.');
+}
 /* ============ v332 - A FARMER IS NEVER LEFT WITHOUT A NAME ============
    26 Oct 2026, Deepak Bhai Baranda (HF_PUB_1779680): his record was missing on the
    server when his verification was submitted. The submit writes only its own fields
@@ -11148,6 +11200,7 @@ async function _topUpBareFarmer(col, rec){
   try{
     if(!rec || !rec.id || !String(rec.name || '').trim()) return false;   // nothing better to give
     if(!(FB && FB.ready)) return false;
+    if(await _isTombstoned(col, rec.id)) return false;   // security fix 17 (NV-28) - permanently gone, stays gone
     const keys = await _serverFarmerKeys(col, rec.id);
     if(!_isBareFarmerKeys(keys)) return false;            // a normal record, or we could not tell
     let full;
@@ -11237,6 +11290,7 @@ async function autoHealBareFarmers(){
     if(!reg) return 0;
     const healed = [];
     for(const it of cands.slice(0, 20)){
+      if(await _isTombstoned(it.col, it.id)) continue;   // security fix 17 (NV-28) - permanently deleted, never healed
       let fill = null;
       try{
         if(it.col === 'haatFarmers'){
@@ -11317,11 +11371,34 @@ async function flushOfflineWrites(){
            window created a second visit. */
         markLocalTouch(it.col, it.id, _QUEUE_WRITE_MS + 15000);
         /* Anything that is not a farmer record - the verifIndex marker, for
-           one - is a single value the device genuinely owns. Unchanged. */
+           one - is a single value the device genuinely owns. Unchanged.
+           security fix 17 (NV-24) - this used to write to WHATEVER it.col/it.id named,
+           trusting local storage completely. Now limited to the exact shapes this app's
+           own code ever queues here (confirmed by grep across the whole file): a bare
+           activity/convForms/verifIndex entry, or a formPhotos/<farmerId> photo address -
+           both as a single further path segment, never deeper. Anything else is held, not
+           sent and not silently dropped. */
         if(it.col !== 'haatFarmers' && it.col !== 'convFarmers'){
+          const _isKnownCol = it.col === 'activity' || it.col === 'convForms' || it.col === 'verifIndex'
+                             || /^formPhotos\/[^/]+$/.test(it.col || '');
+          const _idOk = typeof it.id === 'string' && !/\//.test(it.id);
+          if(!_isKnownCol || !_idOk){
+            console.warn('[Sristi] security fix 17 (NV-24) - held an offline write to an unexpected location:', it.key);
+            await _holdUnexpectedColumnWrite(it);
+            continue;
+          }
           const _g1 = await _fbWriteGuard(fbRef(it.col+'/'+it.id).set(it.rec), _QUEUE_WRITE_MS);
           if(_g1.timedOut){ console.warn('[Sristi] offline write timed out (kept for retry):', it.key); continue; }
           await idbDel('offlineWrites', it.key);
+          continue;
+        }
+        /* security fix 17 (NV-28) - this exact farmer id was permanently deleted; replaying
+           this queued write would .update() a now-missing path back into existence. Checked
+           before the decisionAt reads below, since there is no point doing that work on a
+           write that is about to be held anyway. */
+        if(await _isTombstoned(it.col, it.id)){
+          console.warn('[Sristi] security fix 17 (NV-28) - held a queued write for a permanently deleted farmer:', it.key);
+          await _holdTombstonedWrite(it);
           continue;
         }
         /* v218 - has the office ruled on this farmer since the copy was taken?
@@ -13378,6 +13455,10 @@ async function autoHealVerifications(){
       if(_sg.timedOut || !_sg.value || !_sg.value.exists()) continue;   // cannot check: next load
       _srv = _sg.value.val() || {};
     }catch(e){ continue; }
+    /* security fix 17 (NV-28) - a record that exists but was only just resurrected by
+       another write this fix also guards is still a record this id must never get fleshed
+       out further on; if it is ever somehow bare again, leave it tombstoned, not healed. */
+    if(await _isTombstoned('haatFarmers', id)) continue;
     if(_srv._archived || _HEAL_POST_DECISION.includes(_srv.stage)) continue;
     if(_srv.verificationFormSubmittedAt && _srv.stage === 'verified') continue;
     /* Re-resolve AFTER the await; the live listener replaces every record in
@@ -13439,7 +13520,15 @@ function markVerificationSubmitted(farmerId, whenISO){
   /* v216b - offline this only fills the SDK's in-memory queue, and the
      submission handler stores the same marker in the durable offlineWrites
      queue instead, which survives the tab closing. */
-  if(FB && FB.ready && navigator.onLine){ fbRef('verifIndex/'+farmerId).set(DB.verifIndex[farmerId]).catch(()=>{}); }
+  if(FB && FB.ready && navigator.onLine){
+    /* security fix 17 (NV-28) - a stray verifIndex marker for a permanently deleted
+       farmer is exactly the kind of "marker with no record" litter the self-heal code
+       reacts to; checked here, once, so every caller is covered without its own guard. */
+    _isTombstoned('haatFarmers', farmerId).then(gone => {
+      if(gone) return;
+      fbRef('verifIndex/'+farmerId).set(DB.verifIndex[farmerId]).catch(()=>{});
+    }).catch(()=>{});
+  }
 }
 function clearVerificationSubmitted(farmerId){
   if(!farmerId) return;
@@ -22858,6 +22947,10 @@ async function openRepairVerificationsModal(){
       if(!f || !v) continue;
       if(f.verificationFormSubmittedAt) continue;                   // filled in meanwhile
       if(_REPAIR_POST_DECISION.includes(f.stage)) continue;
+      /* security fix 17 (NV-28) - this tool re-resolves f from the local list, which can
+         be stale: skip a farmer that was permanently deleted elsewhere rather than
+         recreate it from a leftover forms/<id>/verif this tool exists to find. */
+      if(await _isTombstoned('haatFarmers', f.id)) continue;
       /* Claim the 5-second protection BEFORE touching anything, so a listener
          update landing mid-edit cannot revert what we are about to write. */
       markLocalTouch('haatFarmers', f.id);
@@ -23985,6 +24078,13 @@ async function undoVerifEdit(farmerId, editId){
   if(!ok) return;
   f = (DB.haatFarmers||[]).find(x => x.id === farmerId);
   if(!f) return;
+  /* security fix 17 (NV-28) - f came from this device's own local list, which can be
+     stale; refuse to write a farmer that was permanently deleted elsewhere rather than
+     recreate it. */
+  if(await _isTombstoned('haatFarmers', f.id)){
+    toast('That farmer’s record was permanently deleted — there is nothing left to undo', 'error');
+    return;
+  }
   const byId = {};
   form.claims.forEach(c => { if(c && c.id) byId[c.id] = c; });
   (rec.claims||[]).forEach(c => {
@@ -29549,6 +29649,15 @@ window.addEventListener('message',async ev=>{
          saveDB batch below. */
       if(FB && FB.ready && !_farmTgt){
         try{
+          /* security fix 17 (NV-28) - this handler has no durable fallback to fall
+             back on, so the tombstone is checked right here: a permanently deleted
+             farmer must never get this update() recreating their record. */
+          if(await _isTombstoned('haatFarmers', f.id)){
+            console.warn('[Sristi] security fix 17 (NV-28) - held a verification for a permanently deleted farmer:', f.id);
+            await _logHeldAlert('⚠ A verification for <b>' + esc(f.name) + '</b> (' + esc(f.id)
+              + ') could not be delivered — the record was permanently deleted before it could be sent. Nothing was changed.');
+            throw new Error('tombstoned');
+          }
           await fbRef('haatFarmers/' + f.id).update({
             verificationFormSubmittedAt: f.verificationFormSubmittedAt,
             stage: f.stage,
@@ -30637,24 +30746,36 @@ window.addEventListener('message',async ev=>{
         let _rowConfirmed = false;   /* v272 */
         if(FB && FB.ready && navigator.onLine){
           try{
-            /* v216 - GUARDED. Unguarded, this is where an offline submission
-               stopped for good: FB.ready is true when the SDK is merely
-               disconnected, the promise never settles, and the durable
-               fallback fifteen lines below was unreachable. Measured on both
-               v214 and v215 - the form reached the server and the farmer's own
-               row went back to "verification pending" with zero visits. */
-            /* v272 - the result is kept now. Whether THIS write confirmed is
-               the only trustworthy evidence the server has the visit; saveDB
-               returning true is exactly what could not be relied on. */
-            const _rowG = await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
-              verificationFormSubmittedAt: f.verificationFormSubmittedAt,
-              stage: f.stage,
-              visits: sanitizeForFB(f.visits),
-              verificationLock: null
-            }), _fbWriteWaitMs());
-            _rowConfirmed = !(_rowG && _rowG.timedOut);
-            /* v332 - see _topUpBareFarmer: Deepak Bhai Baranda lost his name exactly here */
-            if(_rowConfirmed) _topUpBareFarmer('haatFarmers', f).catch(() => {});
+            /* security fix 17 (NV-28) - the durable copy above already exists in
+               offlineWrites either way; if this id was permanently deleted, don't
+               attempt the fast-path update() that would recreate it - let
+               flushOfflineWrites (which checks the same tombstone) pick the
+               already-queued copy up right away and hold it, instead of leaving
+               the FC's screen waiting on a write that would otherwise appear to
+               just be "offline, will sync" forever. */
+            if(await _isTombstoned('haatFarmers', f.id)){
+              console.warn('[Sristi] security fix 17 (NV-28) - held a verification for a permanently deleted farmer:', f.id);
+              flushOfflineWrites().catch(() => {});
+            } else {
+              /* v216 - GUARDED. Unguarded, this is where an offline submission
+                 stopped for good: FB.ready is true when the SDK is merely
+                 disconnected, the promise never settles, and the durable
+                 fallback fifteen lines below was unreachable. Measured on both
+                 v214 and v215 - the form reached the server and the farmer's own
+                 row went back to "verification pending" with zero visits. */
+              /* v272 - the result is kept now. Whether THIS write confirmed is
+                 the only trustworthy evidence the server has the visit; saveDB
+                 returning true is exactly what could not be relied on. */
+              const _rowG = await _fbWriteGuard(fbRef('haatFarmers/' + f.id).update({
+                verificationFormSubmittedAt: f.verificationFormSubmittedAt,
+                stage: f.stage,
+                visits: sanitizeForFB(f.visits),
+                verificationLock: null
+              }), _fbWriteWaitMs());
+              _rowConfirmed = !(_rowG && _rowG.timedOut);
+              /* v332 - see _topUpBareFarmer: Deepak Bhai Baranda lost his name exactly here */
+              if(_rowConfirmed) _topUpBareFarmer('haatFarmers', f).catch(() => {});
+            }
           }catch(e){ console.error('[Sristi] verification row write failed for ' + f.id, e); }
         }
         /* v195 - AWAITED. This was `saveDB(true).then(...)`, fired and forgotten.

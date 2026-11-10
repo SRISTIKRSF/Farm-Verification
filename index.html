@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v341';
+const APP_VERSION = 'v342';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -8242,7 +8242,12 @@ function _processLiveSnapshot(){
       // Cross-device writes are NOT blocked because their record ids aren't
       // in this session's _localTouches map.
       ['haatFarmers','convFarmers','fcs','verificationPlans','pendingEnrolments','incomeRecords'].forEach(col => {
-        const localById = {};
+        /* security fix 7 - id is attacker-chosen on an anonymous create. On a plain {}, writing
+           key "__proto__" doesn't store a property at all - it replaces the object's own
+           prototype, so every OTHER id's lookup below is quietly rerouted through that one
+           farmer's fields for the rest of this merge. Object.create(null) has no such setter,
+           so "__proto__" is stored and read back as an ordinary id like any other. */
+        const localById = Object.create(null);
         (DB[col]||[]).forEach(r => { if(r && r.id) localById[r.id] = r; });
         cloud[col] = (cloud[col]||[]).map(rec => {
           if(!rec || !rec.id) return rec;
@@ -8368,7 +8373,15 @@ function _processLiveSnapshot(){
          progress line and the buttons, which silently removed the double-click
          guard and made every failure invisible - the error handler then threw on
          the missing element, so a partly-written restore reported nothing at all. */
-      if(typeof render==='function' && !_RESTORE_BUSY) render();   // refresh the UI
+      /* security fix 7 - a single bad record (anonymous create, no type check) could make
+         render() throw while drawing some screen. Before this fix that exception escaped
+         _processLiveSnapshot entirely, skipping _firstSnapshotMerged=true, the catch-up push
+         of this device's own queued offline work, and auto-assign, below - so one planted
+         record silently stalled every device's sync, not just its own screen. */
+      if(typeof render==='function' && !_RESTORE_BUSY){
+        try{ render(); }   // refresh the UI
+        catch(e){ console.error('[Sristi] render failed after a live update - a record may have bad data', e); }
+      }
     }
     // v126 — we now know what the server holds, so a catch-up push is safe.
     _firstSnapshotMerged = true;
@@ -10314,7 +10327,11 @@ window.addEventListener('beforeunload', function(e){
 });
 
 /* ---------- on-demand forms (forms/{farmerId} in Firebase) ---------- */
-const FORMS_CACHE = {};   // farmerId -> {enrol, verif, _attempted, _complete}
+const FORMS_CACHE = Object.create(null);   // farmerId -> {enrol, verif, _attempted, _complete}
+/* security fix 7 - a real farmer id can never collide with an inherited member this way,
+   so a record whose id is "__proto__" (anonymous create - rules only check id+name exist)
+   can no longer make FORMS_CACHE[farmerId] resolve to Object.prototype itself and have every
+   write below land on it as a real, enumerable property, visible to every other farmer. */
 function _attachFormsToRecord(farmerId){
   const fc = FORMS_CACHE[farmerId]; if(!fc) return;
   const rec = (DB && DB.haatFarmers || []).find(x => x.id === farmerId);
@@ -10652,7 +10669,7 @@ function _formsPayloadNow(farmerId){
 /* One queue row per farmer. It carries every sheet this device changed and has not yet
    sent - the kinds of the row it replaces are kept - and the sheets as they are NOW. Rows for
    one farmer are written strictly one after another, so an older content can never land last. */
-const _formsRowChain = {};
+const _formsRowChain = Object.create(null);   // security fix 7 - farmer id as key; see FORMS_CACHE note above
 function _queueFormsRow(farmerId, kinds){
   const prev = _formsRowChain[farmerId] || Promise.resolve();
   const p = prev.catch(() => {}).then(() => idbGet('formWrites', farmerId).catch(() => null)).then(old => {
@@ -13021,7 +13038,11 @@ window.getFarmerCrops = function(f){
 
 /* Pulls a flat list of crop names for the Haat Farmers table CROPS column. */
 window.getFarmerCropNames = function(f){
-  return getFarmerCrops(f).map(c => (c.name||'').trim()).filter(Boolean);
+  /* security fix 7 - f.crops is attacker-shaped data (anonymous create, no type check); a
+     plain non-string, non-object entry such as null passes through getFarmerCrops()
+     unchanged, and c.name on null throws - breaking the crops column for every farmer in
+     the same table, not just the planted one. */
+  return getFarmerCrops(f).map(c => String((c && c.name) || '').trim()).filter(Boolean);
 };
 
 /* The eight default practices. Each row carries its own weight (sums to 100).
@@ -15159,17 +15180,30 @@ function monthlyForms(){
      4. Fallback (enrolledMonth, then latest known activity) only so a green
         farmer with no visits either never silently drops out of the total.
    Financial Year = April to March (India), not calendar year. */
+/* security fix 7 - true whenever s is a usable "YYYY-MM" month key. cumulativeData()'s chart
+   math (_ymRangeInclusive, then the dashboard's cum[0]) needs every month key it is given to
+   really be one of these; a farmer record can carry any value in associationYear, decisionAt
+   or a visit date (anonymous create - the rules only check id and name exist), and a bad one
+   used to make the WHOLE dashboard stop drawing for every admin and viewer, not just fail to
+   plot that one farmer. */
+function _validYM(s){ return typeof s === 'string' && /^\d{4}-\d{2}$/.test(s); }
 function farmerOnboardYM(f){
-  if(f.associationYear) return f.associationYear+'-06';
-  if(f.decisionAt) return f.decisionAt.slice(0,7);
+  if(f.associationYear){
+    const y = String(f.associationYear).trim();
+    if(/^\d{4}$/.test(y)) return y+'-06';
+  }
+  if(f.decisionAt){
+    const ym = String(f.decisionAt).slice(0,7);
+    if(_validYM(ym)) return ym;
+  }
   if(f.visits && f.visits.length){
     /* v297 - a visit dated in the future is not a visit yet, so it cannot be the month
        this farmer came on board either. */
     const _t=todayISO();
     const first=f.visits.map(v=>v.date).filter(d=>d && String(d).slice(0,10)<=_t).sort()[0];
-    if(first) return first.slice(0,7);
+    if(first){ const ym = String(first).slice(0,7); if(_validYM(ym)) return ym; }
   }
-  if(f.enrolledMonth) return f.enrolledMonth;
+  if(f.enrolledMonth && _validYM(String(f.enrolledMonth))) return String(f.enrolledMonth);
   const ts=farmerLatestTs(f);
   return ts ? new Date(ts).toISOString().slice(0,7) : null;
 }
@@ -15221,7 +15255,16 @@ function cumulativeData(){
      dated in the future. Visits dated after today are simply not counted (v300 removed
      the line that used to name them under the charts). */
   const _tYM = todayISO().slice(0,7);
-  countedHaatVisits().forEach(x => bump(newVisits, x.v.date.slice(0,7)));
+  /* security fix 7 - a visit date is attacker-shaped data (anonymous create, no type check on
+     the server); countedHaatVisits() already treats it as text for the future-date check, but
+     here it was used raw. String() alone stops the .slice() throw, but a short value like the
+     number 1 then yields "1" - not a real "YYYY-MM" - and bump() would hand that straight to
+     _ymRangeInclusive() as minYM. There, "1".split('-') has no month half, so m is undefined,
+     m++ turns it to NaN, the m>12 rollover that increments the year never fires, and the loop
+     never terminates - it pushes until Array.push itself throws (RangeError: Invalid array
+     length) a couple of billion elements in. _validYM() keeps that off the chart entirely,
+     same as farmerOnboardYM() above. */
+  countedHaatVisits().forEach(x => { const ym = String(x.v.date).slice(0,7); if(_validYM(ym)) bump(newVisits, ym); });
   farmers.forEach(f=>{
     if(f.status==='green') bump(newOnboarded, farmerOnboardYM(f));
   });
@@ -15316,6 +15359,11 @@ function convStartedMonthly(){
     const c=convCategory(f);
     if(c!=='yellow' && c!=='green') return;
     const ym=convStartedYM(f);
+    /* security fix 7 - convStartedYM() builds its result the same way the haat chart's visit
+       dates did (String(...).slice(0,7) on an attacker-shaped field); the same guard stops the
+       same _ymRangeInclusive() infinite-push crash (see cumulativeData() above) from reaching
+       the conversion-farmers chart too. */
+    if(!_validYM(ym)) return;
     nw[ym]=(nw[ym]||0)+1;
     if(!minYM||ym<minYM) minYM=ym;
   });
@@ -15969,8 +16017,10 @@ function _fcVerifActions(f,visit,opts){
 function _fcActMatch(f,q){
   if(!q) return true;
   q=q.toLowerCase();
-  return (f.name||'').toLowerCase().includes(q) || (f.id||'').toLowerCase().includes(q)
-      || (f.village||'').toLowerCase().includes(q) || farmerCropsMatch(f.crops,q) || fnoMatches(f, fnoColOf(f), q);
+  /* security fix 7 - ||'' only catches a falsy value; a truthy non-string (anonymous create,
+     no type check) still reaches .toLowerCase() and throws. String() first either way. */
+  return String(f.name||'').toLowerCase().includes(q) || String(f.id||'').toLowerCase().includes(q)
+      || String(f.village||'').toLowerCase().includes(q) || farmerCropsMatch(f.crops,q) || fnoMatches(f, fnoColOf(f), q);
 }
 function _fcActCards(rows,F,program){
   /* v210 - the status buttons above narrow this list. */
@@ -16106,7 +16156,7 @@ function _fcConvCards(farmers,F){
   const catProg={'pending':15,'red':30,'yellow':60,'green':100};
   let rows=[...farmers];
   if(F.cat) rows=rows.filter(f=>convCategory(f)===F.cat);
-  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.id||'').toLowerCase().includes(q)||(f.village||'').toLowerCase().includes(q)||farmerCropsMatch(f.crops,q)||farmerPhoneMatch(f,q)||fnoMatches(f, 'convFarmers', q));}
+  if(F.q){const q=F.q.toLowerCase();rows=rows.filter(f=>String(f.name||'').toLowerCase().includes(q)||String(f.id||'').toLowerCase().includes(q)||String(f.village||'').toLowerCase().includes(q)||farmerCropsMatch(f.crops,q)||farmerPhoneMatch(f,q)||fnoMatches(f, 'convFarmers', q));}
   rows.sort((a,b)=>farmerLatestTs(b)-farmerLatestTs(a)); // latest-submitted first
   const now=Date.now(),visible=rows.slice(0,F.lim),more=rows.length-F.lim;
   const ce=document.getElementById('fcCCount');if(ce)ce.textContent=rows.length+' farmers';
@@ -16259,11 +16309,15 @@ function getFcQueueLists(){
     groups.conversionFarmers.push(buildFcQueueItem(f,'conv',b));
   });
   // Most-urgent-first: overdue items surface above merely-due ones.
+  /* security fix 7 - applicationDate comes straight off f.enrolledAt/f.submittedAt (see
+     buildFcQueueItem), which an anonymous create can set to any truthy non-string value;
+     without String() first, .localeCompare on that value throws and breaks the FC's whole
+     queue screen, including every other farmer's card. */
   const byUrgency=(a,b)=>{
     if(a.bucket!==b.bucket) return a.bucket==='overdue'?-1:(b.bucket==='overdue'?1:0);
-    return (a.applicationDate||'').localeCompare(b.applicationDate||'');
+    return String(a.applicationDate||'').localeCompare(String(b.applicationDate||''));
   };
-  groups.newApplications.sort((a,b)=>(a.applicationDate||'').localeCompare(b.applicationDate||''));
+  groups.newApplications.sort((a,b)=>String(a.applicationDate||'').localeCompare(String(b.applicationDate||'')));
   groups.conversionFarmers.sort(byUrgency);
   groups.seasonalVerifications.sort(byUrgency);
   return groups;
@@ -16358,8 +16412,11 @@ function _fcQueueMatch(item, F){
   if(F.taluka   && _fcItemTaluka(item)   !== F.taluka)   return false;
   if(F.q){
     const q=F.q.toLowerCase();
-    if(!(item.name.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
-      || item.village.toLowerCase().includes(q) || farmerCropsMatch(item.farmer&&item.farmer.crops,q)
+    /* security fix 7 - name/id/village are copied from the farmer record as-is (buildFcQueueItem);
+       a truthy non-string value (anonymous create, no type check) used to throw here and break
+       search for the FC's whole queue. */
+    if(!(String(item.name).toLowerCase().includes(q) || String(item.id).toLowerCase().includes(q)
+      || String(item.village).toLowerCase().includes(q) || farmerCropsMatch(item.farmer&&item.farmer.crops,q)
       || fnoMatches(item.farmer, fnoColOf(item.farmer), q))) return false;
   }
   return true;
@@ -17072,7 +17129,12 @@ function viewDashboard(){
   // LEFT: haat-wise active farmers   RIGHT: FC-wise verifications (last 3 months + total)
   /* v312 - onboarded farmers grouped by every haat they sell at, in ONE pass (was one filter of
      every farmer per haat); same membership and order as farmerSellsAt + DB order */
-  const _greenByHaat = {};
+  const _greenByHaat = Object.create(null);
+  /* security fix 7 - haat is a free-text field on an anonymous create; a haat named
+     "constructor" (or __proto__/toString/valueOf) used to make _greenByHaat[h] resolve to an
+     inherited function instead of undefined, so .push threw and broke the whole dashboard
+     for every admin and haat viewer. A null-prototype object has no inherited members to
+     collide with. */
   (DB.haatFarmers||[]).forEach(f => { if(f && f.status === 'green') farmerHaats(f).forEach(h => { (_greenByHaat[h] = _greenByHaat[h] || []).push(f); }); });
   const _greenAt = hn => _greenByHaat[String(hn || '').trim()] || [];
   const haatRows=getHaatList().map(_h=>_h.name).map(hn=>{
@@ -17088,11 +17150,16 @@ function viewDashboard(){
      (v334: the "Field Visits Done" chart now shows only for viewers without
      the conversion programme). */
   const _counted = countedHaatVisits();
-  const _byFc = {};
+  /* security fix 7 - fcId is not type-checked on a visit row either; Object.create(null)
+     keeps a value like "constructor" from colliding with an inherited member (same reasoning
+     as _greenByHaat above). */
+  const _byFc = Object.create(null);
   _counted.forEach(x => { (_byFc[x.fcId] = _byFc[x.fcId] || []).push(x); });
   const fcRows=(DB.fieldCoordinators||[]).map(fc=>{
     const mine = _byFc[fc.id] || [];
-    const perMonth = recent3.map(m => mine.filter(x => x.v.date.startsWith(m)).length);
+    /* security fix 7 - a visit date is attacker-shaped data; String() first so a truthy
+       non-string can never throw on .startsWith() and break this whole coordinator table. */
+    const perMonth = recent3.map(m => mine.filter(x => String(x.v.date||'').startsWith(m)).length);
     return {fc, perMonth, total: mine.length};
   }).sort((a,b)=>b.total-a.total);
   /* A visit recorded with no coordinator on it belongs to nobody, and a
@@ -17105,7 +17172,7 @@ function viewDashboard(){
   if(_unassigned.length){
     fcRows.push({
       fc: {id:'', name:'Not assigned to a coordinator'},
-      perMonth: recent3.map(m => _unassigned.filter(x => x.v.date.startsWith(m)).length),
+      perMonth: recent3.map(m => _unassigned.filter(x => String(x.v.date||'').startsWith(m)).length),
       total: _unassigned.length,
       unassigned: true,
     });
@@ -17119,7 +17186,10 @@ function viewDashboard(){
   const haatRowsMo=getHaatList().map(_h=>_h.name).map(hn=>{
     const all=_greenAt(hn);   /* v312 */
     const monthly=recent3M.map(m=>{
-      const n=all.filter(f=>f.active && (f.visits||[]).some(v=>(v.date||'').startsWith(m))).length;
+      /* security fix 7 - ||'' only catches a falsy date; a truthy non-string (anonymous
+         create, no type check) still reached .startsWith() and threw, breaking this table
+         for every haat, not just the planted farmer's row. */
+      const n=all.filter(f=>f.active && (f.visits||[]).some(v=>String(v.date||'').startsWith(m))).length;
       return {m,n};
     });
     return {haat:hn, active:all.filter(f=>f.active).length, onboarded:all.length, monthly};
@@ -17748,8 +17818,11 @@ function viewHaat(){
     if(F.active==='1') a=a.filter(r=>r.status==='green'&&r.active);
     if(F.active==='0') a=a.filter(r=>r.status==='green'&&!r.active);
     if(window._q){ const q=window._q.toLowerCase();
-      a=a.filter(r=>r.name.toLowerCase().includes(q)||r.village.toLowerCase().includes(q)
-                 ||r.id.toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'haatFarmers', q)); }
+      /* security fix 7 - name/village/id read with no fallback at all; a record with any of
+         them missing or non-string (anonymous create, no type check) threw here and broke
+         the whole admin Haat Farmers list, search box included. */
+      a=a.filter(r=>String(r.name||'').toLowerCase().includes(q)||String(r.village||'').toLowerCase().includes(q)
+                 ||String(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'haatFarmers', q)); }
     return a;
   })();
   const hs=haatStats(_audience);
@@ -18563,9 +18636,11 @@ function openCreatePlanModal(){
   const today = todayISO();
   const defaultDate = addDaysISO(today, 7);
   // Build a single picker that covers haat + conv farmers, prefixed by program.
-  const haatOpts = (DB.haatFarmers||[]).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''))
+  /* security fix 7 - name is attacker-shaped data (anonymous create, no type check); a truthy
+     non-string name used to throw here and break this whole picker, for every farmer in it. */
+  const haatOpts = (DB.haatFarmers||[]).slice().sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')))
     .map(f => ['haat:'+f.id, '🛒 ' + f.name + ' · ' + (f.village||'?') + (f.fcId?' (FC: ' + (((DB.fcs||[]).find(x=>x.id===f.fcId)||{}).name || 'unassigned') + ')':'')]);
-  const convOpts = (DB.convFarmers||[]).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''))
+  const convOpts = (DB.convFarmers||[]).slice().sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')))
     .map(f => ['conv:'+f.id, '🌱 ' + f.name + ' · ' + (f.village||'?') + (f.fcId?' (FC: ' + (((DB.fcs||[]).find(x=>x.id===f.fcId)||{}).name || 'unassigned') + ')':'')]);
   const farmerOpts = [['','— pick farmer —'], ...haatOpts, ...convOpts];
   const fcOpts = [['','— select FC —'], ...((DB.fcs||[]).map(x=>[x.id,x.name]))];
@@ -18735,8 +18810,8 @@ function viewConversion(){
     else if(F.juth) a=a.filter(r=>String(r.juth||'')===F.juth);
     if(F.dateRange.preset!=='all') a=a.filter(r=>inDateRange(F.dateRange,farmerLatestTs(r)));
     if(window._q){ const q=window._q.toLowerCase();
-      a=a.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.village||'').toLowerCase().includes(q)
-                 ||farmerPhoneMatch(r,q)||(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'convFarmers', q)); }
+      a=a.filter(r=>String(r.name||'').toLowerCase().includes(q)||String(r.village||'').toLowerCase().includes(q)
+                 ||farmerPhoneMatch(r,q)||String(r.id||'').toLowerCase().includes(q)||farmerCropsMatch(r.crops,q)||fnoMatches(r, 'convFarmers', q)); }
     return a;
   })();
   const cs=convStats(_audience);
@@ -22728,7 +22803,7 @@ async function openRepairVerificationsModal(){
     '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)">'
     + '<div style="min-width:0"><div style="font-size:12.5px;font-weight:600">' + esc(it.name||it.id) + '</div>'
     +   '<div style="font-size:11px;color:var(--ink-soft)">' + esc(it.id) + ' \u00b7 '
-    +   esc(it.summary.date || (it.at||'').slice(0,10)) + ' \u00b7 '
+    +   esc(it.summary.date || String(it.at||'').slice(0,10)) + ' \u00b7 '   /* security fix 7 - forms/<id>/verif/submittedAt is not type-checked either */
     +   esc(it.summary.verifierName || 'FC not named') + '</div></div>'
     + '<div style="text-align:right;white-space:nowrap;font-size:11.5px;color:var(--ink-soft)">'
     +   (it.summary.verifiedCount != null
@@ -22837,7 +22912,10 @@ function _autoAssignPool(){
     f && !f._archived && !_isSeededRecord(f) && !f.fcId);
 }
 function _autoAssignPlan(){
-  const perFc = {}, ambiguous = {}, uncovered = {}, noDistrict = [];
+  /* security fix 7 - district is a free-text field on an anonymous create; keyed by a value
+     like "constructor" these used to resolve to an inherited function and break auto-assign
+     for every pending farmer, not just the planted one. See the FORMS_CACHE note above. */
+  const perFc = Object.create(null), ambiguous = Object.create(null), uncovered = Object.create(null), noDistrict = [];
   _autoAssignPool().forEach(f => {
     const codes = fcCodesCoveringDistrict(f.district);
     const d = _distEng(f.district);
@@ -23095,7 +23173,10 @@ function openReassignFcModal(){
       '<button class="btn btn-primary" onclick="closeModal()">Close</button>');
     return;
   }
-  const byFc = {};
+  /* security fix 7 - fcId is attacker-shaped data; keyed by "constructor" a plain {} would add
+     1 to an inherited Function instead of 0, turning that count into garbled text instead of
+     a number (not a crash here, since nothing calls .push on it, but still wrong on screen). */
+  const byFc = Object.create(null);
   assigned.forEach(f => { byFc[f.fcId] = (byFc[f.fcId] || 0) + 1; });
   const fromOpts = Object.keys(byFc)
     .map(id => [id, ((fcById(id)||{}).name || id) + ' (' + byFc[id] + ')'])
@@ -34763,7 +34844,12 @@ window.addEventListener('hashchange', () => {
       // Always ensure DB is a valid (possibly empty) object before render.
       if(!DB) DB = normaliseDB(seedDB());
       _mirrorArm();   /* v303c */
-      render();
+      /* security fix 7 - a bad record in the device's own cached copy must not stop a public
+         visitor's landing page from loading at all; it used to fall straight into BOOT FAILED
+         below, replacing the whole page with an error screen for every farmer who opens the
+         app, until that one record is fixed. */
+      try{ render(); }
+      catch(e){ console.error('[Sristi] first render failed - a record may have bad data; continuing boot', e); }
       // Now connect to Firebase in background (non-blocking).
       /* v272 - same safety net as the coordinator path: a farmer's own
          submission is queued before it is sent, and only a pump can carry it. */
@@ -34798,7 +34884,12 @@ window.addEventListener('hashchange', () => {
          runs first wins and the second is a no-op. */
       setTimeout(() => { try{ startBackgroundPumps(); }catch(e){} }, 6000);
       await loadDB();
-      render();
+      /* security fix 7 - same reasoning as the public-mode render() above: a bad record must
+         not stop staff sign-in, the background pumps (which send this device's own queued
+         offline work) or authAfterBoot from running. Before this fix any of those was skipped
+         whenever the first screen happened to throw, and the device showed BOOT FAILED instead. */
+      try{ render(); }
+      catch(e){ console.error('[Sristi] first render failed - a record may have bad data; continuing boot', e); }
       startBackgroundPumps();   // pumps start now that Firebase init is done
       setTimeout(() => { authAfterBoot(); }, 4000);   /* v335 */
     }

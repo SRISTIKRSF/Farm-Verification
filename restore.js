@@ -37,6 +37,16 @@
   ⛔ A restore REPLACES the whole namespace. Anything added since the backup
      was taken is gone. That is why step 2 exists — read the safety backup path
      it prints before you do anything else.
+
+  ⛔ WHO CAN SIGN IN IS NEVER PART OF A RESTORE BY DEFAULT (security fix 6).
+     config/users, authMap and loginAlias — the only things deactivating someone
+     or resetting their password actually changes — are put back to what they
+     were a moment before the restore, not to what the backup file says. A
+     restore can only turn back farmer/operational data, never bring back
+     someone's access. To restore those three paths from the file too (rare —
+     only for recovering from the accounts themselves being lost), add:
+         --restore-accounts-too
+     and read the warning it prints before using it.
 */
 
 const { execSync } = require('child_process');
@@ -53,6 +63,16 @@ const file = argv.find(a => !a.startsWith('--'));
 const toIx = argv.indexOf('--to');
 const target = toIx >= 0 ? argv[toIx + 1] : null;
 const liveOk = argv.includes('--i-am-overwriting-live');
+// security fix 6 (NV-27): who can sign in, and as what, must never move backwards. The app only
+// ever marks someone deactivated or resets their password by changing config/users, authMap (and
+// loginAlias) in the database — it has no way to disable the old Firebase Auth account. A restore
+// used to write the backup file's old copy of those three paths straight over the target, which
+// silently undid every deactivation and password reset made since the backup was taken. By
+// default this script now puts those three paths back to what they were A MOMENT AGO (read in
+// step 2, before anything is overwritten) right after the restore, so a restore can only change
+// farmer/operational data, never who has access. --restore-accounts-too turns this off.
+const RESTORE_ACCOUNTS_TOO = argv.includes('--restore-accounts-too');
+const IDENTITY_PATHS = ['config/users', 'authMap', 'loginAlias'];
 
 function die(msg) { console.error('\n' + msg + '\n'); process.exit(1); }
 
@@ -131,6 +151,17 @@ console.log('   saved to : ' + path.basename(safety));
 console.log('   ' + (wasEmpty ? 'that namespace was empty' :
              'size ' + (safetyRaw.length / 1048576).toFixed(2) + ' MB — this is your undo'));
 
+// security fix 6 (NV-27): the target's identity state A MOMENT AGO — read here, before anything
+// is overwritten, so step 3 can put it straight back after the restore.
+let beforeState = null;
+if (!wasEmpty) {
+  try { beforeState = JSON.parse(safetyRaw.toString('utf8')); }
+  catch (e) { die('REFUSED — the safety backup just taken is not valid JSON, so who-can-sign-in\nstate could not be read. Nothing has been changed.'); }
+}
+const getPath = (o, p) => p.split('/').reduce((v, k) => (v && typeof v === 'object' ? v[k] : undefined), o);
+const identityBefore = {};
+IDENTITY_PATHS.forEach(p => { identityBefore[p] = getPath(beforeState, p); if (identityBefore[p] === undefined) identityBefore[p] = null; });
+
 // ------------------------------------------------------- 3. the restore ----
 console.log('\n3. Writing');
 const t0 = Date.now();
@@ -145,6 +176,32 @@ try {
 }
 console.log('   accepted in ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s');
 
+// security fix 6 (NV-27): put who-can-sign-in back to what it was a moment ago, unless the
+// operator explicitly asked for the backup file's copy of it too.
+if (RESTORE_ACCOUNTS_TOO) {
+  console.log('\n   ⚠  --restore-accounts-too was set: config/users, authMap and loginAlias were');
+  console.log('      left as the backup file wrote them. If anyone was deactivated, or had their');
+  console.log('      password reset, AFTER this backup was taken, that is now UNDONE — they have');
+  console.log('      their old access back. Re-apply those revocations by hand if that is not');
+  console.log('      what you wanted; the pre-restore copy is in: ' + path.basename(safety));
+} else {
+  const idUpd = path.join(OUT_DIR, '_restore_identity_' + stamp + '.json');
+  fs.writeFileSync(idUpd, JSON.stringify(identityBefore));
+  try {
+    fb('database:update "' + dbPath + '" "' + idUpd + '" --force');
+  } catch (e) {
+    console.error(String((e.stderr || '')).split('\n').slice(0, 6).join('\n'));
+    die('FAILED — the restore wrote the file, but putting who-can-sign-in back to what it was\n' +
+        'just before could not be confirmed. Check config/users, authMap and loginAlias by hand\n' +
+        'before trusting this namespace, or restore the safety backup:\n' +
+        '  node restore.js "' + safety + '" --to ' + target +
+        (target === LIVE_NS ? ' --i-am-overwriting-live' : ''));
+  }
+  fs.unlinkSync(idUpd);
+  console.log('   config/users, authMap, loginAlias put back to what they were a moment ago');
+  console.log('   (not what the backup file says — see the note at the top of this file).');
+}
+
 // --------------------------------------------- 4. prove it actually took ---
 console.log('\n4. Reading it back to prove it matches');
 const check = path.join(OUT_DIR, '_verify_' + stamp + '.json');
@@ -153,6 +210,32 @@ const backTxt = fs.readFileSync(check, 'utf8');
 let back;
 try { back = JSON.parse(backTxt); }
 catch (e) { die('FAILED — what came back is not valid JSON.'); }
+
+// security fix 6 (NV-27): "matches the backup file" must mean "matches what this restore was
+// actually SUPPOSED to produce" — the file's data, but with identity put back to its pre-restore
+// state (unless --restore-accounts-too). Built once here so every check below compares against
+// the right thing instead of flagging the deliberate identity substitution as a failure.
+const expected = JSON.parse(JSON.stringify(data));
+if (!RESTORE_ACCOUNTS_TOO) {
+  // Firebase prunes a parent that is left with no children (it never stores an empty node), so
+  // the comparison below must match that: a delete that empties config/* must remove config too.
+  const setPath = (o, p, v) => {
+    const ks = p.split('/'); const chain = [o];
+    for (let i = 0; i < ks.length - 1; i++) {
+      const n = chain[chain.length - 1];
+      if (n[ks[i]] == null || typeof n[ks[i]] !== 'object') n[ks[i]] = {};
+      chain.push(n[ks[i]]);
+    }
+    const leaf = chain[chain.length - 1];
+    if (v === null) {
+      delete leaf[ks[ks.length - 1]];
+      for (let i = chain.length - 2; i >= 0; i--) if (Object.keys(chain[i + 1]).length === 0) delete chain[i][ks[i]]; else break;
+    } else leaf[ks[ks.length - 1]] = v;
+  };
+  IDENTITY_PATHS.forEach(p => setPath(expected, p, identityBefore[p]));
+}
+const expectedNodes = Object.keys(expected);
+const expectedGujarati = (JSON.stringify(expected).match(/[઀-૿]/g) || []).length;
 
 // Canonical form: key order does not survive a round trip, values must.
 const canon = o => JSON.stringify(o, Object.keys(flatten(o)).sort());
@@ -163,30 +246,31 @@ function flatten(o, out, pre) {
   } else if (Array.isArray(o)) { o.forEach(v => flatten(v, out, pre)); }
   return out;
 }
-const same = canon(data) === canon(back);
+const same = canon(expected) === canon(back);
 const gujBack = (backTxt.match(/[઀-૿]/g) || []).length;
 
 let counts = [];
-for (const k of nodes) {
-  const a = data[k] && typeof data[k] === 'object' ? Object.keys(data[k]).length : 1;
+for (const k of expectedNodes) {
+  const a = expected[k] && typeof expected[k] === 'object' ? Object.keys(expected[k]).length : 1;
   const b = back && back[k] && typeof back[k] === 'object' ? Object.keys(back[k]).length : (back && k in back ? 1 : 0);
   counts.push({ k, a, b, ok: a === b });
 }
 const missing = counts.filter(c => !c.ok);
 
 console.log('   nodes restored  : ' + counts.filter(c => c.ok).length + ' of ' + counts.length);
-console.log('   Gujarati chars  : ' + gujBack.toLocaleString() + (gujBack === gujarati ? '  (all of them)' : '  ** ' + (gujarati - gujBack) + ' MISSING **'));
+console.log('   Gujarati chars  : ' + gujBack.toLocaleString() + (gujBack === expectedGujarati ? '  (all of them)' : '  ** ' + (expectedGujarati - gujBack) + ' MISSING **'));
 console.log('   values identical: ' + (same ? 'yes' : 'NO'));
-for (const c of missing) console.log('   ** ' + c.k + ': ' + c.a + ' in the file, ' + c.b + ' in the database');
+for (const c of missing) console.log('   ** ' + c.k + ': ' + c.a + ' expected, ' + c.b + ' in the database');
 
 fs.unlinkSync(check);
 
-if (missing.length || gujBack !== gujarati || !same) {
-  die('FAILED — the database does not match the backup file.\n' +
+if (missing.length || gujBack !== expectedGujarati || !same) {
+  die('FAILED — the database does not match what this restore was supposed to produce.\n' +
       'Your undo is: ' + safety);
 }
 
-console.log('\nOK — ' + dbPath + ' now matches the backup file exactly.');
+console.log('\nOK — ' + dbPath + ' now matches the backup file' +
+            (RESTORE_ACCOUNTS_TOO ? ' exactly.' : ', apart from config/users, authMap and\nloginAlias, which were kept as they were a moment ago (see step 3).'));
 console.log('Undo, if this was the wrong file:');
 console.log('  node restore.js "' + safety + '" --to ' + target +
             (target === LIVE_NS ? ' --i-am-overwriting-live' : ''));

@@ -114,8 +114,8 @@
         "farmerNo": {
           "$k": {
             ".read": "auth != null",
-            ".write": "auth != null",
-            ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+            ".write": "((auth != null && root.child('prakrutik_kheti').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || auth != null && newData.exists()",
+            ".validate": "((auth != null && root.child('prakrutik_kheti').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || newData.isNumber() && newData.val() % 1 === 0 && newData.val() <= 99999 && ((!data.exists() && newData.val() === 1) || newData.val() === data.val() + 1)"
           }
         }
       },
@@ -125,7 +125,7 @@
         "$k": {
           ".read": "auth != null",
           ".write": "(auth != null && !data.exists())",
-          ".validate": "(!data.exists() && newData.hasChildren(['id','col'])) || (data.exists() && newData.child('id').val() === data.child('id').val())"
+          ".validate": "((auth != null && root.child('prakrutik_kheti').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti').child('config').child('users').child(root.child('prakrutik_kheti').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || newData.hasChildren(['id','col']) && (newData.child('col').val() === 'haatFarmers' || newData.child('col').val() === 'convFarmers') && root.child('prakrutik_kheti').child(newData.child('col').val()).child(newData.child('id').val()).exists()"
         }
       },
       "meta": {
@@ -336,8 +336,8 @@
         "farmerNo": {
           "$k": {
             ".read": "auth != null",
-            ".write": "auth != null",
-            ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+            ".write": "((auth != null && root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || auth != null && newData.exists()",
+            ".validate": "((auth != null && root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || newData.isNumber() && newData.val() % 1 === 0 && newData.val() <= 99999 && ((!data.exists() && newData.val() === 1) || newData.val() === data.val() + 1)"
           }
         }
       },
@@ -347,7 +347,7 @@
         "$k": {
           ".read": "auth != null",
           ".write": "(auth != null && !data.exists())",
-          ".validate": "(!data.exists() && newData.hasChildren(['id','col'])) || (data.exists() && newData.child('id').val() === data.child('id').val())"
+          ".validate": "((auth != null && root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).isString() && root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('active').val() !== false) && (root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'admin' || root.child('prakrutik_kheti_staging').child('config').child('users').child(root.child('prakrutik_kheti_staging').child('authMap').child(auth.uid).val()).child('role').val() === 'fc')) || newData.hasChildren(['id','col']) && (newData.child('col').val() === 'haatFarmers' || newData.child('col').val() === 'convFarmers') && root.child('prakrutik_kheti_staging').child(newData.child('col').val()).child(newData.child('id').val()).exists()"
         }
       },
       "meta": {

@@ -5124,7 +5124,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v342';
+const APP_VERSION = 'v343';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -6713,6 +6713,11 @@ let _blobCleanupDone=false;
    tell a real edit from a re-send. Keyed the same as the meta children. */
 const _metaSeenFromServer = {};
 const META_LISTS = ['haats','crops','months','states','convParams','juths'];
+/* security fix 13 - the keys under meta/settings, written one at a time (see saveDB and
+   _metaNoteFromServer below) instead of as one whole-object replace, so that an admin-only
+   child (cloudinary) can be locked down in the rules without an FC's save of anything else
+   here - the score framework, say - being refused along with it. */
+const SETTINGS_KEYS = ['cloudinary','phoneDeltaFcs','practices','scoreFramework','showSeededInStats'];
 /* v222 - key-SORTED serialisation. Both baselines below compare what we hold
    against what the server reported, and plain JSON.stringify is key-order
    sensitive: Firebase hands objects back in whatever order they arrived on the
@@ -6749,8 +6754,11 @@ function _metaNoteFromServer(meta){
     if(j !== undefined) _metaSeenFromServer[k] = j;
   });
   if(meta.settings !== undefined){
-    const j = _stableJson(meta.settings);
-    if(j !== undefined) _metaSeenFromServer.settings = j;
+    /* security fix 13 - per key, matching the per-key write in saveDB below */
+    SETTINGS_KEYS.forEach(function(k){
+      const j = _stableJson(meta.settings[k]);
+      if(j !== undefined) _metaSeenFromServer['settings_'+k] = j;
+    });
   }
 }
 /* v222 - what the server last reported for each activity entry, so a save can
@@ -9103,11 +9111,25 @@ async function saveDB(silent){
     if(j !== undefined && _metaSeenFromServer[k] === j) return;
     updates['meta/'+k] = sanitizeForFB(DB[k]);
   });
+  /* security fix 13 - one settings key at a time, same reasoning as META_LISTS just above:
+     the old updates['meta/settings'] = {...} replaced the WHOLE node in one write, so once
+     meta/settings/cloudinary becomes admin-only in the rules, an FC's legitimate change to
+     anything else here (the score framework, say) would have had to pass that admin-only
+     check too and be refused whole, data included. A key an FC never touches (cloudinary)
+     is now never even part of their write. */
   (function(){
-    const j = _stableJson(DB.settings||{});
-    if(j === undefined || _metaSeenFromServer.settings !== j){
-      updates['meta/settings'] = sanitizeForFB(DB.settings||{});
-    }
+    const s = DB.settings||{};
+    SETTINGS_KEYS.forEach(function(k){
+      const v = s[k];
+      if(v === undefined){
+        if(_metaSeenFromServer['settings_'+k] === undefined) return;   /* never existed either side */
+        updates['meta/settings/'+k] = null;   /* was on the server, removed locally - carry that across, as the whole-object replace used to */
+        return;
+      }
+      const j = _stableJson(v);
+      if(j !== undefined && _metaSeenFromServer['settings_'+k] === j) return;
+      updates['meta/settings/'+k] = sanitizeForFB(v);
+    });
   })();
   /* v218b - for each farmer record we have no baseline for, ask the server one
      question: has anyone recorded a decision on this farmer, and is it newer

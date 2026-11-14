@@ -799,7 +799,7 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
 .bigprog .seg{flex:1;height:6px;border-radius:3px;background:var(--line-soft)}
 .tabs{display:flex;gap:4px;background:var(--line-soft);padding:4px;border-radius:9px;
   margin-bottom:16px;width:fit-content;border:1px solid var(--line)}
-.tab{padding:7px 16px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--ink-soft);transition:.13s}
+.tab{padding:7px 16px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--ink-soft);transition:color .13s}   /* v347 - was `.13s` (all): colour only now, see .tab-ind */
 .tab:hover{color:var(--ink)}
 .tab.on{background:var(--panel);color:var(--ink);box-shadow:var(--sh-1)}
 .split{display:grid;gap:16px}
@@ -851,6 +851,24 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
 .fc-pill:active,.fc-ttab-v2:active,.chip:active{transform:scale(.96)}
 .fc-ttab-v2{transition:background-color .22s,border-color .22s,box-shadow .22s,transform .12s}
 .fc-ttab-v2 .l{transition:color .22s}
+/* v347 - motion release 2. All display only.
+   - .m-pop: a number or status badge whose VALUE changed since the last paint
+     of the same screen pops once (added by _motionValues; a repaint with the
+     same value adds nothing, so live updates do not make things jump).
+   - .tab-ind: the highlight that slides from the old tab to the new one in
+     the grey segmented tab bars (.tabs). It only exists for ~0.3s; the tab's
+     own .on background is hidden while it moves, then shown again in the same
+     frame the highlight is removed, so the end state is exactly as before.
+   - the success toast's tick draws itself in. */
+.m-pop{animation:mPop .45s cubic-bezier(.3,1.5,.5,1)}
+@keyframes mPop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}
+.tabs{position:relative}
+.tabs>.tab{position:relative;z-index:1}
+.tab-ind{position:absolute;left:0;top:0;z-index:0;border-radius:6px;background:var(--panel);
+  box-shadow:var(--sh-1);pointer-events:none}
+.tabs.m-sliding>.tab.on{background:transparent;box-shadow:none}
+.toast.show:not(.err) svg path{stroke-dasharray:24;stroke-dashoffset:24;animation:tickDraw .38s cubic-bezier(.65,0,.35,1) .12s forwards}
+@keyframes tickDraw{to{stroke-dashoffset:0}}
 
 @media(max-width:880px){
   .sidebar{width:60px}
@@ -5162,7 +5180,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v346';
+const APP_VERSION = 'v347';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27946,16 +27964,127 @@ function _listSortOnArrive(){
    off after 0.9s, or at once when a live update rebuilds the same screen.
    Display only: reads ROUTE, touches one class, never reads or writes data.
    var, not let, so a render() during boot can never hit an uninitialised name. */
-var _motionRoute = null, _motionTimer = 0;
+var _motionRoute = null, _motionTimer = 0, _motionVals = null;
 function _motionAfterRender(){
   const v = document.getElementById('view');
   if(!v) return;
   const key = (PUBLIC_MODE ? 'p:' : '') + ROUTE;
   clearTimeout(_motionTimer);
-  if(key === _motionRoute){ v.classList.remove('anim-in'); return; }
-  _motionRoute = key;
-  v.classList.add('anim-in');
-  _motionTimer = setTimeout(function(){ v.classList.remove('anim-in'); }, 900);
+  const same = key === _motionRoute;
+  if(same){ v.classList.remove('anim-in'); }
+  else {
+    _motionRoute = key;
+    v.classList.add('anim-in');
+    _motionTimer = setTimeout(function(){ v.classList.remove('anim-in'); }, 900);
+  }
+  try{ _motionValues(v, same); }catch(e){}   /* v347 */
+}
+/* v347 - motion release 2. Display only: reads text already on screen and
+   adds/removes classes; never reads or writes data, never changes a value. */
+function _motionCanAnimate(){
+  try{
+    return typeof window.requestAnimationFrame === 'function' && !!window.matchMedia
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden;
+  }catch(e){ return false; }
+}
+/* Pop a sidebar count, a dashboard/queue count or a row's status badge when
+   its text differs from the previous paint of the SAME screen. A newly opened
+   screen has nothing to compare with, so it counts up instead (.jnum and the
+   FC queue tab counts only). */
+function _motionValues(v, same){
+  const anim = _motionCanAnimate();
+  const now = {};
+  document.querySelectorAll('#nav .nav-item[data-route] > .badge').forEach(function(b){ now['n:' + b.parentNode.getAttribute('data-route')] = b; });
+  v.querySelectorAll('.jnum').forEach(function(el, i){ now['j:' + i] = el; });
+  v.querySelectorAll('.fc-ttab-v2 .n[id]').forEach(function(el){ now['t:' + el.id] = el; });
+  v.querySelectorAll('tr[data-id], .fc-card-v2[data-id]').forEach(function(row){
+    row.querySelectorAll('.tag, .fc-tag').forEach(function(el, i){ now['r:' + row.getAttribute('data-id') + ':' + i] = el; });
+  });
+  const prev = _motionVals, vals = {};
+  Object.keys(now).forEach(function(k){
+    const el = now[k], t = el.textContent;
+    vals[k] = t;
+    if(!anim || !prev || !(k in prev) || prev[k] === t) return;
+    if(k.charAt(0) !== 'n' && !same) return;      // a different screen: nothing to compare
+    el.classList.add('m-pop');
+    el.addEventListener('animationend', function(){ el.classList.remove('m-pop'); }, {once:true});
+  });
+  _motionVals = vals;
+  if(!same && anim) v.querySelectorAll('.jnum, .fc-ttab-v2 .n').forEach(_motionCount);
+}
+/* Count a whole number up from 0 once. Nothing is written until the first
+   animation frame actually arrives (before the screen is painted), and if that
+   frame comes late (window covered, phone busy) the count is skipped, so the
+   real number is never replaced by a frozen 0. Stops, leaving the app's text
+   alone, the moment the element is replaced or the app writes to it; a timer
+   puts the real number back if frames stop arriving part-way. */
+function _motionCount(el){
+  const txt = el.textContent.trim();
+  if(!/^\d{1,6}$/.test(txt)) return;
+  const end = +txt;
+  if(end < 2) return;
+  const asked = performance.now(), dur = 700;
+  let t0 = 0, last = null;
+  function step(now){
+    if(!el.isConnected) return;
+    if(last === null){
+      if(el.textContent !== txt || performance.now() - asked > 150) return;   // late or rewritten: leave it
+      t0 = now; last = '0'; el.textContent = last;
+      requestAnimationFrame(step);
+      setTimeout(function(){ if(el.isConnected && el.textContent === last && last !== txt) el.textContent = txt; }, dur + 400);
+      return;
+    }
+    if(el.textContent !== last) return;
+    const p = Math.min(1, Math.max(0, (now - t0) / dur));
+    last = p >= 1 ? txt : String(Math.round(end * (1 - Math.pow(1 - p, 3))));
+    el.textContent = last;
+    if(p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+/* Sliding highlight for the grey segmented tab bars (.tabs > .tab.on).
+   Measures the old selected tab before the click handler runs, then, in the
+   next frame (after the handler has repainted or toggled the class), moves a
+   temporary highlight from there to the new selected tab. Works whether the
+   handler rebuilds the bar or just moves the class. */
+document.addEventListener('click', function(e){
+  try{
+    const tab = e.target && e.target.closest ? e.target.closest('.tabs > .tab') : null;
+    if(!tab || !_motionCanAnimate()) return;
+    const view = document.getElementById('view');
+    if(!view || !view.contains(tab)) return;
+    const bar = tab.parentNode;
+    const on = bar.querySelector(':scope > .tab.on');
+    if(!on || on === tab) return;
+    const bi = Array.prototype.indexOf.call(view.querySelectorAll('.tabs'), bar);
+    const ti = Array.prototype.indexOf.call(bar.querySelectorAll(':scope > .tab'), tab);
+    const from = {x:on.offsetLeft, y:on.offsetTop, w:on.offsetWidth, h:on.offsetHeight};
+    requestAnimationFrame(function(){ try{ _motionSlide(bi, ti, from); }catch(_){} });
+  }catch(_){}
+}, true);
+function _motionSlide(bi, ti, from){
+  const view = document.getElementById('view');
+  const bar = view && view.querySelectorAll('.tabs')[bi];
+  if(!bar) return;
+  const tab = bar.querySelectorAll(':scope > .tab')[ti];
+  if(!tab || !tab.classList.contains('on')) return;   // the click did not select it: do nothing
+  bar.querySelectorAll(':scope > .tab-ind').forEach(function(n){ n.remove(); });
+  const ind = document.createElement('span');
+  ind.className = 'tab-ind';
+  ind.setAttribute('aria-hidden', 'true');
+  ind.style.width = from.w + 'px'; ind.style.height = from.h + 'px';
+  ind.style.transform = 'translate(' + from.x + 'px,' + from.y + 'px)';
+  bar.appendChild(ind);
+  bar.classList.add('m-sliding');
+  void ind.offsetWidth;
+  const ease = '.28s cubic-bezier(.3,.8,.3,1)';
+  ind.style.transition = 'transform ' + ease + ',width ' + ease + ',height ' + ease;
+  ind.style.width = tab.offsetWidth + 'px'; ind.style.height = tab.offsetHeight + 'px';
+  ind.style.transform = 'translate(' + tab.offsetLeft + 'px,' + tab.offsetTop + 'px)';
+  let ended = false;
+  function done(){ if(ended) return; ended = true; ind.remove(); bar.classList.remove('m-sliding'); }
+  ind.addEventListener('transitionend', function(ev){ if(ev.propertyName === 'transform') done(); });
+  setTimeout(done, 450);
 }
 function render(){
   if(_inRender === 0) _listSortOnArrive();   /* v333 */

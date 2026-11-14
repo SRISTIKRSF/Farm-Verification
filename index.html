@@ -869,6 +869,41 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
 .tabs.m-sliding>.tab.on{background:transparent;box-shadow:none}
 .toast.show:not(.err) svg path{stroke-dasharray:24;stroke-dashoffset:24;animation:tickDraw .38s cubic-bezier(.65,0,.35,1) .12s forwards}
 @keyframes tickDraw{to{stroke-dashoffset:0}}
+/* v348 - motion release 3. All display only.
+   - .m-wait on #view: a staff screen on a device that has no farmers yet and is
+     still waiting for the server's first copy. The screen's own content (zeros,
+     "no farmers") is hidden and grey placeholder bars with a moving shine show
+     instead, after 0.3s so a fast load never flashes them. _motionWaiting()
+     takes the class off the moment farmers arrive, and after 10s at most, so
+     the real screen always comes back.
+   - .m-sk: shimmer bars above the existing "Loading answers" text on a
+     farmer's record page; the shine stops after ~10s, the text stays.
+   - the record page's More menu drops open; Manage Haats sub-locations slide
+     in when a haat is opened (.m-fold). Closing stays instant. */
+.content.m-wait{position:relative;min-height:440px}
+.content.m-wait>*{visibility:hidden}
+.content.m-wait::before,.content.m-wait::after{content:'';position:absolute;top:22px;height:390px;
+  left:clamp(12px,4%,28px);right:clamp(12px,4%,28px);border-radius:10px;pointer-events:none;opacity:0;
+  animation:mWaitIn .25s ease .3s forwards}
+.content.m-wait::before{background:
+  linear-gradient(#e6ebf1 0 0) 0 0/42% 18px no-repeat,
+  linear-gradient(#e6ebf1 0 0) 0 36px/100% 86px no-repeat,
+  linear-gradient(#e6ebf1 0 0) 0 142px/100% 46px no-repeat,
+  linear-gradient(#e6ebf1 0 0) 0 204px/100% 46px no-repeat,
+  linear-gradient(#e6ebf1 0 0) 0 266px/100% 46px no-repeat,
+  linear-gradient(#e6ebf1 0 0) 0 328px/100% 46px no-repeat}
+.content.m-wait::after{background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.75) 50%,transparent 65%) 0 0/300% 100% no-repeat;
+  animation:mWaitIn .25s ease .3s forwards,mShine 1.4s linear .3s 7}
+@keyframes mWaitIn{to{opacity:1}}
+@keyframes mShine{from{background-position:100% 0}to{background-position:0 0}}
+.m-sk{display:flex;flex-direction:column;align-items:center;gap:9px;max-width:380px;margin:0 auto 14px}
+.m-sk i{display:block;width:100%;height:11px;border-radius:6px;
+  background:linear-gradient(90deg,#e6ebf1 35%,#f8fafc 50%,#e6ebf1 65%) 0 0/300% 100% no-repeat;animation:mShine 1.4s linear 7}
+.m-sk i:nth-child(2){width:86%}
+.m-sk i:nth-child(3){width:58%}
+.rec-menu.open .pop{animation:mDrop .16s cubic-bezier(.2,.8,.2,1)}
+@keyframes mDrop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.m-fold{animation:rowIn .32s cubic-bezier(.2,.7,.2,1) backwards}
 
 @media(max-width:880px){
   .sidebar{width:60px}
@@ -5180,7 +5215,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v347';
+const APP_VERSION = 'v348';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -21916,7 +21951,8 @@ function renderRecordBody(f, claims){
   if(!h){
     h = '<div class="rec-card"><div class="rec-empty">'
       + (REC.loading
-          ? '\u0a9c\u0ab5\u0abe\u0aac \u0ab2\u0abe\u0ab5\u0ac0\u0aa8\u0ac7...<div style="margin-top:5px;font-size:11.5px">Loading answers</div>'
+          ? '<div class="m-sk" aria-hidden="true"><i></i><i></i><i></i></div>'   /* v348 - shimmer above the same text */
+            + '\u0a9c\u0ab5\u0abe\u0aac \u0ab2\u0abe\u0ab5\u0ac0\u0aa8\u0ac7...<div style="margin-top:5px;font-size:11.5px">Loading answers</div>'
           : claims.length
           ? 'No answers match this filter.'
           /* v266 - "not received yet" is true but reads as "still on its
@@ -26373,7 +26409,7 @@ function renderHaatManager(v){
     const dist = s.avgKm
       ? `<span style="font-size:11.5px">${s.avgKm} km / ${s.maxKm} km</span>`
       : '<span style="color:var(--ink-faint);font-size:11px">—</span>';
-    return `<tr style="${indent?'background:var(--panel-2)':''}">
+    return `<tr style="${indent?'background:var(--panel-2)':''}"${indent?` data-haat-sub="${esc(haat.parent||'')}"`:''}>
       <td style="padding-left:${10+indent*16}px">${caret}</td>
       <td><b>${esc(haat.name)}</b>${kids.length?` <span style="color:var(--ink-faint);font-size:10.5px">(${kids.length} sub)</span>`:''}</td>
       <td style="font-size:11.5px;color:var(--ink-soft)">${esc(haat.city||'—')}</td>
@@ -26407,7 +26443,10 @@ function renderHaatManager(v){
   h += '</tbody></table></div>';
   v.innerHTML = h;
   v.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
+    const _opening = !expanded[b.dataset.toggle];
     expanded[b.dataset.toggle] = !expanded[b.dataset.toggle]; render();
+    /* v348 - display only: the rows that just appeared slide in */
+    if(_opening){ try{ const _n = b.dataset.toggle; _motionFoldIn(Array.prototype.filter.call(document.querySelectorAll('#view tr[data-haat-sub]'), r => r.getAttribute('data-haat-sub') === _n)); }catch(e){} }
   });
   const haatCityF = $('#haatCityF'); if(haatCityF) haatCityF.onchange = () => { FILTERS.haatsView.city = haatCityF.value; render(); };
   v.querySelectorAll('[data-haat-edit]').forEach(b => b.onclick = () => openHaatEditModal(b.dataset.haatEdit));
@@ -27965,10 +28004,23 @@ function _listSortOnArrive(){
    Display only: reads ROUTE, touches one class, never reads or writes data.
    var, not let, so a render() during boot can never hit an uninitialised name. */
 var _motionRoute = null, _motionTimer = 0, _motionVals = null;
+var _motionWaitSince = 0, _motionWaitDone = false, _motionWasEmpty = false;   /* v348 */
 function _motionAfterRender(){
   const v = document.getElementById('view');
   if(!v) return;
-  const key = (PUBLIC_MODE ? 'p:' : '') + ROUTE;
+  /* v348 - the first-load placeholder, and the moment farmers first appear on
+     this device (from its saved copy or the server) counts as opening the
+     screen: the content fades in and counts up once, and nothing "pops"
+     because 0 became 756. */
+  let empty = false;
+  try{ empty = !((DB.haatFarmers || []).length || (DB.convFarmers || []).length); }catch(e){}
+  if(_motionWasEmpty && !empty){ _motionRoute = null; _motionVals = null; }
+  _motionWasEmpty = empty;
+  try{ v.classList.toggle('m-wait', empty && _motionWaiting()); }catch(e){ v.classList.remove('m-wait'); }
+  let key = (PUBLIC_MODE ? 'p:' : '') + ROUTE;
+  /* v348 - on Duplicate records, opening a pair's Review panel (and going back)
+     swaps the whole screen without changing ROUTE: treat it as a new screen */
+  try{ if(ROUTE === 'dupRecords' && FILTERS.dup && FILTERS.dup.open) key += ':' + FILTERS.dup.open; }catch(e){}
   clearTimeout(_motionTimer);
   const same = key === _motionRoute;
   if(same){ v.classList.remove('anim-in'); }
@@ -27978,6 +28030,33 @@ function _motionAfterRender(){
     _motionTimer = setTimeout(function(){ v.classList.remove('anim-in'); }, 900);
   }
   try{ _motionValues(v, same); }catch(e){}   /* v347 */
+}
+/* v348 - is this staff device still waiting for its first farmers? Only when
+   Firebase is in use and online, the server's first copy has not been merged,
+   and for 10s at most from the first empty paint (then the real screen shows,
+   whatever it says). Once over, it never comes back this session. Display only. */
+function _motionWaiting(){
+  if(_motionWaitDone) return false;
+  if(PUBLIC_MODE || !fbConfigured() || FB.initFailed || !navigator.onLine) return false;
+  if(_firstSnapshotMerged){ _motionWaitDone = true; return false; }
+  if(!_motionWaitSince){
+    _motionWaitSince = Date.now();
+    setTimeout(function(){
+      _motionWaitDone = true;
+      const v = document.getElementById('view');
+      if(v) v.classList.remove('m-wait');
+    }, 10000);
+  }
+  return Date.now() - _motionWaitSince < 10000;
+}
+/* v348 - Manage Haats: the sub-location rows of the haat just opened slide in */
+function _motionFoldIn(rows){
+  if(!_motionCanAnimate()) return;
+  Array.prototype.slice.call(rows, 0, 12).forEach(function(r, i){
+    r.style.animationDelay = (i * 0.03) + 's';
+    r.classList.add('m-fold');
+    r.addEventListener('animationend', function(){ r.classList.remove('m-fold'); r.style.animationDelay = ''; }, {once:true});
+  });
 }
 /* v347 - motion release 2. Display only: reads text already on screen and
    adds/removes classes; never reads or writes data, never changes a value. */

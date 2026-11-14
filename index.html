@@ -812,11 +812,45 @@ body.fc-mode .toast{bottom:142px;z-index:210}   /* v249b - sits above the strip 
 .heatcell{width:29px;height:29px;border-radius:6px;display:grid;place-items:center;
   font-size:10px;font-weight:700;color:#fff;transition:transform .12s}
 .heatcell:hover{transform:scale(1.12)}
-.content>*{animation:fade .4s ease backwards}
-.content>*:nth-child(2){animation-delay:.04s}
-.content>*:nth-child(3){animation-delay:.08s}
-.content>*:nth-child(4){animation-delay:.12s}
+/* v346 - screen-open motion. #view carries .anim-in only for ~0.9s after a
+   screen is opened (see _motionAfterRender), so none of this replays when a
+   live update rebuilds the screen. Before v346 the fade below ran on every
+   rebuild. Only opacity and transform move (cheap on the weakest phones), and
+   the reduced-motion rule near the top switches all of it off. */
+.content.anim-in>*{animation:fade .4s ease backwards}
+.content.anim-in>*:nth-child(2){animation-delay:.04s}
+.content.anim-in>*:nth-child(3){animation-delay:.08s}
+.content.anim-in>*:nth-child(4){animation-delay:.12s}
 @keyframes fade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+/* chart bars grow from the bottom, left to right */
+.content.anim-in .bar-stack,.content.anim-in .cbar-stack{transform-origin:50% 100%;animation:barGrow .7s cubic-bezier(.2,.8,.2,1) .1s backwards}
+.content.anim-in .bar-col:nth-child(2) .bar-stack,.content.anim-in .cbar-col:nth-child(2) .cbar-stack{animation-delay:.14s}
+.content.anim-in .bar-col:nth-child(3) .bar-stack,.content.anim-in .cbar-col:nth-child(3) .cbar-stack{animation-delay:.18s}
+.content.anim-in .bar-col:nth-child(4) .bar-stack,.content.anim-in .cbar-col:nth-child(4) .cbar-stack{animation-delay:.22s}
+.content.anim-in .bar-col:nth-child(5) .bar-stack,.content.anim-in .cbar-col:nth-child(5) .cbar-stack{animation-delay:.26s}
+.content.anim-in .bar-col:nth-child(6) .bar-stack,.content.anim-in .cbar-col:nth-child(6) .cbar-stack{animation-delay:.30s}
+.content.anim-in .bar-col:nth-child(n+7) .bar-stack,.content.anim-in .cbar-col:nth-child(n+7) .cbar-stack{animation-delay:.34s}
+@keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+/* list rows and FC cards slide in one after another; only the first 12 move */
+.content.anim-in .table-wrap tbody tr:nth-child(-n+12),.content.anim-in .fc-cards>:nth-child(-n+12){animation:rowIn .38s cubic-bezier(.2,.7,.2,1) .08s backwards}
+.content.anim-in .table-wrap tbody tr:nth-child(2),.content.anim-in .fc-cards>:nth-child(2){animation-delay:.115s}
+.content.anim-in .table-wrap tbody tr:nth-child(3),.content.anim-in .fc-cards>:nth-child(3){animation-delay:.15s}
+.content.anim-in .table-wrap tbody tr:nth-child(4),.content.anim-in .fc-cards>:nth-child(4){animation-delay:.185s}
+.content.anim-in .table-wrap tbody tr:nth-child(5),.content.anim-in .fc-cards>:nth-child(5){animation-delay:.22s}
+.content.anim-in .table-wrap tbody tr:nth-child(6),.content.anim-in .fc-cards>:nth-child(6){animation-delay:.255s}
+.content.anim-in .table-wrap tbody tr:nth-child(7),.content.anim-in .fc-cards>:nth-child(7){animation-delay:.29s}
+.content.anim-in .table-wrap tbody tr:nth-child(8),.content.anim-in .fc-cards>:nth-child(8){animation-delay:.325s}
+.content.anim-in .table-wrap tbody tr:nth-child(9),.content.anim-in .fc-cards>:nth-child(9){animation-delay:.36s}
+.content.anim-in .table-wrap tbody tr:nth-child(10),.content.anim-in .fc-cards>:nth-child(10){animation-delay:.395s}
+.content.anim-in .table-wrap tbody tr:nth-child(11),.content.anim-in .fc-cards>:nth-child(11){animation-delay:.43s}
+.content.anim-in .table-wrap tbody tr:nth-child(12),.content.anim-in .fc-cards>:nth-child(12){animation-delay:.465s}
+@keyframes rowIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* filter tabs: transitions run only when a tab is tapped in place, never when
+   a live update rebuilds them, so the active colour fades in on a real tap */
+.fc-pill{transition:background-color .2s,color .2s,border-color .2s,transform .12s}
+.fc-pill:active,.fc-ttab-v2:active,.chip:active{transform:scale(.96)}
+.fc-ttab-v2{transition:background-color .22s,border-color .22s,box-shadow .22s,transform .12s}
+.fc-ttab-v2 .l{transition:color .22s}
 
 @media(max-width:880px){
   .sidebar{width:60px}
@@ -1133,6 +1167,10 @@ body.fc-mode .main{padding-bottom:140px}   /* v249b - measured: 62px nav + 70px 
 @keyframes fcPulse{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){#fcSync .pulse{animation:none}}
 body.fc-mode #fcSync{display:flex}
+/* v346 - the strip fades between states (offline red, waiting amber, sent
+   green). Colour only: it never moves or changes height, because open forms
+   are measured around it (updateFcSync re-runs _sheetify). */
+#fcSync{transition:background-color .45s,color .45s,border-top-color .45s}
 #fcSync.ok{background:#ecfdf5;color:#065f46;border-top-color:#a7f3d0}
 #fcSync.wait{background:#fffbeb;color:#92400e;border-top-color:#fde68a}
 #fcSync.off{background:#fef2f2;color:#991b1b;border-top-color:#fecaca}
@@ -5124,7 +5162,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v345';
+const APP_VERSION = 'v346';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -27903,11 +27941,27 @@ function _listSortOnArrive(){
   if((ROUTE === 'haat' || ROUTE === 'conversion') && _sortOwner !== ROUTE) SORT = {col:'_sortTs', dir:-1};
   _sortOwner = ROUTE;
 }
+/* v346 - screen-open motion. The CSS animations in #view run only while it
+   carries .anim-in, which is added when the screen (ROUTE) changes and taken
+   off after 0.9s, or at once when a live update rebuilds the same screen.
+   Display only: reads ROUTE, touches one class, never reads or writes data.
+   var, not let, so a render() during boot can never hit an uninitialised name. */
+var _motionRoute = null, _motionTimer = 0;
+function _motionAfterRender(){
+  const v = document.getElementById('view');
+  if(!v) return;
+  const key = (PUBLIC_MODE ? 'p:' : '') + ROUTE;
+  clearTimeout(_motionTimer);
+  if(key === _motionRoute){ v.classList.remove('anim-in'); return; }
+  _motionRoute = key;
+  v.classList.add('anim-in');
+  _motionTimer = setTimeout(function(){ v.classList.remove('anim-in'); }, 900);
+}
 function render(){
   if(_inRender === 0) _listSortOnArrive();   /* v333 */
   _inRender++; if(_inRender === 1) _rmHaatStats = null;
   try{ return _renderView.apply(this, arguments); }
-  finally{ _inRender--; if(!_inRender) _rmHaatStats = null; }
+  finally{ _inRender--; if(!_inRender){ _rmHaatStats = null; try{ _motionAfterRender(); }catch(e){} } }
 }
 function _renderView(){
   /* v265 - the scope has to be applied where the answer is KNOWN. normaliseDB

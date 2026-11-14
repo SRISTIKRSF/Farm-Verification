@@ -5215,7 +5215,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v348';
+const APP_VERSION = 'v349';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -15723,8 +15723,13 @@ function _cumChartCard(stateKey, title, color, monthlyRows, pickTotal, pickNew, 
     crumbLabel='← Back to years'; crumbTo=stateKey+':year';
     total=rows.length?pickTotal(rows[rows.length-1]):0;
   } else {
-    subtitle='Running total, month by month';
-    bars=cumulativeChart(monthlyRows.map(r=>({label:monthLabel(r.m),total:pickTotal(r),delta:pickNew(r)})),color);
+    /* v349 - only the latest six months are drawn (owner, 14 Nov 2026: the
+       early empty months added nothing). Each bar is a running total, so the
+       first one shown still includes everything before it, and the headline
+       total is unchanged. Both series end at this month, so the two charts
+       still line up. "View by year" keeps the full history. */
+    subtitle='Running total, last 6 months';
+    bars=cumulativeChart(monthlyRows.slice(-6).map(r=>({label:monthLabel(r.m),total:pickTotal(r),delta:pickNew(r)})),color);
     crumbLabel='View by year →'; crumbTo=stateKey+':year';
     total=monthlyRows.length?pickTotal(monthlyRows[monthlyRows.length-1]):0;
     if(opts&&opts.thisMonth&&monthlyRows.length){

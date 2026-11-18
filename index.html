@@ -5215,7 +5215,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v349';
+const APP_VERSION = 'v350';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -12258,6 +12258,11 @@ function _fcCanSeeFarmer(f){
   const ds=fcAssignedDistricts();
   if(!ds.length) return true;
   if(!f || !f.district) return true;
+  /* v350 - a farmer the office has handed to this coordinator shows even when
+     the farmer's district is not one of theirs. The phone already downloads
+     these (the 'own' query in _scopedFcQueries, _phoneInScope); only the
+     screens were hiding them, so changing the coordinator alone did nothing. */
+  if(f.fcId && f.fcId === currentFcId()) return true;
   return ds.includes(f.district);
 }
 function filterByCurrentFc(farmers){
@@ -27842,7 +27847,8 @@ function paintSecondFarms(body){
   // FCs see the farms in their own districts — the farm's district, not the
   // farmer's, which is the whole reason a second farm needs its own row.
   const ds = fcAssignedDistricts();
-  if(ds.length) units = units.filter(u => !u.district || ds.includes(u.district));
+  const _me = currentFcId();   /* v350 - and any farm handed to this coordinator, as _fcCanSeeFarmer */
+  if(ds.length) units = units.filter(u => !u.district || ds.includes(u.district) || (u.fcId && u.fcId === _me));
 
   let h = `<div class="hint" style="margin:14px 0 10px">Farms that belong to a farmer already on the books, in a different place from their main farm.
     Each needs its own visit — often from a different field coordinator.</div>`;

@@ -1612,6 +1612,146 @@ body{letter-spacing:0;background:radial-gradient(circle at 98% 0,#f8f5f6 0,trans
   .content{padding:14px 12px 22px}.statbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px}.statbox{padding:13px 12px}.statbox .sb-value{font-size:23px}.section-head{margin:18px 0 10px}.filter-row,.toolbar,.table-tools{gap:8px!important}.btn{min-height:40px}.drawer{width:100%!important}.drawer-head{padding:17px 16px!important}.drawer-body{padding:16px!important}.modal{width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important;border-radius:14px!important}.modal-head,.modal-body,.modal-foot{padding-left:14px!important;padding-right:14px!important}.modal-foot{position:sticky;bottom:0;background:#fff}.field-row{gap:8px}.data-table,.tbl{font-size:12px}
 }
 @media(max-width:380px){.nav-item{min-width:58px;font-size:8px!important}.topbar .tt{max-width:calc(100% - 126px)}.statbox-grid{grid-template-columns:1fr}.topbar h2{font-size:15px}}
+/* v351 - the field screens (coordinator + mobilizer), from the owner's mock-up.
+   Every class starts with fh- and sits under .fh, so nothing here can restyle
+   another screen (the app already has .card, .btn, .tag, .num ...). Plum
+   tokens as everywhere else; blue/green/amber/red keep their meanings. */
+.fh{--a-bg:#f8f5f6;--a-fg:#2a1a22;--a-muted:#6a5a61;--a-card:#fff;--a-line:#ebe3e6;--a-pri:#5c2e4a;--a-deep:#33182a;--a-soft:#f3e7ed;--a-danger:#b3261e;
+  --k-new:#1d3f8f;--k-conv:#1b6a45;--k-sea:#8a4b00;--k-grey:#4a3540;--k-red:#a12222;--k-work:#5c2e4a;--k-mute:#6f6469;
+  max-width:560px;margin:0 auto;color:var(--a-fg);font-size:14px;line-height:1.45;font-family:'Inter','Hind Vadodara','Nirmala UI',system-ui,sans-serif}
+.fh button,.fh select,.fh input{font-family:inherit}
+.fh button{cursor:pointer}
+.fh button:focus-visible,.fh input:focus-visible,.fh select:focus-visible{outline:3px solid #2a78d6;outline-offset:2px}
+.fh .fh-nf{font-variant-numeric:tabular-nums}
+.fh-sec{margin-top:16px}
+.fh-langrow{display:flex;justify-content:flex-end;margin-bottom:8px}
+.fh-lang{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 13px;border-radius:99px;border:1.5px solid var(--a-line);background:var(--a-card);color:var(--a-fg);font-size:13px;font-weight:700}
+.fh-lang svg{color:var(--a-pri)}
+.fh-top{display:flex;align-items:center;gap:12px}
+.fh-avc{width:46px;height:46px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:18px;font-weight:800;background:var(--a-pri);color:#fff}
+.fh-who{flex:1;min-width:0;font-size:21px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}
+.fh-who span{display:inline-block}
+.fh-who .fh-sub{display:block;font-size:13px;font-weight:500;color:var(--a-muted)}
+.fh-pill{min-height:36px;padding:0 11px;border-radius:99px;border:1px solid var(--a-line);background:var(--a-card);color:var(--a-fg);font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;flex:none}
+.fh-pill:empty{display:none}
+.fh-pill.wait{background:#fff4d6;border-color:#e2bd5c;color:#5c3f00}
+.fh-back{width:44px;height:44px;flex:none;border-radius:14px;border:1px solid var(--a-line);background:var(--a-card);color:var(--a-fg);display:grid;place-items:center}
+.fh-h2{font-size:17px;font-weight:800;margin:0 0 10px;display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.fh-h2 small{font-size:13.5px;font-weight:600;color:var(--a-muted);text-align:right}
+.fh-g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fh-g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.fh-col{display:flex;flex-direction:column;gap:10px}
+.fh-fp{font-size:13px;color:var(--a-muted);margin:0}
+.fh-fld label{display:block;font-size:12.5px;font-weight:600;color:var(--a-muted);margin-bottom:4px}
+.fh-inp{width:100%;box-sizing:border-box;height:46px;border-radius:12px;border:1px solid var(--a-line);background:var(--a-card);color:var(--a-fg);padding:0 12px;font-size:15px}
+.fh-inp::placeholder{color:var(--a-muted)}
+.fh-num{position:relative;text-align:left;background:var(--a-card);border:1px solid transparent;border-radius:22px;padding:14px;display:flex;flex-direction:column;gap:2px;color:var(--a-fg);min-width:0;
+  box-shadow:0 10px 28px -14px rgba(34,16,27,.3),0 2px 6px -2px rgba(34,16,27,.08)}
+.fh-num b{font-size:34px;line-height:1.05;font-weight:700}
+.fh-num>span{font-size:13.5px;font-weight:700;line-height:1.35}
+.fh-num small{font-size:12px;color:var(--a-muted);line-height:1.4}
+.fh-num.big b{font-size:48px}
+.fh-num .fh-go{position:absolute;top:12px;right:12px;color:var(--a-muted)}
+.fh-num.pick b{color:var(--kc)}
+.fh-num.on{background:var(--a-pri);color:#fff}
+.fh-num.on b,.fh-num.on small{color:#fff}
+.fh .k-new{--kc:var(--k-new)}.fh .k-conv{--kc:var(--k-conv)}.fh .k-sea{--kc:var(--k-sea)}.fh .k-grey{--kc:var(--k-grey)}.fh .k-red{--kc:var(--k-red)}.fh .k-work{--kc:var(--k-work)}.fh .k-mute{--kc:var(--k-mute)}
+.fh-card{background:#fff;border:1px solid var(--a-line);border-radius:20px;padding:14px;box-shadow:0 10px 24px -18px rgba(34,16,27,.45),0 1px 3px rgba(34,16,27,.05)}
+.fh-card[data-fh]{cursor:pointer}
+.fh-hd{display:flex;align-items:flex-start;gap:12px}
+.fh-av{width:46px;height:46px;border-radius:14px;flex:none;display:grid;place-items:center;font-size:15.5px;font-weight:800;color:var(--kc);background:color-mix(in srgb,var(--kc) 13%,#fff)}
+.fh-nm{margin:0;font-size:16px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
+.fh-lc{margin:3px 0 0;font-size:12.5px;color:var(--a-muted);display:flex;align-items:center;gap:4px}
+.fh-lc svg{flex:none}
+.fh-tags{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:46%}
+.fh-tag{font-size:11.5px;font-weight:700;border-radius:99px;padding:3px 9px;white-space:nowrap;color:var(--kc);background:color-mix(in srgb,var(--kc) 12%,#fff)}
+.fh-tag.fh-lv{font-weight:600;color:var(--a-muted);background:var(--a-bg)}
+.fh-tag.fh-lv.fh-old{font-weight:700;color:#5c3f00;background:#fff4d6}
+.fh-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:12px 0 0;padding:11px 12px;border-radius:14px;background:var(--a-bg);font-size:12.5px;color:var(--a-fg)}
+.fh-meta>span{display:flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
+.fh-meta svg{flex:none;color:var(--a-pri)}
+.fh-meta .late{color:var(--a-danger);font-weight:700}
+.fh-meta .late svg{color:var(--a-danger)}
+.fh-meta a{color:var(--a-pri);font-weight:700;text-decoration:none}
+.fh-id{font-style:normal;letter-spacing:.02em;color:var(--a-muted)}
+.fh-ft{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.fh-v{flex:1.25;min-height:46px;padding:0 12px;border:none;border-radius:14px;background:var(--a-pri);color:#fff;font-size:14px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 8px 16px -10px rgba(92,46,74,.9)}
+.fh-p{flex:1;min-height:44px;padding:0 10px;border-radius:14px;border:1.5px solid color-mix(in srgb,var(--a-pri) 30%,#fff);background:var(--a-soft);color:var(--a-pri);font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.fh-lock{margin-top:10px;font-size:12.5px;color:var(--a-muted);line-height:1.45}
+.fh-edited{margin-top:8px;font-size:12px;color:var(--a-muted)}
+.fh-onote{margin:12px 0 0;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--a-fg);background:color-mix(in srgb,var(--kc) 10%,#fff);overflow-wrap:anywhere}
+.fh-onote b{display:block;font-size:11.5px;color:var(--kc);margin-bottom:2px}
+.fh-empty{border:1.5px dashed var(--a-muted);border-radius:18px;padding:20px;text-align:center;color:var(--a-muted);font-size:14px}
+.fh-more{width:100%;min-height:48px;border-radius:14px;border:1.5px solid var(--a-muted);background:transparent;color:var(--a-fg);font-size:14.5px;font-weight:700}
+.fh-box{background:var(--a-card);border:1px solid var(--a-line);border-radius:20px;padding:16px}
+.fh-ringc{text-align:left;background:var(--a-card);border:2px solid transparent;border-radius:22px;padding:14px;display:flex;flex-direction:column;gap:2px;color:var(--a-fg);min-width:0;
+  box-shadow:0 10px 28px -14px rgba(34,16,27,.3),0 2px 6px -2px rgba(34,16,27,.08)}
+.fh-ringc.on{border-color:var(--a-pri)}
+.fh-ringc>b{font-size:14px;font-weight:700;margin-top:8px}
+.fh-ringc .big{font-size:24px;font-weight:700;line-height:1.15}
+.fh-ringc small{font-size:12px;color:var(--a-muted);line-height:1.4}
+.fh-ringc em{font-style:normal;font-size:12.5px;font-weight:700;color:var(--a-danger);margin-top:2px}
+.fh-ring{width:66px;height:66px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--a-pri) calc(var(--p)*1%),var(--a-soft) 0)}
+.fh-ring>span{width:48px;height:48px;border-radius:50%;background:var(--a-card);display:grid;place-items:center;font-size:13.5px;font-weight:700}
+.fh-startc{background:color-mix(in srgb,var(--k-conv) 9%,#fff);border:1.5px solid color-mix(in srgb,var(--k-conv) 35%,#fff);border-radius:20px;padding:14px 16px;color:var(--k-conv)}
+.fh-st-top{display:flex;align-items:center;gap:10px}
+.fh-st-top svg{flex:none}
+.fh-st-top b{font-size:36px;font-weight:800;line-height:1}
+.fh-st-top span{font-size:14.5px;font-weight:700;line-height:1.35;color:var(--a-fg)}
+.fh-st-sub{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-top:10px;font-size:13.5px;font-weight:600;color:var(--a-fg)}
+.fh-st-sub b{font-size:17px;font-weight:800;color:var(--kc)}
+.fh-st-sub i{font-style:normal;color:var(--a-muted)}
+.fh-st-sub em{font-style:normal;margin-left:auto;font-size:12.5px;color:var(--a-muted)}
+.fh-grow{display:flex;align-items:flex-end;gap:8px;margin-top:10px}
+.fh-grow>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.fh-grow b{font-size:13.5px;font-weight:800}
+.fh-grow i{display:block;width:100%;max-width:38px;border-radius:8px 8px 3px 3px;background:color-mix(in srgb,var(--a-pri) 40%,#fff)}
+.fh-grow .now i{background:var(--a-pri)}
+.fh-grow span{font-size:12px;color:var(--a-muted)}
+.fh-grow em{font-style:normal;font-size:12px;font-weight:700;color:var(--k-conv)}
+.fh-sbar{display:flex;gap:3px;height:16px}
+.fh-sbar i{display:block;min-width:8px;border-radius:99px;background:var(--kc)}
+.fh-rows{background:var(--a-card);border:1px solid var(--a-line);border-radius:20px;overflow:hidden;margin-top:10px}
+.fh-row{width:100%;min-height:64px;padding:10px 14px;display:flex;align-items:center;gap:12px;border:none;border-top:1px solid var(--a-line);background:none;color:var(--a-fg);text-align:left}
+.fh-row:first-child{border-top:none}
+.fh-row .rb{flex:1;min-width:0}
+.fh-row .rb b{display:block;font-size:15px;font-weight:700}
+.fh-row .rb small{display:block;font-size:12.5px;color:var(--a-muted)}
+.fh-row svg{flex:none;color:var(--a-muted)}
+.fh-dot{width:13px;height:13px;border-radius:50%;flex:none;background:var(--kc)}
+.fh-mine{font-size:11.5px;font-weight:700;border-radius:99px;padding:2px 8px;background:var(--a-soft);color:var(--a-pri);margin-left:6px;white-space:nowrap}
+.fh-send{border-radius:22px;padding:16px;font-size:13.5px;background:#fff4d6;border:1px solid #e2bd5c;color:#4a3300}
+.fh-send small{font-size:12.5px;font-weight:700}
+.fh-send h3{margin:2px 0 6px;font-size:19px;font-weight:800;line-height:1.3}
+.fh-send .fh-v{margin-top:12px;width:100%;background:#4a3300;box-shadow:none}
+.fh-send.ok{background:#e9f6ee;border-color:#b7dcc5;color:#124d31}
+.fh-kv{background:var(--a-card);border:1px solid var(--a-line);border-radius:20px;overflow:hidden}
+.fh-kv>div{padding:10px 14px;border-top:1px solid var(--a-line)}
+.fh-kv>div:first-child{border-top:none}
+.fh-kv small{display:block;font-size:12.5px;color:var(--a-muted)}
+.fh-kv b{display:block;font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.fh-out{width:100%;min-height:52px;border-radius:14px;border:1.5px solid var(--a-danger);background:transparent;color:var(--a-danger);font-size:15px;font-weight:700}
+@media(max-width:360px){.fh-num.big b{font-size:40px}.fh-g3 .fh-num b{font-size:28px}}
+.fh-guide{width:100%;min-height:52px;border-radius:14px;border:1.5px solid var(--a-pri);background:var(--a-soft);color:var(--a-pri);font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px}
+/* v351 - the guided tour (એપ માર્ગદર્શન): the screen dims, one part is lit and
+   explained. It sits over the whole page (fixed, above the bottom bar), so its
+   classes start with fht- and it carries its own colours. */
+.fht{position:fixed;inset:0;z-index:10050;touch-action:none;font-family:'Inter','Hind Vadodara','Nirmala UI',system-ui,sans-serif}
+.fht-hole{position:fixed;border-radius:16px;box-shadow:0 0 0 200vmax rgba(24,10,18,.64);outline:3px solid #fff;pointer-events:none;transition:left .3s ease,top .3s ease,width .3s ease,height .3s ease}
+.fht-hole::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:3px solid #f2c14e;animation:fhtPulse 1.6s ease-out infinite}
+.fht-hole.none{outline:none}
+.fht-hole.none::after{display:none}
+@keyframes fhtPulse{0%{opacity:.95;transform:scale(1)}100%{opacity:0;transform:scale(1.06)}}
+.fht-tip{position:fixed;left:16px;right:16px;max-width:420px;margin:0 auto;background:#fff;color:#2a1a22;border-radius:18px;padding:16px 16px 12px;box-shadow:0 14px 34px rgba(0,0,0,.28);transition:top .3s ease}
+.fht-tip h4{margin:0 0 6px;font-size:16.5px;font-weight:800;line-height:1.3;color:#5c2e4a}
+.fht-tip p{margin:0;font-size:15px;line-height:1.55}
+.fht-row{display:flex;align-items:center;gap:8px;margin-top:14px}
+.fht-n{margin-right:auto;font-size:12.5px;font-weight:700;color:#6a5a61;font-variant-numeric:tabular-nums}
+.fht button{min-height:44px;padding:0 16px;border-radius:12px;border:1.5px solid #ebe3e6;background:#fff;color:#2a1a22;font:inherit;font-size:14.5px;font-weight:700;cursor:pointer}
+.fht .fht-next{background:#5c2e4a;border-color:#5c2e4a;color:#fff}
+.fht .fht-skip{border:0;background:none;color:#6a5a61;padding:0 8px}
+.fht button:focus-visible{outline:3px solid #2a78d6;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.fht-hole,.fht-tip{transition:none}.fht-hole::after{animation:none}}
 </style>
 </head>
 <body>
@@ -5215,7 +5355,7 @@ async function fnoHandoverWrite(f, sent){
 }
 /* FARMERNO-HANDOVER-END */
 /* ============ STATE & STORAGE ============ */
-const APP_VERSION = 'v350';
+const APP_VERSION = 'v351';
 const STORE_KEY='sristi_haat_v2_real';
 let DB=null, ROUTE='dashboard', SORT={col:'_sortTs',dir:-1};
 const FILTERS={haat:{},conv:{},fcs:{}};
@@ -5530,6 +5670,9 @@ async function updateFcSync(){
     if(!el){ el=document.createElement('div'); el.id='fcSync'; document.body.appendChild(el); }
     el.style.display='flex';
     const {total, photos}=await fcPendingTotal();
+    /* v351 - the field screens' top pill and "still to send" card marks follow
+       the strip, so a screen left open shows "All sent" when the strip does */
+    if(document.getElementById('fhPill') && typeof fhPaintPill === 'function') fhPaintPill();
     const online=navigator.onLine;
     /* v249 - three states, and in each one the coordinator is told WHAT is
        waiting and WHAT TO DO. "N બાકી" on its own left a phone holding 76
@@ -11653,6 +11796,10 @@ function startBackgroundPumps(){
      behind the large, re-shootable one. They all run on the same beat; only
      the order changed. */
   const pump = ()=>{ updateFcSync(); flushFormWrites(); flushOfflineWrites(); flushPendingEnrolments(); flushPhotoQueue(); updateUnsentCounts(); };
+  /* v351 - the field screens' "Send now" button runs this same pump, only sooner.
+     Every queue in it takes a token first (_queueTake / _photoFlushBusy), so a
+     press while it is already running does nothing extra. */
+  window._fcPumpNow = pump;
   setInterval(pump, 30000 + Math.floor(Math.random()*10000));
   window.addEventListener('online', ()=>{ setTimeout(pump, 1500); });
   setTimeout(()=>{ pump(); updatePhotoBadge(); }, 2000);   // initial kick shortly after load
@@ -15618,8 +15765,10 @@ function _padCumFront(rows, fromYM){
 }
 /* Running total, month by month, of conversion farmers who started natural
    farming. Same farmers convStats() counts as yellow + green. */
-function convStartedMonthly(){
-  const farmers=_excludeSeeds(filterByCurrentFc(DB.convFarmers||[])).filter(x=>x && !x._archived);
+/* v351 - an optional list: the field screens chart one area's farmers. The
+   office's call passes nothing and gets exactly what it got before. */
+function convStartedMonthly(list){
+  const farmers=_excludeSeeds(filterByCurrentFc(list||DB.convFarmers||[])).filter(x=>x && !x._archived);
   const nw={}; let minYM=null;
   farmers.forEach(f=>{
     const c=convCategory(f);
@@ -15666,6 +15815,10 @@ const I={
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   rupee:'<path d="M6 4h12M6 8h12M14 4c4 1.5 4 7.5 0 8H8l8 8"/>',
   calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  /* v351 - the field screens' bottom bar */
+  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  box:'<path d="M3 4h18v5H3zM5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/>',
 };
 const svg=(p,w)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w||2}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 
@@ -15914,25 +16067,25 @@ function _fcTopbar(av,sub,title,extra=''){
    verification work now flows through the same unified Queue/Planning/My
    Visits as Haat (per the redesign spec); approved Conversion farmers are
    reachable via a toggle inside Haat Farmers instead (Phase 5). */
+/* v351 - the owner's four tabs: હોમ, ખેડૂતો, મારી પ્રવૃત્તિ, પ્રોફાઇલ (the
+   planning tab is gone, at the owner's word). No red dot: the work count is on
+   Home itself. The labels follow the field screens' language switch. */
 function renderFcBottomNav(){
   let el=document.getElementById('fc-bnav');
   if(!el){el=document.createElement('div');el.id='fc-bnav';document.body.appendChild(el);}
-  const q=getFcQueueLists();
-  const hasPending=q.newApplications.length>0 || q.seasonalVerifications.some(i=>i.bucket==='overdue');
-  const dot=hasPending?'<div class="nd"></div>':'';
   const tabs=[
-    {r:'verification',p:I.check,   label:'Farmers',dot},
-    {r:'planning',     p:I.calendar,label:'Planning'},
-    {r:'haat',         p:I.haat,    label:'My Activity'},
-    {r:'fc_profile',   p:I.user,    label:'Profile'},
+    {r:'verification',p:I.home, label:fhL('હોમ','Home')},
+    {r:'fc_farmers',  p:I.list, label:fhL('ખેડૂતો','Farmers')},
+    {r:'haat',        p:I.box,  label:fhL('મારી પ્રવૃત્તિ','My activity')},
+    {r:'fc_profile',  p:I.user, label:fhL('પ્રોફાઇલ','Profile')},
   ];
   el.innerHTML=tabs.map(t=>`
-    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}">
-      <div class="nb">${svg(t.p,1.8)}${t.dot||''}</div>
+    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}"${ROUTE===t.r?' aria-current="page"':''}>
+      <div class="nb">${svg(t.p,1.8)}</div>
       <span>${t.label}</span>
     </button>`).join('');
   el.querySelectorAll('.fc-ni').forEach(b=>{
-    b.onclick=()=>{ROUTE=b.dataset.route;SORT=(ROUTE==='haat'||ROUTE==='conversion')?{col:'_sortTs',dir:-1}:{col:'name',dir:1};render();};
+    b.onclick=()=>{ROUTE=b.dataset.route;SORT=(ROUTE==='haat'||ROUTE==='conversion')?{col:'_sortTs',dir:-1}:{col:'name',dir:1};fhNavReset();render();try{window.scrollTo(0,0);}catch(e){}};
   });
 }
 /* ===== v(fc-redesign) Phase 5 — Haat Farmers, reference-only =====
@@ -17163,27 +17316,31 @@ async function _fcPaintOfflineReady(){
   if(!el) return;
   const r = await fcOfflineReadiness();
   const done = !r.total || r.ready >= r.total;
+  /* v351 - one language at a time, following the field screens' switch (fhL) */
   el.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
-    +   '<span style="color:var(--ink-soft)">Ready to work offline</span>'
+    +   '<span style="color:var(--ink-soft)">' + fhL('\u0a93\u0aab\u0ab2\u0abe\u0a87\u0aa8 \u0a95\u0abe\u0aae \u0aae\u0abe\u0a9f\u0ac7 \u0aa4\u0ac8\u0aaf\u0abe\u0ab0', 'Ready to work offline') + '</span>'
     +   '<span style="font-weight:700;color:' + (done ? 'var(--green)' : 'var(--orange)') + '">'
     +     r.ready + ' / ' + r.total + '</span>'
     + '</div>'
-    + '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5">'
-    +   (done ? '\u0aa4\u0aae\u0abe\u0ab0\u0abe \u0aac\u0aa7\u0abe \u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0acb\u0aa8\u0ac0 \u0a85\u0ab0\u0a9c\u0ac0 \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0aa5\u0a88 \u0a97\u0a88 \u0a9b\u0ac7 \u00b7 every farmer in your list is saved on this phone'
-            : '\u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0ab9\u0acb\u0aaf \u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0aac\u0abe\u0a95\u0ac0\u0aa8\u0abe \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb \u00b7 download the rest while you have signal')
+    + '<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.5">'
+    +   (done ? fhL('\u0aa4\u0aae\u0abe\u0ab0\u0abe \u0aac\u0aa7\u0abe \u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0acb\u0aa8\u0ac0 \u0a85\u0ab0\u0a9c\u0ac0 \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0aa5\u0a88 \u0a97\u0a88 \u0a9b\u0ac7', 'Every farmer in your list is saved on this phone')
+            : fhL('\u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0ab9\u0acb\u0aaf \u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0aac\u0abe\u0a95\u0ac0\u0aa8\u0abe \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb', 'Download the rest while you have signal'))
     + '</div>'
-    + (done ? '' : '<button class="btn btn-ghost" id="fcOffReadyBtn" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;font-size:12.5px">Download the rest</button>');
+    + (done ? '' : '<button class="btn btn-ghost" id="fcOffReadyBtn" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;font-size:12.5px">' + fhL('\u0aac\u0abe\u0a95\u0ac0\u0aa8\u0abe \u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0acb', 'Download the rest') + '</button>');
   const b = document.getElementById('fcOffReadyBtn');
   if(b) b.onclick = async () => {
-    if(!navigator.onLine || !(FB && FB.ready)){ toast('No connection right now \u2014 try again when you have signal', 'error'); return; }
-    b.disabled = true; b.textContent = 'Downloading\u2026';
+    if(!navigator.onLine || !(FB && FB.ready)){ toast(fhL('\u0a85\u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0aa8\u0aa5\u0ac0. \u0ab8\u0abf\u0a97\u0acd\u0aa8\u0ab2 \u0aae\u0ab3\u0ac7 \u0aa4\u0acd\u0aaf\u0abe\u0ab0\u0ac7 \u0aab\u0ab0\u0ac0 \u0aaa\u0acd\u0ab0\u0aaf\u0aa4\u0acd\u0aa8 \u0a95\u0ab0\u0acb.', 'No connection right now \u2014 try again when you have signal'), 'error'); return; }
+    b.disabled = true; b.textContent = fhL('\u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0aa5\u0a88 \u0ab0\u0ab9\u0acd\u0aaf\u0ac1\u0a82 \u0a9b\u0ac7\u2026', 'Downloading\u2026');
     const n = await prefetchFcForms({cap: 2000});
-    toast(n ? (n + ' farmer' + (n === 1 ? '' : 's') + ' saved for offline use') : 'Nothing new to download');
+    toast(n ? fhL(n + ' \u0a96\u0ac7\u0aa1\u0ac2\u0aa4\u0acb\u0aa8\u0ac0 \u0a85\u0ab0\u0a9c\u0ac0 \u0aab\u0acb\u0aa8\u0aae\u0abe\u0a82 \u0ab8\u0abe\u0a9a\u0ab5\u0ac0', n + ' farmer' + (n === 1 ? '' : 's') + ' saved for offline use')
+            : fhL('\u0aa1\u0abe\u0a89\u0aa8\u0ab2\u0acb\u0aa1 \u0a95\u0ab0\u0ab5\u0abe\u0aa8\u0ac1\u0a82 \u0a95\u0a82\u0a88 \u0aa8\u0ab5\u0ac1\u0a82 \u0aa8\u0aa5\u0ac0', 'Nothing new to download'));
     _fcPaintOfflineReady();
   };
 }
-function viewFcProfile(){
+/* v351 - the v350 profile, kept unrouted so a rollback is one line (the new
+   viewFcProfile is in the field-screens block below). */
+function viewFcProfileV350(){
   const v=$('#view');
   const fcId=SESSION&&SESSION.userId;
   const fcObj=(DB.fcs||[]).find(f=>f.id===fcId)||{};
@@ -17220,6 +17377,837 @@ function viewFcProfile(){
     </div>`;
   /* v215 - the count needs IndexedDB, so it lands a moment after the paint. */
   _fcPaintOfflineReady();
+}
+
+/* ===================== v351 - FIELD SCREENS =====================
+   The coordinator (FC) and mobilizer screens, rebuilt from the owner's mock-up
+   (claude.ai artifact F2KarG4Kto7N96npNZaopN, v21): Home, ખેડૂતો (Farmers),
+   મારી પ્રવૃત્તિ (My activity, FC only) and Profile, with a ગુજરાતી/English
+   switch at the top of every screen.
+
+   DISPLAY ONLY. Every number is worked out from what the phone already holds -
+   the same DB the v350 screens read - so nothing new is downloaded and nothing
+   is written, except the language choice, which stays on this phone
+   (localStorage, never Firebase). Every button opens the form the v350 screens
+   opened (openVerificationForm, openConvScoreModal, openFarmerModal,
+   openFcRefModal, and the data-vact Details/PDF/Edit/Verify again buttons
+   through _wireVerifActions), so the forms, the saving and the syncing are
+   unchanged.
+
+   ONE MODEL. fhModel() builds every farmer's state once per screen and every
+   number on every screen is a count over it, so Home, ખેડૂતો and the work tiles
+   cannot disagree:
+     haat  new      = verification_pending and not waiting for the office
+                      (the office dashboard's "pending" box)
+           joined   = status green          nj = status red or yellow
+           review   = everything else (waiting for the office, plus the odd
+                      record with no decision and no pending stage)
+     conv  convCategory(): pending / green adopted / yellow in progress /
+           red not adopting.  "Started natural farming" = in progress +
+           adopted, the office dashboard's sum.
+   Owner's decisions (20 Nov 2026): seasonal re-checks and repeat conversion
+   visits are not prompted work any more (a last-visit chip shows instead, and
+   amber after 180 days); the planning tab is gone; the language switch is
+   Gujarati/English, Gujarati by default. The old view functions stay in the
+   file, unrouted, so a rollback is the routing lines only. */
+const FH_LANG_KEY = 'sristi_field_lang';
+let FH_LANG = 'gu';
+try{ if(localStorage.getItem(FH_LANG_KEY) === 'en') FH_LANG = 'en'; }catch(e){}
+function fhL(gu, en){ return FH_LANG === 'en' ? en : gu; }
+/* "English (ગુજરાતી)" - the canonical district/taluka/crop form - gives the half
+   for the chosen language. Anything else (a name, a village) is shown as stored. */
+function fhHalf(s){
+  s = String(s == null ? '' : s).trim();
+  const m = s.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  if(!m || !/[઀-૿]/.test(m[2])) return s;
+  const en = m[1].trim(), gu = m[2].trim();
+  return FH_LANG === 'en' ? (en || gu) : (gu || en);
+}
+const FH_MON = {
+  gu:  ['જાન્યુ','ફેબ્રુ','માર્ચ','એપ્રિલ','મે','જૂન','જુલાઈ','ઓગસ્ટ','સપ્ટે','ઓક્ટો','નવે','ડિસે'],
+  guF: ['જાન્યુઆરી','ફેબ્રુઆરી','માર્ચ','એપ્રિલ','મે','જૂન','જુલાઈ','ઓગસ્ટ','સપ્ટેમ્બર','ઓક્ટોબર','નવેમ્બર','ડિસેમ્બર'],
+  en:  ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  enF: ['January','February','March','April','May','June','July','August','September','October','November','December']
+};
+/* dates are read as text (never through Date/UTC, which moves IST midnight to the day before) */
+function fhYMD(v){ const s = String(v == null ? '' : v).slice(0, 10); return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s) ? s : ''; }
+function fhDate(v){
+  const s = fhYMD(v); if(!s) return '';
+  const y = s.slice(0, 4);
+  return (+s.slice(8, 10)) + ' ' + FH_MON[FH_LANG === 'en' ? 'en' : 'gu'][+s.slice(5, 7) - 1] + (y !== todayISO().slice(0, 4) ? ' ' + y : '');
+}
+function fhMonthName(ym){ return FH_MON[FH_LANG === 'en' ? 'enF' : 'guF'][+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4); }
+function fhMonShort(ym){ return FH_MON[FH_LANG === 'en' ? 'en' : 'gu'][+ym.slice(5, 7) - 1]; }
+function fhYMShift(ym, k){ let y = +ym.slice(0, 4), m = +ym.slice(5, 7) + k; while(m < 1){ m += 12; y--; } while(m > 12){ m -= 12; y++; } return y + '-' + String(m).padStart(2, '0'); }
+/* a count and its noun: English gets "1 visit" / "2 visits" right */
+function fhCount(n, gu, en1, enN){ return '<span class="fh-nf">' + n + '</span> ' + (FH_LANG === 'en' ? (n === 1 ? en1 : enN) : gu); }
+const FH_P = {
+  pin:'M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10zM12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  leaf:'M5 19c0-8 5-13 15-14-1 10-6 15-14 15zM5 19l7-7', clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  hash:'M5 9h14M5 15h14M10 4 8 20M16 4l-2 16', check:'M5 12.5l4.5 4.5L19 7.5', chev:'M9 6l6 6-6 6', left:'M15 6l-6 6 6 6',
+  up:'M12 19V5M6 11l6-6 6 6', cal:'M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 2v4M16 2v4M3 10h18',
+  phone:'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z',
+  file:'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5', down:'M12 4v11M7 10l5 5 5-5M5 20h14',
+  edit:'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', redo:'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7'
+};
+function fhIc(n, s, w){ s = s || 18; return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (w || 2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + FH_P[n] + '"></path></svg>'; }
+const FH_GLOBE = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
+
+/* ---- the one model ---- */
+function fhHaatState(f){
+  if(f.stage === 'verification_pending' && !isAwaitingApproval(f)) return 'new';
+  if(f.status === 'green') return 'joined';
+  if(f.status === 'red' || f.status === 'yellow') return 'nj';
+  return 'review';
+}
+const FH_CONV_ST = {pending:'pending', green:'adopted', yellow:'progress', red:'not'};
+function fhRow(f, prog){
+  return { f: f, prog: prog,
+    st: prog === 'haat' ? fhHaatState(f) : (FH_CONV_ST[convCategory(f)] || 'pending'),
+    d: districtDisplayName(f.district) || '',
+    t: f.taluka ? (talukaDisplayName(f.taluka, f.district) || '') : '' };
+}
+/* An FC sees the farmers of their districts (plus the ones handed to them) -
+   _fcCanSeeFarmer, exactly as v350. A mobilizer sees the farmers handed to them -
+   myMobilizerFarmers, exactly as v350. Archived and sample records never. */
+function fhModel(){
+  const ok = f => f && !f._archived && !_isSeededRecord(f);
+  if(isMobilizerUser()) return { haat: [], conv: myMobilizerFarmers().map(f => fhRow(f, 'conv')) };
+  return {
+    haat: (DB.haatFarmers || []).filter(f => ok(f) && _fcCanSeeFarmer(f)).map(f => fhRow(f, 'haat')),
+    conv: (DB.convFarmers || []).filter(f => ok(f) && _fcCanSeeFarmer(f)).map(f => fhRow(f, 'conv'))
+  };
+}
+let _fhM = null, _fhAct = null;   /* the model of the screen on display, so typing in search does not rebuild it */
+function fhF(){
+  if(!FILTERS.fh) FILTERS.fh = {dist:'', tal:'', cur:'', q:'', fun:'haat', stage:'', view:'', amon:'', atype:'', lim:30};
+  return FILTERS.fh;
+}
+function fhNavReset(){ const F = fhF(); F.view = ''; F.stage = ''; F.q = ''; F.lim = 30; }
+function fhInArea(r, F){
+  if(F.dist && r.d !== F.dist) return false;
+  if(F.tal === '__none__') return !r.t;
+  return !F.tal || r.t === F.tal;
+}
+/* The district and taluka choices come from every farmer on the phone, not the
+   list on screen, so they do not reshuffle. A choice that no longer exists is
+   dropped rather than silently filtering everything to nothing. */
+function fhAreaFix(rows, F){
+  const ds = [...new Set(rows.map(r => r.d).filter(Boolean))].sort();
+  if(F.dist && ds.indexOf(F.dist) < 0){ F.dist = ''; F.tal = ''; }
+  const inD = rows.filter(r => !F.dist || r.d === F.dist);
+  const ts = [...new Set(inD.map(r => r.t).filter(Boolean))].sort();
+  const none = inD.filter(r => !r.t).length;
+  if(F.tal && (F.tal === '__none__' ? !(none && ts.length) : ts.indexOf(F.tal) < 0)) F.tal = '';
+  return { ds: ds, ts: ts, none: none };
+}
+function fhAreaHtml(A, F){
+  const many = A.ds.length > 1;
+  return '<div class="fh-g2">'
+    + (many ? `<div class="fh-fld"><label for="fhDist">${fhL('જિલ્લો','District')}</label><select id="fhDist" class="fh-inp"><option value="">${fhL('બધા જિલ્લા','All districts')}</option>${A.ds.map(d => `<option value="${esc(d)}" ${F.dist === d ? 'selected' : ''}>${esc(fhHalf(d))}</option>`).join('')}</select></div>` : '')
+    + `<div class="fh-fld"${many ? '' : ' style="grid-column:1 / -1"'}><label for="fhTal">${fhL('તાલુકો','Taluka')}</label><select id="fhTal" class="fh-inp"><option value="">${fhL('બધા તાલુકા','All talukas')}</option>${A.ts.map(t => `<option value="${esc(t)}" ${F.tal === t ? 'selected' : ''}>${esc(fhHalf(t))}</option>`).join('')}${A.none && A.ts.length ? `<option value="__none__" ${F.tal === '__none__' ? 'selected' : ''}>${fhL('તાલુકો નોંધાયેલ નથી','No taluka on record')}</option>` : ''}</select></div></div>`;
+}
+function fhTotals(M, F){
+  const h = M.haat.filter(r => fhInArea(r, F)), c = M.conv.filter(r => fhInArea(r, F));
+  const n = (a, s) => a.filter(r => r.st === s).length;
+  return { h: h, c: c,
+    haat: h.length, new: n(h, 'new'), review: n(h, 'review'), joined: n(h, 'joined'), nj: n(h, 'nj'),
+    active: h.filter(r => r.st === 'joined' && r.f.active).length,
+    rejected: h.filter(r => r.st === 'nj' && r.f.status === 'red').length,
+    hold: h.filter(r => r.st === 'nj' && r.f.status === 'yellow').length,
+    conv: c.length, pending: n(c, 'pending'), adopted: n(c, 'adopted'), progress: n(c, 'progress'), not: n(c, 'not') };
+}
+function fhHit(f, q){
+  q = String(q || '').trim().toLowerCase();
+  if(!q) return true;
+  return String(f.name || '').toLowerCase().indexOf(q) >= 0 || String(f.village || '').toLowerCase().indexOf(q) >= 0
+    || String(f.id || '').toLowerCase().indexOf(q) >= 0 || farmerPhoneMatch(f, q)
+    || farmerCropsMatch(Array.isArray(f.crops) ? f.crops : [], q) || fnoMatches(f, fnoColOf(f), q);
+}
+/* "Still to send" on a card: only when this farmer's own record is waiting on
+   this phone. Photos are queued by photo, not by farmer, so a card never claims
+   anything about photos. */
+let FH_OFF_KEYS = new Set();
+function fhPendKeys(){ const s = new Set(FH_OFF_KEYS); try{ _readPendingSync().forEach(k => s.add(String(k))); }catch(e){} return s; }
+/* Re-read what is still waiting on this phone (the marker list and the durable
+   offlineWrites rows). Runs with every pill paint, so a card stops saying "still
+   to send" once its record has gone, on whichever screen is open. True if the set
+   changed. Reads this phone only. */
+async function fhRefreshPendKeys(){
+  const keys = new Set();
+  try{ _readPendingSync().forEach(k => keys.add(String(k))); }catch(e){}
+  try{ (await idbAll('offlineWrites')).forEach(x => { if(x && x.key) keys.add(String(x.key).split('#')[0]); }); }catch(e){}
+  const same = keys.size === FH_OFF_KEYS.size && [...keys].every(k => FH_OFF_KEYS.has(k));
+  FH_OFF_KEYS = keys;
+  return !same;
+}
+function fhRepaintCards(){
+  try{ if(document.getElementById('fhList')) fhPaintList(); else if(document.querySelector('[id^="fhGL_"]')) fhPaintAct(); }catch(e){}
+}
+function fhIsPend(keys, r){ return keys.has((r.prog === 'haat' ? 'haatFarmers/' : 'convFarmers/') + r.f.id); }
+
+/* ---- pieces ---- */
+function fhIni(n){ const w = String(n || '').trim().split(/\s+/).filter(Boolean); return (w.slice(0, 2).map(x => Array.from(x)[0] || '').join('') || '?').toUpperCase(); }
+function fhMyName(){
+  if(isMobilizerUser()){ const m = mobilizerById(currentMobilizerId()); return (m && m.name) || (SESSION && SESSION.userName) || 'Mobilizer'; }
+  const id = SESSION && SESSION.userId, rec = (DB.fcs || []).find(f => f && f.id === id);
+  return (rec && rec.name) || (SESSION && SESSION.userName) || 'FC';
+}
+/* Some farmers' crops are saved in Gujarati only ("મરચા"). On the English screen the
+   crop list's own English name is shown for them ("Chili / Green chili"). Display only. */
+let _fhGuCrop = null;
+function fhCropName(c){
+  const s = fhHalf(cropDisplayName(c) || c);
+  if(FH_LANG !== 'en' || !/[઀-૿]/.test(s) || /[A-Za-z]/.test(s)) return s;
+  if(!_fhGuCrop){
+    _fhGuCrop = {};
+    (DB.crops || []).forEach(x => { const m = String(typeof x === 'string' ? x : (x && x.name) || '').match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+      if(m && m[1].trim() && !_fhGuCrop[m[2].trim()]) _fhGuCrop[m[2].trim()] = m[1].trim(); });
+  }
+  return _fhGuCrop[s.trim()] || s;
+}
+function fhCrop(f){
+  const cs = Array.isArray(f.crops) ? f.crops.filter(Boolean) : [];
+  if(!cs.length) return '—';
+  return fhCropName(cs[0]) + (cs.length > 1 ? ' +' + (cs.length - 1) : '');
+}
+function fhFno(f){ return `<i class="fh-id">${esc(fnoLabel(f, fnoColOf(f)))}</i>`; }
+function fhLastVisit(f){ return fhYMD(f.lastVisitAt) || fhYMD(lastVisitDate(f)); }
+const FH_ONB = {joined:1, adopted:1, progress:1, not:1};
+/* the last-visit chip shows only on onboarded farmers (haat joined, conversion
+   assessed); amber for a coordinator when it is more than 180 days old */
+function fhLvChip(r){
+  if(!FH_ONB[r.st]) return '';
+  const lv = fhLastVisit(r.f);
+  if(!lv) return `<span class="fh-tag fh-lv">${fhL('હજી મુલાકાત નથી','No visit yet')}</span>`;
+  const old = !isMobilizerUser() && daysBetween(lv, todayISO()) > VERIF_INTERVAL_DAYS;
+  return `<span class="fh-tag fh-lv${old ? ' fh-old' : ''}">${fhL('છેલ્લી મુલાકાત ','Last visit ')}${esc(fhDate(lv))}</span>`;
+}
+const FH_STL = {
+  new:['નવી અરજી','New application','k-work'], review:['ઓફિસના નિર્ણયની રાહ','Waiting for the office','k-new'],
+  joined:['હાટમાં જોડાયા','Joined the haat','k-conv'], nj:['જોડાયા નથી','Not joined','k-mute'],
+  pending:['કન્વર્ઝન','Conversion','k-work'], adopted:['અપનાવી','Adopted','k-conv'],
+  progress:['પ્રગતિમાં','In progress','k-sea'], not:['નથી અપનાવી','Not adopting','k-red']
+};
+function fhStTag(r){
+  if(r.st === 'nj') return r.f.status === 'yellow' ? [fhL('હોલ્ડ પર','On hold'), 'k-sea'] : [fhL('નામંજૂર','Rejected'), 'k-red'];
+  if(r.st === 'pending' && isMobilizerUser()) return [fhL('મૂલ્યાંકન બાકી','Assessment pending'), 'k-work'];
+  const s = FH_STL[r.st] || FH_STL.review;
+  return [fhL(s[0], s[1]), s[2]];
+}
+function fhStageName(st){
+  if(st === 'pending' && isMobilizerUser()) return fhL('મૂલ્યાંકન બાકી','Assessment pending');
+  const s = FH_STL[st] || FH_STL.review; return fhL(s[0], s[1]);
+}
+function fhPlace(r){
+  const f = r.f, where = isMobilizerUser() ? (r.t || f.taluka) : (r.d || f.district);
+  return [f.village, fhHalf(where)].filter(Boolean).join(' · ') || '—';
+}
+function fhCardHtml(o){
+  const f = o.f;
+  return `<div class="fh-card ${o.kc}"${o.open || ''}>
+    <div class="fh-hd"><div class="fh-av">${esc(fhIni(f.name))}</div><div style="flex:1;min-width:0"><p class="fh-nm">${esc(f.name || '—')}</p><p class="fh-lc">${fhIc('pin', 13)} ${esc(o.place)}</p></div>
+      <div class="fh-tags">${o.tags.map(t => `<span class="fh-tag ${t[1] || ''}">${esc(t[0])}</span>`).join('')}${o.lv || ''}</div></div>
+    <div class="fh-meta">${o.facts.map(x => `<span class="${x[2] || ''}">${fhIc(x[0], 15)}${x[1]}</span>`).join('')}</div>${o.foot || ''}</div>`;
+}
+const fhPendFact = () => ['up', fhL('મોકલવાનું બાકી','Still to send'), 'late'];
+function fhScoreText(cs){ return fhL('ગુણ ','Score ') + `<span class="fh-nf">${esc(String(cs.total))}/100</span>`; }
+/* Home, coordinator: a farmer waiting for the first visit */
+function fhWorkCard(r, pend){
+  const f = r.f, haat = r.prog === 'haat', applied = fhDate(f.enrolledAt || f.submittedAt || f.createdAt);
+  const facts = [['leaf', esc(fhCrop(f))]];
+  if(applied) facts.push(['cal', esc(applied)]);
+  facts.push(['clock', haat ? fhL('મુલાકાત બાકી','Visit pending') : fhL('પહેલી મુલાકાત બાકી','First visit pending')]);
+  facts.push(['hash', fhFno(f)]);
+  if(pend) facts.push(fhPendFact());
+  return fhCardHtml({ f: f, kc: 'k-work', place: fhPlace(r), tags: [fhStTag(r)], facts: facts,
+    open: ` data-fh="open" data-p="${r.prog}" data-id="${esc(f.id)}"`,
+    foot: `<div class="fh-ft"><button type="button" class="fh-v" data-fh="${haat ? 'verify' : 'conv'}" data-id="${esc(f.id)}">${fhIc('check', 16, 2.6)} ${fhL('ચકાસણી શરૂ કરો','Start verification')}</button></div>` });
+}
+/* the mobilizer's card: the same actions as v350 (phone link, log visit) */
+function fhMobCard(r, pend){
+  const f = r.f, cs = calculateConvScore(f), tag = fhStTag(r);
+  const facts = [['clock', cs && cs.assessed ? fhScoreText(cs) : fhL('હજી ગુણ અપાયા નથી','Not scored yet')]];
+  if(f.phone) facts.push(['phone', `<a href="tel:${esc(f.phone)}">${esc(f.phone)}</a>`]);
+  facts.push(['hash', fhFno(f)]);
+  if(pend) facts.push(fhPendFact());
+  return fhCardHtml({ f: f, kc: tag[1], place: fhPlace(r), tags: [tag], lv: fhLvChip(r), facts: facts,
+    foot: canEditData() ? `<div class="fh-ft"><button type="button" class="fh-v" data-fh="conv" data-id="${esc(f.id)}">${fhL('મુલાકાત નોંધો','Log visit')}</button></div>` : '' });
+}
+/* ખેડૂતો -> a stage list, coordinator. Verify again is offered on a joined farmer
+   only when v350 offered it (the seasonal check was due); a conversion farmer can
+   always be visited, as v350's conversion cards allowed. */
+function fhStageCard(r, pend){
+  const f = r.f, haat = r.prog === 'haat', tag = fhStTag(r), facts = [];
+  if(haat){
+    const note = r.st === 'review' ? fhL('મુલાકાત થઈ ગઈ, હવે ઓફિસ નક્કી કરશે','Visited. The office will decide now.')
+      : r.st === 'joined' ? (f.active ? fhL('હાટમાં સક્રિય','Active in the haat') : fhL('હાલ હાટમાં આવતા નથી','Not coming to the haat now'))
+      : tag[0];
+    facts.push(['clock', esc(note)]);
+  } else {
+    const cs = calculateConvScore(f);
+    facts.push(['leaf', cs && cs.assessed ? fhScoreText(cs) : fhL('હજી ગુણ અપાયા નથી','Not scored yet')]);
+  }
+  facts.push(['hash', fhFno(f)]);
+  if(pend) facts.push(fhPendFact());
+  let btn = '';
+  if(canEditData()){
+    if(haat && r.st === 'joined' && isSeasonalVerificationDue(f))
+      btn = `<button type="button" class="fh-v" data-fh="verify" data-id="${esc(f.id)}">${fhIc('redo', 16, 2.4)} ${fhL('ફરી ચકાસણી કરો','Verify again')}</button>`;
+    else if(!haat)
+      btn = `<button type="button" class="fh-v" data-fh="conv" data-id="${esc(f.id)}">${fhL('મુલાકાત નોંધો','Log visit')}</button>`;
+  }
+  return fhCardHtml({ f: f, kc: tag[1], place: fhPlace(r), tags: [tag], lv: fhLvChip(r), facts: facts,
+    open: ` data-fh="ref" data-p="${r.prog}" data-id="${esc(f.id)}"`, foot: btn ? `<div class="fh-ft">${btn}</div>` : '' });
+}
+function fhLangRow(){
+  return `<div class="fh-langrow"><button type="button" class="fh-lang" data-fh="lang" lang="${FH_LANG === 'en' ? 'gu' : 'en'}" aria-label="${fhL('ભાષા બદલો','Change language')}">${FH_GLOBE}<span>${FH_LANG === 'en' ? 'ગુજરાતી' : 'English'}</span></button></div>`;
+}
+function fhSec(html){ return '<section class="fh-sec">' + html + '</section>'; }
+function fhWrap(html){ return `<div class="fh" lang="${FH_LANG}">${fhLangRow()}${html}</div>`; }
+function fhSearchHtml(F){
+  return `<div class="fh-fld"><label for="fhQ">${fhL('શોધો','Search')}</label><input id="fhQ" class="fh-inp" type="search" autocomplete="off" placeholder="${fhL('નામ, ગામ શોધો','Search name, village')}" value="${esc(F.q)}"></div>`;
+}
+const fhPillHtml = () => '<span class="fh-pill" id="fhPill"></span>';
+/* the header pill reads the same count as the strip above the bottom bar (fcPendingTotal) */
+async function fhPaintPill(){
+  if(!document.getElementById('fhPill')) return;
+  let r = {total:0};
+  try{ r = await fcPendingTotal(); }catch(e){}
+  try{ if(await fhRefreshPendKeys()) fhRepaintCards(); }catch(e){}
+  const el = document.getElementById('fhPill'); if(!el) return;
+  if(r.total){
+    el.className = 'fh-pill wait';
+    el.innerHTML = fhIc('up', 15, 2.4) + ' ' + fhCount(r.total, 'મોકલવાનું બાકી', 'still to send', 'still to send');
+    if(!isMobilizerUser()) el.setAttribute('data-fh', 'goact');
+  } else {
+    el.className = 'fh-pill'; el.removeAttribute('data-fh');
+    el.innerHTML = fhIc('check', 15, 2.4) + ' ' + fhL('બધું મોકલાઈ ગયું','All sent');
+  }
+}
+function fhEmptyHtml(F){
+  return `<div class="fh-empty">${F.q ? fhL('આ શોધ માટે કોઈ ખેડૂત મળ્યા નથી.','No farmers match this search.') : fhL('આ યાદીમાં કોઈ ખેડૂત નથી.','No farmers in this list.')}</div>`;
+}
+function fhMoreHtml(left){
+  const n = Math.min(30, left);
+  return `<button type="button" class="fh-more" data-fh="more">${fhL(`વધુ ${n} બતાવો (${left} બાકી)`, `Show ${n} more (${left} left)`)}</button>`;
+}
+const fhAppTs = f => String(f.enrolledAt || f.submittedAt || f.createdAt || '');
+/* Home's list, or a ખેડૂતો stage list: typing in search repaints only this */
+function fhPaintList(){
+  const el = document.getElementById('fhList'); if(!el) return;
+  const F = fhF(), mob = isMobilizerUser(), M = _fhM || fhModel(), keys = fhPendKeys();
+  let rows, head = '', card;
+  if(F.view === 'list' && F.stage && (ROUTE === 'fc_farmers' || ROUTE === 'mob_funnel')){
+    const pool = (F.stage in {new:1, review:1, joined:1, nj:1}) ? M.haat : M.conv;
+    rows = pool.filter(r => r.st === F.stage && fhInArea(r, F) && fhHit(r.f, F.q))
+      .sort((a, b) => fhLastVisit(a.f).localeCompare(fhLastVisit(b.f)));   /* longest since a visit first */
+    card = mob ? fhMobCard : fhStageCard;
+    head = `<div class="fh-h2" style="margin:0"><span></span><small>${fhCount(rows.length, 'ખેડૂત', 'farmer', 'farmers')}</small></div>`;
+  } else {
+    const base = mob ? M.conv.filter(r => F.cur === 'all' || r.st === 'pending')
+      : (F.cur === 'conv' ? M.conv.filter(r => r.st === 'pending') : M.haat.filter(r => r.st === 'new'));
+    rows = base.filter(r => fhInArea(r, F) && fhHit(r.f, F.q));
+    if(!mob) rows.sort((a, b) => fhAppTs(a.f).localeCompare(fhAppTs(b.f)));   /* oldest application first, as v350 */
+    card = mob ? fhMobCard : fhWorkCard;
+    const label = mob ? (F.cur === 'all' ? fhL('બધા ખેડૂતો','All farmers') : fhL('મૂલ્યાંકન બાકી','Assessment pending'))
+      : (F.cur === 'conv' ? fhL('કન્વર્ઝન','Conversion') : fhL('નવી અરજી','New applications'));
+    head = `<div class="fh-h2" style="margin:0">${label}<small>${fhCount(rows.length, 'ખેડૂત', 'farmer', 'farmers')}</small></div>`;
+  }
+  const shown = rows.slice(0, F.lim);
+  let body = shown.length ? shown.map(r => card(r, fhIsPend(keys, r))).join('') : fhEmptyHtml(F);
+  if(mob && !M.conv.length) body = `<div class="fh-empty">${fhL('હજી કોઈ ખેડૂત સોંપાયા નથી. ઓફિસ ખેડૂતો સોંપે છે.','No farmers have been assigned to you yet. The office assigns them.')}</div>`;
+  el.innerHTML = head + body + (rows.length > F.lim ? fhMoreHtml(rows.length - F.lim) : '');
+}
+function fhWire(v){
+  const root = v.querySelector('.fh'); if(!root) return;
+  const F = fhF();
+  root.onclick = fhClick;
+  const d = root.querySelector('#fhDist'); if(d) d.onchange = e => { F.dist = e.target.value; F.tal = ''; F.lim = 30; render(); };
+  const t = root.querySelector('#fhTal');  if(t) t.onchange = e => { F.tal = e.target.value; F.lim = 30; render(); };
+  const m = root.querySelector('#fhMon');  if(m) m.onchange = e => { F.amon = e.target.value; F.lim = 30; render(); };
+  const q = root.querySelector('#fhQ');    if(q) q.oninput = e => { F.q = e.target.value; F.lim = 30; (ROUTE === 'haat' ? fhPaintAct : fhPaintList)(); };
+}
+function fhClick(ev){
+  const b = ev.target.closest('[data-fh]');
+  if(!b || !this.contains(b)) return;
+  if(ev.target.closest('a[href]')) return;   /* the phone number dials; nothing else happens */
+  const a = b.dataset.fh, id = b.dataset.id, val = b.dataset.v, F = fhF(), mob = isMobilizerUser();
+  const go = (route) => { ROUTE = route; render(); try{ window.scrollTo(0, 0); }catch(e){} };
+  if(a === 'lang'){
+    FH_LANG = FH_LANG === 'en' ? 'gu' : 'en';
+    try{ localStorage.setItem(FH_LANG_KEY, FH_LANG); }catch(e){}
+    render(); return;
+  }
+  if(a === 'fun'){ if(!mob) F.fun = val === 'conv' ? 'conv' : 'haat'; fhNavReset(); go(mob ? 'mob_funnel' : 'fc_farmers'); return; }
+  if(a === 'cur'){ F.cur = val; F.lim = 30; render(); return; }
+  if(a === 'stage'){
+    fhNavReset();
+    /* the "your work" row is the Home list, so it goes there rather than to a copy of it */
+    if(val === 'new' || val === 'pending'){ F.cur = mob ? 'pending' : (val === 'new' ? 'new' : 'conv'); go(mob ? 'mob_farmers' : 'verification'); }
+    else { F.view = 'list'; F.stage = val; go(ROUTE); }
+    return;
+  }
+  if(a === 'back'){ fhNavReset(); go(ROUTE); return; }
+  if(a === 'more'){ F.lim += 30; (ROUTE === 'haat' ? fhPaintAct : fhPaintList)(); return; }
+  if(a === 'atype'){ F.atype = F.atype === val ? '' : val; F.lim = 30; render(); return; }
+  if(a === 'goact'){ if(!mob){ fhNavReset(); go('haat'); } return; }
+  if(a === 'send'){ fhSendNow(); return; }
+  if(a === 'tour'){ fhTourStart(); return; }
+  if(!id) return;
+  ev.stopPropagation();
+  if(a === 'verify') openVerificationForm(id);
+  else if(a === 'conv') openConvScoreModal(id);
+  else if(a === 'open') openFarmerModal(b.dataset.p === 'conv' ? 'conv' : 'haat', id);
+  else if(a === 'ref') openFcRefModal(b.dataset.p === 'conv' ? 'conv' : 'haat', id);
+}
+
+/* ---- હોમ ---- */
+function viewFieldHome(){
+  const v = $('#view'), F = fhF(), mob = isMobilizerUser(), M = fhModel(); _fhM = M;
+  const A = fhAreaFix(mob ? M.conv : M.haat.concat(M.conv), F), T = fhTotals(M, F);
+  const tiles = mob ? [['all', T.conv, 'બધા ખેડૂતો', 'All farmers', 'k-grey'], ['pending', T.pending, 'મૂલ્યાંકન બાકી', 'Assessment pending', 'k-work']]
+                    : [['new', T.new, 'નવી અરજી', 'New applications', 'k-work'], ['conv', T.pending, 'કન્વર્ઝન', 'Conversion', 'k-work']];
+  if(!tiles.some(t => t[0] === F.cur)) F.cur = mob ? (T.pending ? 'pending' : 'all') : 'new';
+  const name = fhMyName(), started = T.adopted + T.progress;
+  const big = mob
+    ? [[T.conv, fhL('મારા ખેડૂતો','My farmers'), fhL('મને સોંપાયેલા','assigned to me')],
+       [started, fhL('શરૂઆત કરી','Started'), fhL(`${T.progress} પ્રગતિમાં + ${T.adopted} અપનાવી`, `${T.progress} in progress + ${T.adopted} adopted`)]]
+    : [[T.haat, fhL('હાટના ખેડૂતો','Haat farmers'), fhL(`${T.active} હાટમાં સક્રિય`, `${T.active} active in the haat`), 'haat'],
+       [T.conv, fhL('કન્વર્ઝનના ખેડૂતો','Conversion farmers'), fhL(`${started} એ શરૂઆત કરી`, `${started} have started`), 'conv']];
+  const work = mob ? T.pending : T.new + T.pending;
+  v.innerHTML = fhWrap(
+      `<div class="fh-top"><div class="fh-avc">${esc(Array.from(String(name))[0] || '?')}</div><div class="fh-who"><span>${fhL('નમસ્તે,','Welcome,')}</span> <span>${esc(name)}</span></div>${fhPillHtml()}</div>`
+    + fhSec(fhAreaHtml(A, F))
+    + fhSec(`<div class="fh-g2">${big.map(b => `<button type="button" class="fh-num big" data-fh="fun" data-v="${b[3] || 'conv'}"><span class="fh-go">${fhIc('chev', 18)}</span><b class="fh-nf jnum">${b[0]}</b><span>${esc(b[1])}</span><small>${esc(b[2])}</small></button>`).join('')}</div>`)
+    + fhSec(`<div class="fh-h2">${fhL('તમારું કામ','Your work')}<small>${mob ? fhCount(work, 'મૂલ્યાંકન બાકી', 'assessment pending', 'assessments pending') : fhCount(work, 'મુલાકાત બાકી', 'visit pending', 'visits pending')}</small></div>
+        <div class="fh-g2">${tiles.map(t => `<button type="button" class="fh-num pick ${t[4]}${F.cur === t[0] ? ' on' : ''}" data-fh="cur" data-v="${t[0]}" aria-pressed="${F.cur === t[0]}"><b class="fh-nf jnum">${t[1]}</b><span>${fhL(t[2], t[3])}</span></button>`).join('')}</div>`)
+    + fhSec(fhSearchHtml(F))
+    + fhSec('<div class="fh-col" id="fhList"></div>'));
+  fhWire(v); fhPaintList(); fhPaintPill();
+  /* v215 - top up the offline copies of this coordinator's farmers once the
+     screen is on, exactly as the v350 home (viewFcQueue) did. */
+  /* Home also redraws on a tile tap or a language switch, which v350's home did
+     not; at most one top-up a minute keeps the calls where v350 had them */
+  /* the once-a-minute limit only starts once a download can really run (connected, online),
+     so a Home drawn before Firebase is ready still retries on the next redraw, as in v350 */
+  if(!mob && Date.now() - (window._fhPrefAt || 0) > 60000){ if(FB.ready && navigator.onLine) window._fhPrefAt = Date.now(); setTimeout(() => { try{ prefetchFcForms(); }catch(e){} }, 1500); }
+  /* the guided tour starts by itself once per phone (and role); Profile replays it */
+  if(!_fhTour && !fhTourSeen()) setTimeout(fhTourAuto, 900);
+}
+
+/* ---- ખેડૂતો ---- */
+function fhStartedCard(T){
+  const now = T.adopted + T.progress;
+  return `<div class="fh-startc"><div class="fh-st-top">${fhIc('leaf', 24, 2.2)}<b class="fh-nf jnum">${now}</b><span>${fhL('ખેડૂતોએ પ્રાકૃતિક ખેતી કરવાની શરૂઆત કરી છે','farmers have started natural farming')}</span></div>
+    <div class="fh-st-sub"><span class="k-sea"><b class="fh-nf">${T.progress}</b> ${fhL('પ્રગતિમાં','in progress')}</span><i>+</i><span class="k-conv"><b class="fh-nf">${T.adopted}</b> ${fhL('અપનાવી','adopted')}</span><em>${fhL(`કુલ ${T.conv} માંથી`, `of ${T.conv} in all`)}</em></div></div>`;
+}
+/* the office dashboard's own running total (convStartedMonthly), over this
+   area's farmers, last five months */
+function fhGrowChart(T){
+  const nowYM = todayISO().slice(0, 7), from = fhYMShift(nowYM, -4);
+  let rows = [];
+  try{ rows = _padCumFront(convStartedMonthly(T.c.map(r => r.f)), from).filter(r => r.m >= from && r.m <= nowYM); }catch(e){ rows = []; }
+  if(!rows.length) return '';
+  const max = Math.max(1, ...rows.map(r => r.startedTotal)), add = rows[rows.length - 1].startedNew;
+  return `<div class="fh-box" style="margin-top:10px"><div class="fh-h2" style="margin-bottom:4px">${fhL('મહિના પ્રમાણે વધારો','Increase by month')}<small>${fhL('આ મહિને','This month')} <span class="fh-nf" style="color:var(--k-conv);font-weight:800">+${add}</span></small></div>
+    <div class="fh-grow" role="img" aria-label="${esc(fhL('શરૂઆત કરનાર ખેડૂતો, મહિના પ્રમાણે: ','Farmers who started, by month: ') + rows.map(r => fhMonShort(r.m) + ' ' + r.startedTotal).join(', '))}">${rows.map((r, i) => `<div class="${i === rows.length - 1 ? 'now' : ''}"><b class="fh-nf">${r.startedTotal}</b><i style="height:${Math.max(Math.round(r.startedTotal * 84 / max), 4)}px"></i><span>${fhMonShort(r.m)}</span><em class="fh-nf">+${r.startedNew}</em></div>`).join('')}</div></div>`;
+}
+function viewFieldFarmers(){
+  const v = $('#view'), F = fhF(), mob = isMobilizerUser(), M = fhModel(); _fhM = M;
+  const A = fhAreaFix(mob ? M.conv : M.haat.concat(M.conv), F);
+  if(F.view === 'list' && F.stage){
+    v.innerHTML = fhWrap(
+        `<div class="fh-top"><button type="button" class="fh-back" data-fh="back" aria-label="${fhL('પાછા','Back')}">${fhIc('left', 20, 2.4)}</button><div class="fh-who" style="font-size:19px">${esc(fhStageName(F.stage))}</div>${fhPillHtml()}</div>`
+      + fhSec(fhSearchHtml(F))
+      + fhSec(`${(F.dist || F.tal) ? `<p class="fh-fp" style="margin:0 0 8px">${fhL('વિસ્તાર: ','Area: ')}${esc(F.tal === '__none__' ? fhL('તાલુકો નોંધાયેલ નથી','No taluka on record') : fhHalf(F.tal || F.dist))}</p>` : ''}<div class="fh-col" id="fhList"></div>`));
+    fhWire(v); fhPaintList(); fhPaintPill();
+    return;
+  }
+  const T = fhTotals(M, F), haat = !mob && F.fun !== 'conv';
+  const R = (kc, gu, en, sgu, sen, n, st, work) => ({kc, gu, en, sgu, sen, n, st, work});
+  const conv4 = [
+    R('k-conv','અપનાવી','Adopted','પ્રાકૃતિક ખેતી પૂરી રીતે કરે છે','Fully practising natural farming', T.adopted,'adopted'),
+    R('k-sea','પ્રગતિમાં','In progress','શરૂઆત કરી છે, હજી પૂરું નથી','Started, not complete yet', T.progress,'progress'),
+    R('k-red','નથી અપનાવી','Not adopting','હજી રાસાયણિક ખાતર કે દવા વાપરે છે','Still uses chemical fertiliser or pesticide', T.not,'not')];
+  const V = mob ? [T.conv, [R('k-work','મૂલ્યાંકન બાકી','Assessment pending','હજી ગુણ આપ્યા નથી','Not scored yet', T.pending,'pending',1)].concat(conv4)]
+    : haat ? [T.haat, [
+        R('k-work','મુલાકાત બાકી','Visit pending','તમારે ખેતરની મુલાકાત લેવાની છે','You need to visit the farm', T.new,'new',1),
+        R('k-new','ઓફિસના નિર્ણયની રાહ','Waiting for the office','મુલાકાત થઈ ગઈ, હવે ઓફિસ નક્કી કરશે','Visited. The office will decide now.', T.review,'review'),
+        R('k-conv','હાટમાં જોડાયા','Joined the haat', `${T.active} અત્યારે હાટમાં સક્રિય`, `${T.active} active in the haat now`, T.joined,'joined'),
+        R('k-mute','જોડાયા નથી','Not joined', `${T.rejected} નામંજૂર · ${T.hold} હોલ્ડ પર`, `${T.rejected} rejected · ${T.hold} on hold`, T.nj,'nj')]]
+    : [T.conv, [R('k-work','મુલાકાત બાકી','Visit pending','હજી ખેતરની મુલાકાત થઈ નથી','Farm not visited yet', T.pending,'pending',1)].concat(conv4)];
+  const ring = (val, on, label, done, total, left) => { const p = total ? Math.round(done * 100 / total) : 0;
+    return `<button type="button" class="fh-ringc${on ? ' on' : ''}" data-fh="fun" data-v="${val}" aria-pressed="${on}"><span class="fh-ring" style="--p:${p}"><span class="fh-nf">${p}%</span></span><b>${label}</b><span class="big fh-nf">${done} / ${total}</span><small>${val === 'conv' ? fhL('ખેડૂતોમાંથી મુલાકાત થઈ','of farmers visited') : fhL('અરજીમાંથી મુલાકાત થઈ','of applications visited')}</small><em>${left ? fhCount(left, 'મુલાકાત બાકી', 'visit pending', 'visits pending') : fhL('બધી મુલાકાત થઈ ગઈ','All visits done')}</em></button>`; };
+  v.innerHTML = fhWrap(
+      `<div class="fh-top"><div class="fh-who" style="font-size:22px">${mob ? fhL('મારા ખેડૂતો','My farmers') : fhL('ખેડૂતો','Farmers')}</div>${fhPillHtml()}</div>`
+    + fhSec(fhAreaHtml(A, F))
+    + (mob ? '' : fhSec(`<div class="fh-g2">${ring('haat', haat, fhL('હાટ','Haat'), T.haat - T.new, T.haat, T.new)}${ring('conv', !haat, fhL('કન્વર્ઝન','Conversion'), T.conv - T.pending, T.conv, T.pending)}</div>`))
+    + (mob ? fhSec(fhStartedCard(T)) : !haat ? fhSec(fhStartedCard(T) + fhGrowChart(T)) : '')
+    + fhSec(`<div class="fh-h2">${fhL(`કુલ ${V[0]} ખેડૂત ક્યાં છે?`, `Where are the ${V[0]} farmers?`)}</div><div class="fh-sbar" aria-hidden="true">${V[1].filter(r => r.n > 0).map(r => `<i class="${r.kc}" style="flex:${r.n} 1 0"></i>`).join('')}</div>
+      <div class="fh-rows">${V[1].map(r => `<button type="button" class="fh-row ${r.kc}" data-fh="stage" data-v="${r.st}"><span class="fh-dot"></span><span class="rb"><b>${fhL(r.gu, r.en)}${r.work ? `<span class="fh-mine">${fhL('તમારું કામ','Your work')}</span>` : ''}</b><small>${esc(fhL(r.sgu, r.sen))}</small></span><b class="fh-nf jnum" style="font-size:24px">${r.n}</b>${fhIc('chev', 18)}</button>`).join('')}</div>`));
+  fhWire(v); fhPaintPill();
+}
+
+/* ---- મારી પ્રવૃત્તિ (coordinator) ----
+   Only this coordinator's own work: every haat verification they submitted
+   (fcActivityData, with the office's latest decision beside it - the same rule
+   v350's My Activity used) and every conversion visit they recorded. */
+const FH_AMAP = {'Pending Approval':'wait', 'Onboarded':'done', 'On Hold':'hold', 'Rejected':'rej'};
+const FH_GRP = { att: w => w.s === 'hold' || w.s === 'rej', wait: w => w.s === 'wait', done: w => w.s === 'done' || w.s === 'conv' };
+const FH_AST = {
+  wait:['ઓફિસના નિર્ણયની રાહ','Waiting for the office','k-new'], done:['હાટમાં જોડાયા','Joined the haat','k-conv'],
+  hold:['હોલ્ડ પર','On hold','k-sea'], rej:['નામંજૂર','Rejected','k-red'],
+  adopted:['અપનાવી','Adopted','k-conv'], progress:['પ્રગતિમાં','In progress','k-sea'], not:['નથી અપનાવી','Not adopting','k-red'],
+  visit:['મુલાકાત થઈ','Visited','k-grey']
+};
+/* the band a conversion visit ended in: its own saved status, the same reading
+   convCategory gives the farmer; an old visit with only a score uses the score */
+function fhBand(v){
+  if(v.chemFree === false) return 'not';
+  if(v.status === 'adopted') return 'adopted';
+  if(v.status === 'inProgress') return 'progress';
+  if(v.status) return 'not';
+  const s = Number(v.score);
+  if(v.score == null || v.score === '' || !isFinite(s)) return 'visit';
+  return s > 70 ? 'adopted' : s >= 50 ? 'progress' : 'not';
+}
+function fhActRows(M){
+  const D = fcActivityData();
+  const haat = D.haatNew.concat(D.haatSeasonal).map(r => ({ f: r.f, visit: r.visit, date: fhYMD(r.date), type: 'haat', s: FH_AMAP[r.status && r.status.label] || 'wait' }));
+  const conv = [];
+  M.conv.forEach(r => _fcOwnVisits(r.f).forEach(v => conv.push({ f: r.f, visit: v, date: fhYMD(v.date), type: 'conv', s: 'conv', band: fhBand(v) })));
+  return haat.concat(conv).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+function fhInMon(F){
+  const nowYM = todayISO().slice(0, 7), from3 = fhYMShift(nowYM, -2) + '-01';
+  return w => F.amon === '3m' ? (w.date >= from3) : (String(w.date).slice(0, 7) === F.amon);
+}
+function fhEditedNote(visit){
+  const eds = (visit && Array.isArray(visit.edits)) ? visit.edits : [];
+  if(!eds.length) return '';
+  const last = eds[eds.length - 1] || {};
+  /* the edit's stamp is UTC; show the phone's own date, as v350's fmtStamp did */
+  const d = last.at ? new Date(last.at) : null;
+  const day = d && !isNaN(d) ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : last.at;
+  return `<div class="fh-edited">✏️ ${fhL('સુધારેલ ','Edited ')}${esc(fhDate(day) || '')}${eds.length > 1 ? ' · ' + fhCount(eds.length, 'ફેરફાર', 'edit', 'edits') : ''}</div>`;
+}
+/* v350's _fcVerifActions in both languages: the same data-vact buttons, wired by
+   the same _wireVerifActions, the same _fcEditBlockReason deciding Edit */
+function fhVerifActions(f, visit){
+  const why = _fcEditBlockReason(f, visit);
+  const empty = !!(visit && !(visit.claimVerifications && Object.keys(visit.claimVerifications).length));
+  const reverify = why === 'no-verification' && empty && canEditData();
+  let msg = '';
+  if(why === 'no-verification'){
+    msg = empty ? fhL('આ મુલાકાતના જવાબ સચવાયા નથી, તેથી ખોલવા માટે કંઈ નથી. કૃપા કરીને આ ખેડૂતની ફરી ચકાસણી કરો.', 'The answers from this visit were not saved, so there is nothing to reopen. Please verify this farmer again.')
+                : fhL('આ ખેડૂતની ચકાસણી હજી નોંધાઈ નથી, તેથી ખોલવા માટે કંઈ નથી.', 'No verification is on file for this farmer yet, so there is nothing to reopen.');
+  } else if(why && why !== 'not-fc'){
+    if(FH_LANG === 'en') msg = why;
+    else if(/another coordinator/.test(why)) msg = 'આ ચકાસણી બીજા કોઓર્ડિનેટરે નોંધી છે, તેથી ફક્ત તેઓ અથવા ઓફિસ જ તેને બદલી શકે.';
+    else if(/most recent/.test(why)) msg = 'ફક્ત છેલ્લી ચકાસણી જ બદલી શકાય. આ પહેલાંની મુલાકાત છે.';
+    else if(/office has recorded/.test(why)) msg = 'ઓફિસે આ ખેડૂત વિશે નિર્ણય લઈ લીધો છે, તેથી આ ચકાસણી હવે બદલી શકાતી નથી. કંઈ સુધારવાનું હોય તો ઓફિસને કહો.';
+    else msg = why;
+  }
+  const id = esc(f.id);
+  return `<div class="fh-ft">
+      <button type="button" class="fh-p" data-vact="view" data-id="${id}">${fhIc('file', 15)} ${fhL('વિગત','Details')}</button>
+      <button type="button" class="fh-p" data-vact="pdf" data-id="${id}">${fhIc('down', 15)} PDF</button>
+      ${!why ? `<button type="button" class="fh-p" data-vact="edit" data-id="${id}">${fhIc('edit', 15)} ${fhL('સુધારો','Edit')}</button>` : ''}
+      ${reverify ? `<button type="button" class="fh-p" data-vact="reverify" data-id="${id}">${fhIc('redo', 15)} ${fhL('ફરી ચકાસણી','Verify again')}</button>` : ''}
+    </div>${msg ? `<div class="fh-lock">🔒 ${esc(msg)}</div>` : ''}`;
+}
+function fhActCard(w, keys){
+  const f = w.f, haat = w.type === 'haat', st = FH_AST[haat ? w.s : w.band] || FH_AST.visit;
+  const r = { f: f, prog: haat ? 'haat' : 'conv' };
+  const sc = w.visit && w.visit.score, hasScore = sc != null && sc !== '' && isFinite(Number(sc));
+  const facts = [
+    ['cal', (haat ? fhL('ચકાસણી ','Verified ') : fhL('મુલાકાત ','Visited ')) + esc(fhDate(w.date) || '—')],
+    ['leaf', haat ? fhL('હાટ ચકાસણી','Haat verification') : hasScore ? fhL('ગુણ ','Score ') + `<span class="fh-nf">${esc(String(sc))} / 100</span>` : fhL('કન્વર્ઝન મુલાકાત','Conversion visit')],
+    ['hash', fhFno(f)]];
+  if(fhIsPend(keys, r)) facts.push(fhPendFact());
+  let foot = '';
+  if(haat && (w.s === 'hold' || w.s === 'rej') && f.decisionNote)
+    foot += `<div class="fh-onote"><b>${fhL('ઓફિસની નોંધ',"Office's note")}</b>${esc(f.decisionNote)}</div>`;
+  if(haat) foot += fhEditedNote(w.visit) + fhVerifActions(f, w.visit);
+  else foot += `<div class="fh-ft"><button type="button" class="fh-p" data-fh="ref" data-p="conv" data-id="${esc(f.id)}">${fhIc('file', 15)} ${fhL('વિગત','Details')}</button>${canEditData() ? `<button type="button" class="fh-p" data-fh="conv" data-id="${esc(f.id)}">${fhIc('edit', 15)} ${fhL('સુધારો','Edit')}</button>` : ''}</div>`;
+  return fhCardHtml({ f: f, kc: st[2], tags: [[fhL(st[0], st[1]), st[2]]], facts: facts, foot: foot,
+    place: [f.village, fhHalf(districtDisplayName(f.district) || f.district)].filter(Boolean).join(' · ') || '—',
+    open: ` data-fh="ref" data-p="${r.prog}" data-id="${esc(f.id)}"` });
+}
+function fhPaintAct(){
+  const F = fhF(), every = _fhAct || [], inMon = fhInMon(F), keys = fhPendKeys();
+  const rows = every.filter(w => inMon(w) && (!F.atype || w.type === F.atype) && fhHit(w.f, F.q));
+  ['att', 'wait', 'done'].forEach(k => {
+    const el = document.getElementById('fhGL_' + k); if(!el) return;
+    const xs = rows.filter(FH_GRP[k]), lim = k === 'done' ? F.lim : Infinity;
+    const n = document.getElementById('fhGN_' + k); if(n) n.textContent = xs.length;
+    el.innerHTML = (xs.length ? xs.slice(0, lim).map(w => fhActCard(w, keys)).join('')
+        : `<div class="fh-empty">${F.q ? fhL('આ શોધ માટે કોઈ ખેડૂત મળ્યા નથી.','No farmers match this search.') : fhL('અહીં હજી કંઈ નથી.','Nothing here yet.')}</div>`)
+      + (xs.length > lim ? fhMoreHtml(xs.length - lim) : '');
+    _wireVerifActions(el);
+  });
+}
+/* "Still to send": the same count as the strip (fcPendingTotal), and the names
+   of the farmers whose own record is waiting on this phone */
+async function fhPaintSend(){
+  if(!document.getElementById('fhSend')) return;
+  let r = {total:0, photos:0};
+  try{ r = await fcPendingTotal(); }catch(e){}
+  if(await fhRefreshPendKeys()) fhRepaintCards();
+  const keys = FH_OFF_KEYS;
+  const el = document.getElementById('fhSend'); if(!el) return;
+  if(!r.total){
+    el.innerHTML = `<div class="fh-send ok"><small>${fhL('મોકલવાનું બાકી','Still to send')}</small><h3>${fhL('બધું મોકલાઈ ગયું','All sent')}</h3><div>${fhL('તમારું બધું કામ ઓફિસ સુધી પહોંચી ગયું છે.','All your work has reached the office.')}</div></div>`;
+    return;
+  }
+  const names = [];
+  keys.forEach(k => {
+    const m = /^(haatFarmers|convFarmers)\/(.+)$/.exec(k); if(!m || names.length >= 8) return;
+    const f = (DB[m[1]] || []).find(x => x && x.id === m[2]); if(f) names.push(f.name || f.id);
+  });
+  const p = r.photos || 0;
+  el.innerHTML = `<div class="fh-send"><small>${fhL('મોકલવાનું બાકી','Still to send')}</small>
+    <h3>${fhL(`${r.total} વિગત હજી ફક્ત આ ફોનમાં છે`, `${r.total} ${r.total === 1 ? 'item is' : 'items are'} only on this phone so far`)}</h3>
+    ${names.length ? `<div>${names.map(n => esc(n)).join('<br>')}</div>` : ''}
+    ${p ? `<div style="margin-top:6px">${fhL(p === 1 ? '1 ફોટો મોકલવાનો બાકી' : `${p} ફોટા મોકલવાના બાકી`, p === 1 ? '1 photo still to send' : `${p} photos still to send`)}</div>` : ''}
+    <div style="margin-top:6px">${fhL('સિગ્નલ હોય ત્યાં એપ ખુલ્લી રાખો. ત્યાં સુધી એપનો ડેટા ક્લિયર ન કરશો.', "Keep the app open where there is signal. Until then, don't clear the app's data.")}</div>
+    <button type="button" class="fh-v" data-fh="send">${fhIc('up', 17, 2.4)} ${fhL('હમણાં મોકલો','Send now')}</button></div>`;
+}
+/* Send now runs the same background sender that already runs every 30-40
+   seconds (window._fcPumpNow, set where that timer is set) - only sooner. Each
+   of its queues guards against running twice, so an extra press is harmless. */
+function fhSendNow(){
+  if(!navigator.onLine){ toast(fhL('અત્યારે સિગ્નલ નથી. સિગ્નલ મળતાં આપોઆપ મોકલાશે.','No signal right now. It will send by itself when there is signal.'), 'error'); return; }
+  try{ if(typeof window._fcPumpNow === 'function') window._fcPumpNow(); }catch(e){}
+  toast(fhL('મોકલાઈ રહ્યું છે…','Sending…'));
+  setTimeout(() => { try{ fhPaintSend(); fhPaintPill(); }catch(e){} }, 5000);
+}
+function viewFieldActivity(){
+  const v = $('#view'), F = fhF(), M = fhModel(); _fhM = M;
+  const nowYM = todayISO().slice(0, 7), opts = [nowYM, fhYMShift(nowYM, -1), fhYMShift(nowYM, -2), '3m'];
+  if(opts.indexOf(F.amon) < 0) F.amon = nowYM;
+  if(F.atype !== 'haat' && F.atype !== 'conv') F.atype = '';
+  const every = fhActRows(M); _fhAct = every;
+  const all = every.filter(fhInMon(F)), nH = all.filter(w => w.type === 'haat').length;
+  const has = k => all.some(w => (!F.atype || w.type === F.atype) && FH_GRP[k](w));
+  const mlabel = F.amon === nowYM ? fhL('આ મહિને પૂર્ણ કરેલું કામ','Work completed this month')
+    : F.amon === '3m' ? fhL('છેલ્લા 3 મહિનામાં પૂર્ણ કરેલું કામ','Work completed in the last 3 months')
+    : fhL(fhMonthName(F.amon) + 'માં પૂર્ણ કરેલું કામ', 'Work completed in ' + fhMonthName(F.amon));
+  const tile = (k, n, gu, en) => `<button type="button" class="fh-num pick k-grey${F.atype === k ? ' on' : ''}" data-fh="atype" data-v="${k}" aria-pressed="${F.atype === k}"><b class="fh-nf jnum">${n}</b><span>${fhL(gu, en)}</span></button>`;
+  const grp = (k, gu, en) => fhSec(`<div class="fh-h2" style="margin-bottom:8px">${fhL(gu, en)}<small class="fh-nf" id="fhGN_${k}"></small></div><div class="fh-col" id="fhGL_${k}"></div>`);
+  v.innerHTML = fhWrap(
+      `<div class="fh-top"><div class="fh-who" style="font-size:22px">${fhL('મારી પ્રવૃત્તિ','My activity')}<span class="fh-sub">${fhL('તમે પૂર્ણ કરેલું કામ','Work you have completed')}</span></div>${fhPillHtml()}</div>`
+    + fhSec('<div id="fhSend"></div>')
+    + fhSec(`<div class="fh-fld"><label for="fhMon">${fhL('મહિનો','Month')}</label><select id="fhMon" class="fh-inp">${opts.map(o => `<option value="${o}" ${F.amon === o ? 'selected' : ''}>${o === '3m' ? fhL('છેલ્લા 3 મહિના','Last 3 months') : esc(fhMonthName(o))}</option>`).join('')}</select></div>`)
+    + fhSec(`<div class="fh-h2">${mlabel}<small>${fhCount(all.length, 'મુલાકાત', 'visit', 'visits')}</small></div><div class="fh-g2">${tile('haat', nH, 'હાટ ચકાસણી કરી', 'Haat verifications done')}${tile('conv', all.length - nH, 'કન્વર્ઝન મુલાકાત કરી', 'Conversion visits done')}</div>`)
+    + fhSec(fhSearchHtml(F))
+    + (has('att') ? grp('att', 'તમારે ધ્યાન આપવાનું', 'Needs your attention') : '')
+    + (has('wait') ? grp('wait', 'ઓફિસના નિર્ણયની રાહ', 'Waiting for the office') : '')
+    + grp('done', 'પૂર્ણ થયેલું કામ', 'Completed work'));
+  fhWire(v); fhPaintAct(); fhPaintPill(); fhPaintSend();
+}
+
+/* ---- પ્રોફાઇલ (coordinator and mobilizer) ----
+   v350 showed the planning tab's numbers here; planning is gone, so this month
+   is the coordinator's own visits (the same count as મારી પ્રવૃત્તિ) and, for a
+   mobilizer, their farmers. */
+function viewFcProfile(){
+  const v = $('#view'), mob = isMobilizerUser(), M = fhModel(); _fhM = M;
+  const id = SESSION && SESSION.userId;
+  const rec = mob ? (mobilizerById(currentMobilizerId()) || {}) : ((DB.fcs || []).find(f => f && f.id === id) || {});
+  const name = fhMyName();
+  const tile = (n, gu, en, kc) => `<div class="fh-num ${kc}"><b class="fh-nf jnum" style="color:var(--kc)">${n}</b><span>${fhL(gu, en)}</span></div>`;
+  let month;
+  if(mob){
+    const T = fhTotals(M, {dist:'', tal:''});
+    month = `<div class="fh-h2">${fhL('મારા ખેડૂતો','My farmers')}</div><div class="fh-g3">${tile(T.conv, 'કુલ', 'Total', 'k-grey')}${tile(T.adopted + T.progress, 'શરૂઆત કરી', 'Started', 'k-conv')}${tile(T.pending, 'મૂલ્યાંકન બાકી', 'Assessment pending', 'k-work')}</div>`;
+  } else {
+    const ym = todayISO().slice(0, 7), mw = fhActRows(M).filter(w => String(w.date).slice(0, 7) === ym), h = mw.filter(w => w.type === 'haat').length;
+    month = `<div class="fh-h2">${fhL('આ મહિને પૂર્ણ કરેલું કામ','Work completed this month')}</div><div class="fh-g3">${tile(mw.length, 'કુલ મુલાકાત', 'Total visits', 'k-grey')}${tile(h, 'હાટ ચકાસણી કરી', 'Haat verifications done', 'k-grey')}${tile(mw.length - h, 'કન્વર્ઝન મુલાકાત કરી', 'Conversion visits done', 'k-grey')}</div>`;
+  }
+  const ds = mob ? (Array.isArray(rec.districts) ? rec.districts : []) : fcAssignedDistricts();
+  const area = ds.length ? ds.map(d => fhHalf(districtDisplayName(d) || d)).join(', ') : (rec.district ? fhHalf(districtDisplayName(rec.district) || rec.district) : '');
+  const kv = (gu, en, val) => val ? `<div><small>${fhL(gu, en)}</small><b>${esc(val)}</b></div>` : '';
+  v.innerHTML = fhWrap(
+      `<div class="fh-top"><div class="fh-avc" style="width:60px;height:60px;font-size:24px">${esc(Array.from(String(name))[0] || '?')}</div><div class="fh-who">${esc(name)}<span class="fh-sub">${mob ? fhL('મોબિલાઇઝર','Mobilizer') : fhL('ફિલ્ડ કોઓર્ડિનેટર','Field Coordinator')}</span></div>${fhPillHtml()}</div>`
+    + fhSec(month)
+    + fhSec(`<div class="fh-kv">${kv('નામ', 'Name', name)}${kv('ફોન', 'Phone', rec.phone)}${kv(ds.length > 1 ? 'જિલ્લા' : 'જિલ્લો', ds.length > 1 ? 'Districts' : 'District', area)}${kv('સંસ્થા', 'Organisation', rec.partner)}${mob ? '' : kv('FC ID', 'FC ID', id || '—')}</div>`)
+    + (mob ? '' : fhSec(`<div class="fh-box"><div id="fcOffReady" style="font-size:13px"><div style="color:var(--a-muted)">${fhL('ઓફલાઇન કામ માટે તૈયાર','Ready to work offline')}</div><div style="font-size:12px;color:var(--a-muted);margin-top:6px">${fhL('તપાસી રહ્યા છીએ…','Checking…')}</div></div></div>`))
+    + fhSec(`<button type="button" class="fh-guide" data-fh="tour">${fhIc('leaf', 18, 2.2)} ${fhL('એપ માર્ગદર્શન','App guide')}</button><button type="button" class="fh-out" onclick="signOutNow(false)">${fhL('સાઇન આઉટ','Sign out')}</button>`));
+  fhWire(v); fhPaintPill();
+  /* v215 - the count needs IndexedDB, so it lands a moment after the paint. */
+  if(!mob) _fcPaintOfflineReady();
+}
+
+/* ======== v351 - GUIDED TOUR (એપ માર્ગદર્શન / App guide) ========
+   The screen dims and one part at a time is lit, with a short note in the
+   field screens' language. It runs on the person's own screens and moves
+   between tabs by itself. Look only: the overlay takes every tap, so nothing
+   on the screen can be pressed while it is open. Nothing is saved anywhere
+   except one "seen" mark on this phone (localStorage), so it starts by itself
+   only once; Profile -> App guide replays it. A step whose part is not on the
+   screen (no farmer in the list, say) is skipped. */
+var _fhTour = null;
+const FH_TOUR_KEY = 'sristi_field_tour_v1';
+function fhTourRole(){ return isMobilizerUser() ? 'mob' : 'fc'; }
+function fhTourSeen(){ try{ return localStorage.getItem(FH_TOUR_KEY + '_' + fhTourRole()) === '1'; }catch(e){ return true; } }
+function fhTourMark(){ try{ localStorage.setItem(FH_TOUR_KEY + '_' + fhTourRole(), '1'); }catch(e){} }
+const fhQ = sel => document.querySelector(sel);
+const fhSecOf = sel => { const e = fhQ(sel); return e ? (e.closest('.fh-sec') || e) : null; };
+function fhTourSteps(){
+  const mob = isMobilizerUser(), H = mob ? 'mob_farmers' : 'verification', FR = mob ? 'mob_funnel' : 'fc_farmers';
+  const s = [
+    { r: H, el: null, tg: 'નવી એપમાં સ્વાગત છે', te: 'Welcome to the new screens',
+      g: 'એક મિનિટમાં જોઈએ કે કયો ભાગ શું કરે છે. આગળ જવા "આગળ" દબાવો.', e: 'In one minute, see what each part does. Tap Next to go on.' },
+    { r: H, el: () => fhQ('.fh-lang'), tg: 'ભાષા', te: 'Language',
+      g: 'ગુજરાતી કે English બદલવા અહીં દબાવો. તમારી પસંદ ફોનમાં યાદ રહેશે.', e: 'Tap here to switch between Gujarati and English. The phone remembers your choice.' },
+    { r: H, el: () => fhQ('#fhPill'), tg: 'કામ મોકલાયું કે નહીં', te: 'Has your work been sent?',
+      g: '"બધું મોકલાઈ ગયું" એટલે તમારું કામ ઓફિસ સુધી પહોંચી ગયું. પીળું દેખાય તો કામ હજી ફોનમાં છે, સિગ્નલ હોય ત્યાં એપ ખુલ્લી રાખો.',
+      e: '"All sent" means your work has reached the office. If it turns yellow, the work is still on this phone: keep the app open where there is signal.' },
+    { r: H, el: () => fhSecOf('#fhDist, #fhTal'), tg: 'વિસ્તાર', te: 'Area',
+      g: mob ? 'તાલુકો પસંદ કરો. નીચેની બધી સંખ્યા અને યાદી એ તાલુકા પ્રમાણે બદલાશે.' : 'જિલ્લો અને તાલુકો પસંદ કરો. નીચેની બધી સંખ્યા અને યાદી એ વિસ્તાર પ્રમાણે બદલાશે.',
+      e: mob ? 'Choose a taluka. All the numbers and lists below change to that taluka.' : 'Choose a district and taluka. All the numbers and lists below change to that area.' },
+    { r: H, el: () => fhSecOf('.fh-num.big'), tg: mob ? 'મારા ખેડૂતો' : 'તમારા ખેડૂતો', te: mob ? 'My farmers' : 'Your farmers',
+      g: mob ? 'તમને સોંપાયેલા ખેડૂતો, અને તેમાંથી કેટલાએ પ્રાકૃતિક ખેતી શરૂ કરી. દબાવો તો તબક્કા પ્રમાણે વિગત મળશે.' : 'તમારા વિસ્તારના હાટ અને કન્વર્ઝનના બધા ખેડૂતો. દબાવો તો તબક્કા પ્રમાણે વિગત મળશે.',
+      e: mob ? 'The farmers assigned to you, and how many have started natural farming. Tap to see them stage by stage.' : 'All haat and conversion farmers in your area. Tap to see them stage by stage.' },
+    { r: H, el: () => fhSecOf('[data-fh="cur"]'), tg: 'તમારું કામ', te: 'Your work',
+      g: mob ? 'બધા ખેડૂતો, કે જેમનું મૂલ્યાંકન બાકી છે. જે દબાવો તેની યાદી નીચે આવશે.' : 'નવી અરજી (હાટ) અને કન્વર્ઝન (પહેલી મુલાકાત બાકી). જે દબાવો તેની યાદી નીચે આવશે.',
+      e: mob ? 'All farmers, or those still to be assessed. Tap one and its list appears below.' : 'New haat applications, and conversion farmers waiting for a first visit. Tap one and its list appears below.' },
+    { r: H, el: () => fhQ('#fhQ') && fhQ('#fhQ').closest('.fh-fld'), tg: 'શોધો', te: 'Search',
+      g: 'ખેડૂતનું નામ, ગામ, ફોન કે ખેડૂત નંબર લખીને શોધો.', e: "Type a farmer's name, village, phone or farmer number to find them." },
+    { r: H, el: () => fhQ('#fhList .fh-card'), tg: 'ખેડૂતનું કાર્ડ', te: "A farmer's card",
+      g: mob ? 'દરેક ખેડૂતનું કાર્ડ: ગુણ, ફોન અને છેલ્લી મુલાકાત. ફોન નંબર દબાવો તો કૉલ થશે.' : 'દરેક ખેડૂતનું કાર્ડ: ગામ, પાક, અરજીની તારીખ અને ખેડૂત નંબર. કાર્ડ દબાવો તો પૂરી વિગત મળશે.',
+      e: mob ? "Each farmer's card: score, phone and last visit. Tap the phone number to call." : "Each farmer's card: village, crop, date applied and farmer number. Tap the card for full details." },
+    { r: H, el: () => fhQ('#fhList .fh-card .fh-v'), tg: mob ? 'મુલાકાત નોંધો' : 'ચકાસણી શરૂ કરો', te: mob ? 'Log visit' : 'Start verification',
+      g: mob ? 'ખેડૂતની મુલાકાત પછી અહીં દબાવીને મુલાકાત અને ગુણ નોંધો.' : 'ખેતરે પહોંચો ત્યારે અહીં દબાવીને ચકાસણી શરૂ કરો.',
+      e: mob ? 'After visiting the farmer, tap here to record the visit and score.' : 'When you reach the farm, tap here to start the verification.' },
+    { r: H, el: () => fhQ('#fc-bnav'), tg: 'નીચેનાં પાનાં', te: 'Pages at the bottom',
+      g: mob ? 'નીચે ત્રણ પાનાં: હોમ, ખેડૂતો અને પ્રોફાઇલ. હવે ખેડૂતો પાનું જોઈએ.' : 'નીચે ચાર પાનાં: હોમ, ખેડૂતો, મારી પ્રવૃત્તિ અને પ્રોફાઇલ. હવે ખેડૂતો પાનું જોઈએ.',
+      e: mob ? 'Three pages at the bottom: Home, Farmers and Profile. Next, the Farmers page.' : 'Four pages at the bottom: Home, Farmers, My activity and Profile. Next, the Farmers page.' },
+    mob ? { r: FR, el: () => fhQ('.fh-startc'), tg: 'શરૂઆત કરનાર ખેડૂતો', te: 'Farmers who have started',
+            g: 'કેટલા ખેડૂતોએ પ્રાકૃતિક ખેતી શરૂ કરી: પ્રગતિમાં અને અપનાવી.', e: 'How many farmers have started natural farming: in progress and adopted.' }
+        : { r: FR, el: () => fhSecOf('.fh-ringc'), tg: 'મુલાકાત કેટલી થઈ', te: 'Visits done',
+            g: 'હાટ અને કન્વર્ઝન: કેટલા ખેડૂતોની મુલાકાત થઈ ગઈ અને કેટલી બાકી છે.', e: 'Haat and conversion: how many farmers have been visited and how many visits are left.' },
+    { r: FR, el: () => fhQ('.fh-rows'), tg: 'તબક્કા પ્રમાણે', te: 'Stage by stage',
+      g: 'દરેક તબક્કે કેટલા ખેડૂત છે. કોઈ પણ લાઇન દબાવો તો એ ખેડૂતોની યાદી ખૂલશે.', e: 'How many farmers are at each stage. Tap any line to open the list of those farmers.' }
+  ];
+  if(!mob) s.push(
+    { r: 'haat', el: () => fhQ('#fhSend'), tg: 'મોકલવાનું બાકી', te: 'Still to send',
+      g: 'ફોનમાં હજી બાકી રહેલું કામ અહીં દેખાય. સિગ્નલ આવે ત્યારે "હમણાં મોકલો" દબાવી શકો.', e: 'Work still on this phone shows here. When there is signal, you can tap "Send now".' },
+    { r: 'haat', el: () => fhSecOf('#fhMon'), tg: 'મારી પ્રવૃત્તિ', te: 'My activity',
+      g: 'મહિનો પસંદ કરો અને જુઓ કે તમે કેટલી ચકાસણી અને મુલાકાત કરી. નીચે દરેક કામ, ઓફિસના નિર્ણય સાથે.', e: "Choose a month to see the verifications and visits you did. Each one is listed below, with the office's decision." },
+    { r: 'fc_profile', el: () => fhQ('#fcOffReady') && fhQ('#fcOffReady').closest('.fh-box'), tg: 'નેટ વગર કામ', te: 'Working without internet',
+      g: 'સિગ્નલ હોય ત્યારે અહીંથી તમારા ખેડૂતોની વિગત ફોનમાં ઉતારો, જેથી ખેતરમાં નેટ વગર પણ ચકાસણી થઈ શકે.', e: "When there is signal, download your farmers' details here, so you can verify on the farm without internet." });
+  s.push({ r: 'fc_profile', el: () => fhQ('[data-fh="tour"]'), tg: 'ફરી જોવું હોય તો', te: 'To see it again',
+    g: 'આ માર્ગદર્શન ફરી જોવા માટે અહીં દબાવો. બસ, આટલું જ!', e: "Tap here to see this guide again. That's all!" });
+  return s;
+}
+/* a pop-up (#modal.show), a full-screen form (.enroll-host) or the photo viewer is open */
+function fhBusyUi(){
+  const m = document.getElementById('modal'); if(m && m.classList.contains('show')) return true;
+  return [...document.querySelectorAll('.enroll-host, .cns-host, #lightboxOverlay')].some(e => e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden');
+}
+function fhTourAuto(){
+  if(_fhTour || fhTourSeen() || PUBLIC_MODE || usesAdminLayout()) return;
+  if(ROUTE !== (isMobilizerUser() ? 'mob_farmers' : 'verification') || !fhQ('#view .fh')) return;
+  /* never over a form or a pop-up the person is already using */
+  if(fhBusyUi() || document.visibilityState === 'hidden') return;
+  fhTourStart();
+}
+function fhTourStart(){
+  if(_fhTour) return;
+  const box = document.createElement('div');
+  box.className = 'fht'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+  box.innerHTML = '<div class="fht-hole none"></div><div class="fht-tip" aria-live="polite"></div>';
+  document.body.appendChild(box);
+  _fhTour = { i: 0, steps: fhTourSteps(), box: box, from: ROUTE, timer: setInterval(fhTourPaint, 400) };
+  box.addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if(!b) return;
+    if(b.dataset.t === 'next') fhTourGo(_fhTour.i + 1, 1);
+    else if(b.dataset.t === 'back') fhTourGo(_fhTour.i - 1, -1);
+    else if(b.dataset.t === 'skip') fhTourEnd();
+  });
+  _fhTour.key = ev => { if(!_fhTour) return;
+    const tg = ev.target, typing = tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName) || tg.isContentEditable);
+    if(ev.key === 'Escape') fhTourEnd(); else if(typing) return; else if(ev.key === 'ArrowRight') fhTourGo(_fhTour.i + 1, 1); else if(ev.key === 'ArrowLeft') fhTourGo(_fhTour.i - 1, -1); };
+  document.addEventListener('keydown', _fhTour.key);
+  window.addEventListener('resize', fhTourPaint);
+  window.addEventListener('scroll', fhTourPaint, { passive: true });   /* the light follows the part while the page scrolls to it */
+  fhTourGo(0, 1);
+}
+function fhTourGo(i, dir){
+  const T = _fhTour; if(!T) return;
+  if(i < 0) i = 0;
+  if(i >= T.steps.length){ fhTourEnd(); return; }
+  const s = T.steps[i];
+  if(ROUTE !== s.r){ ROUTE = s.r; fhNavReset(); render(); try{ window.scrollTo(0, 0); }catch(e){} }
+  const el = s.el ? s.el() : null;
+  if(s.el && !el){ if(i === 0 && dir < 0) return fhTourGo(0, 1); return fhTourGo(i + (dir < 0 ? -1 : 1), dir); }
+  T.i = i;
+  if(el && el.id !== 'fc-bnav'){
+    const r = el.getBoundingClientRect();
+    if(r.top < 70 || r.bottom > window.innerHeight - 220){
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      try{ el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' }); }catch(e){ el.scrollIntoView(); }
+    }
+  }
+  const last = i === T.steps.length - 1;
+  T.box.querySelector('.fht-tip').innerHTML =
+      `<h4>${esc(fhL(s.tg, s.te))}</h4><p>${esc(fhL(s.g, s.e))}</p>`
+    + `<div class="fht-row"><span class="fht-n">${i + 1} / ${T.steps.length}</span>`
+    + (last ? '' : `<button type="button" class="fht-skip" data-t="skip">${fhL('છોડો','Skip')}</button>`)
+    + (i > 0 ? `<button type="button" data-t="back">${fhL('પાછળ','Back')}</button>` : '')
+    + `<button type="button" class="fht-next" data-t="next">${last ? fhL('પૂરું','Done') : fhL('આગળ','Next')}</button></div>`;
+  fhTourPaint();
+  setTimeout(fhTourPaint, 350);
+}
+/* light the step's part where it is now (the screen can redraw or scroll under it) */
+function fhTourPaint(ev){
+  const T = _fhTour; if(!T) return;
+  /* the app put something in front that needs the person (a pop-up, a form), or
+     this is no longer a field screen: step aside at once, leaving the screen as is */
+  if(PUBLIC_MODE || !SESSION || usesAdminLayout()){ fhTourEnd('gone'); return; }
+  if(fhBusyUi()){ fhTourEnd('busy'); return; }
+  const s = T.steps[T.i], hole = T.box.querySelector('.fht-hole'), tip = T.box.querySelector('.fht-tip');
+  const el = s.el ? s.el() : null, vh = window.innerHeight, th = tip.offsetHeight;
+  if(!el){
+    hole.classList.add('none');
+    Object.assign(hole.style, { left: '50%', top: '40%', width: '0px', height: '0px' });
+    tip.style.top = Math.max(16, Math.round((vh - th) / 2)) + 'px';
+    return;
+  }
+  hole.classList.remove('none');
+  /* glide from one step to the next, but stay glued to the part while the page scrolls */
+  hole.style.transition = ev && ev.type === 'scroll' ? 'none' : '';
+  const r = el.getBoundingClientRect(), p = 6;
+  const top = Math.max(4, r.top - p), bottom = Math.min(vh - 4, r.bottom + p);
+  Object.assign(hole.style, { left: Math.max(4, r.left - p) + 'px', top: top + 'px',
+    width: Math.max(0, Math.min(window.innerWidth - 8, r.width + 2 * p)) + 'px', height: Math.max(0, bottom - top) + 'px' });
+  let y;
+  if(bottom + 12 + th <= vh - 8) y = bottom + 12;
+  else if(top - 12 - th >= 8) y = top - 12 - th;
+  else y = r.top + r.height / 2 > vh / 2 ? 8 : vh - th - 8;
+  tip.style.top = Math.round(y) + 'px';
+}
+function fhTourEnd(quiet){
+  const T = _fhTour; if(!T) return;
+  clearInterval(T.timer);
+  document.removeEventListener('keydown', T.key);
+  window.removeEventListener('resize', fhTourPaint);
+  window.removeEventListener('scroll', fhTourPaint, { passive: true });
+  try{ T.box.remove(); }catch(e){}
+  _fhTour = null;
+  /* a quiet close (the app needed the screen, or the person left the field screens)
+     does not count as "seen": the tour offers itself again on the next Home. If a
+     pop-up or form pushed it aside, the person's own tab is put back behind it. */
+  if(quiet){
+    if(quiet === 'busy' && T.from && ROUTE !== T.from){ ROUTE = T.from; fhNavReset(); render(); }
+    return;
+  }
+  fhTourMark();
+  ROUTE = isMobilizerUser() ? 'mob_farmers' : 'verification'; fhNavReset(); render();
+  try{ window.scrollTo(0, 0); }catch(e){}
 }
 
 const TITLES={
@@ -27031,16 +28019,18 @@ function mobilizerFarmerCount(id){
 function renderMobBottomNav(){
   let el = document.getElementById('fc-bnav');
   if(!el){ el = document.createElement('div'); el.id = 'fc-bnav'; document.body.appendChild(el); }
+  /* v351 - Home, Farmers, Profile, in the field screens' language */
   const tabs = [
-    {r:'mob_farmers', p:I.check, label:'My farmers'},
-    {r:'fc_profile',  p:I.user,  label:'Profile'},
+    {r:'mob_farmers', p:I.home, label:fhL('હોમ','Home')},
+    {r:'mob_funnel',  p:I.list, label:fhL('ખેડૂતો','Farmers')},
+    {r:'fc_profile',  p:I.user, label:fhL('પ્રોફાઇલ','Profile')},
   ];
   el.innerHTML = tabs.map(t => `
-    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}">
+    <button class="fc-ni${ROUTE===t.r?' active':''}" data-route="${t.r}"${ROUTE===t.r?' aria-current="page"':''}>
       <div class="nb">${svg(t.p,1.8)}</div><span>${t.label}</span>
     </button>`).join('');
   el.querySelectorAll('.fc-ni').forEach(b => {
-    b.onclick = () => { ROUTE = b.dataset.route; render(); };
+    b.onclick = () => { ROUTE = b.dataset.route; fhNavReset(); render(); try{ window.scrollTo(0, 0); }catch(e){} };
   });
 }
 
@@ -28242,7 +29232,7 @@ function _renderView(){
   }
   /* v163 — a mobilizer only ever has two screens. Anything else, including
      every FC screen, bounces to their own farmer list. */
-  if(isMobilizerUser() && ['mob_farmers','fc_profile'].indexOf(ROUTE) < 0) ROUTE = 'mob_farmers';
+  if(isMobilizerUser() && ['mob_farmers','mob_funnel','fc_profile'].indexOf(ROUTE) < 0) ROUTE = 'mob_farmers';   /* v351 - + mob_funnel */
   /* v265 - a viewer works at a desk, not in a field, so they get the desktop
      layout rather than the coordinator's phone UI. usesAdminLayout is about
      which SHAPE of screen to draw and never about permission; every permission
@@ -28256,23 +29246,27 @@ function _renderView(){
   if(_qa) _qa.style.display = canEditData() ? '' : 'none';
   updateFcSync();   // v186 - the strip follows fc-mode on and off
   renderNav();
+  /* v351 - the field screens (see "v351 - FIELD SCREENS"). The v350 views
+     (viewMobFarmers, viewFcQueue, viewFcPlanning, viewFcConversion,
+     viewFcVisits, viewFcActivity, viewFcProfileV350) stay in the file,
+     unrouted, so going back is these lines only. */
   if(isMobilizerUser()){
     renderMobBottomNav();
-    (ROUTE === 'fc_profile' ? viewFcProfile : viewMobFarmers)();
+    ({fc_profile:viewFcProfile, mob_funnel:viewFieldFarmers}[ROUTE] || viewFieldHome)();
     return;
   }
   if(!usesAdminLayout()){
+    /* planning, the old conversion list and My Visits are gone (owner, 20 Nov
+       2026); anything that still sends a coordinator there lands on Home */
+    if(['planning','conversion','fc_visits'].indexOf(ROUTE) >= 0) ROUTE = 'verification';
     renderFcBottomNav();
-    ({haat:viewFcActivity,conversion:viewFcConversion,verification:viewFcQueue,
-      planning:viewFcPlanning,
-      // v(fc-redesign) — "My Visits" tab removed (Planning covers the same
-      // ground). fc_visits kept routable, no sidebar entry, for archaeology.
-      fc_visits:viewFcVisits,fc_profile:viewFcProfile,
+    ({haat:viewFieldActivity,verification:viewFieldHome,
+      fc_farmers:viewFieldFarmers,fc_profile:viewFcProfile,
       public_landing:renderPublicLanding,
       public_haat_form:viewPublicHaatForm,
       public_conv_form:viewPublicConvForm,
       public_thanks:viewPublicThanks,
-    }[ROUTE]||viewFcQueue)();
+    }[ROUTE]||viewFieldHome)();
     return;
   }
   const[crumb,title]=TITLES[ROUTE]||['',''];
